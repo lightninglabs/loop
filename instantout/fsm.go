@@ -148,7 +148,7 @@ type Config struct {
 	// Store is used to store the instant out.
 	Store InstantLoopOutStore
 
-	// LndClient is used to decode the swap invoice.
+	// LndClient is used to query lnd.
 	LndClient lndclient.LightningClient
 
 	// RouterClient is used to send the offchain payment to the server.

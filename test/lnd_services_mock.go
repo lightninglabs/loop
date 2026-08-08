@@ -234,6 +234,22 @@ func (s *LndMockServices) SetInvoice(invoice *lndclient.Invoice) {
 	s.Invoices[invoice.Hash] = &invoiceCopy
 }
 
+// LookupInvoice returns a copy of the invoice for the payment hash.
+func (s *LndMockServices) LookupInvoice(hash lntypes.Hash) (
+	*lndclient.Invoice, bool) {
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	invoice, ok := s.Invoices[hash]
+	if !ok {
+		return nil, false
+	}
+
+	invoiceCopy := *invoice
+	return &invoiceCopy, true
+}
+
 // IsDone checks whether all channels have been fully emptied. If not this may
 // indicate unexpected behaviour of the code under test.
 func (s *LndMockServices) IsDone() error {

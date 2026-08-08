@@ -120,8 +120,22 @@ func createClientTestContext(t *testing.T,
 	serverMock := newServerMock(clientLnd)
 
 	store := loopdb.NewStoreMock(t)
+	registerInvoice := func(encoded string) {
+		invoice, err := clientLnd.DecodeInvoice(encoded)
+		require.NoError(t, err)
+		require.NotNil(t, invoice.PaymentHash)
+		require.NotNil(t, invoice.Description)
+
+		clientLnd.SetInvoice(&lndclient.Invoice{
+			Hash:           lntypes.Hash(*invoice.PaymentHash),
+			Memo:           *invoice.Description,
+			PaymentRequest: encoded,
+		})
+	}
 	for _, s := range pendingSwaps {
 		store.LoopOutSwaps[s.Hash] = s.Contract
+		registerInvoice(s.Contract.SwapInvoice)
+		registerInvoice(s.Contract.PrepayInvoice)
 
 		updates := []loopdb.SwapStateData{}
 		for _, e := range s.Events {

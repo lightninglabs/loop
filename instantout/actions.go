@@ -11,10 +11,10 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
-	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/payment"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -150,17 +150,19 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	if err != nil {
 		return f.HandleError(err)
 	}
-	// Decode the invoice to check if the hash is valid.
-	payReq, err := f.cfg.LndClient.DecodePaymentRequest(
-		ctx, instantOutResponse.SwapInvoice,
+	// Decode and validate the invoice before storing it for payment.
+	paymentRequest, err := payment.RequestFromInvoice(
+		f.cfg.Network, instantOutResponse.SwapInvoice,
+		f.clck.Now(),
 	)
 	if err != nil {
 		return f.HandleError(err)
 	}
 
-	if swapHash != payReq.Hash {
+	invoiceHash := *paymentRequest.PaymentHash
+	if swapHash != invoiceHash {
 		return f.HandleError(fmt.Errorf("invalid swap invoice hash: "+
-			"expected %x got %x", preimage.Hash(), payReq.Hash))
+			"expected %x got %x", preimage.Hash(), invoiceHash))
 	}
 	serverPubkey, err := btcec.ParsePubKey(instantOutResponse.SenderKey)
 	if err != nil {
@@ -212,6 +214,16 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 func (f *FSM) PollPaymentAcceptedAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
+	paymentRequest, err := payment.RequestFromInvoice(
+		f.cfg.Network, f.InstantOut.swapInvoice, f.clck.Now(),
+	)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	paymentRequest.Timeout = defaultSendpaymentTimeout
+	paymentRequest.MaxParts = defaultMaxParts
+	paymentRequest.MaxFee = getMaxRoutingFee(f.InstantOut.Value)
+
 	// Now that we're doing the swap, we first lock the reservations
 	// so that they can't be used for other swaps.
 	for _, reservation := range f.InstantOut.Reservations {
@@ -225,13 +237,7 @@ func (f *FSM) PollPaymentAcceptedAction(ctx context.Context,
 
 	// Now we send the payment to the server.
 	payChan, paymentErrChan, err := f.cfg.RouterClient.SendPayment(
-		ctx,
-		lndclient.SendPaymentRequest{
-			Invoice:  f.InstantOut.swapInvoice,
-			Timeout:  defaultSendpaymentTimeout,
-			MaxParts: defaultMaxParts,
-			MaxFee:   getMaxRoutingFee(f.InstantOut.Value),
-		},
+		ctx, paymentRequest,
 	)
 	if err != nil {
 		f.Errorf("error sending payment: %v", err)

@@ -29,13 +29,6 @@ type mockLightningClient struct {
 	wg  sync.WaitGroup
 }
 
-// DecodePaymentRequest returns a non-nil payment request.
-func (h *mockLightningClient) DecodePaymentRequest(_ context.Context,
-	_ string) (*lndclient.PaymentRequest, error) {
-
-	return &lndclient.PaymentRequest{}, nil
-}
-
 func (h *mockLightningClient) WaitForFinished() {
 	h.wg.Wait()
 }

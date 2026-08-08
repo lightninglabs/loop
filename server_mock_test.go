@@ -108,6 +108,19 @@ func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
 		return nil, err
 	}
 
+	// Store the remote invoices in the test fixture so component-based
+	// payment assertions can identify them by payment hash.
+	s.lnd.SetInvoice(&lndclient.Invoice{
+		Hash:           swapHash,
+		Memo:           swapInvoiceDesc,
+		PaymentRequest: swapPayReqString,
+	})
+	s.lnd.SetInvoice(&lndclient.Invoice{
+		Hash:           s.prepayHash,
+		Memo:           prepayInvoiceDesc,
+		PaymentRequest: prePayReqString,
+	})
+
 	var senderKeyArray [33]byte
 	copy(senderKeyArray[:], senderKey.SerializeCompressed())
 

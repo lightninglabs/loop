@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/payment"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweep"
@@ -772,15 +773,18 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 	pluginType RoutingPluginType, reportPluginResult bool, rfqId []byte) (
 	*lndclient.PaymentStatus, error) {
 
-	// Extract hash from payment request. Unfortunately the request
-	// components aren't available directly.
-	chainParams := s.lnd.ChainParams
-	target, routeHints, hash, amt, err := swap.DecodeInvoice(
-		chainParams, invoice,
+	// Decode and validate the invoice before copying its supported fields
+	// into a component-based payment request.
+	req, err := payment.RequestFromInvoice(
+		s.lnd.ChainParams, invoice, s.clock.Now(),
 	)
 	if err != nil {
 		return nil, err
 	}
+	target := req.Target
+	routeHints := req.RouteHints
+	hash := *req.PaymentHash
+	amt := req.AmountMsat.ToSatoshis()
 
 	maxRetries := 1
 	totalPaymentTimeout := s.executeConfig.totalPaymentTimeout
@@ -824,13 +828,10 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 		paymentTimeout = totalPaymentTimeout
 	}
 
-	req := lndclient.SendPaymentRequest{
-		MaxFee:          maxFee,
-		Invoice:         invoice,
-		OutgoingChanIds: outgoingChanIds,
-		Timeout:         paymentTimeout,
-		MaxParts:        s.executeConfig.loopOutMaxParts,
-	}
+	req.MaxFee = maxFee
+	req.OutgoingChanIds = outgoingChanIds
+	req.Timeout = paymentTimeout
+	req.MaxParts = s.executeConfig.loopOutMaxParts
 
 	// If we want an asset swap, we'll need to set the custom first hop
 	// data to the rfq id. This will then allow LND to route the payment
@@ -1667,11 +1668,11 @@ trackChanLoop:
 // resumeLoopOutPayment attempts to resume the loop out payment for the
 // specified swap.
 func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
-	swap *loopdb.LoopOut) error {
+	pendingSwap *loopdb.LoopOut) error {
 
 	swapRes, err := m.swapClient.NewLoopOutSwap(
 		ctx, &swapserverrpc.ServerLoopOutRequest{
-			SwapHash:  swap.Hash[:],
+			SwapHash:  pendingSwap.Hash[:],
 			UserAgent: ResumeSwapInitiator,
 		},
 	)
@@ -1679,33 +1680,35 @@ func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
 		return err
 	}
 
-	paymentReq := swapRes.SwapInvoice
-	// Verify the payment request before attempting payment.
-	inv, err := m.lnd.Client.DecodePaymentRequest(ctx, paymentReq)
+	// Verify the payment request before attempting payment and copy only
+	// supported invoice fields into the outgoing request.
+	paymentRequest, err := payment.RequestFromInvoice(
+		m.lnd.ChainParams, swapRes.SwapInvoice, m.clock.Now(),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to decode loop out invoice: %v", err)
 	}
 
-	if swap.Hash != inv.Hash {
+	invoiceHash := *paymentRequest.PaymentHash
+	if pendingSwap.Hash != invoiceHash {
 		return fmt.Errorf("invoice payment hash %v does not match "+
-			"swap hash %v", inv.Hash, swap.Hash)
+			"swap hash %v", invoiceHash, pendingSwap.Hash)
 	}
 
-	amtRequested := swap.Contract.AmountRequested
+	amtRequested := pendingSwap.Contract.AmountRequested
+	invoiceAmount := paymentRequest.AmountMsat.ToSatoshis()
 
-	if inv.Value.ToSatoshis() > swap.Contract.MaxSwapFee*2+amtRequested {
+	if invoiceAmount > pendingSwap.Contract.MaxSwapFee*2+amtRequested {
 		return fmt.Errorf("invoice amount %v exceeds max "+
-			"allowed %v", inv.Value.ToSatoshis(),
-			swap.Contract.MaxSwapFee+amtRequested)
+			"allowed %v", invoiceAmount,
+			pendingSwap.Contract.MaxSwapFee+amtRequested)
 	}
+	paymentRequest.Timeout = time.Hour
+	paymentRequest.MaxFee = pendingSwap.Contract.MaxSwapFee
 
 	payChan, errChan, err := m.lnd.Router.SendPayment(
-		ctx,
-		lndclient.SendPaymentRequest{
-			Invoice: paymentReq,
-			Timeout: time.Hour,
-			MaxFee:  swap.Contract.MaxSwapFee,
-		})
+		ctx, paymentRequest,
+	)
 	if err != nil {
 		return err
 	}
@@ -1716,7 +1719,7 @@ func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
 				return fmt.Errorf("payment error: %v", payResp.FailureReason)
 			}
 			if payResp.State == lnrpc.Payment_SUCCEEDED {
-				cost := swap.LastUpdate().Cost
+				cost := pendingSwap.LastUpdate().Cost
 				cost.Server = payResp.Value.ToSatoshis() - amtRequested
 				cost.Offchain = payResp.Fee.ToSatoshis()
 				// Payment succeeded.
@@ -1724,11 +1727,11 @@ func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
 
 				// Update state in store.
 				err = m.swapStore.UpdateLoopOut(
-					ctx, swap.Hash, updateTime,
+					ctx, pendingSwap.Hash, updateTime,
 					loopdb.SwapStateData{
 						State:      loopdb.StateSuccess,
 						Cost:       cost,
-						HtlcTxHash: swap.LastUpdate().HtlcTxHash,
+						HtlcTxHash: pendingSwap.LastUpdate().HtlcTxHash,
 					},
 				)
 				if err != nil {

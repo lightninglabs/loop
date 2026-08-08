@@ -161,12 +161,15 @@ func (ctx *Context) AssertPaid(
 				expectedMemo)
 		}
 
-		payReq := ctx.DecodeInvoice(swapPayment.SendPaymentRequest.Invoice)
+		paymentHash := swapPayment.SendPaymentRequest.PaymentHash
+		require.NotNil(ctx.T, paymentHash)
+		invoice, ok := ctx.Lnd.LookupInvoice(*paymentHash)
+		require.True(ctx.T, ok, "unknown payment hash: %v", paymentHash)
 
-		_, ok := ctx.PaidInvoices[*payReq.Description]
+		_, ok = ctx.PaidInvoices[invoice.Memo]
 		require.False(
 			ctx.T, ok,
-			"duplicate invoice paid: %v", *payReq.Description,
+			"duplicate invoice paid: %v", invoice.Memo,
 		)
 
 		done := func(result error) {
@@ -184,9 +187,9 @@ func (ctx *Context) AssertPaid(
 			}
 		}
 
-		ctx.PaidInvoices[*payReq.Description] = done
+		ctx.PaidInvoices[invoice.Memo] = done
 
-		if *payReq.Description == expectedMemo {
+		if invoice.Memo == expectedMemo {
 			return done
 		}
 	}
