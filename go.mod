@@ -248,3 +248,7 @@ replace github.com/lightningnetwork/lnd/sqldb v1.0.13 => github.com/lightningnet
 
 // The v0.8 release branch has not yet adopted btcd v2.
 replace github.com/lightninglabs/taproot-assets => github.com/lightninglabs/taproot-assets v0.7.1-0.20260706193822-2adfadc58e3c
+
+// TODO: Remove this temporary replace once the following PR is merged:
+// https://github.com/lightninglabs/lndclient/pull/286
+replace github.com/lightninglabs/lndclient => github.com/starius/lndclient v0.21.0-2-payment-components-2

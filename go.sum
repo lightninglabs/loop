@@ -272,8 +272,6 @@ github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.4-0.20250610182311-2f1d46ef18b7 h1:373o5lNr1udAdhcf5+zq/0dYpRtkvYLl8Lk6wG7I0DY=
 github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.4-0.20250610182311-2f1d46ef18b7/go.mod h1:bDnEKRN1u13NFBuy/C+bFLhxA5bfd3clT25y76QY0AM=
-github.com/lightninglabs/lndclient v1.0.1-0.20260730152521-c255827dd83e h1:QdaQT0PQ+RjzpsqHHAQa44WoymcMCwMlxbI9S+PTme8=
-github.com/lightninglabs/lndclient v1.0.1-0.20260730152521-c255827dd83e/go.mod h1:DtZg/wz7YFXVCwOwYOJyWKQBnUp1NFg4RQdax3MSYbc=
 github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2.0.20251211093704-71c1eef09789 h1:7kX7vUgHUazAHcCJ6uzBDa4/2MEGEbMEfa01GtfqmTQ=
 github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2.0.20251211093704-71c1eef09789/go.mod h1:99BKpIi6ruaaXRM1A77eqZ+FWPQ3cfRa+ZVy5bmWMaY=
 github.com/lightninglabs/neutrino v0.18.0 h1:UsyeU3twkCSAXxUssVg8vGXcHkWKzHZ3xQCej57t5t0=
@@ -391,6 +389,8 @@ github.com/soheilhy/cmux v0.1.5 h1:jjzc5WVemNEDTLwv9tlmemhC73tI08BNOIGwBOo10Js=
 github.com/soheilhy/cmux v0.1.5/go.mod h1:T7TcVDs9LWfQgPlPsdngu6I6QIoyIFZDDC6sNE1GqG0=
 github.com/spf13/pflag v1.0.9 h1:9exaQaMOCwffKiiiYk6/BndUBv+iRViNW+4lEMi0PvY=
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
+github.com/starius/lndclient v0.21.0-2-payment-components-2 h1:pmVOgJeGtzMSzXdeP3WOqk+ktGiSFcn7em8H0bSR5Qc=
+github.com/starius/lndclient v0.21.0-2-payment-components-2/go.mod h1:DtZg/wz7YFXVCwOwYOJyWKQBnUp1NFg4RQdax3MSYbc=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=
