@@ -204,6 +204,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		},
 		AssetClient:     cfg.AssetClient,
 		LoopOutMaxParts: cfg.LoopOutMaxParts,
+		Clock:           clock.NewDefaultClock(),
 	}
 
 	sweeper := &sweep.Sweeper{
@@ -489,7 +490,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 
 	swapCfg := newSwapConfig(
 		s.lndServices, s.Store, s.Server, s.AssetClient,
-		clock.NewDefaultClock(),
+		s.Clock,
 	)
 
 	for _, pend := range loopOutSwaps {
@@ -583,7 +584,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Create a new swap object for this swap.
 	swapCfg := newSwapConfig(
 		s.lndServices, s.Store, s.Server, s.AssetClient,
-		clock.NewDefaultClock(),
+		s.Clock,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -767,7 +768,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	initiationHeight := s.executor.height()
 	swapCfg := newSwapConfig(
 		s.lndServices, s.Store, s.Server, s.AssetClient,
-		clock.NewDefaultClock(),
+		s.Clock,
 	)
 	initResult, err := newLoopInSwap(
 		globalCtx, swapCfg, initiationHeight, request,

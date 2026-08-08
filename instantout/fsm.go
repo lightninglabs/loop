@@ -8,6 +8,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
 )
 
@@ -170,6 +171,9 @@ type Config struct {
 
 	// Network is the network that is used for the swap.
 	Network *chaincfg.Params
+
+	// Clock provides the current time.
+	Clock clock.Clock
 }
 
 // FSM is the state machine that handles the instant out.
@@ -182,6 +186,9 @@ type FSM struct {
 
 	// InstantOut contains all the information about the instant out.
 	InstantOut *InstantOut
+
+	// clck provides the current time.
+	clck clock.Clock
 
 	// htlcMusig2Sessions contains all the reservations input musig2
 	// sessions that will be used for the htlc transaction.
@@ -205,9 +212,15 @@ func NewFSM(cfg *Config, protocolVersion ProtocolVersion) (*FSM, error) {
 // NewFSMFromInstantOut creates a new instantout FSM from an existing instantout
 // recovered from the database.
 func NewFSMFromInstantOut(cfg *Config, instantOut *InstantOut) (*FSM, error) {
+	fsmClock := cfg.Clock
+	if fsmClock == nil {
+		fsmClock = clock.NewDefaultClock()
+	}
+
 	instantOutFSM := &FSM{
 		cfg:        cfg,
 		InstantOut: instantOut,
+		clck:       fsmClock,
 	}
 	switch instantOut.protocolVersion {
 	case ProtocolVersionFullReservation:

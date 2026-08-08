@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
@@ -139,6 +140,7 @@ func createClientTestContext(t *testing.T,
 		Server:            serverMock,
 		Store:             store,
 		CreateExpiryTimer: timerFactory,
+		Clock:             clock.NewTestClock(testTime),
 	})
 
 	statusChan := make(chan SwapInfo)
