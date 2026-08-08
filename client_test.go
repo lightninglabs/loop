@@ -221,7 +221,9 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	swapPayReq, err := getInvoice(hash, amt, swapInvoiceDesc)
 	require.NoError(t, err)
 
-	prePayReq, err := getInvoice(hash, 100, prepayInvoiceDesc)
+	prepayHash := hash
+	prepayHash[0] ^= 1
+	prePayReq, err := getInvoice(prepayHash, 100, prepayInvoiceDesc)
 	require.NoError(t, err)
 
 	_, senderPubKey := test.CreateKey(1)
