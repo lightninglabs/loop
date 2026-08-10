@@ -6,6 +6,10 @@
 
 #### Bug Fixes
 
+* Loop Out requests now account for channel reserves when checking outbound
+  capacity, preventing swaps from starting when their off-chain payment cannot
+  be funded.
+
 * Taproot Asset Loop Out handling now validates RFQ timeouts and asset rates,
   keeps cached asset-name lookups responsive during slow `tapd` queries, and
   closes `tapd` connections cleanly during shutdown and startup failures.

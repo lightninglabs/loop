@@ -1379,6 +1379,50 @@ func TestValidateLoopOutRequest(t *testing.T) {
 			expectedTarget: 0,
 		},
 		{
+			name:       "channel reserve leaves balance one sat short",
+			chain:      chaincfg.MainNetParams,
+			destAddr:   mainnetAddr,
+			label:      "label ok",
+			confTarget: 2,
+			channels: []lndclient.ChannelInfo{
+				{
+					Active:       true,
+					ChannelID:    chanID2.ToUint64(),
+					LocalBalance: 10100,
+					LocalConstraints: &lndclient.ChannelConstraints{
+						Reserve: 100,
+					},
+				},
+			},
+			amount:         10000,
+			maxRoutingFee:  1,
+			maxParts:       1,
+			err:            errBalanceTooLow,
+			expectedTarget: 0,
+		},
+		{
+			name:       "channel reserve leaves exact balance",
+			chain:      chaincfg.MainNetParams,
+			destAddr:   mainnetAddr,
+			label:      "label ok",
+			confTarget: 2,
+			channels: []lndclient.ChannelInfo{
+				{
+					Active:       true,
+					ChannelID:    chanID2.ToUint64(),
+					LocalBalance: 10101,
+					LocalConstraints: &lndclient.ChannelConstraints{
+						Reserve: 100,
+					},
+				},
+			},
+			amount:         10000,
+			maxRoutingFee:  1,
+			maxParts:       1,
+			err:            nil,
+			expectedTarget: 2,
+		},
+		{
 			name:       "can split between channels",
 			chain:      chaincfg.MainNetParams,
 			destAddr:   mainnetAddr,
