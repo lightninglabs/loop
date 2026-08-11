@@ -6,6 +6,10 @@
 
 #### Bug Fixes
 
+* Hardened Instant Out and reservation handling against malformed server
+  responses, invalid signatures and reservation outputs, resource exhaustion,
+  unsafe recovery, excessive swap fees, and under-scoped macaroon permissions.
+
 * Taproot Asset Loop Out handling now validates RFQ timeouts and asset rates,
   keeps cached asset-name lookups responsive during slow `tapd` queries, and
   closes `tapd` connections cleanly during shutdown and startup failures.
