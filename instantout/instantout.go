@@ -364,6 +364,9 @@ func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 			"expected %d, got %d", len(inputs), len(serverSigs))
 	}
 
+	prevOutFetcher := inputs.GetPrevoutFetcher()
+	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
+
 	for idx := range inputs {
 		if musig2Sessions[idx] == nil {
 			return nil, fmt.Errorf("MuSig2 session %d is nil", idx)
@@ -382,6 +385,20 @@ func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 		}
 
 		tx.TxIn[idx].Witness = wire.TxWitness{finalSig}
+
+		vm, err := txscript.NewEngine(
+			inputs[idx].PkScript, tx, idx,
+			txscript.StandardVerifyFlags, nil, sigHashes,
+			int64(inputs[idx].Value), prevOutFetcher,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to verify final MuSig2 "+
+				"signature for input %d: %w", idx, err)
+		}
+		if err := vm.Execute(); err != nil {
+			return nil, fmt.Errorf("invalid final MuSig2 signature "+
+				"for input %d: %w", idx, err)
+		}
 	}
 
 	return tx, nil
