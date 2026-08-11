@@ -99,6 +99,51 @@ func TestManager(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestManagerContinuesAfterInvalidNotification verifies that a malformed
+// server notification doesn't stop the reservation manager from processing
+// later notifications.
+func TestManagerContinuesAfterInvalidNotification(t *testing.T) {
+	testContext := newManagerTestContext(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	initChan := make(chan struct{})
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- testContext.manager.Run(
+			ctx, testContext.mockLnd.Height, initChan,
+		)
+	}()
+
+	<-initChan
+
+	// A malformed ID is rejected by newReservation. The manager should log
+	// the error and continue processing the stream.
+	testContext.reservationNotificationChan <- &swapserverrpc.ServerReservationNotification{
+		ReservationId: []byte{1},
+	}
+
+	testContext.reservationNotificationChan <- &swapserverrpc.ServerReservationNotification{
+		ReservationId: defaultReservationId[:],
+		Value:         uint64(defaultValue),
+		ServerKey:     defaultPubkeyBytes,
+		Expiry: uint32(testContext.mockLnd.Height) +
+			defaultExpiry,
+	}
+
+	select {
+	case <-testContext.mockLnd.RegisterConfChannel:
+	case err := <-errChan:
+		require.NoError(t, err)
+		t.Fatal("reservation manager stopped after malformed notification")
+	case <-time.After(5 * time.Second):
+		t.Fatal("valid reservation notification was not processed")
+	}
+
+	cancel()
+	require.NoError(t, <-errChan)
+}
+
 // ManagerTestContext is a helper struct that contains all the necessary
 // components to test the reservation manager.
 type ManagerTestContext struct {

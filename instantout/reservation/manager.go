@@ -80,7 +80,8 @@ func (m *Manager) Run(ctx context.Context, height int32,
 				runCtx, uint32(currentHeight), reservationRes,
 			)
 			if err != nil {
-				return err
+				log.Errorf("Unable to create reservation %x: %v",
+					reservationRes.ReservationId, err)
 			}
 
 		case err := <-newBlockErrChan:
