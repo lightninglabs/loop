@@ -26,6 +26,28 @@ type Manager struct {
 	activeReservations map[ID]*FSM
 }
 
+// finalStateObserver removes a reservation FSM from the active set once it
+// reaches a terminal state.
+type finalStateObserver struct {
+	manager *Manager
+	id      ID
+	fsm     *FSM
+}
+
+// Notify implements the fsm.Observer interface.
+func (o *finalStateObserver) Notify(notification fsm.Notification) {
+	if !isFinalState(notification.NextState) {
+		return
+	}
+
+	o.manager.Lock()
+	defer o.manager.Unlock()
+
+	if o.manager.activeReservations[o.id] == o.fsm {
+		delete(o.manager.activeReservations, o.id)
+	}
+}
+
 // NewManager creates a new reservation manager.
 func NewManager(cfg *Config) *Manager {
 	return &Manager{
@@ -134,8 +156,18 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 		m.Unlock()
 		return nil, ErrReservationAlreadyExists
 	}
+	if len(m.activeReservations) >= maxActiveReservations {
+		m.Unlock()
+		return nil, ErrTooManyActiveReservations
+	}
 	m.activeReservations[reservationID] = reservationFSM
 	m.Unlock()
+
+	reservationFSM.RegisterObserver(&finalStateObserver{
+		manager: m,
+		id:      reservationID,
+		fsm:     reservationFSM,
+	})
 
 	initContext := &InitReservationContext{
 		reservationID: reservationID,
@@ -187,6 +219,16 @@ func (m *Manager) RecoverReservations(ctx context.Context) error {
 		return err
 	}
 
+	activeCount := 0
+	for _, reservation := range reservations {
+		if !isFinalState(reservation.State) {
+			activeCount++
+		}
+	}
+	if activeCount > maxActiveReservations {
+		return ErrTooManyActiveReservations
+	}
+
 	for _, reservation := range reservations {
 		if isFinalState(reservation.State) {
 			continue
@@ -199,6 +241,11 @@ func (m *Manager) RecoverReservations(ctx context.Context) error {
 		reservationFSM := NewFSMFromReservation(m.cfg, reservation)
 
 		m.activeReservations[reservation.ID] = reservationFSM
+		reservationFSM.RegisterObserver(&finalStateObserver{
+			manager: m,
+			id:      reservation.ID,
+			fsm:     reservationFSM,
+		})
 
 		// As SendEvent can block, we'll start a goroutine to process
 		// the event.
