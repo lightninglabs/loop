@@ -1917,6 +1917,11 @@
         "dest_addr": {
           "type": "string",
           "description": "An optional address to sweep the onchain funds to. If not set, the funds\nwill be swept to the wallet's internal address."
+        },
+        "max_swap_fee_sat": {
+          "type": "string",
+          "format": "int64",
+          "description": "The maximum off-chain swap fee that may be charged for the swap. If\nthis field is omitted, no fee cap is applied for compatibility with\nclients that predate this field. An explicitly set value of zero\nrejects any positive swap fee."
         }
       }
     },

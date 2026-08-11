@@ -148,7 +148,8 @@
           "outgoing_chan_set": [
             "125344325763072"
           ],
-          "dest_addr": ""
+          "dest_addr": "",
+          "max_swap_fee_sat": "3200"
         }
       }
     },

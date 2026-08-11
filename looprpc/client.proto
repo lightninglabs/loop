@@ -1685,6 +1685,16 @@ message InstantOutRequest {
     will be swept to the wallet's internal address.
     */
     string dest_addr = 3;
+
+    oneof max_swap_fee {
+        /*
+        The maximum off-chain swap fee that may be charged for the swap. If
+        this field is omitted, no fee cap is applied for compatibility with
+        clients that predate this field. An explicitly set value of zero
+        rejects any positive swap fee.
+        */
+        int64 max_swap_fee_sat = 4;
+    }
 }
 
 message InstantOutResponse {

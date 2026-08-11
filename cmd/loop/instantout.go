@@ -183,6 +183,8 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 
 	fmt.Println("Starting instant swap out")
 
+	maxSwapFee := quote.ServiceFeeSat
+
 	// Now we can request the instant out swap.
 	instantOutRes, err := client.InstantOut(
 		ctx,
@@ -190,6 +192,9 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 			ReservationIds:  selectedReservations,
 			OutgoingChanSet: outgoingChanSet,
 			DestAddr:        cmd.String("addr"),
+			MaxSwapFee: &looprpc.InstantOutRequest_MaxSwapFeeSat{
+				MaxSwapFeeSat: maxSwapFee,
+			},
 		},
 	)
 	if err != nil {
