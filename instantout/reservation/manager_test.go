@@ -58,6 +58,7 @@ func TestManager(t *testing.T) {
 	confTx := &wire.MsgTx{
 		TxOut: []*wire.TxOut{
 			{
+				Value:    int64(defaultValue),
 				PkScript: pkScript,
 			},
 		},
