@@ -142,13 +142,24 @@ func (r *Reservation) findReservationOutput(tx *wire.MsgTx) (*wire.OutPoint,
 		return nil, err
 	}
 
+	var foundScript bool
 	for i, txOut := range tx.TxOut {
 		if bytes.Equal(txOut.PkScript, pkScript) {
+			foundScript = true
+			if txOut.Value != int64(r.Value) {
+				continue
+			}
+
 			return &wire.OutPoint{
 				Hash:  tx.TxHash(),
 				Index: uint32(i),
 			}, nil
 		}
+	}
+
+	if foundScript {
+		return nil, fmt.Errorf("reservation output value mismatch: "+
+			"expected %d", r.Value)
 	}
 
 	return nil, errors.New("reservation output not found")

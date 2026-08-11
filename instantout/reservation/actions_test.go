@@ -203,6 +203,7 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 		blockHeight   int32
 		blockErr      error
 		sendTxConf    bool
+		outputValue   btcutil.Amount
 		confErr       error
 		expectedEvent fsm.EventType
 	}{
@@ -210,7 +211,14 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 			name:          "success",
 			blockHeight:   0,
 			sendTxConf:    true,
+			outputValue:   defaultValue,
 			expectedEvent: OnConfirmed,
+		},
+		{
+			name:          "reservation value mismatch",
+			sendTxConf:    true,
+			outputValue:   defaultValue - 1,
+			expectedEvent: fsm.OnError,
 		},
 		{
 			name:          "expired",
@@ -273,7 +281,7 @@ func TestSubscribeToConfirmationAction(t *testing.T) {
 							TxIn: []*wire.TxIn{},
 							TxOut: []*wire.TxOut{
 								{
-									Value:    int64(defaultValue),
+									Value:    int64(tc.outputValue),
 									PkScript: pkScript,
 								},
 							},
