@@ -9,10 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
@@ -701,7 +702,7 @@ func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
 	// type is chosen because it adds the most weight of all output types
 	// and we want the quote to return a worst case value.
 	wsh := [32]byte{}
-	p2wshAddress, err := btcutil.NewAddressWitnessScriptHash(
+	p2wshAddress, err := btcaddr.NewAddressWitnessScriptHash(
 		wsh[:], s.lndServices.ChainParams,
 	)
 	if err != nil {
@@ -903,7 +904,7 @@ func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
 	confTarget int32) (btcutil.Amount, error) {
 
 	var (
-		address btcutil.Address
+		address btcaddr.Address
 		err     error
 	)
 	// Generate a dummy address for fee estimation.
@@ -914,11 +915,11 @@ func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
 	)
 
 	if scriptVersion != swap.HtlcV3 {
-		address, err = btcutil.NewAddressWitnessScriptHash(
+		address, err = btcaddr.NewAddressWitnessScriptHash(
 			witnessProg[:], s.lndServices.ChainParams,
 		)
 	} else {
-		address, err = btcutil.NewAddressTaproot(
+		address, err = btcaddr.NewAddressTaproot(
 			witnessProg[:], s.lndServices.ChainParams,
 		)
 	}

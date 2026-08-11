@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"sync"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/mempool"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
@@ -97,7 +98,7 @@ type loopInSwap struct {
 	// htlcTxHash is the confirmed htlc tx id.
 	htlcTxHash *chainhash.Hash
 
-	timeoutAddr btcutil.Address
+	timeoutAddr btcaddr.Address
 
 	abandonChan chan struct{}
 

@@ -3,8 +3,9 @@ package withdraw
 import (
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
@@ -208,12 +209,12 @@ func TestCalculateWithdrawalTxValuesCommitmentTypeParity(t *testing.T) {
 		{Value: 300_000},
 	}
 
-	p2wshAddr, err := btcutil.NewAddressWitnessScriptHash(
+	p2wshAddr, err := btcaddr.NewAddressWitnessScriptHash(
 		make([]byte, 32), &chaincfg.RegressionNetParams,
 	)
 	require.NoError(t, err)
 
-	taprootAddr, err := btcutil.NewAddressTaproot(
+	taprootAddr, err := btcaddr.NewAddressTaproot(
 		make([]byte, 32), &chaincfg.RegressionNetParams,
 	)
 	require.NoError(t, err)
@@ -221,7 +222,7 @@ func TestCalculateWithdrawalTxValuesCommitmentTypeParity(t *testing.T) {
 	type testCase struct {
 		name           string
 		commitmentType lnrpc.CommitmentType
-		addr           btcutil.Address
+		addr           btcaddr.Address
 	}
 
 	cases := []testCase{

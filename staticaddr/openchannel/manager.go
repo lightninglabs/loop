@@ -10,10 +10,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
@@ -642,7 +643,7 @@ func (m *Manager) openChannelPsbt(ctx context.Context,
 			// Create the psbt funding transaction for the
 			// channel. Ensure the selected deposits amount
 			// to the psbt funding amount.
-			channelFundingAddress, err := btcutil.DecodeAddress(
+			channelFundingAddress, err := btcaddr.DecodeAddress(
 				addr, m.cfg.ChainParams,
 			)
 			if err != nil {

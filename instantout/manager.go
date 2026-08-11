@@ -7,7 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -138,11 +139,11 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 	reservations []reservation.ID, sweepAddress string) (*FSM, error) {
 
 	var (
-		sweepAddr btcutil.Address
+		sweepAddr btcaddr.Address
 		err       error
 	)
 	if sweepAddress != "" {
-		sweepAddr, err = btcutil.DecodeAddress(
+		sweepAddr, err = btcaddr.DecodeAddress(
 			sweepAddress, m.cfg.Network,
 		)
 		if err != nil {

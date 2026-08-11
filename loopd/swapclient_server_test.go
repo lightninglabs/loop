@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -39,15 +40,15 @@ import (
 )
 
 var (
-	testnetAddr, _ = btcutil.NewAddressScriptHash(
+	testnetAddr, _ = btcaddr.NewAddressScriptHash(
 		[]byte{123}, &chaincfg.TestNet3Params,
 	)
 
-	mainnetAddr, _ = btcutil.NewAddressScriptHash(
+	mainnetAddr, _ = btcaddr.NewAddressScriptHash(
 		[]byte{123}, &chaincfg.MainNetParams,
 	)
 
-	nodepubkeyAddr, _ = btcutil.DecodeAddress(
+	nodepubkeyAddr, _ = btcaddr.DecodeAddress(
 		mock_lnd.NewMockLnd().NodePubkey, &chaincfg.MainNetParams,
 	)
 
@@ -876,7 +877,7 @@ func newGenericStaticLoopInServer(t *testing.T) (*swapClientServer,
 }
 
 func newTestStaticAddressParams(t *testing.T) (*script.Parameters,
-	*btcutil.AddressTaproot) {
+	*btcaddr.AddressTaproot) {
 
 	t.Helper()
 
@@ -893,7 +894,7 @@ func newTestStaticAddressParams(t *testing.T) (*script.Parameters,
 	staticPkScript, err := staticAddress.StaticAddressScript()
 	require.NoError(t, err)
 
-	taprootAddress, err := btcutil.NewAddressTaproot(
+	taprootAddress, err := btcaddr.NewAddressTaproot(
 		schnorr.SerializePubKey(staticAddress.TaprootKey),
 		&chaincfg.TestNet3Params,
 	)
@@ -1176,7 +1177,7 @@ func TestValidateLoopOutRequest(t *testing.T) {
 		name            string
 		chain           chaincfg.Params
 		confTarget      int32
-		destAddr        btcutil.Address
+		destAddr        btcaddr.Address
 		label           string
 		channels        []lndclient.ChannelInfo
 		outgoingChanSet []uint64

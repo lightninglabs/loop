@@ -3,11 +3,11 @@ package sweepbatcher
 import (
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -77,8 +77,8 @@ func testHtlcV3SuccessEstimator(estimator *input.TxWeightEstimator) error {
 func TestEstimateSweepFeeIncrement(t *testing.T) {
 	// Useful variables reused in test cases.
 	se3 := testHtlcV3SuccessEstimator
-	trAddr := (*btcutil.AddressTaproot)(nil)
-	p2pkhAddr := (*btcutil.AddressPubKeyHash)(nil)
+	trAddr := (*btcaddr.AddressTaproot)(nil)
+	p2pkhAddr := (*btcaddr.AddressPubKeyHash)(nil)
 
 	outpoint1 := wire.OutPoint{
 		Hash:  chainhash.Hash{1, 1, 1},
@@ -269,11 +269,11 @@ func TestEstimateBatchWeight(t *testing.T) {
 	}
 	se2 := testHtlcV2SuccessEstimator
 	se3 := testHtlcV3SuccessEstimator
-	trAddr := (*btcutil.AddressTaproot)(nil)
+	trAddr := (*btcaddr.AddressTaproot)(nil)
 
 	changeAddr := "bc1pdx9ggvtjjcpaqfqk375qhdmzx9xu8dcu7w94lqfcxhh0rj" +
 		"lwyyeq5ryn6r"
-	changeAddress, err := btcutil.DecodeAddress(changeAddr, nil)
+	changeAddress, err := btcaddr.DecodeAddress(changeAddr, nil)
 	require.NoError(t, err)
 	changePkscript, err := txscript.PayToAddrScript(changeAddress)
 	require.NoError(t, err)

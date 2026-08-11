@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -100,7 +101,7 @@ func newHtlcConfirmedRecoveryFixture(
 		},
 	}
 
-	destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+	destAddr, err := btcaddr.NewAddressWitnessPubKeyHash(
 		bytes.Repeat([]byte{2}, 20), lnd.ChainParams,
 	)
 	require.NoError(t, err)
