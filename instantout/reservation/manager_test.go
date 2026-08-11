@@ -123,8 +123,8 @@ func TestManagerContinuesAfterInvalidNotification(t *testing.T) {
 
 	<-initChan
 
-	// A malformed ID is rejected by newReservation. The manager should log
-	// the error and continue processing the stream.
+	// A malformed ID is rejected by newReservationFromNtfn. The manager
+	// should log the error and continue processing the stream.
 	testContext.reservationNotificationChan <- &swapserverrpc.ServerReservationNotification{
 		ReservationId: []byte{1},
 	}
@@ -163,12 +163,12 @@ func TestManagerRejectsDuplicateReservation(t *testing.T) {
 			defaultExpiry,
 	}
 
-	firstFSM, err := testContext.manager.newReservation(
+	firstFSM, err := testContext.manager.newReservationFromNtfn(
 		ctx, uint32(testContext.mockLnd.Height), req,
 	)
 	require.NoError(t, err)
 
-	secondFSM, err := testContext.manager.newReservation(
+	secondFSM, err := testContext.manager.newReservationFromNtfn(
 		ctx, uint32(testContext.mockLnd.Height), req,
 	)
 	require.ErrorIs(t, err, ErrReservationAlreadyExists)
@@ -189,11 +189,11 @@ func TestManagerLimitsActiveReservations(t *testing.T) {
 		id[0] = byte(i)
 		id[1] = byte(i >> 8)
 		testContext.manager.activeReservations[id] = NewFSM(
-			testContext.manager.cfg,
+			testContext.manager.cfg, ProtocolVersionServerInitiated,
 		)
 	}
 
-	reservationFSM, err := testContext.manager.newReservation(
+	reservationFSM, err := testContext.manager.newReservationFromNtfn(
 		t.Context(), uint32(testContext.mockLnd.Height),
 		&swapserverrpc.ServerReservationNotification{
 			ReservationId: defaultReservationId[:],
