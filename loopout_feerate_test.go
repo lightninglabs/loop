@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/sweep"
 	"github.com/lightninglabs/loop/test"
@@ -25,7 +26,7 @@ type testSweeper struct {
 // weight estimator. It returns also the fee rate and transaction weight.
 func (s testSweeper) GetSweepFeeDetails(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator) error,
-	destAddr btcutil.Address, sweepConfTarget int32,
+	destAddr btcaddr.Address, sweepConfTarget int32,
 	label string) (btcutil.Amount, chainfee.SatPerKWeight,
 	lntypes.WeightUnit, error) {
 
@@ -99,7 +100,7 @@ func TestLoopOutSweepFeerateProvider(t *testing.T) {
 		}
 	}()
 
-	var destAddr *btcutil.AddressTaproot
+	var destAddr *btcaddr.AddressTaproot
 
 	swapInvoice := "lntb1230n1pjjszzgpp5j76f03wrkya4sm4gxv6az5nmz5aqsvmn4" +
 		"tpguu2sdvdyygedqjgqdq9xyerxcqzzsxqr23ssp5rwzmwtfjmsgranfk8sr" +

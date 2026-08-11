@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
@@ -121,7 +121,7 @@ func TestValidateRestrictions(t *testing.T) {
 func TestParametersRejectUnsupportedDestAddr(t *testing.T) {
 	params := &chaincfg.MainNetParams
 
-	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(
+	p2wpkh, err := btcaddr.NewAddressWitnessPubKeyHash(
 		make([]byte, 20), params,
 	)
 	require.NoError(t, err)
@@ -131,12 +131,15 @@ func TestParametersRejectUnsupportedDestAddr(t *testing.T) {
 		"7029bfcdb2dce28d959f2815b16f81798")
 	require.NoError(t, err)
 
-	rawPubKey, err := btcutil.NewAddressPubKey(pubKey, params)
+	rawPubKey, err := btcaddr.NewAddressPubKey(pubKey, params)
+	require.NoError(t, err)
+
+	p2a, err := btcaddr.NewAddressPayToAnchor(params)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name string
-		addr btcutil.Address
+		addr btcaddr.Address
 		err  error
 	}{
 		{
@@ -146,6 +149,11 @@ func TestParametersRejectUnsupportedDestAddr(t *testing.T) {
 		{
 			name: "raw public key",
 			addr: rawPubKey,
+			err:  ErrUnsupportedDestAddr,
+		},
+		{
+			name: "pay to anchor",
+			addr: p2a,
 			err:  ErrUnsupportedDestAddr,
 		},
 	}
@@ -172,25 +180,25 @@ func TestSetParametersDestAddr(t *testing.T) {
 	_, lnd := newTestConfig()
 	params := lnd.ChainParams
 
-	p2pkh, err := btcutil.NewAddressPubKeyHash(make([]byte, 20), params)
+	p2pkh, err := btcaddr.NewAddressPubKeyHash(make([]byte, 20), params)
 	require.NoError(t, err)
 
-	p2sh, err := btcutil.NewAddressScriptHashFromHash(
+	p2sh, err := btcaddr.NewAddressScriptHashFromHash(
 		make([]byte, 20), params,
 	)
 	require.NoError(t, err)
 
-	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(
+	p2wpkh, err := btcaddr.NewAddressWitnessPubKeyHash(
 		make([]byte, 20), params,
 	)
 	require.NoError(t, err)
 
-	mainnetP2PKH, err := btcutil.NewAddressPubKeyHash(
+	mainnetP2PKH, err := btcaddr.NewAddressPubKeyHash(
 		make([]byte, 20), &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 
-	mainnetP2WPKH, err := btcutil.NewAddressWitnessPubKeyHash(
+	mainnetP2WPKH, err := btcaddr.NewAddressWitnessPubKeyHash(
 		make([]byte, 20), &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
@@ -198,7 +206,7 @@ func TestSetParametersDestAddr(t *testing.T) {
 	tests := []struct {
 		name     string
 		addr     string
-		destAddr btcutil.Address
+		destAddr btcaddr.Address
 		err      error
 	}{
 		{
@@ -226,7 +234,7 @@ func TestSetParametersDestAddr(t *testing.T) {
 		{
 			name: "p2pkh of another network",
 			addr: mainnetP2PKH.EncodeAddress(),
-			err:  btcutil.ErrUnknownAddressType,
+			err:  btcaddr.ErrUnknownAddressType,
 		},
 		{
 			name: "p2wpkh of another network",

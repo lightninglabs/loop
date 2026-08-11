@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/input"
@@ -39,14 +40,14 @@ func TestConstructUnsignedTx(t *testing.T) {
 
 	p2trAddr := "bcrt1pa38tp2hgjevqv3jcsxeu7v72n0s5a3ck8q2u8r" +
 		"k6mm67dv7uk26qq8je7e"
-	p2trAddress, err := btcutil.DecodeAddress(p2trAddr, nil)
+	p2trAddress, err := btcaddr.DecodeAddress(p2trAddr, nil)
 	require.NoError(t, err)
 	p2trPkScript, err := txscript.PayToAddrScript(p2trAddress)
 	require.NoError(t, err)
 
 	change1Addr := "bc1pdx9ggvtjjcpaqfqk375qhdmzx9xu8dcu7w94lqfcxhh0rj" +
 		"lwyyeq5ryn6r"
-	change1Address, err := btcutil.DecodeAddress(change1Addr, nil)
+	change1Address, err := btcaddr.DecodeAddress(change1Addr, nil)
 	require.NoError(t, err)
 	change1Pkscript, err := txscript.PayToAddrScript(change1Address)
 	require.NoError(t, err)
@@ -57,7 +58,7 @@ func TestConstructUnsignedTx(t *testing.T) {
 
 	change1PrimeAddr := "bc1pdx9ggvtjjcpaqfqk375qhdmzx9xu8dcu7w94lqfcxhh0rj" +
 		"lwyyeq5ryn6r"
-	change1PrimeAddress, err := btcutil.DecodeAddress(change1PrimeAddr, nil)
+	change1PrimeAddress, err := btcaddr.DecodeAddress(change1PrimeAddr, nil)
 	require.NoError(t, err)
 	change1PrimePkscript, err := txscript.PayToAddrScript(change1PrimeAddress)
 	require.NoError(t, err)
@@ -68,7 +69,7 @@ func TestConstructUnsignedTx(t *testing.T) {
 
 	change2Addr := "bc1psw0nrrulq4pgyuyk09a3wsutygltys4gxjjw3zl2uz4ep8pa" +
 		"r2vsvntfe0"
-	change2Address, err := btcutil.DecodeAddress(change2Addr, nil)
+	change2Address, err := btcaddr.DecodeAddress(change2Addr, nil)
 	require.NoError(t, err)
 	change2Pkscript, err := txscript.PayToAddrScript(change2Address)
 	require.NoError(t, err)
@@ -83,7 +84,7 @@ func TestConstructUnsignedTx(t *testing.T) {
 		0xc3, 0xeb, 0xec, 0x3a, 0x95, 0x77, 0x24, 0x89, 0x5d, 0xca,
 		0x52, 0xc6, 0xb4,
 	}
-	p2pkAddress, err := btcutil.NewAddressPubKey(
+	p2pkAddress, err := btcaddr.NewAddressPubKey(
 		serializedPubKey, &chaincfg.RegressionNetParams,
 	)
 	require.NoError(t, err)
@@ -112,7 +113,7 @@ func TestConstructUnsignedTx(t *testing.T) {
 	cases := []struct {
 		name             string
 		sweeps           []sweep
-		address          btcutil.Address
+		address          btcaddr.Address
 		currentHeight    int32
 		feeRate          chainfee.SatPerKWeight
 		minRelayFeeRate  chainfee.SatPerKWeight

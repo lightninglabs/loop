@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
@@ -52,9 +53,9 @@ const (
 
 // destAddr is a dummy p2wkh address to use as the destination address for
 // the swaps.
-var destAddr = func() btcutil.Address {
+var destAddr = func() btcaddr.Address {
 	p2wkhAddr := "bcrt1qq68r6ff4k4pjx39efs44gcyccf7unqnu5qtjjz"
-	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
+	addr, err := btcaddr.DecodeAddress(p2wkhAddr, nil)
 	if err != nil {
 		panic(err)
 	}

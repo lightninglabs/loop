@@ -3,7 +3,7 @@ package utils
 import (
 	"bytes"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 // Bip69Less is taken from btcd in btcutil/txsort/txsort.go.

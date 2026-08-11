@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
@@ -462,7 +463,7 @@ func TestRestoreParamsWrongNetworkDestAddr(t *testing.T) {
 
 	// The mock lnd runs on testnet3. Earlier versions could save a mainnet
 	// destination address there.
-	destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+	destAddr, err := btcaddr.NewAddressWitnessPubKeyHash(
 		make([]byte, 20), &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)

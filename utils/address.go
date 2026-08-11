@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 )
 
 // ErrWrongNetwork is returned when an address belongs to another network than
@@ -16,13 +16,13 @@ var ErrWrongNetwork = errors.New("address belongs to another network")
 // sweep outputs to: P2PKH, P2SH, P2WPKH, P2WSH or P2TR. It rejects any other
 // type that an address decoder may return, such as a raw public key or a
 // pay-to-anchor output, which anyone can spend.
-func IsSupportedDestAddr(addr btcutil.Address) bool {
+func IsSupportedDestAddr(addr btcaddr.Address) bool {
 	switch addr.(type) {
-	case *btcutil.AddressPubKeyHash,
-		*btcutil.AddressScriptHash,
-		*btcutil.AddressWitnessPubKeyHash,
-		*btcutil.AddressWitnessScriptHash,
-		*btcutil.AddressTaproot:
+	case *btcaddr.AddressPubKeyHash,
+		*btcaddr.AddressScriptHash,
+		*btcaddr.AddressWitnessPubKeyHash,
+		*btcaddr.AddressWitnessScriptHash,
+		*btcaddr.AddressTaproot:
 
 		return true
 
@@ -35,7 +35,7 @@ func IsSupportedDestAddr(addr btcutil.Address) bool {
 // belong to the network with the given chain parameters. The decoder accepts
 // bech32 addresses of all known networks, and their output scripts don't
 // depend on the network.
-func CheckAddrNetwork(addr btcutil.Address, params *chaincfg.Params) error {
+func CheckAddrNetwork(addr btcaddr.Address, params *chaincfg.Params) error {
 	if addr.IsForNet(params) {
 		return nil
 	}

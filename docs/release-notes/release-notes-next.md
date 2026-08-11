@@ -4,6 +4,11 @@
 
 #### Breaking Changes
 
+* Loop now uses the btcd v2 modules. Projects compiling against Loop's
+  exported Go APIs must migrate address, transaction, and related types to the
+  corresponding btcd v2 packages.
+  [PR #1199](https://github.com/lightninglabs/loop/pull/1199)
+
 #### Bug Fixes
 
 * The `postgres.maxconnections` option now limits the number of open

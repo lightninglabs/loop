@@ -9,14 +9,15 @@ import (
 	"sync"
 	"sync/atomic"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
@@ -541,7 +542,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 // replaces, because the monitor of the withdrawal only completes it for a
 // spend that pays this address.
 func (m *Manager) withdrawalAddress(ctx context.Context, destAddr string,
-	prevWithdrawalTx *wire.MsgTx) (btcutil.Address, error) {
+	prevWithdrawalTx *wire.MsgTx) (btcaddr.Address, error) {
 
 	var prevPkScript []byte
 	if prevWithdrawalTx != nil {
@@ -555,7 +556,7 @@ func (m *Manager) withdrawalAddress(ctx context.Context, destAddr string,
 
 	switch {
 	case destAddr != "":
-		address, err := btcutil.DecodeAddress(
+		address, err := btcaddr.DecodeAddress(
 			destAddr, m.cfg.ChainParams,
 		)
 		if err != nil {
@@ -607,7 +608,7 @@ func (m *Manager) withdrawalAddress(ctx context.Context, destAddr string,
 // transaction that can be broadcast to the network. It returns the
 // signed *wire.MsgTx representation and the unsigned psbt.
 func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
-	deposits []*deposit.Deposit, withdrawalAddress btcutil.Address,
+	deposits []*deposit.Deposit, withdrawalAddress btcaddr.Address,
 	feeRate chainfee.SatPerKWeight,
 	selectedWithdrawalAmount int64,
 	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
@@ -965,7 +966,7 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 func (m *Manager) createWithdrawalTx(ctx context.Context,
 	outpoints []wire.OutPoint, deposits []*deposit.Deposit,
 	prevOuts map[wire.OutPoint]*wire.TxOut,
-	selectedWithdrawalAmount btcutil.Amount, withdrawAddr btcutil.Address,
+	selectedWithdrawalAmount btcutil.Amount, withdrawAddr btcaddr.Address,
 	feeRate chainfee.SatPerKWeight,
 	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
 
@@ -1022,7 +1023,7 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 			return nil, nil, fmt.Errorf("withdrawal failed")
 		}
 
-		changeAddress, err := btcutil.NewAddressTaproot(
+		changeAddress, err := btcaddr.NewAddressTaproot(
 			schnorr.SerializePubKey(staticAddress.TaprootKey),
 			m.cfg.ChainParams,
 		)
@@ -1074,7 +1075,7 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 // error if any.
 func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 	selectedAmount btcutil.Amount, feeRate chainfee.SatPerKWeight,
-	withdrawalAddress btcutil.Address,
+	withdrawalAddress btcaddr.Address,
 	commitmentType lnrpc.CommitmentType) (btcutil.Amount, btcutil.Amount,
 	error) {
 
@@ -1182,7 +1183,7 @@ func CalculateWithdrawalTxValues(deposits []*deposit.Deposit,
 }
 
 // WithdrawalTxWeight returns the weight for the withdrawal transaction.
-func WithdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
+func WithdrawalTxWeight(numInputs int, sweepAddress btcaddr.Address,
 	commitmentType lnrpc.CommitmentType,
 	hasChange bool) (lntypes.WeightUnit, error) {
 
@@ -1205,13 +1206,13 @@ func WithdrawalTxWeight(numInputs int, sweepAddress btcutil.Address,
 	} else {
 		// Get the weight of the sweep output.
 		switch sweepAddress.(type) {
-		case *btcutil.AddressWitnessPubKeyHash:
+		case *btcaddr.AddressWitnessPubKeyHash:
 			weightEstimator.AddP2WKHOutput()
 
-		case *btcutil.AddressWitnessScriptHash:
+		case *btcaddr.AddressWitnessScriptHash:
 			weightEstimator.AddP2WSHOutput()
 
-		case *btcutil.AddressTaproot:
+		case *btcaddr.AddressTaproot:
 			weightEstimator.AddP2TROutput()
 
 		default:

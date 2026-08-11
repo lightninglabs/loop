@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
@@ -830,7 +830,7 @@ type mockWithdrawManager struct {
 
 func (m *mockWithdrawManager) CreateFinalizedWithdrawalTx(
 	_ context.Context, _ []*deposit.Deposit,
-	_ btcutil.Address, _ chainfee.SatPerKWeight, _ int64,
+	_ btcaddr.Address, _ chainfee.SatPerKWeight, _ int64,
 	_ lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
 
 	return m.tx, m.psbt, m.err
@@ -838,7 +838,7 @@ func (m *mockWithdrawManager) CreateFinalizedWithdrawalTx(
 
 // testFundingAddress returns a valid regtest P2WPKH address for use in tests.
 func testFundingAddress() string {
-	addr, _ := btcutil.NewAddressWitnessPubKeyHash(
+	addr, _ := btcaddr.NewAddressWitnessPubKeyHash(
 		make([]byte, 20), &chaincfg.RegressionNetParams,
 	)
 

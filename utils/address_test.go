@@ -4,8 +4,8 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,27 +23,30 @@ func TestIsSupportedDestAddr(t *testing.T) {
 		"7029bfcdb2dce28d959f2815b16f81798")
 	require.NoError(t, err)
 
-	p2pkh, err := btcutil.NewAddressPubKeyHash(hash20, params)
+	p2pkh, err := btcaddr.NewAddressPubKeyHash(hash20, params)
 	require.NoError(t, err)
 
-	p2sh, err := btcutil.NewAddressScriptHashFromHash(hash20, params)
+	p2sh, err := btcaddr.NewAddressScriptHashFromHash(hash20, params)
 	require.NoError(t, err)
 
-	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(hash20, params)
+	p2wpkh, err := btcaddr.NewAddressWitnessPubKeyHash(hash20, params)
 	require.NoError(t, err)
 
-	p2wsh, err := btcutil.NewAddressWitnessScriptHash(hash32, params)
+	p2wsh, err := btcaddr.NewAddressWitnessScriptHash(hash32, params)
 	require.NoError(t, err)
 
-	p2tr, err := btcutil.NewAddressTaproot(hash32, params)
+	p2tr, err := btcaddr.NewAddressTaproot(hash32, params)
 	require.NoError(t, err)
 
-	p2pk, err := btcutil.NewAddressPubKey(pubKey, params)
+	p2pk, err := btcaddr.NewAddressPubKey(pubKey, params)
+	require.NoError(t, err)
+
+	p2a, err := btcaddr.NewAddressPayToAnchor(params)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name      string
-		addr      btcutil.Address
+		addr      btcaddr.Address
 		supported bool
 	}{
 		{name: "p2pkh", addr: p2pkh, supported: true},
@@ -52,6 +55,7 @@ func TestIsSupportedDestAddr(t *testing.T) {
 		{name: "p2wsh", addr: p2wsh, supported: true},
 		{name: "p2tr", addr: p2tr, supported: true},
 		{name: "raw public key", addr: p2pk, supported: false},
+		{name: "pay to anchor", addr: p2a, supported: false},
 		{name: "nil", addr: nil, supported: false},
 	}
 
@@ -73,24 +77,24 @@ func TestCheckAddrNetwork(t *testing.T) {
 
 	hash20 := make([]byte, 20)
 
-	p2pkh, err := btcutil.NewAddressPubKeyHash(
+	p2pkh, err := btcaddr.NewAddressPubKeyHash(
 		hash20, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 
-	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(
+	p2wpkh, err := btcaddr.NewAddressWitnessPubKeyHash(
 		hash20, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 
-	regtestP2WPKH, err := btcutil.NewAddressWitnessPubKeyHash(
+	regtestP2WPKH, err := btcaddr.NewAddressWitnessPubKeyHash(
 		hash20, &chaincfg.RegressionNetParams,
 	)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name   string
-		addr   btcutil.Address
+		addr   btcaddr.Address
 		params *chaincfg.Params
 		err    error
 	}{

@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/utils"
@@ -24,7 +25,7 @@ type sweeper interface {
 	// logging. It returns also the fee rate and transaction weight.
 	GetSweepFeeDetails(ctx context.Context,
 		addInputEstimate func(*input.TxWeightEstimator) error,
-		destAddr btcutil.Address, sweepConfTarget int32, label string) (
+		destAddr btcaddr.Address, sweepConfTarget int32, label string) (
 		btcutil.Amount, chainfee.SatPerKWeight, lntypes.WeightUnit,
 		error)
 }
@@ -126,7 +127,7 @@ func (p *loopOutSweepFeerateProvider) GetConfTargetAndFeeRate(
 	// Transaction weight might be important for feeRate, in case of high
 	// priority proportional fee, so we accurately assess the size of input.
 	// The size of output is almost the same for all types, so use P2TR.
-	var destAddr *btcutil.AddressTaproot
+	var destAddr *btcaddr.AddressTaproot
 
 	// Get current height.
 	height := p.getHeight()

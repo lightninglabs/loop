@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"golang.org/x/sync/errgroup"
@@ -315,7 +316,7 @@ type presigner interface {
 // gets LockTime equal to timeout minus 50 blocks, as a precautionary measure.
 // A feerate is considered high if it is at least 100 sat/vbyte AND is at least
 // 10x of the current next block feerate.
-func presign(ctx context.Context, presigner presigner, destAddr btcutil.Address,
+func presign(ctx context.Context, presigner presigner, destAddr btcaddr.Address,
 	primarySweepID wire.OutPoint, sweeps []sweep,
 	nextBlockFeeRate chainfee.SatPerKWeight,
 	minRelayFeeRate chainfee.SatPerKWeight) error {
@@ -572,7 +573,7 @@ type destPkScripter interface {
 // primary outpoint. The function must be used in presigned mode only.
 func getPresignedSweepsDestAddr(ctx context.Context, helper destPkScripter,
 	primarySweepID wire.OutPoint,
-	chainParams *chaincfg.Params) (btcutil.Address, error) {
+	chainParams *chaincfg.Params) (btcaddr.Address, error) {
 
 	// Load pkScript from the presigned helper.
 	pkScriptBytes, err := helper.DestPkScript(ctx, primarySweepID)
@@ -581,7 +582,7 @@ func getPresignedSweepsDestAddr(ctx context.Context, helper destPkScripter,
 			"for primarySweepID %v: %w", primarySweepID, err)
 	}
 
-	// Convert pkScript to btcutil.Address.
+	// Convert pkScript to btcaddr.Address.
 	pkScript, err := txscript.ParsePkScript(pkScriptBytes)
 	if err != nil {
 		return nil, fmt.Errorf("txscript.ParsePkScript failed for "+

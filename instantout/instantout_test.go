@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -285,6 +286,11 @@ func TestNewInstantOutRejectsUnsupportedDestAddr(t *testing.T) {
 			addr: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce" +
 				"28d959f2815b16f81798",
 		},
+		{
+			// Anyone can spend a pay-to-anchor output.
+			name: "pay to anchor",
+			addr: "bc1pfeessrawgf",
+		},
 	}
 
 	for _, test := range tests {
@@ -309,7 +315,7 @@ func TestNewInstantOutRejectsUnsupportedDestAddr(t *testing.T) {
 // TestNewInstantOutRejectsWrongNetworkDestAddr verifies that an instant out
 // cannot pay to an address of another network.
 func TestNewInstantOutRejectsWrongNetworkDestAddr(t *testing.T) {
-	addr, err := btcutil.NewAddressWitnessPubKeyHash(
+	addr, err := btcaddr.NewAddressWitnessPubKeyHash(
 		make([]byte, 20), &chaincfg.TestNet3Params,
 	)
 	require.NoError(t, err)

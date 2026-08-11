@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
@@ -247,7 +247,7 @@ func TestWithdrawalHoldPreservesOrdering(t *testing.T) {
 			require.NoError(t, err)
 			pkScript, err := addr.StaticAddressScript()
 			require.NoError(t, err)
-			dest, err := btcutil.NewAddressWitnessPubKeyHash(
+			dest, err := btcaddr.NewAddressWitnessPubKeyHash(
 				make([]byte, 20), &chaincfg.RegressionNetParams,
 			)
 			require.NoError(t, err)

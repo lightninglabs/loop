@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightningnetwork/lnd/lntypes"

@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/lightninglabs/lndclient"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
@@ -48,7 +49,7 @@ type Parameters struct {
 
 	// DestAddr is the address to be used for sweeping the on-chain HTLC
 	// that is related with a loop out.
-	DestAddr btcutil.Address
+	DestAddr btcaddr.Address
 
 	// An alternative destination address source for the swap. This field
 	// represents the name of the account in the backing lnd instance.
@@ -480,12 +481,12 @@ func RpcToParameters(req *clientrpc.LiquidityParameters,
 		return nil, err
 	}
 
-	var destaddr btcutil.Address
+	var destaddr btcaddr.Address
 	if len(req.AutoloopDestAddress) != 0 {
 		if req.AutoloopDestAddress == "default" {
 			destaddr = nil
 		} else {
-			destaddr, err = btcutil.DecodeAddress(
+			destaddr, err = btcaddr.DecodeAddress(
 				req.AutoloopDestAddress, chainParams,
 			)
 			if err != nil {
