@@ -3013,6 +3013,13 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 	// the amount requested, the maximum possible routing fees,
 	// the available channel set and the fact that equal splitting is
 	// used for MPP.
+	//
+	// TODO: Also account for the quoted server fee and the concurrent prepay
+	// payment. The CLI and autoloop obtain the fee and prepay amounts from a
+	// quote, but this RPC only carries maximum limits, which direct callers may
+	// set higher than the quoted amounts. Treating those limits as exact can
+	// reject a viable swap, while the actual routing fees are only known when
+	// the invoices are paid.
 	requiredBalance := btcutil.Amount(req.Amt + req.MaxSwapRoutingFee)
 	isRoutable, _ := hasBandwidth(activeChannelSet, requiredBalance,
 		int(maxParts))
@@ -3047,11 +3054,24 @@ func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 	localBalances := make([]btcutil.Amount, len(channels))
 	var totalBandwidth btcutil.Amount
 	for i, channel := range channels {
-		tracef("Channel %v: local=%v remote=%v", channel.ChannelID,
-			channel.LocalBalance, channel.RemoteBalance)
+		localBalance := channel.LocalBalance
+		var reserve btcutil.Amount
+		if channel.LocalConstraints != nil {
+			reserve = channel.LocalConstraints.Reserve
+		}
 
-		localBalances[i] = channel.LocalBalance
-		totalBandwidth += channel.LocalBalance
+		if reserve >= localBalance {
+			localBalance = 0
+		} else {
+			localBalance -= reserve
+		}
+
+		tracef("Channel %v: local=%v reserve=%v available=%v "+
+			"remote=%v", channel.ChannelID, channel.LocalBalance,
+			reserve, localBalance, channel.RemoteBalance)
+
+		localBalances[i] = localBalance
+		totalBandwidth += localBalance
 	}
 
 	tracef("Total bandwidth: %v", totalBandwidth)
@@ -3073,8 +3093,6 @@ func hasBandwidth(channels []lndclient.ChannelInfo, amt btcutil.Amount,
 
 		paid := false
 		for i := range len(localBalances) {
-			// TODO(hieblmi): Consider channel reserves because the
-			//      channel can't send its full local balance.
 			if localBalances[i] >= split {
 				tracef("len(shards)=%v: Local channel "+
 					"balance %v can pay %v sats",
