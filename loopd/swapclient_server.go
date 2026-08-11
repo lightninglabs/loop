@@ -1765,6 +1765,7 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 
 	instantOutFsm, err := s.instantOutManager.NewInstantOut(
 		ctx, reservationIds, req.DestAddr,
+		btcutil.Amount(req.MaxSwapFeeSat),
 	)
 	if err != nil {
 		return nil, err

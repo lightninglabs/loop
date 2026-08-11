@@ -138,7 +138,12 @@ func (m *Manager) recoverInstantOuts(ctx context.Context) error {
 
 // NewInstantOut creates a new instantout.
 func (m *Manager) NewInstantOut(ctx context.Context,
-	reservations []reservation.ID, sweepAddress string) (*FSM, error) {
+	reservations []reservation.ID, sweepAddress string,
+	maxSwapFee btcutil.Amount) (*FSM, error) {
+
+	if maxSwapFee < 0 {
+		return nil, fmt.Errorf("maximum swap fee must not be negative")
+	}
 
 	var (
 		sweepAddr btcutil.Address
@@ -161,6 +166,7 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 		initationHeight: m.currentHeight,
 		protocolVersion: CurrentProtocolVersion(),
 		sweepAddress:    sweepAddr,
+		maxSwapFee:      maxSwapFee,
 	}
 
 	instantOut, err := NewFSM(m.cfg, ProtocolVersionFullReservation)

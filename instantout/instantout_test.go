@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -138,4 +139,65 @@ func TestPushPreimageRejectsExpiringReservation(t *testing.T) {
 	require.ErrorContains(
 		t, instantOutFSM.LastActionError, "before recovery safety height",
 	)
+}
+
+// TestValidateInstantOutInvoiceAmount verifies enforcement of the fee cap at
+// millisatoshi precision.
+func TestValidateInstantOutInvoiceAmount(t *testing.T) {
+	const (
+		swapAmount = btcutil.Amount(100_000)
+		maxSwapFee = btcutil.Amount(200)
+	)
+
+	tests := []struct {
+		name          string
+		invoiceAmount lnwire.MilliSatoshi
+		maxSwapFee    btcutil.Amount
+		expectErr     bool
+	}{
+		{
+			name: "exact fee cap",
+			invoiceAmount: lnwire.NewMSatFromSatoshis(
+				swapAmount + maxSwapFee,
+			),
+			maxSwapFee: maxSwapFee,
+		},
+		{
+			name: "one millisatoshi over fee cap",
+			invoiceAmount: lnwire.NewMSatFromSatoshis(
+				swapAmount+maxSwapFee,
+			) + 1,
+			maxSwapFee: maxSwapFee,
+			expectErr:  true,
+		},
+		{
+			name: "discounted invoice",
+			invoiceAmount: lnwire.NewMSatFromSatoshis(
+				swapAmount - 1,
+			),
+			maxSwapFee: 0,
+		},
+		{
+			name: "negative cap",
+			invoiceAmount: lnwire.NewMSatFromSatoshis(
+				swapAmount,
+			),
+			maxSwapFee: -1,
+			expectErr:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateInstantOutInvoiceAmount(
+				tc.invoiceAmount, swapAmount, tc.maxSwapFee,
+			)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
 }

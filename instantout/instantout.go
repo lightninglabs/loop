@@ -60,6 +60,9 @@ type InstantOut struct {
 	// Value is the amount that is swapped.
 	Value btcutil.Amount
 
+	// MaxSwapFee is the maximum off-chain swap fee accepted by the client.
+	MaxSwapFee btcutil.Amount
+
 	// keyLocator is the key locator that is used for the swap.
 	keyLocator keychain.KeyLocator
 

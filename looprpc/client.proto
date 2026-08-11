@@ -1685,6 +1685,11 @@ message InstantOutRequest {
     will be swept to the wallet's internal address.
     */
     string dest_addr = 3;
+
+    /*
+    The maximum off-chain swap fee that may be charged for the swap.
+    */
+    int64 max_swap_fee_sat = 4;
 }
 
 message InstantOutResponse {

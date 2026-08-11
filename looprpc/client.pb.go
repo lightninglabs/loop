@@ -4467,7 +4467,9 @@ type InstantOutRequest struct {
 	OutgoingChanSet []uint64 `protobuf:"varint,2,rep,packed,name=outgoing_chan_set,json=outgoingChanSet,proto3" json:"outgoing_chan_set,omitempty"`
 	// An optional address to sweep the onchain funds to. If not set, the funds
 	// will be swept to the wallet's internal address.
-	DestAddr      string `protobuf:"bytes,3,opt,name=dest_addr,json=destAddr,proto3" json:"dest_addr,omitempty"`
+	DestAddr string `protobuf:"bytes,3,opt,name=dest_addr,json=destAddr,proto3" json:"dest_addr,omitempty"`
+	// The maximum off-chain swap fee that may be charged for the swap.
+	MaxSwapFeeSat int64 `protobuf:"varint,4,opt,name=max_swap_fee_sat,json=maxSwapFeeSat,proto3" json:"max_swap_fee_sat,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4521,6 +4523,13 @@ func (x *InstantOutRequest) GetDestAddr() string {
 		return x.DestAddr
 	}
 	return ""
+}
+
+func (x *InstantOutRequest) GetMaxSwapFeeSat() int64 {
+	if x != nil {
+		return x.MaxSwapFeeSat
+	}
+	return 0
 }
 
 type InstantOutResponse struct {
@@ -6964,11 +6973,12 @@ const file_client_proto_rawDesc = "" +
 	"\x06amount\x18\x03 \x01(\x04R\x06amount\x12\x13\n" +
 	"\x05tx_id\x18\x04 \x01(\tR\x04txId\x12\x12\n" +
 	"\x04vout\x18\x05 \x01(\rR\x04vout\x12\x16\n" +
-	"\x06expiry\x18\x06 \x01(\rR\x06expiry\"\x85\x01\n" +
+	"\x06expiry\x18\x06 \x01(\rR\x06expiry\"\xae\x01\n" +
 	"\x11InstantOutRequest\x12'\n" +
 	"\x0freservation_ids\x18\x01 \x03(\fR\x0ereservationIds\x12*\n" +
 	"\x11outgoing_chan_set\x18\x02 \x03(\x04R\x0foutgoingChanSet\x12\x1b\n" +
-	"\tdest_addr\x18\x03 \x01(\tR\bdestAddr\"t\n" +
+	"\tdest_addr\x18\x03 \x01(\tR\bdestAddr\x12'\n" +
+	"\x10max_swap_fee_sat\x18\x04 \x01(\x03R\rmaxSwapFeeSat\"t\n" +
 	"\x12InstantOutResponse\x12(\n" +
 	"\x10instant_out_hash\x18\x01 \x01(\fR\x0einstantOutHash\x12\x1e\n" +
 	"\vsweep_tx_id\x18\x02 \x01(\tR\tsweepTxId\x12\x14\n" +

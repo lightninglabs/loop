@@ -20,6 +20,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 const (
@@ -61,6 +62,7 @@ type InitInstantOutCtx struct {
 	outgoingChanSet loopdb.ChannelSet
 	protocolVersion ProtocolVersion
 	sweepAddress    btcutil.Address
+	maxSwapFee      btcutil.Amount
 }
 
 // RecoverInstantOutCtx contains the chain height at which an instant out is
@@ -84,7 +86,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	var (
-		reservationAmt uint64
+		reservationAmt btcutil.Amount
 		reservationIds = make([][]byte, 0, len(initCtx.reservations))
 		reservations   = make(
 			[]*reservation.Reservation, 0, len(initCtx.reservations),
@@ -105,7 +107,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 				"locked", reservationId))
 		}
 
-		reservationAmt += uint64(res.Value)
+		reservationAmt += res.Value
 		reservationIds = append(reservationIds, resId[:])
 		reservations = append(reservations, res)
 
@@ -167,6 +169,11 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		return f.HandleError(fmt.Errorf("invalid swap invoice hash: "+
 			"expected %x got %x", preimage.Hash(), payReq.Hash))
 	}
+	if err := validateInstantOutInvoiceAmount(
+		payReq.Value, reservationAmt, initCtx.maxSwapFee,
+	); err != nil {
+		return f.HandleError(err)
+	}
 	serverPubkey, err := btcec.ParsePubKey(instantOutResponse.SenderKey)
 	if err != nil {
 		return f.HandleError(err)
@@ -194,7 +201,8 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		CltvExpiry:       initCtx.cltvExpiry,
 		clientPubkey:     keyRes.PubKey,
 		serverPubkey:     serverPubkey,
-		Value:            btcutil.Amount(reservationAmt),
+		Value:            reservationAmt,
+		MaxSwapFee:       initCtx.maxSwapFee,
 		htlcFeeRate:      feeRate,
 		swapInvoice:      instantOutResponse.SwapInvoice,
 		Reservations:     reservations,
@@ -210,6 +218,31 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	f.InstantOut = instantOut
 
 	return OnInit
+}
+
+// validateInstantOutInvoiceAmount verifies that the server invoice doesn't
+// charge more than the client-approved swap fee. Sub-satoshi fees are rounded
+// up so the cap cannot be bypassed with millisatoshi precision.
+func validateInstantOutInvoiceAmount(invoiceAmount lnwire.MilliSatoshi,
+	swapAmount, maxSwapFee btcutil.Amount) error {
+
+	if maxSwapFee < 0 {
+		return fmt.Errorf("maximum swap fee must not be negative")
+	}
+
+	swapAmountMsat := lnwire.NewMSatFromSatoshis(swapAmount)
+	if invoiceAmount <= swapAmountMsat {
+		return nil
+	}
+
+	swapFeeMsat := invoiceAmount - swapAmountMsat
+	swapFeeSat := btcutil.Amount((int64(swapFeeMsat)-1)/1000 + 1)
+	if swapFeeSat > maxSwapFee {
+		return fmt.Errorf("instant out swap fee %d exceeds maximum %d",
+			swapFeeSat, maxSwapFee)
+	}
+
+	return nil
 }
 
 // PollPaymentAcceptedAction locks the reservations, sends the payment to the

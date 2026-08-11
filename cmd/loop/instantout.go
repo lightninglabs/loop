@@ -190,6 +190,7 @@ func instantOut(ctx context.Context, cmd *cli.Command) error {
 			ReservationIds:  selectedReservations,
 			OutgoingChanSet: outgoingChanSet,
 			DestAddr:        cmd.String("addr"),
+			MaxSwapFeeSat:   quote.ServiceFeeSat,
 		},
 	)
 	if err != nil {
