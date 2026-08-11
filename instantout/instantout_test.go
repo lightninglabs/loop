@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,23 @@ type cleanupTrackingSigner struct {
 	lndclient.SignerClient
 
 	cleaned [][32]byte
+}
+
+type fixedHeightLightningClient struct {
+	lndclient.LightningClient
+
+	height uint32
+	err    error
+}
+
+func (c *fixedHeightLightningClient) GetInfo(context.Context) (
+	*lndclient.Info, error) {
+
+	if c.err != nil {
+		return nil, c.err
+	}
+
+	return &lndclient.Info{BlockHeight: c.height}, nil
 }
 
 func (s *cleanupTrackingSigner) MuSig2Cleanup(_ context.Context,
@@ -112,4 +130,62 @@ func TestCleanupMuSig2Sessions(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, [][32]byte{firstID, secondID}, signer.cleaned)
+}
+
+// TestPushPreimageRejectsExpiringReservation verifies that recovery takes the
+// on-chain fallback before revealing the preimage when a reservation is too
+// close to its server-controlled timeout.
+func TestPushPreimageRejectsExpiringReservation(t *testing.T) {
+	instantOutFSM := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			LndClient: &fixedHeightLightningClient{height: 100},
+		},
+		InstantOut: &InstantOut{
+			CltvExpiry: 200,
+			Reservations: []*reservation.Reservation{
+				{
+					ID:     reservation.ID{1},
+					Expiry: 139,
+				},
+			},
+		},
+	}
+
+	event := instantOutFSM.PushPreimageAction(
+		t.Context(), &RecoverInstantOutCtx{},
+	)
+	require.Equal(t, OnErrorPublishHtlc, event)
+	require.ErrorContains(
+		t, instantOutFSM.LastActionError, "before recovery safety height",
+	)
+}
+
+// TestPushPreimageRejectsExpiringHtlc verifies that recovery uses a fresh
+// chain height and leaves time to confirm both fallback transactions.
+func TestPushPreimageRejectsExpiringHtlc(t *testing.T) {
+	instantOutFSM := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			LndClient: &fixedHeightLightningClient{height: 100},
+		},
+		InstantOut: &InstantOut{
+			CltvExpiry: 105,
+			Reservations: []*reservation.Reservation{
+				{
+					ID:     reservation.ID{1},
+					Expiry: 200,
+				},
+			},
+		},
+	}
+
+	event := instantOutFSM.PushPreimageAction(
+		t.Context(), &RecoverInstantOutCtx{},
+	)
+	require.Equal(t, OnErrorPublishHtlc, event)
+	require.ErrorContains(
+		t, instantOutFSM.LastActionError,
+		"instant out HTLC expires at height 105",
+	)
 }

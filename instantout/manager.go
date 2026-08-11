@@ -119,8 +119,9 @@ func (m *Manager) recoverInstantOuts(ctx context.Context) error {
 
 		// As SendEvent can block, we'll start a goroutine to process
 		// the event.
+		recoverCtx := &RecoverInstantOutCtx{}
 		go func() {
-			err := instantOutFSM.SendEvent(ctx, OnRecover, nil)
+			err := instantOutFSM.SendEvent(ctx, OnRecover, recoverCtx)
 			if err != nil {
 				log.Errorf("FSM %v Error sending recover "+
 					"event %v, state: %v",

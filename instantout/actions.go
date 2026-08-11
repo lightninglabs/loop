@@ -51,6 +51,10 @@ const (
 	// htlcExpiryDelta is the delta in blocks we require between the htlc
 	// expiry and reservation expiry.
 	htlcExpiryDelta = int32(40)
+
+	// htlcRecoverySafetyDelta leaves one urgent confirmation target for
+	// the HTLC and another for its preimage sweep after recovery.
+	htlcRecoverySafetyDelta = 2 * urgentConfTarget
 )
 
 // InitInstantOutCtx contains the context for the InitInstantOutAction.
@@ -62,6 +66,9 @@ type InitInstantOutCtx struct {
 	protocolVersion ProtocolVersion
 	sweepAddress    btcutil.Address
 }
+
+// RecoverInstantOutCtx marks an action as being resumed after restart.
+type RecoverInstantOutCtx struct{}
 
 // InitInstantOutAction is the first action that is executed when the instant
 // out FSM is started. It will send the instant out request to the server.
@@ -381,6 +388,46 @@ func (f *FSM) BuildHTLCAction(ctx context.Context,
 // pushing the preimage fail, the htlc timeout transaction will be published.
 func (f *FSM) PushPreimageAction(ctx context.Context,
 	eventCtx fsm.EventContext) fsm.EventType {
+
+	// A recovered swap may have been offline long enough that the server's
+	// reservation timeout is now close. Fall back to the already finalized
+	// HTLC instead of revealing the preimage without enough time to publish
+	// that safety transaction.
+	if _, ok := eventCtx.(*RecoverInstantOutCtx); ok {
+		info, err := f.cfg.LndClient.GetInfo(ctx)
+		if err != nil {
+			f.LastActionError = fmt.Errorf(
+				"unable to get recovery chain height: %w", err,
+			)
+
+			return OnErrorPublishHtlc
+		}
+
+		currentHeight := int64(info.BlockHeight)
+		minHtlcExpiry := currentHeight +
+			int64(htlcRecoverySafetyDelta)
+		if int64(f.InstantOut.CltvExpiry) < minHtlcExpiry {
+			f.LastActionError = fmt.Errorf("instant out HTLC expires at "+
+				"height %d, before recovery safety height %d",
+				f.InstantOut.CltvExpiry, minHtlcExpiry)
+
+			return OnErrorPublishHtlc
+		}
+
+		minReservationExpiry := currentHeight +
+			int64(htlcExpiryDelta)
+		for _, res := range f.InstantOut.Reservations {
+			if int64(res.Expiry) >= minReservationExpiry {
+				continue
+			}
+
+			f.LastActionError = fmt.Errorf("reservation %x expires at "+
+				"height %d, before recovery safety height %d",
+				res.ID, res.Expiry, minReservationExpiry)
+
+			return OnErrorPublishHtlc
+		}
+	}
 
 	// First we'll create the musig2 context.
 	coopSessions, coopClientNonces, err := f.InstantOut.createMusig2Session(
