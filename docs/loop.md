@@ -455,6 +455,26 @@ The following flags are supported:
 |-----------------|-------------|------|:-------------:|
 | `--help` (`-h`) | show help   | bool |    `false`    |
 
+### `reservations new` subcommand (aliases: `n`)
+
+create a new reservation.
+
+Create a new reservation with the given value and expiry.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] reservations new [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description                                                | Type | Default value |
+|-----------------|------------------------------------------------------------|------|:-------------:|
+| `--amt="…"`     | the amount in satoshis for the reservation                 | uint |      `0`      |
+| `--expiry="…"`  | the relative block height at which the reservation expires | uint |      `0`      |
+| `--help` (`-h`) | show help                                                  | bool |    `false`    |
+
 ### `instantout` command
 
 perform an instant off-chain to on-chain swap (looping out).
