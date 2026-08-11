@@ -263,12 +263,31 @@ func (i *InstantOut) signMusig2Tx(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	if tx == nil {
+		return nil, errors.New("transaction is nil")
+	}
+	if len(tx.TxIn) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of transaction inputs: "+
+			"expected %d, got %d", len(inputs), len(tx.TxIn))
+	}
+	if len(musig2sessions) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of MuSig2 sessions: "+
+			"expected %d, got %d", len(inputs), len(musig2sessions))
+	}
+	if len(counterPartyNonces) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of server nonces: "+
+			"expected %d, got %d", len(inputs), len(counterPartyNonces))
+	}
 
 	prevOutFetcher := inputs.GetPrevoutFetcher()
 	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
 	sigs := make([][]byte, len(inputs))
 
 	for idx, reservation := range inputs {
+		if musig2sessions[idx] == nil {
+			return nil, fmt.Errorf("MuSig2 session %d is nil", idx)
+		}
+
 		if !reflect.DeepEqual(tx.TxIn[idx].PreviousOutPoint,
 			reservation.Outpoint) {
 
@@ -329,8 +348,27 @@ func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	if tx == nil {
+		return nil, errors.New("transaction is nil")
+	}
+	if len(tx.TxIn) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of transaction inputs: "+
+			"expected %d, got %d", len(inputs), len(tx.TxIn))
+	}
+	if len(musig2Sessions) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of MuSig2 sessions: "+
+			"expected %d, got %d", len(inputs), len(musig2Sessions))
+	}
+	if len(serverSigs) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of server signatures: "+
+			"expected %d, got %d", len(inputs), len(serverSigs))
+	}
 
 	for idx := range inputs {
+		if musig2Sessions[idx] == nil {
+			return nil, fmt.Errorf("MuSig2 session %d is nil", idx)
+		}
+
 		haveAllSigs, finalSig, err := signer.MuSig2CombineSig(
 			ctx, musig2Sessions[idx].SessionID,
 			[][]byte{serverSigs[idx]},
