@@ -4,12 +4,13 @@ import (
 	"context"
 	"testing"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
@@ -483,7 +484,7 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 	t.Parallel()
 
 	// Create a taproot address for withdrawal.
-	taprootAddr, err := btcutil.NewAddressTaproot(
+	taprootAddr, err := btcaddr.NewAddressTaproot(
 		make([]byte, 32), &chaincfg.RegressionNetParams,
 	)
 	require.NoError(t, err)
@@ -509,7 +510,7 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 		deposits       []*deposit.Deposit
 		localAmount    btcutil.Amount
 		feeRate        chainfee.SatPerKWeight
-		withdrawAddr   btcutil.Address
+		withdrawAddr   btcaddr.Address
 		commitmentType lnrpc.CommitmentType
 		expectedErr    string
 		expectDustFee  bool // change is dust, given to miners

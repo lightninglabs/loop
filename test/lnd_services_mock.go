@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -232,6 +232,22 @@ func (s *LndMockServices) SetInvoice(invoice *lndclient.Invoice) {
 
 	invoiceCopy := *invoice
 	s.Invoices[invoice.Hash] = &invoiceCopy
+}
+
+// LookupInvoice returns a copy of the invoice for the payment hash.
+func (s *LndMockServices) LookupInvoice(hash lntypes.Hash) (
+	*lndclient.Invoice, bool) {
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	invoice, ok := s.Invoices[hash]
+	if !ok {
+		return nil, false
+	}
+
+	invoiceCopy := *invoice
+	return &invoiceCopy, true
 }
 
 // IsDone checks whether all channels have been fully emptied. If not this may

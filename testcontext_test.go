@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/loop/sweepbatcher"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
@@ -119,8 +120,22 @@ func createClientTestContext(t *testing.T,
 	serverMock := newServerMock(clientLnd)
 
 	store := loopdb.NewStoreMock(t)
+	registerInvoice := func(encoded string) {
+		invoice, err := clientLnd.DecodeInvoice(encoded)
+		require.NoError(t, err)
+		require.NotNil(t, invoice.PaymentHash)
+		require.NotNil(t, invoice.Description)
+
+		clientLnd.SetInvoice(&lndclient.Invoice{
+			Hash:           lntypes.Hash(*invoice.PaymentHash),
+			Memo:           *invoice.Description,
+			PaymentRequest: encoded,
+		})
+	}
 	for _, s := range pendingSwaps {
 		store.LoopOutSwaps[s.Hash] = s.Contract
+		registerInvoice(s.Contract.SwapInvoice)
+		registerInvoice(s.Contract.PrepayInvoice)
 
 		updates := []loopdb.SwapStateData{}
 		for _, e := range s.Events {
@@ -139,6 +154,7 @@ func createClientTestContext(t *testing.T,
 		Server:            serverMock,
 		Store:             store,
 		CreateExpiryTimer: timerFactory,
+		Clock:             clock.NewTestClock(testTime),
 	})
 
 	statusChan := make(chan SwapInfo)

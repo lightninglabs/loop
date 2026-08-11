@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/test"
@@ -129,7 +130,7 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 
 	_, clientPubKey := test.CreateKey(1)
 	_, serverPubKey := test.CreateKey(2)
-	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	addr, err := btcaddr.DecodeAddress(P2wkhAddr, nil)
 	require.NoError(t, err)
 
 	// Create pending swap.
@@ -308,7 +309,7 @@ func TestCreateLoopIn(t *testing.T) {
 
 	_, clientPubKey := test.CreateKey(1)
 	_, serverPubKey := test.CreateKey(2)
-	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	addr, err := btcaddr.DecodeAddress(P2wkhAddr, nil)
 	require.NoError(t, err)
 
 	// Create pending swap.
@@ -515,7 +516,7 @@ func TestGetLoopInByHashOrdersDepositsBySnapshot(t *testing.T) {
 
 	_, clientPubKey := test.CreateKey(1)
 	_, serverPubKey := test.CreateKey(2)
-	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	addr, err := btcaddr.DecodeAddress(P2wkhAddr, nil)
 	require.NoError(t, err)
 
 	swapHash := lntypes.Hash{0x1, 0x2, 0x3, 0x4}
@@ -585,7 +586,7 @@ func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
 
 	_, clientPubKey := test.CreateKey(1)
 	_, serverPubKey := test.CreateKey(2)
-	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	addr, err := btcaddr.DecodeAddress(P2wkhAddr, nil)
 	require.NoError(t, err)
 
 	swapHash := lntypes.Hash{0x1, 0x2, 0x3, 0x4}

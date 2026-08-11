@@ -9,10 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
@@ -203,6 +204,7 @@ func NewClient(dbDir string, loopDB loopdb.SwapStore,
 		},
 		AssetClient:     cfg.AssetClient,
 		LoopOutMaxParts: cfg.LoopOutMaxParts,
+		Clock:           clock.NewDefaultClock(),
 	}
 
 	sweeper := &sweep.Sweeper{
@@ -488,7 +490,7 @@ func (s *Client) resumeSwaps(ctx context.Context,
 
 	swapCfg := newSwapConfig(
 		s.lndServices, s.Store, s.Server, s.AssetClient,
-		clock.NewDefaultClock(),
+		s.Clock,
 	)
 
 	for _, pend := range loopOutSwaps {
@@ -582,7 +584,7 @@ func (s *Client) LoopOut(globalCtx context.Context,
 	// Create a new swap object for this swap.
 	swapCfg := newSwapConfig(
 		s.lndServices, s.Store, s.Server, s.AssetClient,
-		clock.NewDefaultClock(),
+		s.Clock,
 	)
 
 	initResult, err := newLoopOutSwap(
@@ -701,7 +703,7 @@ func (s *Client) getLoopOutSweepFee(ctx context.Context, confTarget int32) (
 	// type is chosen because it adds the most weight of all output types
 	// and we want the quote to return a worst case value.
 	wsh := [32]byte{}
-	p2wshAddress, err := btcutil.NewAddressWitnessScriptHash(
+	p2wshAddress, err := btcaddr.NewAddressWitnessScriptHash(
 		wsh[:], s.lndServices.ChainParams,
 	)
 	if err != nil {
@@ -766,7 +768,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	initiationHeight := s.executor.height()
 	swapCfg := newSwapConfig(
 		s.lndServices, s.Store, s.Server, s.AssetClient,
-		clock.NewDefaultClock(),
+		s.Clock,
 	)
 	initResult, err := newLoopInSwap(
 		globalCtx, swapCfg, initiationHeight, request,
@@ -903,7 +905,7 @@ func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
 	confTarget int32) (btcutil.Amount, error) {
 
 	var (
-		address btcutil.Address
+		address btcaddr.Address
 		err     error
 	)
 	// Generate a dummy address for fee estimation.
@@ -914,11 +916,11 @@ func (s *Client) estimateFee(ctx context.Context, amt btcutil.Amount,
 	)
 
 	if scriptVersion != swap.HtlcV3 {
-		address, err = btcutil.NewAddressWitnessScriptHash(
+		address, err = btcaddr.NewAddressWitnessScriptHash(
 			witnessProg[:], s.lndServices.ChainParams,
 		)
 	} else {
-		address, err = btcutil.NewAddressTaproot(
+		address, err = btcaddr.NewAddressTaproot(
 			witnessProg[:], s.lndServices.ChainParams,
 		)
 	}

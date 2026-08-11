@@ -783,6 +783,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			ReservationManager: reservationManager,
 			InstantOutClient:   instantOutClient,
 			Network:            d.lnd.ChainParams,
+			Clock:              clock.NewDefaultClock(),
 		}
 
 		instantOutManager = instantout.NewInstantOutManager(

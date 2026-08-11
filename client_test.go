@@ -6,9 +6,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -23,7 +24,7 @@ import (
 )
 
 var (
-	testAddr, _ = btcutil.NewAddressScriptHash(
+	testAddr, _ = btcaddr.NewAddressScriptHash(
 		[]byte{123}, &chaincfg.TestNet3Params,
 	)
 
@@ -220,7 +221,9 @@ func testLoopOutResume(t *testing.T, confs uint32, expired, preimageRevealed,
 	swapPayReq, err := getInvoice(hash, amt, swapInvoiceDesc)
 	require.NoError(t, err)
 
-	prePayReq, err := getInvoice(hash, 100, prepayInvoiceDesc)
+	prepayHash := hash
+	prepayHash[0] ^= 1
+	prePayReq, err := getInvoice(prepayHash, 100, prepayInvoiceDesc)
 	require.NoError(t, err)
 
 	_, senderPubKey := test.CreateKey(1)

@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
@@ -346,7 +347,7 @@ func TestSweepHtlc(t *testing.T) {
 				ProtocolVersion:  loopdb.ProtocolVersionHtlcV2,
 			}
 
-			destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+			destAddr, err := btcaddr.NewAddressWitnessPubKeyHash(
 				bytes.Repeat([]byte{1}, 20), lnd.ChainParams,
 			)
 			require.NoError(t, err)
@@ -514,7 +515,7 @@ func TestSweepHtlc(t *testing.T) {
 			// record does not define one.
 			expectedAddr := loopOut.Contract.DestAddr
 			if req.DestAddress != "" {
-				expectedAddr, err = btcutil.DecodeAddress(
+				expectedAddr, err = btcaddr.DecodeAddress(
 					req.DestAddress, lnd.ChainParams,
 				)
 				require.NoError(t, err)

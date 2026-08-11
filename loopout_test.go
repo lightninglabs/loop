@@ -10,8 +10,8 @@ import (
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
@@ -127,7 +127,7 @@ func testLoopOutPaymentParameters(t *testing.T) {
 	// Find the swap payment.
 	var swapPayment test.RouterPaymentChannelMessage
 	for _, p := range payments {
-		if p.Invoice == swap.SwapInvoice {
+		if p.PaymentHash != nil && *p.PaymentHash == swap.hash {
 			swapPayment = p
 		}
 	}
@@ -894,7 +894,7 @@ func testFailedOffChainCancellation(t *testing.T) {
 
 	// We want to fail our swap payment and succeed the prepayment, so we send
 	// a failure update to the payment that has the larger amount.
-	if pmt1.Amount > pmt2.Amount {
+	if pmt1.AmountMsat > pmt2.AmountMsat {
 		pmt1.TrackPaymentMessage.Updates <- failUpdate
 		pmt2.TrackPaymentMessage.Updates <- successUpdate
 	} else {

@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightningnetwork/lnd/clock"
 	"google.golang.org/grpc"
 )
 
@@ -20,4 +21,5 @@ type clientConfig struct {
 	L402Store         l402.Store
 	CreateExpiryTimer func(expiry time.Duration) <-chan time.Time
 	LoopOutMaxParts   uint32
+	Clock             clock.Clock
 }

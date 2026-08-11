@@ -13,15 +13,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
@@ -101,7 +102,7 @@ type sweep struct {
 	isExternalAddr bool
 
 	// destAddr is the destination address of the sweep.
-	destAddr btcutil.Address
+	destAddr btcaddr.Address
 
 	// notifier is a collection of channels used to communicate the status
 	// of the sweep back to the swap that requested it.
@@ -262,7 +263,7 @@ type batch struct {
 	batchPkScript []byte
 
 	// batchAddress is the address of the batch transaction's output.
-	batchAddress btcutil.Address
+	batchAddress btcaddr.Address
 
 	// rbfCache stores data related to the RBF fee bumping mechanism.
 	rbfCache rbfCache
@@ -1293,7 +1294,7 @@ func (b *batch) createPsbt(unsignedTx *wire.MsgTx, sweeps []sweep) ([]byte,
 // the first output of the transaction, followed by an optional list of change
 // outputs. If the main output value is below dust limit this function will
 // return an error.
-func constructUnsignedTx(sweeps []sweep, address btcutil.Address,
+func constructUnsignedTx(sweeps []sweep, address btcaddr.Address,
 	currentHeight int32, feeRate chainfee.SatPerKWeight,
 	minRelayFeeRate chainfee.SatPerKWeight) (*wire.MsgTx,
 	lntypes.WeightUnit, btcutil.Amount, btcutil.Amount, error) {
@@ -1525,7 +1526,7 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 	}
 
 	// Find destination address.
-	var address btcutil.Address
+	var address btcaddr.Address
 	if addrOverride {
 		// Sanity check, there should be exactly 1 sweep in this batch.
 		if len(sweeps) != 1 {
@@ -2492,7 +2493,7 @@ func (b *batch) dbBatch() *dbBatch {
 // has already generated an address then the same one will be returned.
 // The method must not be used in presigned mode. Use getPresignedSweepsDestAddr
 // instead.
-func (b *batch) getBatchDestAddr(ctx context.Context) (btcutil.Address, error) {
+func (b *batch) getBatchDestAddr(ctx context.Context) (btcaddr.Address, error) {
 	// Determine if we should use presigned mode for the batch.
 	presigned, err := b.isPresigned()
 	if err != nil {
@@ -2506,7 +2507,7 @@ func (b *batch) getBatchDestAddr(ctx context.Context) (btcutil.Address, error) {
 			"mode")
 	}
 
-	var address btcutil.Address
+	var address btcaddr.Address
 
 	// If a batch address is set, use that. Otherwise, generate a
 	// new address.

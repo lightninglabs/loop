@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/test"
@@ -107,6 +107,19 @@ func (s *serverMock) NewLoopOutSwap(_ context.Context, swapHash lntypes.Hash,
 	if err != nil {
 		return nil, err
 	}
+
+	// Store the remote invoices in the test fixture so component-based
+	// payment assertions can identify them by payment hash.
+	s.lnd.SetInvoice(&lndclient.Invoice{
+		Hash:           swapHash,
+		Memo:           swapInvoiceDesc,
+		PaymentRequest: swapPayReqString,
+	})
+	s.lnd.SetInvoice(&lndclient.Invoice{
+		Hash:           s.prepayHash,
+		Memo:           prepayInvoiceDesc,
+		PaymentRequest: prePayReqString,
+	})
 
 	var senderKeyArray [33]byte
 	copy(senderKeyArray[:], senderKey.SerializeCompressed())

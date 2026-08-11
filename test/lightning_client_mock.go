@@ -10,8 +10,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
@@ -27,13 +27,6 @@ type mockLightningClient struct {
 
 	lnd *LndMockServices
 	wg  sync.WaitGroup
-}
-
-// DecodePaymentRequest returns a non-nil payment request.
-func (h *mockLightningClient) DecodePaymentRequest(_ context.Context,
-	_ string) (*lndclient.PaymentRequest, error) {
-
-	return &lndclient.PaymentRequest{}, nil
 }
 
 func (h *mockLightningClient) WaitForFinished() {

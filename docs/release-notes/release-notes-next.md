@@ -17,6 +17,10 @@
 
 #### Maintenance
 
+* Hardened invoice payments to verify BOLT 11 signatures and expiry, reject
+  unsupported metadata, blinded paths, AMP, and feature semantics, and send
+  only explicitly reconstructed payment components to LND.
+
 * Added a CI gate and repository agent guidance requiring every pull request to
   include a non-empty entry in the next release notes unless it carries the
   `no-changelog` label.
