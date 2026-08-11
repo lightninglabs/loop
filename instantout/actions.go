@@ -293,6 +293,15 @@ func (f *FSM) BuildHTLCAction(ctx context.Context,
 	}
 
 	f.htlcMusig2Sessions = htlcSessions
+	defer func() {
+		err := cleanupMuSig2Sessions(
+			ctx, f.cfg.Signer, f.htlcMusig2Sessions,
+		)
+		if err != nil {
+			f.Errorf("unable to clean up HTLC MuSig2 sessions: %v", err)
+		}
+		f.htlcMusig2Sessions = nil
+	}()
 
 	// Send the server the client nonces.
 	htlcInitRes, err := f.cfg.InstantOutClient.InitHtlcSig(
@@ -382,6 +391,15 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 	}
 
 	f.sweeplessSweepSessions = coopSessions
+	defer func() {
+		err := cleanupMuSig2Sessions(
+			ctx, f.cfg.Signer, f.sweeplessSweepSessions,
+		)
+		if err != nil {
+			f.Errorf("unable to clean up sweep MuSig2 sessions: %v", err)
+		}
+		f.sweeplessSweepSessions = nil
+	}()
 
 	// Get the feerate for the coop sweep.
 	feeRate, err := f.cfg.Wallet.EstimateFeeRate(ctx, normalConfTarget)
