@@ -62,6 +62,9 @@ type Reservation struct {
 	// Outpoint is the outpoint of the reservation.
 	Outpoint *wire.OutPoint
 
+	// PrepayInvoice is the invoice that the client paid as a prepayment.
+	PrepayInvoice string
+
 	// InitiationHeight is the height at which the reservation was
 	// initiated.
 	InitiationHeight int32
@@ -142,13 +145,24 @@ func (r *Reservation) findReservationOutput(tx *wire.MsgTx) (*wire.OutPoint,
 		return nil, err
 	}
 
+	var foundScript bool
 	for i, txOut := range tx.TxOut {
 		if bytes.Equal(txOut.PkScript, pkScript) {
+			foundScript = true
+			if txOut.Value != int64(r.Value) {
+				continue
+			}
+
 			return &wire.OutPoint{
 				Hash:  tx.TxHash(),
 				Index: uint32(i),
 			}, nil
 		}
+	}
+
+	if foundScript {
+		return nil, fmt.Errorf("reservation output value mismatch: "+
+			"expected %d", r.Value)
 	}
 
 	return nil, errors.New("reservation output not found")

@@ -1739,6 +1739,49 @@ func (s *swapClientServer) ListReservations(ctx context.Context,
 	}, nil
 }
 
+func (s *swapClientServer) ReservationRequest(ctx context.Context,
+	req *looprpc.ReservationRequestRequest) (
+	*looprpc.ReservationRequestResponse, error) {
+
+	if s.reservationManager == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"Restart loop with --experimental")
+	}
+
+	reservation, err := s.reservationManager.RequestReservationFromServer(
+		ctx, btcutil.Amount(req.Amt), req.Expiry,
+		btcutil.Amount(req.MaxPrepayAmt),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.ReservationRequestResponse{
+		Reservation: toClientReservation(reservation),
+	}, nil
+}
+
+func (s *swapClientServer) ReservationQuote(ctx context.Context,
+	req *looprpc.ReservationQuoteRequest) (
+	*looprpc.ReservationQuoteResponse, error) {
+
+	if s.reservationManager == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"Restart loop with --experimental")
+	}
+
+	quote, err := s.reservationManager.QuoteReservation(
+		ctx, btcutil.Amount(req.Amt), req.Expiry,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.ReservationQuoteResponse{
+		PrepayAmt: uint64(quote),
+	}, nil
+}
+
 // InstantOut initiates an instant out swap.
 func (s *swapClientServer) InstantOut(ctx context.Context,
 	req *looprpc.InstantOutRequest) (*looprpc.InstantOutResponse,
@@ -1765,6 +1808,7 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 
 	instantOutFsm, err := s.instantOutManager.NewInstantOut(
 		ctx, reservationIds, req.DestAddr,
+		btcutil.Amount(req.MaxSwapFeeSat),
 	)
 	if err != nil {
 		return nil, err

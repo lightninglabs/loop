@@ -119,8 +119,11 @@ func (m *Manager) recoverInstantOuts(ctx context.Context) error {
 
 		// As SendEvent can block, we'll start a goroutine to process
 		// the event.
+		recoverCtx := &RecoverInstantOutCtx{
+			currentHeight: m.currentHeight,
+		}
 		go func() {
-			err := instantOutFSM.SendEvent(ctx, OnRecover, nil)
+			err := instantOutFSM.SendEvent(ctx, OnRecover, recoverCtx)
 			if err != nil {
 				log.Errorf("FSM %v Error sending recover "+
 					"event %v, state: %v",
@@ -135,7 +138,12 @@ func (m *Manager) recoverInstantOuts(ctx context.Context) error {
 
 // NewInstantOut creates a new instantout.
 func (m *Manager) NewInstantOut(ctx context.Context,
-	reservations []reservation.ID, sweepAddress string) (*FSM, error) {
+	reservations []reservation.ID, sweepAddress string,
+	maxSwapFee btcutil.Amount) (*FSM, error) {
+
+	if maxSwapFee < 0 {
+		return nil, fmt.Errorf("maximum swap fee must not be negative")
+	}
 
 	var (
 		sweepAddr btcutil.Address
@@ -148,6 +156,24 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+
+		if !sweepAddr.IsForNet(m.cfg.Network) {
+			return nil, fmt.Errorf("sweep address %s is not "+
+				"valid for network %s", sweepAddress,
+				m.cfg.Network.Name)
+		}
+
+		switch sweepAddr.(type) {
+		case *btcutil.AddressTaproot,
+			*btcutil.AddressWitnessScriptHash,
+			*btcutil.AddressWitnessPubKeyHash,
+			*btcutil.AddressScriptHash,
+			*btcutil.AddressPubKeyHash:
+
+		default:
+			return nil, fmt.Errorf("unsupported sweep address "+
+				"type %T", sweepAddr)
+		}
 	}
 
 	m.Lock()
@@ -158,6 +184,7 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 		initationHeight: m.currentHeight,
 		protocolVersion: CurrentProtocolVersion(),
 		sweepAddress:    sweepAddr,
+		maxSwapFee:      maxSwapFee,
 	}
 
 	instantOut, err := NewFSM(m.cfg, ProtocolVersionFullReservation)

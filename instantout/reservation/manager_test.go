@@ -36,7 +36,7 @@ func TestManager(t *testing.T) {
 	<-initChan
 
 	// Create a new reservation.
-	reservationFSM, err := testContext.manager.newReservation(
+	reservationFSM, err := testContext.manager.newReservationFromNtfn(
 		ctxb, uint32(testContext.mockLnd.Height),
 		&swapserverrpc.ServerReservationNotification{
 			ReservationId: defaultReservationId[:],
@@ -57,6 +57,7 @@ func TestManager(t *testing.T) {
 	confTx := &wire.MsgTx{
 		TxOut: []*wire.TxOut{
 			{
+				Value:    int64(defaultValue),
 				PkScript: pkScript,
 			},
 		},
@@ -97,6 +98,117 @@ func TestManager(t *testing.T) {
 	// We'll now expect the reservation to be expired.
 	err = reservationFSM.DefaultObserver.WaitForState(ctxb, 5*time.Second, Spent)
 	require.NoError(t, err)
+
+	testContext.manager.Lock()
+	_, ok := testContext.manager.activeReservations[defaultReservationId]
+	testContext.manager.Unlock()
+	require.False(t, ok)
+}
+
+// TestManagerContinuesAfterInvalidNotification verifies that a malformed
+// server notification doesn't stop the reservation manager from processing
+// later notifications.
+func TestManagerContinuesAfterInvalidNotification(t *testing.T) {
+	testContext := newManagerTestContext(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	initChan := make(chan struct{})
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- testContext.manager.Run(
+			ctx, testContext.mockLnd.Height, initChan,
+		)
+	}()
+
+	<-initChan
+
+	// A malformed ID is rejected by newReservationFromNtfn. The manager
+	// should log the error and continue processing the stream.
+	testContext.reservationNotificationChan <- &swapserverrpc.ServerReservationNotification{
+		ReservationId: []byte{1},
+	}
+
+	testContext.reservationNotificationChan <- &swapserverrpc.ServerReservationNotification{
+		ReservationId: defaultReservationId[:],
+		Value:         uint64(defaultValue),
+		ServerKey:     defaultPubkeyBytes,
+		Expiry: uint32(testContext.mockLnd.Height) +
+			defaultExpiry,
+	}
+
+	select {
+	case <-testContext.mockLnd.RegisterConfChannel:
+	case err := <-errChan:
+		require.NoError(t, err)
+		t.Fatal("reservation manager stopped after malformed notification")
+	case <-time.After(5 * time.Second):
+		t.Fatal("valid reservation notification was not processed")
+	}
+
+	cancel()
+	require.NoError(t, <-errChan)
+}
+
+// TestManagerRejectsDuplicateReservation verifies that a duplicate server
+// notification cannot replace the active FSM for an existing reservation.
+func TestManagerRejectsDuplicateReservation(t *testing.T) {
+	testContext := newManagerTestContext(t)
+	ctx := t.Context()
+	req := &swapserverrpc.ServerReservationNotification{
+		ReservationId: defaultReservationId[:],
+		Value:         uint64(defaultValue),
+		ServerKey:     defaultPubkeyBytes,
+		Expiry: uint32(testContext.mockLnd.Height) +
+			defaultExpiry,
+	}
+
+	firstFSM, err := testContext.manager.newReservationFromNtfn(
+		ctx, uint32(testContext.mockLnd.Height), req,
+	)
+	require.NoError(t, err)
+
+	secondFSM, err := testContext.manager.newReservationFromNtfn(
+		ctx, uint32(testContext.mockLnd.Height), req,
+	)
+	require.ErrorIs(t, err, ErrReservationAlreadyExists)
+	require.Nil(t, secondFSM)
+	require.Same(
+		t, firstFSM,
+		testContext.manager.activeReservations[defaultReservationId],
+	)
+}
+
+// TestManagerLimitsActiveReservations verifies that server notifications
+// cannot grow the active FSM set without bound.
+func TestManagerLimitsActiveReservations(t *testing.T) {
+	testContext := newManagerTestContext(t)
+
+	for i := range maxActiveReservations {
+		var id ID
+		id[0] = byte(i)
+		id[1] = byte(i >> 8)
+		testContext.manager.activeReservations[id] = NewFSM(
+			testContext.manager.cfg, ProtocolVersionServerInitiated,
+		)
+	}
+
+	reservationFSM, err := testContext.manager.newReservationFromNtfn(
+		t.Context(), uint32(testContext.mockLnd.Height),
+		&swapserverrpc.ServerReservationNotification{
+			ReservationId: defaultReservationId[:],
+			Value:         uint64(defaultValue),
+			ServerKey:     defaultPubkeyBytes,
+			Expiry: uint32(testContext.mockLnd.Height) +
+				defaultExpiry,
+		},
+	)
+	require.ErrorIs(t, err, ErrTooManyActiveReservations)
+	require.Nil(t, reservationFSM)
+	require.Len(
+		t, testContext.manager.activeReservations,
+		maxActiveReservations,
+	)
 }
 
 // ManagerTestContext is a helper struct that contains all the necessary

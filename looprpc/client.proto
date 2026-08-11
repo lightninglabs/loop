@@ -137,11 +137,24 @@ service SwapClient {
     */
     rpc SuggestSwaps (SuggestSwapsRequest) returns (SuggestSwapsResponse);
 
-    /* loop: `listreservations`
+    /* loop: `reservations list`
     ListReservations returns a list of all reservations the server opened to us.
     */
     rpc ListReservations (ListReservationsRequest)
         returns (ListReservationsResponse);
+
+    /* loop:`reservation request`
+ReservationRequest requests a reservation from the server.
+*/
+    rpc ReservationRequest (ReservationRequestRequest)
+        returns (ReservationRequestResponse);
+
+    /* loop:`reservation quote`
+    ReservationQuote returns a quote for a reservation with the provided
+    parameters.
+    */
+    rpc ReservationQuote (ReservationQuoteRequest)
+        returns (ReservationQuoteResponse);
 
     /* loop: `instantout`
     InstantOut initiates an instant out swap with the given parameters.
@@ -1667,6 +1680,46 @@ message ClientReservation {
     uint32 expiry = 6;
 }
 
+message ReservationRequestRequest {
+    /*
+    The amount to reserve in satoshis.
+    */
+    uint64 amt = 1;
+
+    /*
+    The relative expiry of the reservation in blocks.
+    */
+    uint32 expiry = 2;
+
+    /*
+    The maximum amt in satoshis we allow for the prepayment.
+    */
+    uint64 max_prepay_amt = 3;
+}
+
+message ReservationRequestResponse {
+    ClientReservation reservation = 1;
+}
+
+message ReservationQuoteRequest {
+    /*
+    The amount to reserve in satoshis.
+    */
+    uint64 amt = 1;
+
+    /*
+    The relative expiry of the reservation in blocks.
+    */
+    uint32 expiry = 2;
+}
+
+message ReservationQuoteResponse {
+    /*
+    The prepay fee that will be charged for the reservation.
+    */
+    uint64 prepay_amt = 1;
+}
+
 message InstantOutRequest {
     /*
     The reservations to use for the swap.
@@ -1685,6 +1738,11 @@ message InstantOutRequest {
     will be swept to the wallet's internal address.
     */
     string dest_addr = 3;
+
+    /*
+    The maximum off-chain swap fee that may be charged for the swap.
+    */
+    int64 max_swap_fee_sat = 4;
 }
 
 message InstantOutResponse {

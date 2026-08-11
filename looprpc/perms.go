@@ -177,18 +177,41 @@ var RequiredPermissions = map[string][]bakery.Op{
 	"/looprpc.SwapClient/ListReservations": {{
 		Entity: "swap",
 		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "out",
+	}},
+	"/looprpc.SwapClient/ReservationRequest": {{
+		Entity: "swap",
+		Action: "execute",
+	}, {
+		Entity: "loop",
+		Action: "out",
+	}},
+	"/looprpc.SwapClient/ReservationQuote": {{
+		Entity: "swap",
+		Action: "read",
 	}},
 	"/looprpc.SwapClient/InstantOut": {{
 		Entity: "swap",
 		Action: "execute",
+	}, {
+		Entity: "loop",
+		Action: "out",
 	}},
 	"/looprpc.SwapClient/InstantOutQuote": {{
 		Entity: "swap",
 		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "out",
 	}},
 	"/looprpc.SwapClient/ListInstantOuts": {{
 		Entity: "swap",
 		Action: "read",
+	}, {
+		Entity: "loop",
+		Action: "out",
 	}},
 	"/looprpc.SwapClient/StopDaemon": {{
 		Entity: "loop",

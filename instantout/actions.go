@@ -20,6 +20,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 const (
@@ -61,6 +62,13 @@ type InitInstantOutCtx struct {
 	outgoingChanSet loopdb.ChannelSet
 	protocolVersion ProtocolVersion
 	sweepAddress    btcutil.Address
+	maxSwapFee      btcutil.Amount
+}
+
+// RecoverInstantOutCtx contains the chain height at which an instant out is
+// resumed after restart.
+type RecoverInstantOutCtx struct {
+	currentHeight int32
 }
 
 // InitInstantOutAction is the first action that is executed when the instant
@@ -78,7 +86,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	var (
-		reservationAmt uint64
+		reservationAmt btcutil.Amount
 		reservationIds = make([][]byte, 0, len(initCtx.reservations))
 		reservations   = make(
 			[]*reservation.Reservation, 0, len(initCtx.reservations),
@@ -99,7 +107,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 				"locked", reservationId))
 		}
 
-		reservationAmt += uint64(res.Value)
+		reservationAmt += res.Value
 		reservationIds = append(reservationIds, resId[:])
 		reservations = append(reservations, res)
 
@@ -161,6 +169,11 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		return f.HandleError(fmt.Errorf("invalid swap invoice hash: "+
 			"expected %x got %x", preimage.Hash(), payReq.Hash))
 	}
+	if err := validateInstantOutInvoiceAmount(
+		payReq.Value, reservationAmt, initCtx.maxSwapFee,
+	); err != nil {
+		return f.HandleError(err)
+	}
 	serverPubkey, err := btcec.ParsePubKey(instantOutResponse.SenderKey)
 	if err != nil {
 		return f.HandleError(err)
@@ -188,7 +201,8 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		CltvExpiry:       initCtx.cltvExpiry,
 		clientPubkey:     keyRes.PubKey,
 		serverPubkey:     serverPubkey,
-		Value:            btcutil.Amount(reservationAmt),
+		Value:            reservationAmt,
+		MaxSwapFee:       initCtx.maxSwapFee,
 		htlcFeeRate:      feeRate,
 		swapInvoice:      instantOutResponse.SwapInvoice,
 		Reservations:     reservations,
@@ -204,6 +218,31 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	f.InstantOut = instantOut
 
 	return OnInit
+}
+
+// validateInstantOutInvoiceAmount verifies that the server invoice doesn't
+// charge more than the client-approved swap fee. Sub-satoshi fees are rounded
+// up so the cap cannot be bypassed with millisatoshi precision.
+func validateInstantOutInvoiceAmount(invoiceAmount lnwire.MilliSatoshi,
+	swapAmount, maxSwapFee btcutil.Amount) error {
+
+	if maxSwapFee < 0 {
+		return fmt.Errorf("maximum swap fee must not be negative")
+	}
+
+	swapAmountMsat := lnwire.NewMSatFromSatoshis(swapAmount)
+	if invoiceAmount <= swapAmountMsat {
+		return nil
+	}
+
+	swapFeeMsat := invoiceAmount - swapAmountMsat
+	swapFeeSat := btcutil.Amount((int64(swapFeeMsat)-1)/1000 + 1)
+	if swapFeeSat > maxSwapFee {
+		return fmt.Errorf("instant out swap fee %d exceeds maximum %d",
+			swapFeeSat, maxSwapFee)
+	}
+
+	return nil
 }
 
 // PollPaymentAcceptedAction locks the reservations, sends the payment to the
@@ -293,6 +332,15 @@ func (f *FSM) BuildHTLCAction(ctx context.Context,
 	}
 
 	f.htlcMusig2Sessions = htlcSessions
+	defer func() {
+		err := cleanupMuSig2Sessions(
+			ctx, f.cfg.Signer, f.htlcMusig2Sessions,
+		)
+		if err != nil {
+			f.Errorf("unable to clean up HTLC MuSig2 sessions: %v", err)
+		}
+		f.htlcMusig2Sessions = nil
+	}()
 
 	// Send the server the client nonces.
 	htlcInitRes, err := f.cfg.InstantOutClient.InitHtlcSig(
@@ -373,6 +421,26 @@ func (f *FSM) BuildHTLCAction(ctx context.Context,
 func (f *FSM) PushPreimageAction(ctx context.Context,
 	eventCtx fsm.EventContext) fsm.EventType {
 
+	// A recovered swap may have been offline long enough that the server's
+	// reservation timeout is now close. Fall back to the already finalized
+	// HTLC instead of revealing the preimage without enough time to publish
+	// that safety transaction.
+	if recoverCtx, ok := eventCtx.(*RecoverInstantOutCtx); ok {
+		minReservationExpiry := int64(recoverCtx.currentHeight) +
+			int64(htlcExpiryDelta)
+		for _, res := range f.InstantOut.Reservations {
+			if int64(res.Expiry) >= minReservationExpiry {
+				continue
+			}
+
+			f.LastActionError = fmt.Errorf("reservation %x expires at "+
+				"height %d, before recovery safety height %d",
+				res.ID, res.Expiry, minReservationExpiry)
+
+			return OnErrorPublishHtlc
+		}
+	}
+
 	// First we'll create the musig2 context.
 	coopSessions, coopClientNonces, err := f.InstantOut.createMusig2Session(
 		ctx, f.cfg.Signer,
@@ -382,6 +450,15 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 	}
 
 	f.sweeplessSweepSessions = coopSessions
+	defer func() {
+		err := cleanupMuSig2Sessions(
+			ctx, f.cfg.Signer, f.sweeplessSweepSessions,
+		)
+		if err != nil {
+			f.Errorf("unable to clean up sweep MuSig2 sessions: %v", err)
+		}
+		f.sweeplessSweepSessions = nil
+	}()
 
 	// Get the feerate for the coop sweep.
 	feeRate, err := f.cfg.Wallet.EstimateFeeRate(ctx, normalConfTarget)
@@ -614,13 +691,34 @@ func (f *FSM) WaitForHtlcSweepConfirmedAction(ctx context.Context,
 	}
 }
 
+// unlockReservationsOnRecoverAction is the action of the
+// UnlockReservationsOnRecover state. It is entered via OnRecover from any
+// in-flight state where the reservations are already locked, and it unlocks
+// them before routing to Failed. Without this, a crash between
+// PollPaymentAcceptedAction's LockReservation and the swap reaching a
+// terminal state would leave the reservations permanently Locked in the
+// local store, blocking any future InstantOut that wants to spend them.
+func (f *FSM) unlockReservationsOnRecoverAction(ctx context.Context,
+	_ fsm.EventContext) fsm.EventType {
+
+	return f.handleErrorAndUnlockReservations(
+		ctx, errors.New("instant out recovered from in-flight state"),
+	)
+}
+
 // handleErrorAndUnlockReservations handles an error and unlocks the
 // reservations.
-func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
+func (f *FSM) handleErrorAndUnlockReservations(_ context.Context,
 	err error) fsm.EventType {
-	// We might get here from a canceled context, we create a new context
-	// with a timeout to unlock the reservations.
-	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	// We very likely got here from a canceled parent context (caller
+	// timeout, daemon shutdown, etc.). Deriving with timeout from a
+	// canceled parent yields an already-done context, so neither the
+	// local UnlockReservation calls nor the server-side CancelInstantSwap
+	// RPC would ever get a chance to run. Detach from the caller's
+	// context entirely.
+	ctx, cancel := context.WithTimeout(
+		context.Background(), time.Second*30,
+	)
 	defer cancel()
 
 	// Unlock the reservations.
@@ -635,19 +733,23 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	}
 
 	// We're also sending the server a cancel message so that it can
-	// release the reservations. This can be done in a goroutine as we
-	// wan't to fail the fsm early.
+	// release the reservations. This runs in a goroutine because we
+	// want to fail the FSM early -- but it must use its OWN background
+	// context with timeout, not derive from the cancel above (which
+	// fires the moment this function returns).
 	go func() {
-		ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+		cancelCtx, cancel := context.WithTimeout(
+			context.Background(), time.Second*30,
+		)
 		defer cancel()
 		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
-			ctx, &swapserverrpc.CancelInstantSwapRequest{
+			cancelCtx, &swapserverrpc.CancelInstantSwapRequest{
 				SwapHash: f.InstantOut.SwapHash[:],
 			},
 		)
 		if cancelErr != nil {
-			// We'll log the error but not return it as we want to return the
-			// original error.
+			// We'll log the error but not return it as we want
+			// to return the original error.
 			f.Debugf("error sending cancel message: %v", cancelErr)
 		}
 	}()
