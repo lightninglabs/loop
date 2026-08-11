@@ -23,6 +23,19 @@ func (s *invalidFinalSigSigner) MuSig2CombineSig(context.Context, [32]byte,
 	return true, make([]byte, 64), nil
 }
 
+type cleanupTrackingSigner struct {
+	lndclient.SignerClient
+
+	cleaned [][32]byte
+}
+
+func (s *cleanupTrackingSigner) MuSig2Cleanup(_ context.Context,
+	sessionID [32]byte) error {
+
+	s.cleaned = append(s.cleaned, sessionID)
+	return nil
+}
+
 // TestMuSig2VectorLengthValidation verifies that malformed server-controlled
 // vectors are rejected before they can be indexed.
 func TestMuSig2VectorLengthValidation(t *testing.T) {
@@ -76,9 +89,27 @@ func TestFinalizeMuSig2TransactionVerifiesSignature(t *testing.T) {
 	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: *res.Outpoint})
 	tx.AddTxOut(&wire.TxOut{Value: 90_000})
 
+	sessions := []*input.MuSig2SessionInfo{{}}
 	_, err := instantOut.finalizeMusig2Transaction(
 		context.Background(), &invalidFinalSigSigner{},
-		[]*input.MuSig2SessionInfo{{}}, tx, [][]byte{{1}},
+		sessions, tx, [][]byte{{1}},
 	)
 	require.ErrorContains(t, err, "invalid final MuSig2 signature")
+	require.Nil(t, sessions[0])
+}
+
+// TestCleanupMuSig2Sessions verifies that all allocated sessions are released
+// while nil entries from partial session creation are skipped.
+func TestCleanupMuSig2Sessions(t *testing.T) {
+	firstID := [32]byte{1}
+	secondID := [32]byte{2}
+	signer := &cleanupTrackingSigner{}
+
+	err := cleanupMuSig2Sessions(
+		t.Context(), signer, []*input.MuSig2SessionInfo{
+			{SessionID: firstID}, nil, {SessionID: secondID},
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, [][32]byte{firstID, secondID}, signer.cleaned)
 }

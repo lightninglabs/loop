@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
@@ -24,6 +25,8 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
+
+const muSig2CleanupTimeout = 5 * time.Second
 
 // InstantOut holds the necessary information to execute an instant out swap.
 type InstantOut struct {
@@ -112,7 +115,10 @@ func (i *InstantOut) createMusig2Session(ctx context.Context,
 	for idx, reservation := range i.Reservations {
 		session, err := reservation.Musig2CreateSession(ctx, signer)
 		if err != nil {
-			return nil, nil, err
+			cleanupErr := cleanupMuSig2Sessions(
+				ctx, signer, musig2Sessions[:idx],
+			)
+			return nil, nil, errors.Join(err, cleanupErr)
 		}
 
 		musig2Sessions[idx] = session
@@ -120,6 +126,32 @@ func (i *InstantOut) createMusig2Session(ctx context.Context,
 	}
 
 	return musig2Sessions, clientNonces, nil
+}
+
+// cleanupMuSig2Sessions removes completed or abandoned MuSig2 sessions from
+// lnd. Cleanup uses a bounded context that survives cancellation of the swap
+// action that created the sessions.
+func cleanupMuSig2Sessions(ctx context.Context, signer lndclient.SignerClient,
+	sessions []*input.MuSig2SessionInfo) error {
+
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), muSig2CleanupTimeout,
+	)
+	defer cancel()
+
+	var cleanupErr error
+	for _, session := range sessions {
+		if session == nil {
+			continue
+		}
+
+		err := signer.MuSig2Cleanup(cleanupCtx, session.SessionID)
+		if err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+
+	return cleanupErr
 }
 
 // getInputReservations returns the input reservations for the instant out.
@@ -383,6 +415,11 @@ func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 		if !haveAllSigs {
 			return nil, fmt.Errorf("missing sigs")
 		}
+
+		// lnd removes a MuSig2 session automatically once all signatures
+		// have been combined. Clear the local entry so the caller's deferred
+		// cleanup only targets sessions abandoned on an error path.
+		musig2Sessions[idx] = nil
 
 		tx.TxIn[idx].Witness = wire.TxWitness{finalSig}
 
