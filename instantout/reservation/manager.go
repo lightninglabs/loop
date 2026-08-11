@@ -14,6 +14,11 @@ import (
 	reservationrpc "github.com/lightninglabs/loop/swapserverrpc"
 )
 
+var (
+	reservationStateWaitTimeout = 5 * time.Second
+	reservationStatePollDelay   = time.Second
+)
+
 // Manager manages the reservation state machines.
 type Manager struct {
 	sync.Mutex
@@ -24,6 +29,28 @@ type Manager struct {
 
 	// activeReservations contains all the active reservationsFSMs.
 	activeReservations map[ID]*FSM
+}
+
+// finalStateObserver removes a reservation FSM from the active set once it
+// reaches a terminal state.
+type finalStateObserver struct {
+	manager *Manager
+	id      ID
+	fsm     *FSM
+}
+
+// Notify implements the fsm.Observer interface.
+func (o *finalStateObserver) Notify(notification fsm.Notification) {
+	if !isFinalState(notification.NextState) {
+		return
+	}
+
+	o.manager.Lock()
+	defer o.manager.Unlock()
+
+	if o.manager.activeReservations[o.id] == o.fsm {
+		delete(o.manager.activeReservations, o.id)
+	}
 }
 
 // NewManager creates a new reservation manager.
@@ -134,8 +161,18 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 		m.Unlock()
 		return nil, ErrReservationAlreadyExists
 	}
+	if len(m.activeReservations) >= maxActiveReservations {
+		m.Unlock()
+		return nil, ErrTooManyActiveReservations
+	}
 	m.activeReservations[reservationID] = reservationFSM
 	m.Unlock()
+
+	reservationFSM.RegisterObserver(&finalStateObserver{
+		manager: m,
+		id:      reservationID,
+		fsm:     reservationFSM,
+	})
 
 	initContext := &InitReservationContext{
 		reservationID: reservationID,
@@ -158,16 +195,10 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 	// We'll now wait for the reservation to be in the state where it is
 	// waiting to be confirmed.
 	err = reservationFSM.DefaultObserver.WaitForState(
-		ctx, 5*time.Second, WaitForConfirmation,
-		fsm.WithWaitForStateOption(time.Second),
+		ctx, reservationStateWaitTimeout, WaitForConfirmation,
+		fsm.WithWaitForStateOption(reservationStatePollDelay),
 	)
 	if err != nil {
-		m.Lock()
-		if m.activeReservations[reservationID] == reservationFSM {
-			delete(m.activeReservations, reservationID)
-		}
-		m.Unlock()
-
 		if reservationFSM.LastActionError != nil {
 			return nil, fmt.Errorf("error waiting for "+
 				"state: %v, last action error: %v",
@@ -198,7 +229,14 @@ func (m *Manager) RecoverReservations(ctx context.Context) error {
 
 		reservationFSM := NewFSMFromReservation(m.cfg, reservation)
 
+		m.Lock()
 		m.activeReservations[reservation.ID] = reservationFSM
+		m.Unlock()
+		reservationFSM.RegisterObserver(&finalStateObserver{
+			manager: m,
+			id:      reservation.ID,
+			fsm:     reservationFSM,
+		})
 
 		// As SendEvent can block, we'll start a goroutine to process
 		// the event.
@@ -236,7 +274,7 @@ func (m *Manager) LockReservation(ctx context.Context, id ID) error {
 	m.Unlock()
 
 	if !ok {
-		return fmt.Errorf("reservation not found")
+		return ErrReservationNotFound
 	}
 
 	// Try to send the lock event to the reservation.
@@ -256,7 +294,20 @@ func (m *Manager) UnlockReservation(ctx context.Context, id ID) error {
 	m.Unlock()
 
 	if !ok {
-		return fmt.Errorf("reservation not found")
+		storedReservation, err := m.cfg.Store.GetReservation(ctx, id)
+		if err != nil {
+			return err
+		}
+
+		// Terminal reservations are removed from the active set. Treat an
+		// unlock after that removal as idempotent, while still surfacing a
+		// missing active FSM for reservations that should be running.
+		if isFinalState(storedReservation.State) {
+			return nil
+		}
+
+		return fmt.Errorf("%w: reservation %x is in state %v",
+			ErrReservationNotFound, id, storedReservation.State)
 	}
 
 	// Try to send the unlock event to the reservation.

@@ -8,14 +8,18 @@ import (
 )
 
 var (
-	ErrReservationAlreadyExists = fmt.Errorf("reservation already exists")
-	ErrReservationNotFound      = fmt.Errorf("reservation not found")
+	ErrReservationAlreadyExists  = fmt.Errorf("reservation already exists")
+	ErrReservationNotFound       = fmt.Errorf("reservation not found")
+	ErrTooManyActiveReservations = fmt.Errorf(
+		"too many active reservations",
+	)
 )
 
 const (
-	KeyFamily         = int32(42068)
-	DefaultConfTarget = int32(3)
-	IdLength          = 32
+	KeyFamily             = int32(42068)
+	DefaultConfTarget     = int32(3)
+	IdLength              = 32
+	maxActiveReservations = 1000
 )
 
 // Store is the interface that stores the reservations.

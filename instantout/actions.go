@@ -617,20 +617,23 @@ func (f *FSM) WaitForHtlcSweepConfirmedAction(ctx context.Context,
 // handleErrorAndUnlockReservations handles an error and unlocks the
 // reservations.
 func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
-	err error) fsm.EventType {
+	actionErr error) fsm.EventType {
 	// We might get here from a canceled context, we create a new context
 	// with a timeout to unlock the reservations.
-	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), time.Second*30,
+	)
 	defer cancel()
 
 	// Unlock the reservations.
+	var unlockErr error
 	for _, reservation := range f.InstantOut.Reservations {
 		err := f.cfg.ReservationManager.UnlockReservation(
-			ctx, reservation.ID,
+			cleanupCtx, reservation.ID,
 		)
 		if err != nil {
 			f.Errorf("error unlocking reservation: %v", err)
-			return f.HandleError(err)
+			unlockErr = errors.Join(unlockErr, err)
 		}
 	}
 
@@ -638,10 +641,12 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	// release the reservations. This can be done in a goroutine as we
 	// wan't to fail the fsm early.
 	go func() {
-		ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+		cancelCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), time.Second*30,
+		)
 		defer cancel()
 		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
-			ctx, &swapserverrpc.CancelInstantSwapRequest{
+			cancelCtx, &swapserverrpc.CancelInstantSwapRequest{
 				SwapHash: f.InstantOut.SwapHash[:],
 			},
 		)
@@ -652,7 +657,13 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 		}
 	}()
 
-	return f.HandleError(err)
+	// Preserve the action failure when cleanup also fails. If cleanup was
+	// the only failure, report it to the state machine.
+	if actionErr != nil {
+		return f.HandleError(actionErr)
+	}
+
+	return f.HandleError(unlockErr)
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {

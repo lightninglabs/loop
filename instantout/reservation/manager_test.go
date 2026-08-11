@@ -12,6 +12,7 @@ import (
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -97,6 +98,11 @@ func TestManager(t *testing.T) {
 	// We'll now expect the reservation to be expired.
 	err = reservationFSM.DefaultObserver.WaitForState(ctxb, 5*time.Second, Spent)
 	require.NoError(t, err)
+
+	testContext.manager.Lock()
+	_, ok := testContext.manager.activeReservations[defaultReservationId]
+	testContext.manager.Unlock()
+	require.False(t, ok)
 }
 
 // TestManagerContinuesAfterInvalidNotification verifies that a malformed
@@ -171,6 +177,166 @@ func TestManagerRejectsDuplicateReservation(t *testing.T) {
 		t, firstFSM,
 		testContext.manager.activeReservations[defaultReservationId],
 	)
+}
+
+// TestManagerLimitsActiveReservations verifies that server notifications
+// cannot grow the active FSM set without bound.
+func TestManagerLimitsActiveReservations(t *testing.T) {
+	testContext := newManagerTestContext(t)
+
+	for i := range maxActiveReservations {
+		var id ID
+		id[0] = byte(i)
+		id[1] = byte(i >> 8)
+		testContext.manager.activeReservations[id] = NewFSM(
+			testContext.manager.cfg,
+		)
+	}
+
+	reservationFSM, err := testContext.manager.newReservation(
+		t.Context(), uint32(testContext.mockLnd.Height),
+		&swapserverrpc.ServerReservationNotification{
+			ReservationId: defaultReservationId[:],
+			Value:         uint64(defaultValue),
+			ServerKey:     defaultPubkeyBytes,
+			Expiry: uint32(testContext.mockLnd.Height) +
+				defaultExpiry,
+		},
+	)
+	require.ErrorIs(t, err, ErrTooManyActiveReservations)
+	require.Nil(t, reservationFSM)
+	require.Len(
+		t, testContext.manager.activeReservations,
+		maxActiveReservations,
+	)
+}
+
+// TestManagerKeepsReservationAfterWaitTimeout verifies that a caller-side
+// wait timeout doesn't evict a reservation FSM that is still initializing.
+func TestManagerKeepsReservationAfterWaitTimeout(t *testing.T) {
+	testContext := newManagerTestContext(t)
+
+	originalWaitTimeout := reservationStateWaitTimeout
+	originalPollDelay := reservationStatePollDelay
+	reservationStateWaitTimeout = 20 * time.Millisecond
+	reservationStatePollDelay = time.Millisecond
+	t.Cleanup(func() {
+		reservationStateWaitTimeout = originalWaitTimeout
+		reservationStatePollDelay = originalPollDelay
+	})
+
+	releaseOpen := make(chan struct{})
+	testContext.mockReservationClient.ExpectedCalls = nil
+	testContext.mockReservationClient.On(
+		"OpenReservation", mock.Anything, mock.Anything, mock.Anything,
+	).Run(func(mock.Arguments) {
+		<-releaseOpen
+	}).Return(
+		&swapserverrpc.ServerOpenReservationResponse{}, nil,
+	)
+
+	reservationFSM, err := testContext.manager.newReservation(
+		t.Context(), uint32(testContext.mockLnd.Height),
+		&swapserverrpc.ServerReservationNotification{
+			ReservationId: defaultReservationId[:],
+			Value:         uint64(defaultValue),
+			ServerKey:     defaultPubkeyBytes,
+			Expiry: uint32(testContext.mockLnd.Height) +
+				defaultExpiry,
+		},
+	)
+	require.Error(t, err)
+	require.Nil(t, reservationFSM)
+
+	testContext.manager.Lock()
+	activeFSM := testContext.manager.activeReservations[defaultReservationId]
+	testContext.manager.Unlock()
+	require.NotNil(t, activeFSM)
+
+	close(releaseOpen)
+	require.NoError(t, activeFSM.DefaultObserver.WaitForState(
+		t.Context(), 5*time.Second, WaitForConfirmation,
+	))
+}
+
+// TestManagerRecoversAllPersistedReservations verifies that the cap applied to
+// new notifications doesn't prevent the manager from resuming obligations
+// already recorded in the database. The terminal transitions also exercise
+// concurrent observer-driven removal from the active map.
+func TestManagerRecoversAllPersistedReservations(t *testing.T) {
+	reservations := make([]*Reservation, maxActiveReservations+1)
+	for i := range reservations {
+		reservations[i] = &Reservation{
+			ID: ID{
+				byte(i), byte(i >> 8), byte(i >> 16),
+			},
+			State:           Init,
+			ProtocolVersion: ProtocolVersionServerInitiated,
+		}
+	}
+
+	manager := NewManager(&Config{
+		Store: &recoveryStore{reservations: reservations},
+	})
+	require.NoError(t, manager.RecoverReservations(t.Context()))
+	require.Eventually(t, func() bool {
+		manager.Lock()
+		defer manager.Unlock()
+
+		return len(manager.activeReservations) == 0
+	}, 5*time.Second, time.Millisecond)
+}
+
+// TestUnlockTerminalReservationIsIdempotent verifies that cleanup can safely
+// race with terminal-state eviction without masking the original swap result.
+func TestUnlockTerminalReservationIsIdempotent(t *testing.T) {
+	testContext := newManagerTestContext(t)
+	storedReservation := &Reservation{
+		ID:              defaultReservationId,
+		State:           Init,
+		ClientPubkey:    defaultPubkey,
+		ServerPubkey:    defaultPubkey,
+		Value:           defaultValue,
+		Expiry:          defaultExpiry,
+		ProtocolVersion: ProtocolVersionServerInitiated,
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(KeyFamily),
+			Index:  1,
+		},
+	}
+
+	require.NoError(t, testContext.manager.cfg.Store.CreateReservation(
+		t.Context(), storedReservation,
+	))
+	storedReservation.State = TimedOut
+	require.NoError(t, testContext.manager.cfg.Store.UpdateReservation(
+		t.Context(), storedReservation,
+	))
+
+	require.NoError(t, testContext.manager.UnlockReservation(
+		t.Context(), defaultReservationId,
+	))
+	require.ErrorIs(t, testContext.manager.UnlockReservation(
+		t.Context(), ID{1},
+	), ErrReservationNotFound)
+}
+
+type recoveryStore struct {
+	Store
+
+	reservations []*Reservation
+}
+
+func (s *recoveryStore) ListReservations(context.Context) ([]*Reservation,
+	error) {
+
+	return s.reservations, nil
+}
+
+func (s *recoveryStore) UpdateReservation(context.Context,
+	*Reservation) error {
+
+	return nil
 }
 
 // ManagerTestContext is a helper struct that contains all the necessary
