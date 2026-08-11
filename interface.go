@@ -3,7 +3,8 @@ package loop
 import (
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -20,7 +21,7 @@ type OutRequest struct {
 	Amount btcutil.Amount
 
 	// DestAddr is the destination address for the swap.
-	DestAddr btcutil.Address
+	DestAddr btcaddr.Address
 
 	// IsExternalAddr indicates whether the provided destination address
 	// does not belong to the underlying wallet. This helps indicate
@@ -442,10 +443,10 @@ type LoopInSwapInfo struct { // nolint
 
 	// HtlcAddressP2WSH contains the native segwit swap htlc address,
 	// where the loop-in funds may be paid.
-	HtlcAddressP2WSH btcutil.Address
+	HtlcAddressP2WSH btcaddr.Address
 
 	// HtlcAddressP2TR contains the v3 (pay to taproot) htlc address.
-	HtlcAddressP2TR btcutil.Address
+	HtlcAddressP2TR btcaddr.Address
 
 	// ServerMessage is the human-readable message received from the loop
 	// server.
@@ -460,7 +461,7 @@ type LoopOutSwapInfo struct { // nolint:revive
 
 	// HtlcAddress contains the swap htlc address that the server will
 	// publish to.
-	HtlcAddress btcutil.Address
+	HtlcAddress btcaddr.Address
 
 	// ServerMessage is the human-readable message received from the loop
 	// server.
@@ -503,11 +504,11 @@ type SwapInfo struct {
 
 	// HtlcAddressP2WSH stores the address of the P2WSH (native segwit)
 	// swap htlc. This is used for both loop-in and loop-out.
-	HtlcAddressP2WSH btcutil.Address
+	HtlcAddressP2WSH btcaddr.Address
 
 	// HtlcAddressP2TR stores the address of the P2TR (taproot) swap htlc.
 	// This is used for both internal and external loop-in and loop out.
-	HtlcAddressP2TR btcutil.Address
+	HtlcAddressP2TR btcaddr.Address
 
 	// ExternalHtlc is set to true for external loop-in swaps.
 	ExternalHtlc bool

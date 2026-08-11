@@ -8,12 +8,13 @@ import (
 	"sync"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
@@ -119,7 +120,7 @@ type SweepInfo struct {
 	IsExternalAddr bool
 
 	// DestAddr is the destination address of the sweep.
-	DestAddr btcutil.Address
+	DestAddr btcaddr.Address
 
 	// NonCoopHint is set, if the sweep can not be spent cooperatively and
 	// has to be spent using preimage. This is only used in fee estimations
@@ -754,7 +755,7 @@ func (b *Batcher) Run(ctx context.Context) error {
 // primarySweepID if the group starts a new batch. The change output may be nil
 // to indicate that the sweep group does not create a change output.
 func (b *Batcher) PresignSweepsGroup(ctx context.Context, inputs []Input,
-	sweepTimeout int32, destAddress btcutil.Address,
+	sweepTimeout int32, destAddress btcaddr.Address,
 	changeOutput *wire.TxOut) error {
 
 	if len(inputs) == 0 {

@@ -9,13 +9,14 @@ import (
 	"sync"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
@@ -183,7 +184,7 @@ type StaticAddressLoopIn struct {
 	HtlcTimeoutSweepTxHash *chainhash.Hash
 
 	// HtlcTimeoutSweepAddress
-	HtlcTimeoutSweepAddress btcutil.Address
+	HtlcTimeoutSweepAddress btcaddr.Address
 
 	mu sync.Mutex
 }
@@ -366,7 +367,7 @@ func (l *StaticAddressLoopIn) htlcWeight(hasChange bool) lntypes.WeightUnit {
 // createHtlcSweepTx creates the htlc sweep transaction for the timeout path of
 // the loop-in htlc.
 func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
-	signer lndclient.SignerClient, sweepAddress btcutil.Address,
+	signer lndclient.SignerClient, sweepAddress btcaddr.Address,
 	feeRate chainfee.SatPerKWeight, network *chaincfg.Params,
 	blockHeight uint32, maxFeePercentage float64) (*wire.MsgTx, error) {
 

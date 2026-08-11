@@ -6,9 +6,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
@@ -23,7 +24,7 @@ import (
 )
 
 var (
-	testAddr, _ = btcutil.NewAddressScriptHash(
+	testAddr, _ = btcaddr.NewAddressScriptHash(
 		[]byte{123}, &chaincfg.TestNet3Params,
 	)
 

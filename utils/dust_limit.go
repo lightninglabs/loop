@@ -1,9 +1,9 @@
 package utils
 
 import (
-	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/btcsuite/btcd/mempool"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 // DustLimitForPkScript returns the dust limit for a given pkScript. An output

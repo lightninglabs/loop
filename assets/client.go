@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/priceoraclerpc"
@@ -289,7 +289,10 @@ func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
 
 	assetUnits := rfqmath.NewBigIntFixedPoint(assetAmt, 0)
 
-	msatAmt := rfqmath.UnitsToMilliSatoshi(assetUnits, *rateFP)
+	msatAmt, err := rfqmath.UnitsToMilliSatoshi(assetUnits, *rateFP)
+	if err != nil {
+		return 0, fmt.Errorf("cannot convert asset amount: %w", err)
+	}
 
 	return msatAmt.ToSatoshis(), nil
 }

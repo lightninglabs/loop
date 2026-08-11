@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
@@ -102,7 +103,7 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 		PaymentTimeoutSeconds: 3600,
 	}
 
-	sweepAddr, err := btcutil.NewAddressTaproot(
+	sweepAddr, err := btcaddr.NewAddressTaproot(
 		make([]byte, 32), network,
 	)
 	require.NoError(t, err)

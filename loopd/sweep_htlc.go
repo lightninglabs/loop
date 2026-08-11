@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
@@ -48,7 +49,7 @@ type htlcWallet interface {
 	// NextAddr derives the next address from the given account and type.
 	NextAddr(ctx context.Context, account string,
 		addrType walletrpc.AddressType,
-		change bool) (btcutil.Address, error)
+		change bool) (btcaddr.Address, error)
 
 	// PublishTransaction broadcasts the transaction with the given label.
 	PublishTransaction(ctx context.Context, tx *wire.MsgTx,
@@ -87,7 +88,7 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 
 	// Parse the inputs.
-	htlcAddr, err := btcutil.DecodeAddress(
+	htlcAddr, err := btcaddr.DecodeAddress(
 		req.HtlcAddress, chainParams,
 	)
 	if err != nil {
@@ -108,9 +109,9 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 
 	// Destination address: honor a provided override immediately so request
 	// validation stays independent from swap lookup.
-	var sweepAddr btcutil.Address
+	var sweepAddr btcaddr.Address
 	if req.DestAddress != "" {
-		sweepAddr, err = btcutil.DecodeAddress(
+		sweepAddr, err = btcaddr.DecodeAddress(
 			req.DestAddress, chainParams,
 		)
 		if err != nil {
