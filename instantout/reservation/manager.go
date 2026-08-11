@@ -131,9 +131,11 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 
 	// Send the init event to the state machine.
 	go func() {
-		err = reservationFSM.SendEvent(ctx, OnServerRequest, initContext)
-		if err != nil {
-			log.Errorf("Error sending init event: %v", err)
+		sendErr := reservationFSM.SendEvent(
+			ctx, OnServerRequest, initContext,
+		)
+		if sendErr != nil {
+			log.Errorf("Error sending init event: %v", sendErr)
 		}
 	}()
 
