@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/stretchr/testify/require"
@@ -112,4 +113,29 @@ func TestCleanupMuSig2Sessions(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, [][32]byte{firstID, secondID}, signer.cleaned)
+}
+
+// TestPushPreimageRejectsExpiringReservation verifies that recovery takes the
+// on-chain fallback before revealing the preimage when a reservation is too
+// close to its server-controlled timeout.
+func TestPushPreimageRejectsExpiringReservation(t *testing.T) {
+	instantOutFSM := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		InstantOut: &InstantOut{
+			Reservations: []*reservation.Reservation{
+				{
+					ID:     reservation.ID{1},
+					Expiry: 139,
+				},
+			},
+		},
+	}
+
+	event := instantOutFSM.PushPreimageAction(
+		t.Context(), &RecoverInstantOutCtx{currentHeight: 100},
+	)
+	require.Equal(t, OnErrorPublishHtlc, event)
+	require.ErrorContains(
+		t, instantOutFSM.LastActionError, "before recovery safety height",
+	)
 }

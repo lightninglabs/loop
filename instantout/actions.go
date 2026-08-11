@@ -63,6 +63,12 @@ type InitInstantOutCtx struct {
 	sweepAddress    btcutil.Address
 }
 
+// RecoverInstantOutCtx contains the chain height at which an instant out is
+// resumed after restart.
+type RecoverInstantOutCtx struct {
+	currentHeight int32
+}
+
 // InitInstantOutAction is the first action that is executed when the instant
 // out FSM is started. It will send the instant out request to the server.
 func (f *FSM) InitInstantOutAction(ctx context.Context,
@@ -381,6 +387,26 @@ func (f *FSM) BuildHTLCAction(ctx context.Context,
 // pushing the preimage fail, the htlc timeout transaction will be published.
 func (f *FSM) PushPreimageAction(ctx context.Context,
 	eventCtx fsm.EventContext) fsm.EventType {
+
+	// A recovered swap may have been offline long enough that the server's
+	// reservation timeout is now close. Fall back to the already finalized
+	// HTLC instead of revealing the preimage without enough time to publish
+	// that safety transaction.
+	if recoverCtx, ok := eventCtx.(*RecoverInstantOutCtx); ok {
+		minReservationExpiry := int64(recoverCtx.currentHeight) +
+			int64(htlcExpiryDelta)
+		for _, res := range f.InstantOut.Reservations {
+			if int64(res.Expiry) >= minReservationExpiry {
+				continue
+			}
+
+			f.LastActionError = fmt.Errorf("reservation %x expires at "+
+				"height %d, before recovery safety height %d",
+				res.ID, res.Expiry, minReservationExpiry)
+
+			return OnErrorPublishHtlc
+		}
+	}
 
 	// First we'll create the musig2 context.
 	coopSessions, coopClientNonces, err := f.InstantOut.createMusig2Session(
