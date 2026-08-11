@@ -4,6 +4,11 @@
 
 #### Breaking Changes
 
+* Loop now uses the btcd v2 modules and requires Go 1.26. Projects compiling
+  against Loop's exported Go APIs must migrate address, transaction, and
+  related types to the corresponding btcd v2 packages.
+  [PR #1199](https://github.com/lightninglabs/loop/pull/1199)
+
 #### Bug Fixes
 
 * Update `looprpc`'s `github.com/klauspost/compress` dependency to v1.18.7

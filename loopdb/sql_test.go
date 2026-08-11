@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -576,9 +576,7 @@ func randomStruct(v any) error {
 	}
 
 	val = val.Elem()
-	for i := range val.NumField() {
-		field := val.Field(i)
-
+	for _, field := range val.Fields() {
 		switch field.Kind() {
 		case reflect.Int64:
 			if field.CanSet() {
