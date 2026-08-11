@@ -180,6 +180,10 @@ func (r *SQLStore) GetReservation(ctx context.Context,
 			return nil
 		})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrReservationNotFound
+		}
+
 		return nil, err
 	}
 

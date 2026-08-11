@@ -2,6 +2,7 @@ package reservation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -111,13 +112,28 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 		return nil, err
 	}
 
+	_, err = m.cfg.Store.GetReservation(ctx, reservationID)
+	switch {
+	case err == nil:
+		return nil, ErrReservationAlreadyExists
+
+	case !errors.Is(err, ErrReservationNotFound):
+		return nil, err
+	}
+
 	// Create the reservation state machine. We need to pass in the runCtx
 	// of the reservation manager so that the state machine will keep on
 	// running even if the grpc conte
 	reservationFSM := NewFSM(m.cfg)
 
-	// Add the reservation to the active reservations map.
+	// Add the reservation to the active reservations map. Check the map while
+	// holding the lock as concurrent callers may both have completed the store
+	// lookup above.
 	m.Lock()
+	if _, ok := m.activeReservations[reservationID]; ok {
+		m.Unlock()
+		return nil, ErrReservationAlreadyExists
+	}
 	m.activeReservations[reservationID] = reservationFSM
 	m.Unlock()
 
@@ -146,6 +162,12 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 		fsm.WithWaitForStateOption(time.Second),
 	)
 	if err != nil {
+		m.Lock()
+		if m.activeReservations[reservationID] == reservationFSM {
+			delete(m.activeReservations, reservationID)
+		}
+		m.Unlock()
+
 		if reservationFSM.LastActionError != nil {
 			return nil, fmt.Errorf("error waiting for "+
 				"state: %v, last action error: %v",

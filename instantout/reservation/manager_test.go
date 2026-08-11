@@ -144,6 +144,35 @@ func TestManagerContinuesAfterInvalidNotification(t *testing.T) {
 	require.NoError(t, <-errChan)
 }
 
+// TestManagerRejectsDuplicateReservation verifies that a duplicate server
+// notification cannot replace the active FSM for an existing reservation.
+func TestManagerRejectsDuplicateReservation(t *testing.T) {
+	testContext := newManagerTestContext(t)
+	ctx := t.Context()
+	req := &swapserverrpc.ServerReservationNotification{
+		ReservationId: defaultReservationId[:],
+		Value:         uint64(defaultValue),
+		ServerKey:     defaultPubkeyBytes,
+		Expiry: uint32(testContext.mockLnd.Height) +
+			defaultExpiry,
+	}
+
+	firstFSM, err := testContext.manager.newReservation(
+		ctx, uint32(testContext.mockLnd.Height), req,
+	)
+	require.NoError(t, err)
+
+	secondFSM, err := testContext.manager.newReservation(
+		ctx, uint32(testContext.mockLnd.Height), req,
+	)
+	require.ErrorIs(t, err, ErrReservationAlreadyExists)
+	require.Nil(t, secondFSM)
+	require.Same(
+		t, firstFSM,
+		testContext.manager.activeReservations[defaultReservationId],
+	)
+}
+
 // ManagerTestContext is a helper struct that contains all the necessary
 // components to test the reservation manager.
 type ManagerTestContext struct {
