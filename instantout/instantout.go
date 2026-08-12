@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
@@ -24,6 +25,8 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
+
+const muSig2CleanupTimeout = 5 * time.Second
 
 // InstantOut holds the necessary information to execute an instant out swap.
 type InstantOut struct {
@@ -56,6 +59,9 @@ type InstantOut struct {
 
 	// Value is the amount that is swapped.
 	Value btcutil.Amount
+
+	// MaxSwapFee is the maximum off-chain swap fee accepted by the client.
+	MaxSwapFee btcutil.Amount
 
 	// keyLocator is the key locator that is used for the swap.
 	keyLocator keychain.KeyLocator
@@ -112,7 +118,10 @@ func (i *InstantOut) createMusig2Session(ctx context.Context,
 	for idx, reservation := range i.Reservations {
 		session, err := reservation.Musig2CreateSession(ctx, signer)
 		if err != nil {
-			return nil, nil, err
+			cleanupErr := cleanupMuSig2Sessions(
+				ctx, signer, musig2Sessions[:idx],
+			)
+			return nil, nil, errors.Join(err, cleanupErr)
 		}
 
 		musig2Sessions[idx] = session
@@ -120,6 +129,32 @@ func (i *InstantOut) createMusig2Session(ctx context.Context,
 	}
 
 	return musig2Sessions, clientNonces, nil
+}
+
+// cleanupMuSig2Sessions removes completed or abandoned MuSig2 sessions from
+// lnd. Cleanup uses a bounded context that survives cancellation of the swap
+// action that created the sessions.
+func cleanupMuSig2Sessions(ctx context.Context, signer lndclient.SignerClient,
+	sessions []*input.MuSig2SessionInfo) error {
+
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), muSig2CleanupTimeout,
+	)
+	defer cancel()
+
+	var cleanupErr error
+	for _, session := range sessions {
+		if session == nil {
+			continue
+		}
+
+		err := signer.MuSig2Cleanup(cleanupCtx, session.SessionID)
+		if err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+
+	return cleanupErr
 }
 
 // getInputReservations returns the input reservations for the instant out.
@@ -263,12 +298,31 @@ func (i *InstantOut) signMusig2Tx(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	if tx == nil {
+		return nil, errors.New("transaction is nil")
+	}
+	if len(tx.TxIn) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of transaction inputs: "+
+			"expected %d, got %d", len(inputs), len(tx.TxIn))
+	}
+	if len(musig2sessions) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of MuSig2 sessions: "+
+			"expected %d, got %d", len(inputs), len(musig2sessions))
+	}
+	if len(counterPartyNonces) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of server nonces: "+
+			"expected %d, got %d", len(inputs), len(counterPartyNonces))
+	}
 
 	prevOutFetcher := inputs.GetPrevoutFetcher()
 	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
 	sigs := make([][]byte, len(inputs))
 
 	for idx, reservation := range inputs {
+		if musig2sessions[idx] == nil {
+			return nil, fmt.Errorf("MuSig2 session %d is nil", idx)
+		}
+
 		if !reflect.DeepEqual(tx.TxIn[idx].PreviousOutPoint,
 			reservation.Outpoint) {
 
@@ -329,8 +383,30 @@ func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	if tx == nil {
+		return nil, errors.New("transaction is nil")
+	}
+	if len(tx.TxIn) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of transaction inputs: "+
+			"expected %d, got %d", len(inputs), len(tx.TxIn))
+	}
+	if len(musig2Sessions) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of MuSig2 sessions: "+
+			"expected %d, got %d", len(inputs), len(musig2Sessions))
+	}
+	if len(serverSigs) != len(inputs) {
+		return nil, fmt.Errorf("invalid number of server signatures: "+
+			"expected %d, got %d", len(inputs), len(serverSigs))
+	}
+
+	prevOutFetcher := inputs.GetPrevoutFetcher()
+	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
 
 	for idx := range inputs {
+		if musig2Sessions[idx] == nil {
+			return nil, fmt.Errorf("MuSig2 session %d is nil", idx)
+		}
+
 		haveAllSigs, finalSig, err := signer.MuSig2CombineSig(
 			ctx, musig2Sessions[idx].SessionID,
 			[][]byte{serverSigs[idx]},
@@ -343,7 +419,26 @@ func (i *InstantOut) finalizeMusig2Transaction(ctx context.Context,
 			return nil, fmt.Errorf("missing sigs")
 		}
 
+		// lnd removes a MuSig2 session automatically once all signatures
+		// have been combined. Clear the local entry so the caller's deferred
+		// cleanup only targets sessions abandoned on an error path.
+		musig2Sessions[idx] = nil
+
 		tx.TxIn[idx].Witness = wire.TxWitness{finalSig}
+
+		vm, err := txscript.NewEngine(
+			inputs[idx].PkScript, tx, idx,
+			txscript.StandardVerifyFlags, nil, sigHashes,
+			int64(inputs[idx].Value), prevOutFetcher,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to verify final MuSig2 "+
+				"signature for input %d: %w", idx, err)
+		}
+		if err := vm.Execute(); err != nil {
+			return nil, fmt.Errorf("invalid final MuSig2 signature "+
+				"for input %d: %w", idx, err)
+		}
 	}
 
 	return tx, nil

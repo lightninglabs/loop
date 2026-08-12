@@ -4,11 +4,20 @@
 
 #### Breaking Changes
 
+* Instant Out and reservation RPCs now require the `loop:out` permission.
+  Operators using custom scoped macaroons must rebake them before calling
+  `ListReservations`, `InstantOut`, `InstantOutQuote`, or `ListInstantOuts`.
+  [PR #1194](https://github.com/lightninglabs/loop/pull/1194)
+
 #### Bug Fixes
 
 * Loop Out requests now account for channel reserves when checking outbound
   capacity, preventing swaps from starting when their off-chain payment cannot
   be funded.
+
+* Improved Instant Out and reservation validation, lifecycle cleanup, recovery
+  timing, fee limits, and macaroon permissions.
+  [PR #1194](https://github.com/lightninglabs/loop/pull/1194)
 
 * Taproot Asset Loop Out handling now validates RFQ timeouts and asset rates,
   keeps cached asset-name lookups responsive during slow `tapd` queries, and

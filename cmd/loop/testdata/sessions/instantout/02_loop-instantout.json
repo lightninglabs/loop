@@ -139,7 +139,8 @@
             "Mu65fbhayEtRzougKLBnoeRN8f+tEM1+O9QuNvUIfbI="
           ],
           "outgoing_chan_set": [],
-          "dest_addr": ""
+          "dest_addr": "",
+          "max_swap_fee_sat": "4800"
         }
       }
     },

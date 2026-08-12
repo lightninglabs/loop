@@ -20,6 +20,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 const (
@@ -51,6 +52,10 @@ const (
 	// htlcExpiryDelta is the delta in blocks we require between the htlc
 	// expiry and reservation expiry.
 	htlcExpiryDelta = int32(40)
+
+	// htlcRecoverySafetyDelta leaves one urgent confirmation target for
+	// the HTLC and another for its preimage sweep after recovery.
+	htlcRecoverySafetyDelta = 2 * urgentConfTarget
 )
 
 // InitInstantOutCtx contains the context for the InitInstantOutAction.
@@ -61,7 +66,11 @@ type InitInstantOutCtx struct {
 	outgoingChanSet loopdb.ChannelSet
 	protocolVersion ProtocolVersion
 	sweepAddress    btcutil.Address
+	maxSwapFee      *btcutil.Amount
 }
+
+// RecoverInstantOutCtx marks an action as being resumed after restart.
+type RecoverInstantOutCtx struct{}
 
 // InitInstantOutAction is the first action that is executed when the instant
 // out FSM is started. It will send the instant out request to the server.
@@ -78,7 +87,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	var (
-		reservationAmt uint64
+		reservationAmt btcutil.Amount
 		reservationIds = make([][]byte, 0, len(initCtx.reservations))
 		reservations   = make(
 			[]*reservation.Reservation, 0, len(initCtx.reservations),
@@ -99,7 +108,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 				"locked", reservationId))
 		}
 
-		reservationAmt += uint64(res.Value)
+		reservationAmt += res.Value
 		reservationIds = append(reservationIds, resId[:])
 		reservations = append(reservations, res)
 
@@ -161,6 +170,11 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		return f.HandleError(fmt.Errorf("invalid swap invoice hash: "+
 			"expected %x got %x", preimage.Hash(), payReq.Hash))
 	}
+	if err := validateInstantOutInvoiceAmount(
+		payReq.Value, reservationAmt, initCtx.maxSwapFee,
+	); err != nil {
+		return f.HandleError(err)
+	}
 	serverPubkey, err := btcec.ParsePubKey(instantOutResponse.SenderKey)
 	if err != nil {
 		return f.HandleError(err)
@@ -179,6 +193,11 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	// Now we can create the instant out.
+	var maxSwapFee btcutil.Amount
+	if initCtx.maxSwapFee != nil {
+		maxSwapFee = *initCtx.maxSwapFee
+	}
+
 	instantOut := &InstantOut{
 		SwapHash:         swapHash,
 		swapPreimage:     preimage,
@@ -188,7 +207,8 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		CltvExpiry:       initCtx.cltvExpiry,
 		clientPubkey:     keyRes.PubKey,
 		serverPubkey:     serverPubkey,
-		Value:            btcutil.Amount(reservationAmt),
+		Value:            reservationAmt,
+		MaxSwapFee:       maxSwapFee,
 		htlcFeeRate:      feeRate,
 		swapInvoice:      instantOutResponse.SwapInvoice,
 		Reservations:     reservations,
@@ -204,6 +224,37 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	f.InstantOut = instantOut
 
 	return OnInit
+}
+
+// validateInstantOutInvoiceAmount verifies that the server invoice doesn't
+// charge more than the client-approved swap fee. Sub-satoshi fees are rounded
+// up so the cap cannot be bypassed with millisatoshi precision.
+func validateInstantOutInvoiceAmount(invoiceAmount lnwire.MilliSatoshi,
+	swapAmount btcutil.Amount, maxSwapFee *btcutil.Amount) error {
+
+	// Omitting the cap preserves the behavior of clients that predate this
+	// field. In-tree callers set it explicitly after accepting a quote.
+	if maxSwapFee == nil {
+		return nil
+	}
+
+	if *maxSwapFee < 0 {
+		return fmt.Errorf("maximum swap fee must not be negative")
+	}
+
+	swapAmountMsat := lnwire.NewMSatFromSatoshis(swapAmount)
+	if invoiceAmount <= swapAmountMsat {
+		return nil
+	}
+
+	swapFeeMsat := invoiceAmount - swapAmountMsat
+	swapFeeSat := btcutil.Amount((int64(swapFeeMsat)-1)/1000 + 1)
+	if swapFeeSat > *maxSwapFee {
+		return fmt.Errorf("instant out swap fee %d exceeds maximum %d",
+			swapFeeSat, *maxSwapFee)
+	}
+
+	return nil
 }
 
 // PollPaymentAcceptedAction locks the reservations, sends the payment to the
@@ -293,6 +344,15 @@ func (f *FSM) BuildHTLCAction(ctx context.Context,
 	}
 
 	f.htlcMusig2Sessions = htlcSessions
+	defer func() {
+		err := cleanupMuSig2Sessions(
+			ctx, f.cfg.Signer, f.htlcMusig2Sessions,
+		)
+		if err != nil {
+			f.Errorf("unable to clean up HTLC MuSig2 sessions: %v", err)
+		}
+		f.htlcMusig2Sessions = nil
+	}()
 
 	// Send the server the client nonces.
 	htlcInitRes, err := f.cfg.InstantOutClient.InitHtlcSig(
@@ -373,6 +433,46 @@ func (f *FSM) BuildHTLCAction(ctx context.Context,
 func (f *FSM) PushPreimageAction(ctx context.Context,
 	eventCtx fsm.EventContext) fsm.EventType {
 
+	// A recovered swap may have been offline long enough that the server's
+	// reservation timeout is now close. Fall back to the already finalized
+	// HTLC instead of revealing the preimage without enough time to publish
+	// that safety transaction.
+	if _, ok := eventCtx.(*RecoverInstantOutCtx); ok {
+		info, err := f.cfg.LndClient.GetInfo(ctx)
+		if err != nil {
+			f.LastActionError = fmt.Errorf(
+				"unable to get recovery chain height: %w", err,
+			)
+
+			return OnErrorPublishHtlc
+		}
+
+		currentHeight := int64(info.BlockHeight)
+		minHtlcExpiry := currentHeight +
+			int64(htlcRecoverySafetyDelta)
+		if int64(f.InstantOut.CltvExpiry) < minHtlcExpiry {
+			f.LastActionError = fmt.Errorf("instant out HTLC expires at "+
+				"height %d, before recovery safety height %d",
+				f.InstantOut.CltvExpiry, minHtlcExpiry)
+
+			return OnErrorPublishHtlc
+		}
+
+		minReservationExpiry := currentHeight +
+			int64(htlcExpiryDelta)
+		for _, res := range f.InstantOut.Reservations {
+			if int64(res.Expiry) >= minReservationExpiry {
+				continue
+			}
+
+			f.LastActionError = fmt.Errorf("reservation %x expires at "+
+				"height %d, before recovery safety height %d",
+				res.ID, res.Expiry, minReservationExpiry)
+
+			return OnErrorPublishHtlc
+		}
+	}
+
 	// First we'll create the musig2 context.
 	coopSessions, coopClientNonces, err := f.InstantOut.createMusig2Session(
 		ctx, f.cfg.Signer,
@@ -382,6 +482,15 @@ func (f *FSM) PushPreimageAction(ctx context.Context,
 	}
 
 	f.sweeplessSweepSessions = coopSessions
+	defer func() {
+		err := cleanupMuSig2Sessions(
+			ctx, f.cfg.Signer, f.sweeplessSweepSessions,
+		)
+		if err != nil {
+			f.Errorf("unable to clean up sweep MuSig2 sessions: %v", err)
+		}
+		f.sweeplessSweepSessions = nil
+	}()
 
 	// Get the feerate for the coop sweep.
 	feeRate, err := f.cfg.Wallet.EstimateFeeRate(ctx, normalConfTarget)
@@ -617,20 +726,23 @@ func (f *FSM) WaitForHtlcSweepConfirmedAction(ctx context.Context,
 // handleErrorAndUnlockReservations handles an error and unlocks the
 // reservations.
 func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
-	err error) fsm.EventType {
+	actionErr error) fsm.EventType {
 	// We might get here from a canceled context, we create a new context
 	// with a timeout to unlock the reservations.
-	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), time.Second*30,
+	)
 	defer cancel()
 
 	// Unlock the reservations.
+	var unlockErr error
 	for _, reservation := range f.InstantOut.Reservations {
 		err := f.cfg.ReservationManager.UnlockReservation(
-			ctx, reservation.ID,
+			cleanupCtx, reservation.ID,
 		)
 		if err != nil {
 			f.Errorf("error unlocking reservation: %v", err)
-			return f.HandleError(err)
+			unlockErr = errors.Join(unlockErr, err)
 		}
 	}
 
@@ -638,10 +750,12 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	// release the reservations. This can be done in a goroutine as we
 	// wan't to fail the fsm early.
 	go func() {
-		ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+		cancelCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), time.Second*30,
+		)
 		defer cancel()
 		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
-			ctx, &swapserverrpc.CancelInstantSwapRequest{
+			cancelCtx, &swapserverrpc.CancelInstantSwapRequest{
 				SwapHash: f.InstantOut.SwapHash[:],
 			},
 		)
@@ -652,7 +766,13 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 		}
 	}()
 
-	return f.HandleError(err)
+	// Preserve the action failure when cleanup also fails. If cleanup was
+	// the only failure, report it to the state machine.
+	if actionErr != nil {
+		return f.HandleError(actionErr)
+	}
+
+	return f.HandleError(unlockErr)
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {

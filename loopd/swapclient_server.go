@@ -1763,8 +1763,15 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 		reservationIds[i] = resId
 	}
 
+	var options []instantout.NewInstantOutOption
+	if req.GetMaxSwapFee() != nil {
+		options = append(options, instantout.WithMaxSwapFee(
+			btcutil.Amount(req.GetMaxSwapFeeSat()),
+		))
+	}
+
 	instantOutFsm, err := s.instantOutManager.NewInstantOut(
-		ctx, reservationIds, req.DestAddr,
+		ctx, reservationIds, req.DestAddr, options...,
 	)
 	if err != nil {
 		return nil, err
