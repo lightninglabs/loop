@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"

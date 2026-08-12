@@ -3,7 +3,7 @@ package withdraw
 import (
 	"context"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"

@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 // LoopOutContract contains the data that is serialized to persistent storage
@@ -22,7 +23,7 @@ type LoopOutContract struct {
 	SwapContract
 
 	// DestAddr is the destination address of the loop out swap.
-	DestAddr btcutil.Address
+	DestAddr btcaddr.Address
 
 	// IsExternalAddr indicates whether the destination address does not
 	// belong to the backing lnd node.
@@ -202,7 +203,7 @@ func deserializeLoopOutContract(value []byte, chainParams *chaincfg.Params) (
 	if err != nil {
 		return nil, err
 	}
-	contract.DestAddr, err = btcutil.DecodeAddress(addr, chainParams)
+	contract.DestAddr, err = btcaddr.DecodeAddress(addr, chainParams)
 	if err != nil {
 		return nil, err
 	}

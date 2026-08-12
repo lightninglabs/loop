@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	sweeppkg "github.com/lightninglabs/loop/sweep"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -189,7 +190,7 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 	}
 
 	// Find sweep destination address (type) for weight estimations.
-	var destAddr btcutil.Address
+	var destAddr btcaddr.Address
 	if theSweep.isExternalAddr {
 		if theSweep.destAddr == nil {
 			return feeDetails{}, errors.New("isExternalAddr=true," +
@@ -198,7 +199,7 @@ func estimateBatchWeight(batch *batch) (feeDetails, error) {
 		destAddr = theSweep.destAddr
 	} else {
 		// Assume it is taproot by default.
-		destAddr = (*btcutil.AddressTaproot)(nil)
+		destAddr = (*btcaddr.AddressTaproot)(nil)
 	}
 
 	// Make a weight estimator.

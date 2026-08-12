@@ -4,6 +4,10 @@
 
 #### Breaking Changes
 
+* Loop now uses the btcd v2 modules and requires Go 1.26. Projects compiling
+  against Loop's exported Go APIs must migrate address, transaction, and
+  related types to the corresponding btcd v2 packages.
+
 * Instant Out and reservation RPCs now require the `loop:out` permission.
   Operators using custom scoped macaroons must rebake them before calling
   `ListReservations`, `InstantOut`, `InstantOutQuote`, or `ListInstantOuts`.

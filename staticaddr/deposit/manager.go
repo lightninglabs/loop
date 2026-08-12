@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"

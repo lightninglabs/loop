@@ -7,13 +7,14 @@ import (
 	"reflect"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -79,7 +80,7 @@ type InstantOut struct {
 	htlcFeeRate chainfee.SatPerKWeight
 
 	// sweepAddress is the address that is used to sweep the funds to.
-	sweepAddress btcutil.Address
+	sweepAddress btcaddr.Address
 
 	// finalizedHtlcTx is the finalized htlc transaction that is used in the
 	// non-cooperative path for the instant out swap.

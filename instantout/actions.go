@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -65,7 +66,7 @@ type InitInstantOutCtx struct {
 	initationHeight int32
 	outgoingChanSet loopdb.ChannelSet
 	protocolVersion ProtocolVersion
-	sweepAddress    btcutil.Address
+	sweepAddress    btcaddr.Address
 	maxSwapFee      *btcutil.Amount
 }
 

@@ -3,8 +3,8 @@ package deposit
 import (
 	"context"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
@@ -49,5 +49,5 @@ type AddressManager interface {
 
 	// GetTaprootAddress returns a taproot address.
 	GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
-		expiry int64) (*btcutil.AddressTaproot, error)
+		expiry int64) (*btcaddr.AddressTaproot, error)
 }
