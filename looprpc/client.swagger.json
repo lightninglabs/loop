@@ -870,7 +870,7 @@
     },
     "/v1/staticaddr": {
       "post": {
-        "summary": "loop: `static newstaticaddress`\nNewStaticAddress requests a new static address for loop-ins from the server.",
+        "summary": "loop: `static newstaticaddress`\nNewStaticAddress derives a fresh static receive address on every request\nwithout send_coins_request.addr, or funds an existing address when addr is\nset.",
         "operationId": "SwapClient_NewStaticAddress",
         "responses": {
           "200": {

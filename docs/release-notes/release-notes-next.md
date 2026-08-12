@@ -15,6 +15,12 @@
   `ListReservations`, `InstantOut`, `InstantOutQuote`, or `ListInstantOuts`.
   [PR #1194](https://github.com/lightninglabs/loop/pull/1194)
 
+* Calling `NewStaticAddress` without `send_coins_request.addr` now derives and
+  returns a fresh receive address instead of reusing the address associated
+  with the client's L402. Integrations must not assume that repeated calls are
+  idempotent or return the same address.
+  [PR #1139](https://github.com/lightninglabs/loop/pull/1139)
+
 #### Bug Fixes
 
 * Loop Out requests now account for channel reserves when checking outbound
