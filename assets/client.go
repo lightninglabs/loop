@@ -289,7 +289,11 @@ func getSatsFromAssetAmt(assetAmt uint64, assetRate *rfqrpc.FixedPoint) (
 
 	assetUnits := rfqmath.NewBigIntFixedPoint(assetAmt, 0)
 
-	msatAmt := rfqmath.UnitsToMilliSatoshi(assetUnits, *rateFP)
+	msatAmt, err := rfqmath.UnitsToMilliSatoshi(assetUnits, *rateFP)
+	if err != nil {
+		return 0, fmt.Errorf("cannot convert asset amount to msat: %w",
+			err)
+	}
 
 	return msatAmt.ToSatoshis(), nil
 }

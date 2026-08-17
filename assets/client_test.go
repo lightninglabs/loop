@@ -380,6 +380,12 @@ func TestGetRfqTimeoutSeconds(t *testing.T) {
 }
 
 func TestGetSatsFromAssetAmt(t *testing.T) {
+	msatPerBTC := uint64(lnwire.NewMSatFromSatoshis(
+		btcutil.SatoshiPerBitcoin,
+	))
+
+	maxAssetAmt := math.MaxUint64 / msatPerBTC
+
 	tests := []struct {
 		assetAmt    uint64
 		assetRate   *rfqrpc.FixedPoint
@@ -434,6 +440,23 @@ func TestGetSatsFromAssetAmt(t *testing.T) {
 			assetAmt: 1000,
 			assetRate: &rfqrpc.FixedPoint{
 				Coefficient: "1", Scale: 256,
+			},
+			expectError: true,
+		},
+		{
+			assetAmt: maxAssetAmt,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "1", Scale: 0,
+			},
+			expected: btcutil.Amount(
+				maxAssetAmt * uint64(btcutil.SatoshiPerBitcoin),
+			),
+			expectError: false,
+		},
+		{
+			assetAmt: maxAssetAmt + 1,
+			assetRate: &rfqrpc.FixedPoint{
+				Coefficient: "1", Scale: 0,
 			},
 			expectError: true,
 		},
