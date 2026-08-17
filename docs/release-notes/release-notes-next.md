@@ -26,6 +26,9 @@
 
 #### Maintenance
 
+* Updated the Taproot Assets dependency to v0.8.1; asset conversions that
+  overflow a millisatoshi amount are now safely rejected.
+
 * Added a CI gate and repository agent guidance requiring every pull request to
   include a non-empty entry in the next release notes unless it carries the
   `no-changelog` label.
