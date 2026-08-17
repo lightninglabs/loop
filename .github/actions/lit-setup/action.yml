@@ -41,7 +41,7 @@ runs:
     - name: setup nodejs
       uses: ./lightning-terminal/.github/actions/setup-node
       with:
-        node-version: 16.x
+        node-version: 24.x
 
     - name: Cache yarn dependencies
       uses: actions/cache@v4
@@ -49,9 +49,9 @@ runs:
         path: |
           ~/.cache/yarn
           lightning-terminal/app/node_modules
-        key: ${{ runner.os }}-lit-node16-${{ hashFiles('lightning-terminal/app/yarn.lock') }}
+        key: ${{ runner.os }}-lit-node24-${{ hashFiles('lightning-terminal/app/yarn.lock') }}
         restore-keys: |
-          ${{ runner.os }}-lit-node16-
+          ${{ runner.os }}-lit-node24-
 
     - name: install LiT app dependencies
       working-directory: ./lightning-terminal/app
