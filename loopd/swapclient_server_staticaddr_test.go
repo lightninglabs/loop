@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
@@ -31,6 +32,20 @@ func (c *staticAddrTestLightningClient) GetInfo(context.Context) (
 		BestBlockHash: chainhash.Hash{1},
 		SyncedToChain: true,
 	}, nil
+}
+
+// staticAddrTestLoopInQuoter records the Loop In quote request it receives.
+type staticAddrTestLoopInQuoter struct {
+	request *loop.LoopInQuoteRequest
+}
+
+// LoopInQuote records the request and returns an empty quote.
+func (q *staticAddrTestLoopInQuoter) LoopInQuote(_ context.Context,
+	request *loop.LoopInQuoteRequest) (*loop.LoopInQuote, error) {
+
+	q.request = request
+
+	return &loop.LoopInQuote{}, nil
 }
 
 type staticAddrDepositStore struct {
@@ -124,7 +139,7 @@ func newTestDepositManager(
 }
 
 // newTestStaticAddressContext creates static address test dependencies.
-func newTestStaticAddressContext(t *testing.T) (*address.Manager,
+func newTestStaticAddressContext(t *testing.T, expiry uint32) (*address.Manager,
 	*mock_lnd.LndMockServices) {
 
 	t.Helper()
@@ -137,7 +152,7 @@ func newTestStaticAddressContext(t *testing.T) (*address.Manager,
 		params: []*script.Parameters{{
 			ClientPubkey: client,
 			ServerPubkey: server,
-			Expiry:       10,
+			Expiry:       expiry,
 			PkScript:     []byte("pkscript"),
 		}},
 	}
@@ -165,7 +180,7 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	}
 	available.SetState(deposit.Deposited)
 
-	addrMgr, lnd := newTestStaticAddressContext(t)
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
 	server := &swapClientServer{
 		depositManager:       newTestDepositManager(available),
 		staticAddressManager: addrMgr,
@@ -208,7 +223,7 @@ func TestGetStaticAddressSummaryTotalsDeposits(t *testing.T) {
 	}
 	confirmed.SetState(deposit.Deposited)
 
-	addrMgr, _ := newTestStaticAddressContext(t)
+	addrMgr, _ := newTestStaticAddressContext(t, 10)
 	server := &swapClientServer{
 		depositManager: newTestDepositManager(
 			unconfirmed, confirmed,
@@ -240,7 +255,7 @@ func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {
 	}
 	locked.SetState(deposit.LoopingIn)
 
-	addrMgr, lnd := newTestStaticAddressContext(t)
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
 	server := &swapClientServer{
 		depositManager:       newTestDepositManager(locked),
 		staticAddressManager: addrMgr,
@@ -251,4 +266,75 @@ func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {
 		DepositOutpoints: []string{locked.OutPoint.String()},
 	})
 	require.ErrorContains(t, err, "is not currently available")
+}
+
+// TestGetLoopInQuoteRejectsExpiringSelectedDeposit verifies manual quote
+// requests fail before server quote retrieval when a selected deposit no longer
+// has enough timeout runway for a static-address loop-in HTLC.
+func TestGetLoopInQuoteRejectsExpiringSelectedDeposit(t *testing.T) {
+	t.Parallel()
+	setLogger(btclog.Disabled)
+
+	expiring := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{7},
+			Index: 7,
+		},
+		Value:              btcutil.Amount(5_000),
+		ConfirmationHeight: 500,
+	}
+	expiring.SetState(deposit.Deposited)
+
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	server := &swapClientServer{
+		depositManager:       newTestDepositManager(expiring),
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	_, err := server.GetLoopInQuote(t.Context(), &looprpc.QuoteRequest{
+		DepositOutpoints: []string{expiring.OutPoint.String()},
+	})
+	require.ErrorContains(t, err, "expires before htlc")
+}
+
+// TestGetLoopInQuoteAllowsFreshSelectedDeposit verifies the static address
+// expiry and current height are passed to manual quote validation in the
+// correct order.
+func TestGetLoopInQuoteAllowsFreshSelectedDeposit(t *testing.T) {
+	t.Parallel()
+	setLogger(btclog.Disabled)
+
+	const (
+		confirmationHeight = 500
+		staticAddrExpiry   = 2_000
+	)
+
+	fresh := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{8},
+			Index: 8,
+		},
+		Value:              btcutil.Amount(5_000),
+		ConfirmationHeight: confirmationHeight,
+	}
+	fresh.SetState(deposit.Deposited)
+
+	quoter := &staticAddrTestLoopInQuoter{}
+	addrMgr, lnd := newTestStaticAddressContext(t, staticAddrExpiry)
+	server := &swapClientServer{
+		depositManager:       newTestDepositManager(fresh),
+		staticAddressManager: addrMgr,
+		loopInQuoter:         quoter,
+		lnd:                  &lnd.LndServices,
+	}
+
+	response, err := server.GetLoopInQuote(t.Context(), &looprpc.QuoteRequest{
+		DepositOutpoints: []string{fresh.OutPoint.String()},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	require.NotNil(t, quoter.request)
+	require.Equal(t, fresh.Value, quoter.request.Amount)
+	require.EqualValues(t, 1, quoter.request.NumDeposits)
 }

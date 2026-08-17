@@ -800,6 +800,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		config:               d.cfg,
 		network:              lndclient.Network(d.cfg.Network),
 		impl:                 swapClient,
+		loopInQuoter:         swapClient,
 		liquidityMgr:         liquidityMgr,
 		lnd:                  &d.lnd.LndServices,
 		swaps:                make(map[lntypes.Hash]loop.SwapInfo),

@@ -223,6 +223,9 @@ func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 	}
 
 	manager, err := NewManager(&Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{Expiry: 10_000},
+		},
 		DepositManager: &mockDepositManager{
 			byOutpoint: map[string]*deposit.Deposit{
 				selectedOutpoint: selectedDeposit,
@@ -242,6 +245,92 @@ func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 	})
 	require.ErrorIs(t, err, quoteErr)
 	require.NotContains(t, err.Error(), labels.ErrReservedPrefix.Error())
+	require.Equal(t, selectedDeposit.Value, quoteGetter.amount)
+}
+
+// TestInitiateLoopInRejectsExpiringSelectedDeposit verifies manually selected
+// outpoints use the same expiry runway check as automatic selection.
+func TestInitiateLoopInRejectsExpiringSelectedDeposit(t *testing.T) {
+	ctx := t.Context()
+
+	const (
+		blockHeight        = 3_000
+		csvExpiry          = 1_000
+		confirmationHeight = 2_000
+	)
+
+	selectedDeposit := makeDeposit(
+		2, 0, 9_000, confirmationHeight,
+	)
+	selectedOutpoint := selectedDeposit.OutPoint.String()
+	quoteGetter := &mockQuoteGetter{
+		err: errors.New("quote should not be reached"),
+	}
+
+	manager, err := NewManager(&Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{Expiry: csvExpiry},
+		},
+		DepositManager: &mockDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				selectedOutpoint: selectedDeposit,
+			},
+		},
+		QuoteGetter: quoteGetter,
+		NodePubkey:  route.Vertex{2},
+	}, blockHeight)
+	require.NoError(t, err)
+
+	_, err = manager.initiateLoopIn(ctx, &loop.StaticAddressLoopInRequest{
+		DepositOutpoints: []string{selectedOutpoint},
+		SelectedAmount:   selectedDeposit.Value,
+		MaxSwapFee:       1_000,
+		Initiator:        "test",
+	})
+	require.ErrorContains(t, err, "expires before htlc")
+	require.Zero(t, quoteGetter.amount)
+}
+
+// TestInitiateLoopInAllowsFreshSelectedDeposit verifies the static address
+// expiry and current height are passed to manual initiation validation in the
+// correct order.
+func TestInitiateLoopInAllowsFreshSelectedDeposit(t *testing.T) {
+	ctx := t.Context()
+
+	const (
+		blockHeight        = 600
+		csvExpiry          = 2_000
+		confirmationHeight = 500
+	)
+
+	selectedDeposit := makeDeposit(
+		3, 0, 9_000, confirmationHeight,
+	)
+	selectedOutpoint := selectedDeposit.OutPoint.String()
+	quoteErr := errors.New("quote reached")
+	quoteGetter := &mockQuoteGetter{err: quoteErr}
+
+	manager, err := NewManager(&Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{Expiry: csvExpiry},
+		},
+		DepositManager: &mockDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				selectedOutpoint: selectedDeposit,
+			},
+		},
+		QuoteGetter: quoteGetter,
+		NodePubkey:  route.Vertex{2},
+	}, blockHeight)
+	require.NoError(t, err)
+
+	_, err = manager.initiateLoopIn(ctx, &loop.StaticAddressLoopInRequest{
+		DepositOutpoints: []string{selectedOutpoint},
+		SelectedAmount:   selectedDeposit.Value,
+		MaxSwapFee:       1_000,
+		Initiator:        "test",
+	})
+	require.ErrorIs(t, err, quoteErr)
 	require.Equal(t, selectedDeposit.Value, quoteGetter.amount)
 }
 

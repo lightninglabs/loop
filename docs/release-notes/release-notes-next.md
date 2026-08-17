@@ -17,6 +17,9 @@
   initialization fails, allowing locked reservations to be released without
   waiting for the server timeout.
 
+* Static-address loop-in quotes and manual outpoint initiation now reject
+  deposits that are too close to expiry before contacting the Loop server.
+
 * Static Address deposit reconciliation now preserves authoritative
   first-confirmation heights while lnd is catching up, preventing premature
   expiry decisions from mismatched wallet and block-notification heights.
