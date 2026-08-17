@@ -236,3 +236,33 @@ func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "is not currently available")
 }
+
+// TestGetLoopInQuoteRejectsExpiringSelectedDeposit verifies manual quote
+// requests fail before server quote retrieval when a selected deposit no longer
+// has enough timeout runway for a static-address loop-in HTLC.
+func TestGetLoopInQuoteRejectsExpiringSelectedDeposit(t *testing.T) {
+	t.Parallel()
+	setLogger(btclog.Disabled)
+
+	expiring := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{7},
+			Index: 7,
+		},
+		Value:              btcutil.Amount(5_000),
+		ConfirmationHeight: 500,
+	}
+	expiring.SetState(deposit.Deposited)
+
+	addrMgr, lnd := newTestStaticAddressContext(t)
+	server := &swapClientServer{
+		depositManager:       newTestDepositManager(expiring),
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	_, err := server.GetLoopInQuote(t.Context(), &looprpc.QuoteRequest{
+		DepositOutpoints: []string{expiring.OutPoint.String()},
+	})
+	require.ErrorContains(t, err, "expires before htlc")
+}

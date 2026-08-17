@@ -1182,6 +1182,27 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 			)
 		}
 
+		params, err := s.staticAddressManager.
+			GetStaticAddressParameters(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve static "+
+				"address parameters: %w", err)
+		}
+
+		info, err := s.lnd.Client.GetInfo(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get lnd info: %w",
+				err)
+		}
+
+		err = validateStaticQuoteDepositsSwappable(
+			depositList.FilteredDeposits, params.Expiry,
+			info.BlockHeight,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		// If a fractional amount is also selected, we check if it
 		// leads to a dust change output.
 		selectedAmount, err = loopin.DeduceSwapAmount(
@@ -2604,6 +2625,29 @@ func depositBlocksUntilExpiry(confirmationHeight int64, expiry uint32,
 	}
 
 	return confirmationHeight + int64(expiry) - bestBlockHeight
+}
+
+// validateStaticQuoteDepositsSwappable rejects manual quote deposits that are
+// too close to expiry for the server's static-address loop-in HTLC timeout.
+func validateStaticQuoteDepositsSwappable(deposits []*looprpc.Deposit,
+	csvExpiry uint32, blockHeight uint32) error {
+
+	for _, deposit := range deposits {
+		if deposit.ConfirmationHeight <= 0 {
+			continue
+		}
+
+		confirmationHeight := uint32(deposit.ConfirmationHeight)
+		swappable := loopin.IsSwappable(
+			confirmationHeight, blockHeight, csvExpiry,
+		)
+		if !swappable {
+			return fmt.Errorf("deposit %s expires before htlc",
+				deposit.Outpoint)
+		}
+	}
+
+	return nil
 }
 
 // StaticOpenChannel initiates an open channel request using static address
