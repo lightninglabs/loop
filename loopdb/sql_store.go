@@ -4,14 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/utils/chainhashutil"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -754,12 +755,15 @@ func getSwapEvents(updates []sqlc.SwapUpdate) ([]*LoopEvent, error) {
 		}
 
 		if updates[i].HtlcTxhash != "" {
-			chainHash, err := chainhash.NewHashFromStr(updates[i].HtlcTxhash)
+			chainHash, err := chainhashutil.NewHashFromStrExact(
+				updates[i].HtlcTxhash,
+			)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("invalid htlc tx hash "+
+					"%q: %w", updates[i].HtlcTxhash, err)
 			}
 
-			events[i].HtlcTxHash = chainHash
+			events[i].HtlcTxHash = &chainHash
 		}
 	}
 
