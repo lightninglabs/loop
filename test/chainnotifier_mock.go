@@ -129,13 +129,18 @@ func (c *mockChainNotifier) RegisterBlockEpochNtfn(ctx context.Context) (
 			}
 		}()
 
-		// Send initial block height
+		// Snapshot the initial block height while holding the lock, but
+		// release it before sending. The buffered channel may already contain
+		// a concurrent height notification, and blocking on a full channel
+		// while holding the lock would deadlock other mock LND calls.
 		c.lnd.lock.Lock()
+		currentHeight := c.lnd.Height
+		c.lnd.lock.Unlock()
+
 		select {
-		case blockEpochChan <- c.lnd.Height:
+		case blockEpochChan <- currentHeight:
 		case <-ctx.Done():
 		}
-		c.lnd.lock.Unlock()
 
 		<-ctx.Done()
 	})
