@@ -2,6 +2,10 @@
 
 #### New Features
 
+* The `loop out sweephtlc` recovery command can reconstruct and sweep a
+  protocol-11 Loop Out HTLC from public swap data when the local swap database
+  record is unavailable.
+
 #### Breaking Changes
 
 * Instant Out and reservation RPCs now require the `loop:out` permission.

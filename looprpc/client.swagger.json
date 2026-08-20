@@ -2646,6 +2646,37 @@
     "looprpcSetLiquidityParamsResponse": {
       "type": "object"
     },
+    "looprpcStatelessRecovery": {
+      "type": "object",
+      "properties": {
+        "server_pubkey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The server's compressed HTLC public key."
+        },
+        "client_pubkey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The client's compressed HTLC public key. The connected lnd wallet must\nbe able to derive the corresponding private key."
+        },
+        "cltv_expiry": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The absolute CLTV expiry committed to by the Loop Out HTLC."
+        },
+        "swap_initiation_height": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The block height at which the swap was initiated. This is used as the\nearliest possible confirmation height when locating the HTLC funding\ntransaction."
+        },
+        "key_scan_limit": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The maximum number of client keys to scan in Loop's lnd key family if\nsigning by public key fails. If zero, loopd uses its default limit."
+        }
+      },
+      "description": "StatelessRecovery contains the public swap data needed to reconstruct the\nlatest Loop Out HTLC without its database record."
+    },
     "looprpcStaticAddressLoopInRequest": {
       "type": "object",
       "properties": {
@@ -3165,7 +3196,7 @@
         "preimage": {
           "type": "string",
           "format": "byte",
-          "description": "Optional override for the stored swap preimage."
+          "description": "Optional override for the stored swap preimage. This is required when\nstateless_recovery is set."
         },
         "publish": {
           "type": "boolean",
@@ -3174,6 +3205,10 @@
         "htlc_address": {
           "type": "string",
           "description": "The HTLC address whose output is being swept; used to derive the\nexpected pkScript."
+        },
+        "stateless_recovery": {
+          "$ref": "#/definitions/looprpcStatelessRecovery",
+          "description": "If set, reconstruct the latest Loop Out HTLC without querying the swap\ndatabase."
         }
       },
       "description": "SweepHtlcRequest instructs loopd to sweep a swap HTLC via its success path."

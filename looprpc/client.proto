@@ -789,7 +789,8 @@ message SweepHtlcRequest {
     // HTLC outpoint to sweep, formatted as "txid:vout".
     string outpoint = 3;
 
-    // Optional override for the stored swap preimage.
+    // Optional override for the stored swap preimage. This is required when
+    // stateless_recovery is set.
     bytes preimage = 4;
 
     // If true, publish the sweep transaction immediately.
@@ -798,6 +799,10 @@ message SweepHtlcRequest {
     // The HTLC address whose output is being swept; used to derive the
     // expected pkScript.
     string htlc_address = 6;
+
+    // If set, reconstruct the latest Loop Out HTLC without querying the swap
+    // database.
+    StatelessRecovery stateless_recovery = 7;
 }
 
 // SweepHtlcResponse returns the broadcast sweep transaction.
@@ -2513,4 +2518,27 @@ message AssetLoopOutInfo {
     The total asset offchain cost of the swap.
     */
     uint64 asset_cost_offchain = 3;
+}
+
+// StatelessRecovery contains the public swap data needed to reconstruct the
+// latest Loop Out HTLC without its database record.
+message StatelessRecovery {
+    // The server's compressed HTLC public key.
+    bytes server_pubkey = 1;
+
+    // The client's compressed HTLC public key. The connected lnd wallet must
+    // be able to derive the corresponding private key.
+    bytes client_pubkey = 2;
+
+    // The absolute CLTV expiry committed to by the Loop Out HTLC.
+    int32 cltv_expiry = 3;
+
+    // The block height at which the swap was initiated. This is used as the
+    // earliest possible confirmation height when locating the HTLC funding
+    // transaction.
+    int32 swap_initiation_height = 4;
+
+    // The maximum number of client keys to scan in Loop's lnd key family if
+    // signing by public key fails. If zero, loopd uses its default limit.
+    uint32 key_scan_limit = 5;
 }

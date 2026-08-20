@@ -3,7 +3,9 @@ package loopd
 import (
 	"bytes"
 	"context"
+	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -27,6 +29,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// defaultStatelessRecoveryKeyScanLimit is the maximum number of client keys
+// scanned during stateless recovery.
+const defaultStatelessRecoveryKeyScanLimit = 20_000
+
+// statelessRecoveryKeyScanLogInterval controls how often a key scan reports
+// progress.
+const statelessRecoveryKeyScanLogInterval = 2_000
+
 // loopOutStore abstracts the minimal store API needed to look up loop-out
 // swaps.
 type loopOutStore interface {
@@ -45,6 +55,10 @@ type htlcChainNotifier interface {
 
 // htlcWallet abstracts the wallet calls used for sweeping.
 type htlcWallet interface {
+	// DeriveKey derives the key identified by the given locator.
+	DeriveKey(ctx context.Context, locator *keychain.KeyLocator) (
+		*keychain.KeyDescriptor, error)
+
 	// NextAddr derives the next address from the given account and type.
 	NextAddr(ctx context.Context, account string,
 		addrType walletrpc.AddressType,
@@ -61,6 +75,10 @@ type htlcWallet interface {
 // htlcSigner signs the success path spend.
 type htlcSigner interface {
 	SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
+		signDescriptors []*lndclient.SignDescriptor,
+		prevOutputs []*wire.TxOut) ([][]byte, error)
+
+	SignOutputRawKeyLocator(ctx context.Context, tx *wire.MsgTx,
 		signDescriptors []*lndclient.SignDescriptor,
 		prevOutputs []*wire.TxOut) ([][]byte, error)
 }
@@ -84,6 +102,31 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	if req.SatPerVbyte == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"sat_per_vbyte required")
+	}
+
+	recovery := req.StatelessRecovery
+	stateless := recovery != nil
+	if stateless {
+		if len(recovery.ServerPubkey) == 0 ||
+			len(recovery.ClientPubkey) == 0 {
+
+			return nil, status.Error(codes.InvalidArgument,
+				"both server_pubkey and client_pubkey "+
+					"are required")
+		}
+		if recovery.CltvExpiry <= 0 {
+			return nil, status.Error(codes.InvalidArgument,
+				"cltv_expiry required in stateless mode")
+		}
+		if recovery.SwapInitiationHeight <= 0 {
+			return nil, status.Error(codes.InvalidArgument,
+				"swap_initiation_height required in "+
+					"stateless mode")
+		}
+		if len(req.Preimage) == 0 {
+			return nil, status.Error(codes.InvalidArgument,
+				"preimage required in stateless mode")
+		}
 	}
 
 	// Parse the inputs.
@@ -119,44 +162,130 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		}
 	}
 
-	// Locate the loop-out swap whose HTLC script matches the outpoint so
-	// we can obtain keys, the stored preimage, and the default destination.
-	swaps, err := store.FetchLoopOutSwaps(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var (
-		targetSwap *loopdb.LoopOut
-		targetHtlc *swap.Htlc
+		targetSwap   *loopdb.LoopOut
+		targetHtlc   *swap.Htlc
+		targetHash   lntypes.Hash
+		preimage     lntypes.Preimage
+		heightHint   int32
+		storedDest   btcutil.Address
+		keyDesc      keychain.KeyDescriptor
+		clientKey    *btcec.PublicKey
+		keyScanLimit uint32
 	)
 
-	for _, swp := range swaps {
-		htlc, htlcErr := utils.GetHtlc(
-			swp.Hash, &swp.Contract.SwapContract,
-			chainParams,
+	if stateless {
+		preimage, err = lntypes.MakePreimage(req.Preimage)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid preimage: %v", err)
+		}
+
+		serverKey, _, keyErr := parseSweepPubKey(
+			"server_pubkey", recovery.ServerPubkey,
 		)
-		if htlcErr != nil {
-			return nil, htlcErr
+		if keyErr != nil {
+			return nil, keyErr
 		}
 
-		if bytes.Equal(htlc.PkScript, htlcPkScript) {
-			targetSwap = swp
-			targetHtlc = htlc
-			break
+		clientKeyBytes, clientPubKey, keyErr := parseSweepPubKey(
+			"client_pubkey", recovery.ClientPubkey,
+		)
+		if keyErr != nil {
+			return nil, keyErr
 		}
-	}
+		clientKey = clientPubKey
+		keyDesc.PubKey = clientPubKey
+		keyScanLimit = recovery.KeyScanLimit
+		if keyScanLimit == 0 {
+			keyScanLimit = defaultStatelessRecoveryKeyScanLimit
+		}
 
-	if targetSwap == nil || targetHtlc == nil {
-		return nil, status.Error(codes.NotFound,
-			"no matching swap HTLC found")
+		targetHash = preimage.Hash()
+		contract := loopdb.SwapContract{
+			Preimage:         preimage,
+			CltvExpiry:       recovery.CltvExpiry,
+			InitiationHeight: recovery.SwapInitiationHeight,
+			ProtocolVersion:  loopdb.ProtocolVersionMuSig2,
+			HtlcKeys: loopdb.HtlcKeys{
+				SenderScriptKey:        serverKey,
+				SenderInternalPubKey:   serverKey,
+				ReceiverScriptKey:      clientKeyBytes,
+				ReceiverInternalPubKey: clientKeyBytes,
+			},
+		}
+
+		targetHtlc, err = utils.GetHtlc(
+			targetHash, &contract, chainParams,
+		)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"construct stateless HTLC: %v", err)
+		}
+
+		if !bytes.Equal(targetHtlc.PkScript, htlcPkScript) {
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"provided HTLC address %s does not match "+
+					"generated HTLC address %s",
+				htlcAddr.EncodeAddress(),
+				targetHtlc.Address.EncodeAddress(),
+			)
+		}
+
+		heightHint = recovery.SwapInitiationHeight
+	} else {
+		// Locate the loop-out swap whose HTLC script matches the
+		// requested HTLC address. This supplies all fields needed by
+		// the legacy database-backed mode.
+		swaps, storeErr := store.FetchLoopOutSwaps(ctx)
+		if storeErr != nil {
+			return nil, storeErr
+		}
+
+		for _, swp := range swaps {
+			htlc, htlcErr := utils.GetHtlc(
+				swp.Hash, &swp.Contract.SwapContract,
+				chainParams,
+			)
+			if htlcErr != nil {
+				return nil, htlcErr
+			}
+
+			if bytes.Equal(htlc.PkScript, htlcPkScript) {
+				targetSwap = swp
+				targetHtlc = htlc
+				break
+			}
+		}
+
+		if targetSwap == nil || targetHtlc == nil {
+			return nil, status.Error(codes.NotFound,
+				"no matching swap HTLC found")
+		}
+
+		targetHash = targetSwap.Hash
+		heightHint = targetSwap.Contract.InitiationHeight
+		storedDest = targetSwap.Contract.DestAddr
+		keyDesc.KeyLocator = targetSwap.Contract.HtlcKeys.
+			ClientScriptKeyLocator
+
+		if len(req.Preimage) > 0 {
+			preimage, err = lntypes.MakePreimage(req.Preimage)
+			if err != nil {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"invalid preimage: %v", err)
+			}
+		} else {
+			preimage = targetSwap.Contract.Preimage
+		}
 	}
 
 	// Prefer the stored swap destination for recovery sweeps and only
 	// derive a fresh wallet address when neither the request nor DB
 	// specifies one.
 	if sweepAddr == nil {
-		sweepAddr = targetSwap.Contract.DestAddr
+		sweepAddr = storedDest
 	}
 	if sweepAddr == nil {
 		sweepAddr, err = wallet.NextAddr(
@@ -180,22 +309,21 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	infof("sweephtlc: start sweep for %v -> %v", req.Outpoint,
 		sweepAddr.EncodeAddress())
 
-	infof("sweephtlc: matched swap %v at height hint %v",
-		targetSwap.Hash, targetSwap.Contract.InitiationHeight)
+	infof("sweephtlc: using swap hash %v at height hint %v",
+		targetHash, heightHint)
 
-	if targetSwap.Contract.InitiationHeight <= 0 {
+	if heightHint <= 0 {
 		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid initiation height %d",
-			targetSwap.Contract.InitiationHeight)
+			"invalid initiation height %d", heightHint)
 	}
 
 	// Wait for a confirmation so we can read the full transaction even if
 	// it's not in our wallet.
 	infof("sweephtlc: registering conf ntfn for %v hint=%v",
-		req.Outpoint, targetSwap.Contract.InitiationHeight)
+		req.Outpoint, heightHint)
 	confChan, errChan, err := notifier.RegisterConfirmationsNtfn(
 		ctx, &htlcOutpoint.Hash, htlcPkScript, 1,
-		targetSwap.Contract.InitiationHeight,
+		heightHint,
 	)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
@@ -210,6 +338,11 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	infof("sweephtlc: waiting for confirmation of %v", req.Outpoint)
 	select {
 	case conf := <-confChan:
+		if conf == nil {
+			return nil, status.Error(codes.Internal,
+				"confirmation notification was empty")
+		}
+
 		fundingTx = conf.Tx
 		infof("sweephtlc: funding confirmed at height %v",
 			conf.BlockHeight)
@@ -229,6 +362,19 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 			"waiting for transaction details")
 	}
 
+	if fundingTx == nil {
+		return nil, status.Error(codes.Internal,
+			"confirmation did not include the funding transaction")
+	}
+	if fundingTx.TxHash() != htlcOutpoint.Hash {
+		return nil, status.Errorf(
+			codes.InvalidArgument,
+			"confirmed transaction %s does not match outpoint "+
+				"transaction %s",
+			fundingTx.TxHash(), htlcOutpoint.Hash,
+		)
+	}
+
 	if int(htlcOutpoint.Index) >= len(fundingTx.TxOut) {
 		return nil, status.Errorf(codes.InvalidArgument,
 			"vout %d out of range", htlcOutpoint.Index)
@@ -237,24 +383,24 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	htlcTxOut = fundingTx.TxOut[htlcOutpoint.Index]
 
 	if !bytes.Equal(htlcTxOut.PkScript, htlcPkScript) {
+		if stateless {
+			observed := sweepOutputAddress(
+				htlcTxOut.PkScript, chainParams,
+			)
+
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"on-chain HTLC address %s does not match "+
+					"generated HTLC address %s",
+				observed, targetHtlc.Address.EncodeAddress(),
+			)
+		}
+
 		return nil, status.Error(codes.InvalidArgument,
 			"outpoint script does not match HTLC address")
 	}
 
 	infof("sweephtlc: swap hash validated for %v", req.Outpoint)
-
-	// Pick a preimage: prefer the caller-provided override, otherwise use
-	// the swap's stored preimage.
-	var preimage lntypes.Preimage
-	if len(req.Preimage) > 0 {
-		preimage, err = lntypes.MakePreimage(req.Preimage)
-		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"invalid preimage: %v", err)
-		}
-	} else {
-		preimage = targetSwap.Contract.Preimage
-	}
 
 	if preimage.Hash() != targetHtlc.Hash {
 		return nil, status.Error(codes.InvalidArgument,
@@ -331,34 +477,118 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		Output:        prevOut,
 		HashType:      targetHtlc.SigHash(),
 		InputIndex:    0,
-		KeyDesc: keychain.KeyDescriptor{
-			KeyLocator: targetSwap.Contract.HtlcKeys.
-				ClientScriptKeyLocator,
-		},
+		KeyDesc:       keyDesc,
 	}
 	if targetHtlc.Version == swap.HtlcV3 {
 		signDesc.SignMethod = input.TaprootScriptSpendSignMethod
 	}
 
-	// Sign the HTLC spend.
+	// Sign the HTLC spend. Stateless recovery first asks lnd to resolve
+	// the supplied public key from its wallet. A signing error or invalid
+	// signature triggers the bounded key-family scan.
+	usedKeyScan := false
+	scanAndSign := func() ([][]byte, error) {
+		recoveredKey, scanErr := findStatelessSweepKey(
+			ctx, wallet, clientKey, keyScanLimit,
+		)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+
+		signDesc.KeyDesc = recoveredKey
+		usedKeyScan = true
+
+		return signer.SignOutputRawKeyLocator(
+			ctx, sweepTx,
+			[]*lndclient.SignDescriptor{&signDesc},
+			[]*wire.TxOut{prevOut},
+		)
+	}
+
 	rawSigs, err := signer.SignOutputRaw(
 		ctx, sweepTx, []*lndclient.SignDescriptor{&signDesc},
 		[]*wire.TxOut{prevOut},
 	)
 	if err != nil {
+		if !stateless {
+			return nil, err
+		}
+
+		infof("sweephtlc: public-key signing failed: %v; "+
+			"scanning up to %d family-%d keys", err,
+			keyScanLimit, swap.KeyFamily,
+		)
+		rawSigs, err = scanAndSign()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	applySignature := func(signatures [][]byte) error {
+		if len(signatures) != 1 || len(signatures[0]) == 0 {
+			return status.Error(codes.Internal,
+				"signer returned an invalid signature count")
+		}
+
+		witness, witnessErr := targetHtlc.GenSuccessWitness(
+			signatures[0], preimage,
+		)
+		if witnessErr != nil {
+			return witnessErr
+		}
+
+		sweepTx.TxIn[0].Witness = witness
+
+		return nil
+	}
+	if err = applySignature(rawSigs); err != nil {
 		return nil, err
 	}
-	sig := rawSigs[0]
+
+	if stateless {
+		if usedKeyScan {
+			infof("sweephtlc: verifying stateless sweep witness " +
+				"after key recovery")
+		} else {
+			infof("sweephtlc: verifying stateless sweep witness")
+		}
+
+		verifyErr := verifySweepHtlcWitness(sweepTx, prevOut)
+		if verifyErr != nil && !usedKeyScan {
+			infof("sweephtlc: public-key signature did not match "+
+				"client key; scanning up to %d family-%d keys",
+				keyScanLimit, swap.KeyFamily)
+
+			rawSigs, err = scanAndSign()
+			if err != nil {
+				return nil, err
+			}
+			if err = applySignature(rawSigs); err != nil {
+				return nil, err
+			}
+
+			infof("sweephtlc: verifying stateless sweep witness " +
+				"after key recovery")
+			verifyErr = verifySweepHtlcWitness(sweepTx, prevOut)
+		}
+		if verifyErr != nil {
+			return nil, status.Errorf(codes.Internal,
+				"lnd produced an invalid signature for "+
+					"client_pubkey: %v", verifyErr)
+		}
+		infof("sweephtlc: stateless sweep witness verified")
+
+		if usedKeyScan {
+			infof("sweephtlc: signed with recovered client " +
+				"key locator")
+		} else {
+			infof("sweephtlc: signed directly with client " +
+				"public key")
+		}
+	}
 
 	infof("sweephtlc: witness assembled, tx size=%d vbytes",
 		sweepTx.SerializeSize())
-
-	// Assemble the success witness using the signature and preimage.
-	witness, err := targetHtlc.GenSuccessWitness(sig, preimage)
-	if err != nil {
-		return nil, err
-	}
-	sweepTx.TxIn[0].Witness = witness
 
 	var rawBuf bytes.Buffer
 	err = sweepTx.Serialize(&rawBuf)
@@ -372,7 +602,7 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	if req.Publish {
 		err = wallet.PublishTransaction(
 			ctx, sweepTx,
-			labels.LoopOutSweepSuccess(targetSwap.Hash.String()),
+			labels.LoopOutSweepSuccess(targetHash.String()),
 		)
 		if err != nil {
 			errorf("sweephtlc: publish failed for %v: %v",
@@ -407,4 +637,117 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 
 	return resp, nil
+}
+
+// findStatelessSweepKey locates the client key in the Loop key family so lnd
+// receives the actual key locator when signing.
+func findStatelessSweepKey(ctx context.Context, wallet htlcWallet,
+	targetKey *btcec.PublicKey,
+	keyScanLimit uint32) (keychain.KeyDescriptor, error) {
+
+	for index := range keyScanLimit {
+		locator := keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.KeyFamily),
+			Index:  index,
+		}
+		keyDesc, err := wallet.DeriveKey(ctx, &locator)
+		if err != nil {
+			return keychain.KeyDescriptor{}, status.Errorf(
+				codes.Internal,
+				"derive client key at family %d index %d: %v",
+				swap.KeyFamily, index, err,
+			)
+		}
+		if keyDesc == nil || keyDesc.PubKey == nil {
+			return keychain.KeyDescriptor{}, status.Errorf(
+				codes.Internal,
+				"lnd returned an empty key at family %d "+
+					"index %d",
+				swap.KeyFamily, index,
+			)
+		}
+
+		keysScanned := index + 1
+		if keysScanned%statelessRecoveryKeyScanLogInterval == 0 {
+			infof("sweephtlc: scanned %d of %d family-%d keys",
+				keysScanned, keyScanLimit, swap.KeyFamily,
+			)
+		}
+
+		if keyDesc.PubKey.IsEqual(targetKey) {
+			infof("sweephtlc: found client key at family %d "+
+				"index %d", swap.KeyFamily, index,
+			)
+
+			return *keyDesc, nil
+		}
+	}
+
+	return keychain.KeyDescriptor{}, status.Errorf(
+		codes.FailedPrecondition,
+		"client_pubkey does not belong to the connected lnd wallet; "+
+			"searched key family %d indices 0-%d",
+		swap.KeyFamily, keyScanLimit-1,
+	)
+}
+
+// parseSweepPubKey parses a canonical compressed public key for stateless
+// recovery.
+func parseSweepPubKey(name string, serialized []byte) ([33]byte,
+	*btcec.PublicKey, error) {
+
+	var keyBytes [33]byte
+	if len(serialized) != len(keyBytes) {
+		return keyBytes, nil, status.Errorf(
+			codes.InvalidArgument, "%s must be 33 bytes", name,
+		)
+	}
+
+	pubKey, err := btcec.ParsePubKey(serialized)
+	if err != nil {
+		return keyBytes, nil, status.Errorf(
+			codes.InvalidArgument, "invalid %s: %v", name, err,
+		)
+	}
+	if !bytes.Equal(serialized, pubKey.SerializeCompressed()) {
+		return keyBytes, nil, status.Errorf(
+			codes.InvalidArgument,
+			"%s must use canonical compressed encoding", name,
+		)
+	}
+
+	copy(keyBytes[:], serialized)
+
+	return keyBytes, pubKey, nil
+}
+
+// sweepOutputAddress returns a printable address for an observed output. A
+// script is returned when the output isn't a standard single-address script.
+func sweepOutputAddress(pkScript []byte, chainParams *chaincfg.Params) string {
+	_, addresses, _, err := txscript.ExtractPkScriptAddrs(
+		pkScript, chainParams,
+	)
+	if err != nil || len(addresses) != 1 {
+		return fmt.Sprintf("script:%x", pkScript)
+	}
+
+	return addresses[0].EncodeAddress()
+}
+
+// verifySweepHtlcWitness executes the stateless recovery witness against the
+// exact on-chain output before the transaction can be returned or published.
+func verifySweepHtlcWitness(sweepTx *wire.MsgTx, prevOut *wire.TxOut) error {
+	prevOutFetcher := txscript.NewCannedPrevOutputFetcher(
+		prevOut.PkScript, prevOut.Value,
+	)
+	sigHashes := txscript.NewTxSigHashes(sweepTx, prevOutFetcher)
+	engine, err := txscript.NewEngine(
+		prevOut.PkScript, sweepTx, 0, txscript.StandardVerifyFlags,
+		nil, sigHashes, prevOut.Value, prevOutFetcher,
+	)
+	if err != nil {
+		return err
+	}
+
+	return engine.Execute()
 }
