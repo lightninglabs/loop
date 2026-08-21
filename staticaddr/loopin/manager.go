@@ -658,6 +658,25 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 				"state %s", deposit.Deposited)
 		}
 
+		// The server rejects deposits whose static-address timeout is
+		// too close to the HTLC timeout. Automatic selection already
+		// filters those deposits, so manual outpoint selection must
+		// enforce the same rule before quoting and initiating a swap.
+		params, err := m.cfg.AddressManager.
+			GetStaticAddressParameters(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve static "+
+				"address parameters: %w", err)
+		}
+
+		err = ValidateDepositsSwappable(
+			selectedDeposits, params.Expiry,
+			m.currentHeight.Load(),
+		)
+		if err != nil {
+			return nil, err
+		}
+
 	case len(selectedOutpoints) == 0:
 		// If an amount was provided, we'll coin-select deposits to
 		// cover for the amount.
@@ -941,6 +960,29 @@ func IsSwappable(confirmationHeight, blockHeight, csvExpiry uint32) bool {
 	return blocksUntilDepositExpiry(
 		confirmationHeight, blockHeight, csvExpiry,
 	) >= DefaultLoopInOnChainCltvDelta+DepositHtlcDelta
+}
+
+// ValidateDepositsSwappable verifies that selected deposits still have enough
+// timeout runway to back a static-address loop-in HTLC.
+func ValidateDepositsSwappable(deposits []*deposit.Deposit, csvExpiry uint32,
+	blockHeight uint32) error {
+
+	for _, deposit := range deposits {
+		confirmationHeight := deposit.GetConfirmationHeight()
+		if confirmationHeight <= 0 {
+			continue
+		}
+
+		swappable := IsSwappable(
+			uint32(confirmationHeight), blockHeight, csvExpiry,
+		)
+		if !swappable {
+			return fmt.Errorf("deposit %s expires before htlc",
+				deposit.OutPoint)
+		}
+	}
+
+	return nil
 }
 
 // blocksUntilDepositExpiry returns the remaining number of blocks until a

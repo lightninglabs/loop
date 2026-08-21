@@ -11,6 +11,9 @@
 
 #### Bug Fixes
 
+* Static-address loop-in quotes and manual outpoint initiation now reject
+  deposits that are too close to expiry before contacting the Loop server.
+
 * Loop Out requests now account for channel reserves when checking outbound
   capacity, preventing swaps from starting when their off-chain payment cannot
   be funded.
