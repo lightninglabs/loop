@@ -26,6 +26,8 @@
 
 #### Maintenance
 
+* Updated the gRPC dependency to v1.83.1.
+
 * Updated the Taproot Assets dependency to v0.8.1; asset conversions that
   overflow a millisatoshi amount are now safely rejected.
 
