@@ -3354,6 +3354,13 @@ func (n *noopDepositManager) EnsureDepositsFresh(context.Context) error {
 	return n.ensureFreshErr
 }
 
+// RegisterDepositUse implements DepositManager with a no-op.
+func (n *noopDepositManager) RegisterDepositUse(
+	[]*deposit.Deposit) (func(), error) {
+
+	return func() {}, nil
+}
+
 // GetAllDeposits implements DepositManager with a no-op.
 func (n *noopDepositManager) GetAllDeposits(_ context.Context) (
 	[]*deposit.Deposit, error) {
