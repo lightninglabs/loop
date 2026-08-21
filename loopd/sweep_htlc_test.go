@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
@@ -22,10 +24,13 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
 )
 
@@ -454,6 +459,31 @@ func TestSweepHtlcStatelessValidation(t *testing.T) {
 			},
 			expected: "invalid client_pubkey",
 		},
+		{
+			name: "cooperative payment address missing",
+			modify: func(req *looprpc.SweepHtlcRequest) {
+				req.Cooperative = &looprpc.CooperativeSweep{}
+			},
+			expected: "32-byte payment_address required",
+		},
+		{
+			name: "cooperative payment address length",
+			modify: func(req *looprpc.SweepHtlcRequest) {
+				req.Cooperative = &looprpc.CooperativeSweep{
+					PaymentAddress: make([]byte, 31),
+				}
+			},
+			expected: "32-byte payment_address required",
+		},
+		{
+			name: "cooperative signing unavailable",
+			modify: func(req *looprpc.SweepHtlcRequest) {
+				req.Cooperative = &looprpc.CooperativeSweep{
+					PaymentAddress: make([]byte, 32),
+				}
+			},
+			expected: "cooperative signing is unavailable",
+		},
 	}
 
 	store := &rejectingLoopOutStore{}
@@ -465,14 +495,214 @@ func TestSweepHtlcStatelessValidation(t *testing.T) {
 			_, err := sweepHtlc(
 				t.Context(), req, lnd.ChainParams, store,
 				lnd.ChainNotifier, lnd.WalletKit,
-				&realSweepSigner{},
+				&realSweepSigner{}, nil, nil,
 			)
 			require.ErrorContains(t, err, testCase.expected)
 		})
 	}
 
 	require.Zero(t, store.calls)
+
+	statefulRequest := newRequest()
+	statefulRequest.StatelessRecovery = nil
+	statefulRequest.Cooperative = &looprpc.CooperativeSweep{
+		PaymentAddress: make([]byte, 32),
+	}
+	_, err = sweepHtlc(
+		t.Context(), statefulRequest, lnd.ChainParams, store,
+		lnd.ChainNotifier, lnd.WalletKit, &realSweepSigner{}, nil,
+		nil,
+	)
+	require.ErrorContains(
+		t, err, "payment_address is only used in stateless mode",
+	)
+	require.Zero(t, store.calls)
 	require.NoError(t, lnd.IsDone())
+}
+
+// TestSweepHtlcCooperative exercises both database-backed and stateless
+// cooperative sweeps with two real MuSig2 signers.
+func TestSweepHtlcCooperative(t *testing.T) {
+	defer test.Guard(t)()
+	setLogger(btclog.Disabled)
+
+	const clientKeyIndex = int32(7)
+
+	testCases := []struct {
+		name      string
+		stateless bool
+	}{
+		{
+			name: "stateful",
+		},
+		{
+			name:      "stateless",
+			stateless: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			lnd := test.NewMockLnd()
+			preimage := lntypes.Preimage{21, 22, 23, 24}
+			swapHash := preimage.Hash()
+			paymentAddr := [32]byte{31, 32, 33, 34}
+
+			serverPrivKey, serverPubKey := test.CreateKey(8)
+			clientPrivKey, clientPubKey := test.CreateKey(
+				clientKeyIndex,
+			)
+			serverLocator := keychain.KeyLocator{
+				Family: keychain.KeyFamily(swap.KeyFamily),
+				Index:  8,
+			}
+			clientLocator := keychain.KeyLocator{
+				Family: keychain.KeyFamily(swap.KeyFamily),
+				Index:  uint32(clientKeyIndex),
+			}
+
+			var serverKey, clientKey [33]byte
+			copy(serverKey[:], serverPubKey.SerializeCompressed())
+			copy(clientKey[:], clientPubKey.SerializeCompressed())
+			htlcKeys := loopdb.HtlcKeys{
+				SenderScriptKey:        serverKey,
+				SenderInternalPubKey:   serverKey,
+				ReceiverScriptKey:      clientKey,
+				ReceiverInternalPubKey: clientKey,
+				ClientScriptKeyLocator: clientLocator,
+			}
+			contract := loopdb.SwapContract{
+				Preimage:         preimage,
+				AmountRequested:  100_000,
+				HtlcKeys:         htlcKeys,
+				CltvExpiry:       500,
+				InitiationHeight: 123,
+				ProtocolVersion:  loopdb.ProtocolVersionMuSig2,
+			}
+			htlc, err := utils.GetHtlc(
+				swapHash, &contract, lnd.ChainParams,
+			)
+			require.NoError(t, err)
+
+			fundingTx := wire.NewMsgTx(2)
+			fundingTx.AddTxOut(&wire.TxOut{
+				Value:    100_000,
+				PkScript: htlc.PkScript,
+			})
+			outpoint := wire.OutPoint{Hash: fundingTx.TxHash()}
+			destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+				bytes.Repeat([]byte{5}, 20), lnd.ChainParams,
+			)
+			require.NoError(t, err)
+
+			clientSigner := newRealMuSig2TestSigner(
+				t, clientPrivKey, clientLocator,
+			)
+			serverSigner := newRealMuSig2TestSigner(
+				t, serverPrivKey, serverLocator,
+			)
+			cooperativeSigner := newRealCooperativeServerSigner(
+				t, serverSigner, serverLocator,
+				loopdb.ProtocolVersionMuSig2, swapHash,
+				paymentAddr, htlcKeys, htlc,
+			)
+
+			request := &looprpc.SweepHtlcRequest{
+				Outpoint:    outpoint.String(),
+				HtlcAddress: htlc.Address.EncodeAddress(),
+				DestAddress: destAddr.EncodeAddress(),
+				SatPerVbyte: 10,
+				Cooperative: &looprpc.CooperativeSweep{},
+			}
+			var (
+				store  loopOutStore
+				wallet htlcWallet = lnd.WalletKit
+			)
+			if testCase.stateless {
+				rejectingStore := &rejectingLoopOutStore{}
+				countingWallet := &countingSweepWallet{
+					htlcWallet: lnd.WalletKit,
+				}
+				store = rejectingStore
+				wallet = countingWallet
+				request.Preimage = preimage[:]
+				request.StatelessRecovery = &looprpc.StatelessRecovery{
+					ServerPubkey: serverKey[:],
+					ClientPubkey: clientKey[:],
+					CltvExpiry:   contract.CltvExpiry,
+					SwapInitiationHeight: contract.
+						InitiationHeight,
+					KeyScanLimit: uint32(clientKeyIndex + 1),
+				}
+				request.Cooperative.PaymentAddress = paymentAddr[:]
+				defer func() {
+					require.Zero(t, rejectingStore.calls)
+					require.Equal(
+						t, int(clientKeyIndex+1),
+						countingWallet.deriveCalls,
+					)
+				}()
+			} else {
+				invoice, err := zpay32.NewInvoice(
+					lnd.ChainParams, swapHash, time.Now(),
+					zpay32.Description("cooperative sweep"),
+					zpay32.Amount(lnwire.NewMSatFromSatoshis(
+						100_000,
+					)),
+					zpay32.PaymentAddr(paymentAddr),
+				)
+				require.NoError(t, err)
+				payReq, err := test.EncodePayReq(invoice)
+				require.NoError(t, err)
+
+				storeMock := loopdb.NewStoreMock(t)
+				storeMock.LoopOutSwaps[swapHash] =
+					&loopdb.LoopOutContract{
+						SwapContract: contract,
+						DestAddr:     destAddr,
+						SwapInvoice:  payReq,
+					}
+				store = storeMock
+			}
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(), 5*time.Second,
+			)
+			defer cancel()
+			go sendSweepConfirmation(ctx, lnd, fundingTx)
+
+			response, err := sweepHtlc(
+				ctx, request, lnd.ChainParams, store,
+				lnd.ChainNotifier, wallet, nil,
+				clientSigner, cooperativeSigner.sign,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, response.GetNotRequested())
+			require.Equal(t, 1, cooperativeSigner.calls)
+
+			var sweepTx wire.MsgTx
+			err = sweepTx.Deserialize(bytes.NewReader(response.SweepTx))
+			require.NoError(t, err)
+			require.Len(t, sweepTx.TxIn, 1)
+			require.Len(t, sweepTx.TxIn[0].Witness, 1)
+			require.Len(t, sweepTx.TxIn[0].Witness[0], 64)
+			require.NoError(t, verifySweepHtlcWitness(
+				&sweepTx, fundingTx.TxOut[0],
+			))
+			require.Equal(
+				t, int64(100_000-response.FeeSats),
+				sweepTx.TxOut[0].Value,
+			)
+
+			select {
+			case <-lnd.TxPublishChannel:
+				t.Fatal("unexpected publish")
+
+			case <-time.After(100 * time.Millisecond):
+			}
+			require.NoError(t, lnd.IsDone())
+		})
+	}
 }
 
 // TestSweepHtlcStateless exercises public-key signing and the bounded key scan
@@ -616,7 +846,7 @@ func TestSweepHtlcStateless(t *testing.T) {
 			resp, err := sweepHtlc(
 				ctx, request, lnd.ChainParams, store,
 				lnd.ChainNotifier,
-				wallet, signer,
+				wallet, signer, nil, nil,
 			)
 			if testCase.expectErr != "" {
 				require.ErrorContains(
@@ -736,7 +966,7 @@ func TestSweepHtlcStatelessRejectsInvalidSignature(t *testing.T) {
 		lnd.ChainNotifier, lnd.WalletKit, &realSweepSigner{
 			privateKey:     wrongPrivKey,
 			expectedPubKey: clientPubKey,
-		},
+		}, nil, nil,
 	)
 	require.ErrorContains(t, err, "invalid signature for client_pubkey")
 	require.NoError(t, lnd.IsDone())
@@ -782,7 +1012,7 @@ func TestSweepHtlcStatelessAddressMismatch(t *testing.T) {
 				SwapInitiationHeight: 123,
 			},
 		}, lnd.ChainParams, store, lnd.ChainNotifier,
-		lnd.WalletKit, &realSweepSigner{},
+		lnd.WalletKit, &realSweepSigner{}, nil, nil,
 	)
 	require.ErrorContains(
 		t, err, providedHtlc.Address.EncodeAddress(),
@@ -845,7 +1075,7 @@ func TestSweepHtlcStatelessOnChainAddressMismatch(t *testing.T) {
 				SwapInitiationHeight: 123,
 			},
 		}, lnd.ChainParams, store, lnd.ChainNotifier,
-		lnd.WalletKit, &realSweepSigner{},
+		lnd.WalletKit, &realSweepSigner{}, nil, nil,
 	)
 	require.ErrorContains(t, err, observedAddr.EncodeAddress())
 	require.ErrorContains(t, err, htlc.Address.EncodeAddress())
@@ -940,6 +1170,248 @@ type realSweepSigner struct {
 	expectedKeyLocator *keychain.KeyLocator
 	directCalls        int
 	keyLocatorCalls    int
+}
+
+// realMuSig2TestSigner adapts lnd's in-memory MuSig2 session manager to the
+// lndclient signer interface. The manager performs all nonce and signature
+// operations with the configured real private key.
+type realMuSig2TestSigner struct {
+	manager *input.MusigSessionManager
+}
+
+// newRealMuSig2TestSigner creates a real MuSig2 signer for one key locator.
+func newRealMuSig2TestSigner(t *testing.T, privateKey *btcec.PrivateKey,
+	locator keychain.KeyLocator) *realMuSig2TestSigner {
+
+	t.Helper()
+
+	keyFetcher := func(keyDesc *keychain.KeyDescriptor) (
+		*btcec.PrivateKey, error) {
+
+		if keyDesc.KeyLocator != locator {
+			return nil, fmt.Errorf("unexpected key locator: %v",
+				keyDesc.KeyLocator)
+		}
+
+		return privateKey, nil
+	}
+
+	return &realMuSig2TestSigner{
+		manager: input.NewMusigSessionManager(keyFetcher),
+	}
+}
+
+// MuSig2CreateSession creates a real signing session.
+func (s *realMuSig2TestSigner) MuSig2CreateSession(_ context.Context,
+	version input.MuSig2Version, signerLoc *keychain.KeyLocator,
+	signers [][]byte, opts ...lndclient.MuSig2SessionOpts) (
+	*input.MuSig2SessionInfo, error) {
+
+	parsedSigners, err := input.MuSig2ParsePubKeys(version, signers)
+	if err != nil {
+		return nil, err
+	}
+
+	request := &signrpc.MuSig2SessionRequest{}
+	for _, opt := range opts {
+		opt(request)
+	}
+
+	tweaks := &input.MuSig2Tweaks{}
+	if request.TaprootTweak != nil {
+		if request.TaprootTweak.KeySpendOnly {
+			tweaks.TaprootBIP0086Tweak = true
+		} else {
+			tweaks.TaprootTweak = request.TaprootTweak.ScriptRoot
+		}
+	}
+
+	nonces := make(
+		[][musig2.PubNonceSize]byte,
+		len(request.OtherSignerPublicNonces),
+	)
+	for i, rawNonce := range request.OtherSignerPublicNonces {
+		if len(rawNonce) != musig2.PubNonceSize {
+			return nil, fmt.Errorf("invalid nonce length: %d",
+				len(rawNonce))
+		}
+
+		copy(nonces[i][:], rawNonce)
+	}
+
+	return s.manager.MuSig2CreateSession(
+		version, *signerLoc, parsedSigners, tweaks, nonces, nil,
+	)
+}
+
+// MuSig2RegisterNonces registers real public nonces with a session.
+func (s *realMuSig2TestSigner) MuSig2RegisterNonces(_ context.Context,
+	sessionID [32]byte, nonces [][musig2.PubNonceSize]byte) (
+	bool, error) {
+
+	return s.manager.MuSig2RegisterNonces(
+		input.MuSig2SessionID(sessionID), nonces,
+	)
+}
+
+// MuSig2Sign creates a real partial MuSig2 signature.
+func (s *realMuSig2TestSigner) MuSig2Sign(_ context.Context,
+	sessionID [32]byte, message [32]byte, cleanup bool) ([]byte, error) {
+
+	partialSig, err := s.manager.MuSig2Sign(
+		input.MuSig2SessionID(sessionID), message, cleanup,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	serialized, err := input.SerializePartialSignature(partialSig)
+	if err != nil {
+		return nil, err
+	}
+
+	return serialized[:], nil
+}
+
+// MuSig2CombineSig combines real partial signatures into a Schnorr signature.
+func (s *realMuSig2TestSigner) MuSig2CombineSig(_ context.Context,
+	sessionID [32]byte, otherPartialSigs [][]byte) (bool, []byte, error) {
+
+	partialSigs := make(
+		[]*musig2.PartialSignature, len(otherPartialSigs),
+	)
+	for i, serialized := range otherPartialSigs {
+		partialSig, err := input.DeserializePartialSignature(serialized)
+		if err != nil {
+			return false, nil, err
+		}
+
+		partialSigs[i] = partialSig
+	}
+
+	finalSig, haveAllSigs, err := s.manager.MuSig2CombineSig(
+		input.MuSig2SessionID(sessionID), partialSigs,
+	)
+	if err != nil || finalSig == nil {
+		return haveAllSigs, nil, err
+	}
+
+	return haveAllSigs, finalSig.Serialize(), nil
+}
+
+// MuSig2Cleanup removes a real signing session.
+func (s *realMuSig2TestSigner) MuSig2Cleanup(_ context.Context,
+	sessionID [32]byte) error {
+
+	return s.manager.MuSig2Cleanup(input.MuSig2SessionID(sessionID))
+}
+
+// realCooperativeServerSigner emulates the existing server signing RPC with a
+// second real MuSig2 signer.
+type realCooperativeServerSigner struct {
+	t               *testing.T
+	signer          *realMuSig2TestSigner
+	locator         keychain.KeyLocator
+	protocolVersion loopdb.ProtocolVersion
+	swapHash        lntypes.Hash
+	paymentAddr     [32]byte
+	htlcKeys        loopdb.HtlcKeys
+	htlc            *swap.Htlc
+	calls           int
+}
+
+// newRealCooperativeServerSigner creates a real cooperative server signer.
+func newRealCooperativeServerSigner(t *testing.T,
+	signer *realMuSig2TestSigner, locator keychain.KeyLocator,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, htlcKeys loopdb.HtlcKeys,
+	htlc *swap.Htlc) *realCooperativeServerSigner {
+
+	t.Helper()
+
+	return &realCooperativeServerSigner{
+		t:               t,
+		signer:          signer,
+		locator:         locator,
+		protocolVersion: protocolVersion,
+		swapHash:        swapHash,
+		paymentAddr:     paymentAddr,
+		htlcKeys:        htlcKeys,
+		htlc:            htlc,
+	}
+}
+
+// sign validates the server request and creates a real server partial
+// signature over the PSBT transaction.
+func (s *realCooperativeServerSigner) sign(ctx context.Context,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, clientNonce, sweepTxPsbt []byte) (
+	[]byte, []byte, error) {
+
+	s.calls++
+	require.Equal(s.t, s.protocolVersion, protocolVersion)
+	require.Equal(s.t, s.swapHash, swapHash)
+	require.Equal(s.t, s.paymentAddr, paymentAddr)
+	require.Len(s.t, clientNonce, musig2.PubNonceSize)
+
+	packet, err := psbt.NewFromRawBytes(
+		bytes.NewReader(sweepTxPsbt), false,
+	)
+	require.NoError(s.t, err)
+	require.Len(s.t, packet.Inputs, 1)
+	require.NotNil(s.t, packet.Inputs[0].WitnessUtxo)
+
+	prevOut := packet.Inputs[0].WitnessUtxo
+	prevOutFetcher := txscript.NewCannedPrevOutputFetcher(
+		prevOut.PkScript, prevOut.Value,
+	)
+	sigHashes := txscript.NewTxSigHashes(
+		packet.UnsignedTx, prevOutFetcher,
+	)
+	sigHash, err := txscript.CalcTaprootSignatureHash(
+		sigHashes, txscript.SigHashDefault, packet.UnsignedTx, 0,
+		prevOutFetcher,
+	)
+	require.NoError(s.t, err)
+
+	htlcV3, ok := s.htlc.HtlcScript.(*swap.HtlcScriptV3)
+	require.True(s.t, ok)
+	var nonce [musig2.PubNonceSize]byte
+	copy(nonce[:], clientNonce)
+
+	muSig2Version := input.MuSig2Version100RC2
+	signers := [][]byte{
+		s.htlcKeys.SenderInternalPubKey[:],
+		s.htlcKeys.ReceiverInternalPubKey[:],
+	}
+	if protocolVersion < loopdb.ProtocolVersionMuSig2 {
+		muSig2Version = input.MuSig2Version040
+		signers = [][]byte{
+			s.htlcKeys.SenderInternalPubKey[1:],
+			s.htlcKeys.ReceiverInternalPubKey[1:],
+		}
+	}
+
+	session, err := s.signer.MuSig2CreateSession(
+		ctx, muSig2Version, &s.locator, signers,
+		lndclient.MuSig2TaprootTweakOpt(
+			htlcV3.RootHash[:], false,
+		),
+		lndclient.MuSig2NonceOpt(
+			[][musig2.PubNonceSize]byte{nonce},
+		),
+	)
+	require.NoError(s.t, err)
+	require.True(s.t, session.HaveAllNonces)
+
+	var message [32]byte
+	copy(message[:], sigHash)
+	partialSig, err := s.signer.MuSig2Sign(
+		ctx, session.SessionID, message, true,
+	)
+	require.NoError(s.t, err)
+
+	return session.PublicNonce[:], partialSig, nil
 }
 
 // emptySweepSigner returns an invalid empty signature response.
@@ -1230,7 +1702,7 @@ func TestSweepHtlc(t *testing.T) {
 			resp, err := sweepHtlc(
 				ctx, req, lnd.ChainParams, store,
 				lnd.ChainNotifier, lnd.WalletKit,
-				signer,
+				signer, nil, nil,
 			)
 
 			// Handle confirmation registration caused by the call

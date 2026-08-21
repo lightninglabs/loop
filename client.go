@@ -112,6 +112,19 @@ type Client struct {
 	wg          sync.WaitGroup
 }
 
+// MuSig2SignSweep asks the swap server to cooperatively sign a Loop Out HTLC
+// sweep transaction.
+func (c *Client) MuSig2SignSweep(ctx context.Context,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, nonce, sweepTxPsbt []byte) ([]byte, []byte,
+	error) {
+
+	return c.Server.MuSig2SignSweep(
+		ctx, protocolVersion, swapHash, paymentAddr, nonce,
+		sweepTxPsbt,
+	)
+}
+
 // ClientConfig is the exported configuration structure that is required to
 // instantiate the loop client.
 type ClientConfig struct {

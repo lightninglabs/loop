@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -83,12 +85,41 @@ type htlcSigner interface {
 		prevOutputs []*wire.TxOut) ([][]byte, error)
 }
 
-// sweepHtlc spends a Loop HTLC output using the success path and a known
-// preimage.
+// htlcMuSig2Signer contains the lnd signer operations needed for a
+// cooperative HTLC sweep.
+type htlcMuSig2Signer interface {
+	MuSig2CreateSession(ctx context.Context, version input.MuSig2Version,
+		signerLoc *keychain.KeyLocator, signers [][]byte,
+		opts ...lndclient.MuSig2SessionOpts) (
+		*input.MuSig2SessionInfo, error)
+
+	MuSig2RegisterNonces(ctx context.Context, sessionID [32]byte,
+		nonces [][musig2.PubNonceSize]byte) (bool, error)
+
+	MuSig2Sign(ctx context.Context, sessionID [32]byte,
+		message [32]byte, cleanup bool) ([]byte, error)
+
+	MuSig2CombineSig(ctx context.Context, sessionID [32]byte,
+		otherPartialSigs [][]byte) (bool, []byte, error)
+
+	MuSig2Cleanup(ctx context.Context, sessionID [32]byte) error
+}
+
+// htlcCooperativeSigner asks the swap server for its nonce and MuSig2 partial
+// signature.
+type htlcCooperativeSigner func(ctx context.Context,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, nonce, sweepTxPsbt []byte) ([]byte, []byte,
+	error)
+
+// sweepHtlc spends a Loop HTLC output using the preimage success path or the
+// cooperative key path.
 func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	chainParams *chaincfg.Params, store loopOutStore,
 	notifier htlcChainNotifier, wallet htlcWallet,
-	signer htlcSigner) (*looprpc.SweepHtlcResponse, error) {
+	signer htlcSigner, muSig2Signer htlcMuSig2Signer,
+	cooperativeSigner htlcCooperativeSigner) (
+	*looprpc.SweepHtlcResponse, error) {
 
 	// Make sure that the request has all required inputs.
 	if req.Outpoint == "" {
@@ -106,6 +137,7 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 
 	recovery := req.StatelessRecovery
 	stateless := recovery != nil
+	cooperative := req.Cooperative != nil
 	if stateless {
 		if len(recovery.ServerPubkey) == 0 ||
 			len(recovery.ClientPubkey) == 0 {
@@ -127,6 +159,21 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 			return nil, status.Error(codes.InvalidArgument,
 				"preimage required in stateless mode")
 		}
+		if cooperative && len(req.Cooperative.PaymentAddress) != 32 {
+			return nil, status.Error(codes.InvalidArgument,
+				"32-byte payment_address required for stateless "+
+					"cooperative recovery")
+		}
+	}
+	if !stateless && cooperative &&
+		len(req.Cooperative.PaymentAddress) != 0 {
+
+		return nil, status.Error(codes.InvalidArgument,
+			"payment_address is only used in stateless mode")
+	}
+	if cooperative && (muSig2Signer == nil || cooperativeSigner == nil) {
+		return nil, status.Error(codes.FailedPrecondition,
+			"cooperative signing is unavailable")
 	}
 
 	// Parse the inputs.
@@ -172,6 +219,9 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		keyDesc      keychain.KeyDescriptor
 		clientKey    *btcec.PublicKey
 		keyScanLimit uint32
+		htlcKeys     loopdb.HtlcKeys
+		protocol     loopdb.ProtocolVersion
+		paymentAddr  [32]byte
 	)
 
 	if stateless {
@@ -213,6 +263,11 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 				ReceiverScriptKey:      clientKeyBytes,
 				ReceiverInternalPubKey: clientKeyBytes,
 			},
+		}
+		htlcKeys = contract.HtlcKeys
+		protocol = contract.ProtocolVersion
+		if cooperative {
+			copy(paymentAddr[:], req.Cooperative.PaymentAddress)
 		}
 
 		targetHtlc, err = utils.GetHtlc(
@@ -267,8 +322,24 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		targetHash = targetSwap.Hash
 		heightHint = targetSwap.Contract.InitiationHeight
 		storedDest = targetSwap.Contract.DestAddr
+		htlcKeys = targetSwap.Contract.HtlcKeys
+		protocol = targetSwap.Contract.ProtocolVersion
 		keyDesc.KeyLocator = targetSwap.Contract.HtlcKeys.
 			ClientScriptKeyLocator
+
+		if cooperative {
+			storedPaymentAddr, paymentErr :=
+				utils.ObtainSwapPaymentAddr(
+					targetSwap.Contract.SwapInvoice,
+					chainParams,
+				)
+			if paymentErr != nil {
+				return nil, status.Errorf(codes.Internal,
+					"obtain stored swap payment address: %v",
+					paymentErr)
+			}
+			paymentAddr = *storedPaymentAddr
+		}
 
 		if len(req.Preimage) > 0 {
 			preimage, err = lntypes.MakePreimage(req.Preimage)
@@ -331,8 +402,9 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 
 	var (
-		htlcTxOut *wire.TxOut
-		fundingTx *wire.MsgTx
+		htlcTxOut     *wire.TxOut
+		fundingTx     *wire.MsgTx
+		fundingHeight uint32
 	)
 
 	infof("sweephtlc: waiting for confirmation of %v", req.Outpoint)
@@ -344,6 +416,7 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		}
 
 		fundingTx = conf.Tx
+		fundingHeight = conf.BlockHeight
 		infof("sweephtlc: funding confirmed at height %v",
 			conf.BlockHeight)
 
@@ -402,7 +475,12 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 
 	infof("sweephtlc: swap hash validated for %v", req.Outpoint)
 
-	if preimage.Hash() != targetHtlc.Hash {
+	if cooperative && targetHtlc.Version != swap.HtlcV3 {
+		return nil, status.Error(codes.InvalidArgument,
+			"cooperative sweeping requires a Taproot HTLC")
+	}
+
+	if !cooperative && preimage.Hash() != targetHtlc.Hash {
 		return nil, status.Error(codes.InvalidArgument,
 			"preimage does not match HTLC hash")
 	}
@@ -410,12 +488,16 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	infof("sweephtlc: sweeping to %v with feerate %v sat/vbyte",
 		sweepAddr.EncodeAddress(), req.SatPerVbyte)
 
-	// Estimate fee for the success-path spend weight.
+	// Estimate the fee for the selected spend path.
 	var estimator input.TxWeightEstimator
-	err = targetHtlc.AddSuccessToEstimator(&estimator)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"failed to estimate tx input weight: %v", err)
+	if cooperative {
+		estimator.AddTaprootKeySpendInput(txscript.SigHashDefault)
+	} else {
+		err = targetHtlc.AddSuccessToEstimator(&estimator)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"failed to estimate tx input weight: %v", err)
+		}
 	}
 	err = sweep.AddOutputEstimate(&estimator, sweepAddr)
 	if err != nil {
@@ -455,135 +537,194 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 		)
 	}
 
-	// Build the sweep transaction spending the HTLC via the success path.
-	sweepTx := wire.NewMsgTx(2)
-	sweepTx.AddTxIn(&wire.TxIn{
-		PreviousOutPoint: *htlcOutpoint,
-		Sequence:         targetHtlc.SuccessSequence(),
-	})
-	sweepTx.AddTxOut(&wire.TxOut{
-		PkScript: sweepPkScript,
-		Value:    int64(htlcValue - fee),
-	})
-
-	infof("sweephtlc: signing sweep spending %v", req.Outpoint)
-
 	prevOut := &wire.TxOut{
 		Value:    int64(htlcValue),
 		PkScript: targetHtlc.PkScript,
 	}
-	signDesc := lndclient.SignDescriptor{
-		WitnessScript: targetHtlc.SuccessScript(),
-		Output:        prevOut,
-		HashType:      targetHtlc.SigHash(),
-		InputIndex:    0,
-		KeyDesc:       keyDesc,
-	}
-	if targetHtlc.Version == swap.HtlcV3 {
-		signDesc.SignMethod = input.TaprootScriptSpendSignMethod
-	}
 
-	// Sign the HTLC spend. Stateless recovery first asks lnd to resolve
-	// the supplied public key from its wallet. A signing error or invalid
-	// signature triggers the bounded key-family scan.
-	usedKeyScan := false
-	scanAndSign := func() ([][]byte, error) {
-		recoveredKey, scanErr := findStatelessSweepKey(
-			ctx, wallet, clientKey, keyScanLimit,
-		)
-		if scanErr != nil {
-			return nil, scanErr
+	var sweepTx *wire.MsgTx
+	if cooperative {
+		if stateless {
+			recoveredKey, scanErr := findStatelessSweepKey(
+				ctx, wallet, clientKey, keyScanLimit,
+			)
+			if scanErr != nil {
+				return nil, scanErr
+			}
+			keyDesc = recoveredKey
+			infof("sweephtlc: using recovered client key locator for " +
+				"cooperative signing")
 		}
 
-		signDesc.KeyDesc = recoveredKey
-		usedKeyScan = true
+		infof("sweephtlc: signing cooperative sweep spending %v",
+			req.Outpoint)
 
-		return signer.SignOutputRawKeyLocator(
-			ctx, sweepTx,
-			[]*lndclient.SignDescriptor{&signDesc},
+		var lockTime uint32
+		if fundingHeight > 0 {
+			lockTime = fundingHeight
+		}
+
+		cooperativeSweeper := &sweep.Sweeper{}
+		var (
+			psbtBytes []byte
+			sigHash   []byte
+		)
+		sweepTx, psbtBytes, sigHash, err = cooperativeSweeper.
+			CreateUnsignedTaprootKeySpendSweepTx(
+				ctx, lockTime, targetHtlc, *htlcOutpoint,
+				htlcValue, fee, sweepAddr,
+			)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"construct cooperative sweep: %v", err)
+		}
+
+		finalSig, signErr := signCooperativeSweep(
+			ctx, muSig2Signer, cooperativeSigner, protocol,
+			targetHash, paymentAddr, htlcKeys,
+			keyDesc.KeyLocator, targetHtlc, sigHash, psbtBytes,
+		)
+		if signErr != nil {
+			return nil, signErr
+		}
+		sweepTx.TxIn[0].Witness = wire.TxWitness{finalSig}
+
+		if err := verifySweepHtlcWitness(sweepTx, prevOut); err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"verify cooperative sweep witness: %v", err)
+		}
+		infof("sweephtlc: cooperative sweep witness verified")
+	} else {
+		// Build the transaction spending the HTLC via its success path.
+		sweepTx = wire.NewMsgTx(2)
+		sweepTx.AddTxIn(&wire.TxIn{
+			PreviousOutPoint: *htlcOutpoint,
+			Sequence:         targetHtlc.SuccessSequence(),
+		})
+		sweepTx.AddTxOut(&wire.TxOut{
+			PkScript: sweepPkScript,
+			Value:    int64(htlcValue - fee),
+		})
+
+		infof("sweephtlc: signing sweep spending %v", req.Outpoint)
+
+		signDesc := lndclient.SignDescriptor{
+			WitnessScript: targetHtlc.SuccessScript(),
+			Output:        prevOut,
+			HashType:      targetHtlc.SigHash(),
+			InputIndex:    0,
+			KeyDesc:       keyDesc,
+		}
+		if targetHtlc.Version == swap.HtlcV3 {
+			signDesc.SignMethod = input.TaprootScriptSpendSignMethod
+		}
+
+		// Sign the HTLC spend. Stateless recovery first asks lnd to
+		// resolve the supplied public key from its wallet. A signing
+		// error or invalid signature triggers the key-family scan.
+		usedKeyScan := false
+		scanAndSign := func() ([][]byte, error) {
+			recoveredKey, scanErr := findStatelessSweepKey(
+				ctx, wallet, clientKey, keyScanLimit,
+			)
+			if scanErr != nil {
+				return nil, scanErr
+			}
+
+			signDesc.KeyDesc = recoveredKey
+			usedKeyScan = true
+
+			return signer.SignOutputRawKeyLocator(
+				ctx, sweepTx,
+				[]*lndclient.SignDescriptor{&signDesc},
+				[]*wire.TxOut{prevOut},
+			)
+		}
+
+		rawSigs, err := signer.SignOutputRaw(
+			ctx, sweepTx, []*lndclient.SignDescriptor{&signDesc},
 			[]*wire.TxOut{prevOut},
 		)
-	}
-
-	rawSigs, err := signer.SignOutputRaw(
-		ctx, sweepTx, []*lndclient.SignDescriptor{&signDesc},
-		[]*wire.TxOut{prevOut},
-	)
-	if err != nil {
-		if !stateless {
-			return nil, err
-		}
-
-		infof("sweephtlc: public-key signing failed: %v; "+
-			"scanning up to %d family-%d keys", err,
-			keyScanLimit, swap.KeyFamily,
-		)
-		rawSigs, err = scanAndSign()
 		if err != nil {
-			return nil, err
-		}
-	}
+			if !stateless {
+				return nil, err
+			}
 
-	applySignature := func(signatures [][]byte) error {
-		if len(signatures) != 1 || len(signatures[0]) == 0 {
-			return status.Error(codes.Internal,
-				"signer returned an invalid signature count")
-		}
-
-		witness, witnessErr := targetHtlc.GenSuccessWitness(
-			signatures[0], preimage,
-		)
-		if witnessErr != nil {
-			return witnessErr
-		}
-
-		sweepTx.TxIn[0].Witness = witness
-
-		return nil
-	}
-	if err = applySignature(rawSigs); err != nil {
-		return nil, err
-	}
-
-	if stateless {
-		if usedKeyScan {
-			infof("sweephtlc: verifying stateless sweep witness " +
-				"after key recovery")
-		} else {
-			infof("sweephtlc: verifying stateless sweep witness")
-		}
-
-		verifyErr := verifySweepHtlcWitness(sweepTx, prevOut)
-		if verifyErr != nil && !usedKeyScan {
-			infof("sweephtlc: public-key signature did not match "+
-				"client key; scanning up to %d family-%d keys",
-				keyScanLimit, swap.KeyFamily)
-
+			infof("sweephtlc: public-key signing failed: %v; "+
+				"scanning up to %d family-%d keys", err,
+				keyScanLimit, swap.KeyFamily,
+			)
 			rawSigs, err = scanAndSign()
 			if err != nil {
 				return nil, err
 			}
-			if err = applySignature(rawSigs); err != nil {
-				return nil, err
+		}
+
+		applySignature := func(signatures [][]byte) error {
+			if len(signatures) != 1 || len(signatures[0]) == 0 {
+				return status.Error(codes.Internal,
+					"signer returned an invalid signature count")
 			}
 
-			infof("sweephtlc: verifying stateless sweep witness " +
-				"after key recovery")
-			verifyErr = verifySweepHtlcWitness(sweepTx, prevOut)
-		}
-		if verifyErr != nil {
-			return nil, status.Errorf(codes.Internal,
-				"lnd produced an invalid signature for "+
-					"client_pubkey: %v", verifyErr)
-		}
-		infof("sweephtlc: stateless sweep witness verified")
+			witness, witnessErr := targetHtlc.GenSuccessWitness(
+				signatures[0], preimage,
+			)
+			if witnessErr != nil {
+				return witnessErr
+			}
 
-		if usedKeyScan {
-			infof("sweephtlc: signed with recovered client " +
-				"key locator")
-		} else {
-			infof("sweephtlc: signed directly with client " +
-				"public key")
+			sweepTx.TxIn[0].Witness = witness
+
+			return nil
+		}
+		if err = applySignature(rawSigs); err != nil {
+			return nil, err
+		}
+
+		if stateless {
+			if usedKeyScan {
+				infof("sweephtlc: verifying stateless sweep " +
+					"witness after key recovery")
+			} else {
+				infof("sweephtlc: verifying stateless sweep " +
+					"witness")
+			}
+
+			verifyErr := verifySweepHtlcWitness(sweepTx, prevOut)
+			if verifyErr != nil && !usedKeyScan {
+				infof("sweephtlc: public-key signature did not "+
+					"match client key; scanning up to %d "+
+					"family-%d keys", keyScanLimit,
+					swap.KeyFamily)
+
+				rawSigs, err = scanAndSign()
+				if err != nil {
+					return nil, err
+				}
+				if err = applySignature(rawSigs); err != nil {
+					return nil, err
+				}
+
+				infof("sweephtlc: verifying stateless sweep " +
+					"witness after key recovery")
+				verifyErr = verifySweepHtlcWitness(
+					sweepTx, prevOut,
+				)
+			}
+			if verifyErr != nil {
+				return nil, status.Errorf(codes.Internal,
+					"lnd produced an invalid signature for "+
+						"client_pubkey: %v", verifyErr)
+			}
+			infof("sweephtlc: stateless sweep witness verified")
+
+			if usedKeyScan {
+				infof("sweephtlc: signed with recovered client " +
+					"key locator")
+			} else {
+				infof("sweephtlc: signed directly with client " +
+					"public key")
+			}
 		}
 	}
 
@@ -637,6 +778,119 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 
 	return resp, nil
+}
+
+// signCooperativeSweep creates a client MuSig2 session, obtains the server's
+// partial signature and returns the verified combined Schnorr signature.
+func signCooperativeSweep(ctx context.Context, signer htlcMuSig2Signer,
+	serverSigner htlcCooperativeSigner,
+	protocolVersion loopdb.ProtocolVersion, swapHash lntypes.Hash,
+	paymentAddr [32]byte, htlcKeys loopdb.HtlcKeys,
+	clientKeyLocator keychain.KeyLocator, htlc *swap.Htlc,
+	sigHash, sweepTxPsbt []byte) ([]byte, error) {
+
+	htlcV3, ok := htlc.HtlcScript.(*swap.HtlcScriptV3)
+	if !ok {
+		return nil, fmt.Errorf("cooperative sweep requires HTLC v3")
+	}
+	if len(sigHash) != chainhash.HashSize {
+		return nil, fmt.Errorf("invalid cooperative sighash length: %d",
+			len(sigHash))
+	}
+
+	var (
+		muSig2Version input.MuSig2Version
+		signers       [][]byte
+	)
+	if protocolVersion >= loopdb.ProtocolVersionMuSig2 {
+		muSig2Version = input.MuSig2Version100RC2
+		signers = [][]byte{
+			htlcKeys.SenderInternalPubKey[:],
+			htlcKeys.ReceiverInternalPubKey[:],
+		}
+	} else {
+		muSig2Version = input.MuSig2Version040
+		signers = [][]byte{
+			htlcKeys.SenderInternalPubKey[1:],
+			htlcKeys.ReceiverInternalPubKey[1:],
+		}
+	}
+
+	session, err := signer.MuSig2CreateSession(
+		ctx, muSig2Version, &clientKeyLocator, signers,
+		lndclient.MuSig2TaprootTweakOpt(
+			htlcV3.RootHash[:], false,
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create client MuSig2 session: %w", err)
+	}
+
+	cleanupSession := true
+	defer func() {
+		if cleanupSession {
+			_ = signer.MuSig2Cleanup(ctx, session.SessionID)
+		}
+	}()
+
+	serverNonce, serverSig, err := serverSigner(
+		ctx, protocolVersion, swapHash, paymentAddr,
+		session.PublicNonce[:], sweepTxPsbt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("server cooperative signing: %w", err)
+	}
+	if len(serverNonce) != musig2.PubNonceSize {
+		return nil, fmt.Errorf("invalid server nonce length: %d",
+			len(serverNonce))
+	}
+	if len(serverSig) != input.MuSig2PartialSigSize {
+		return nil, fmt.Errorf("invalid server partial signature length: %d",
+			len(serverSig))
+	}
+
+	var otherNonce [musig2.PubNonceSize]byte
+	copy(otherNonce[:], serverNonce)
+	haveAllNonces, err := signer.MuSig2RegisterNonces(
+		ctx, session.SessionID,
+		[][musig2.PubNonceSize]byte{otherNonce},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("register server MuSig2 nonce: %w", err)
+	}
+	if !haveAllNonces {
+		return nil, fmt.Errorf("MuSig2 session is missing nonces")
+	}
+
+	var digest [chainhash.HashSize]byte
+	copy(digest[:], sigHash)
+	_, err = signer.MuSig2Sign(
+		ctx, session.SessionID, digest, false,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create client MuSig2 signature: %w", err)
+	}
+
+	haveAllSigs, finalSig, err := signer.MuSig2CombineSig(
+		ctx, session.SessionID, [][]byte{serverSig},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("combine MuSig2 signatures: %w", err)
+	}
+	if !haveAllSigs {
+		return nil, fmt.Errorf("MuSig2 session is missing signatures")
+	}
+	cleanupSession = false
+
+	parsedSig, err := schnorr.ParseSignature(finalSig)
+	if err != nil {
+		return nil, fmt.Errorf("parse cooperative signature: %w", err)
+	}
+	if !parsedSig.Verify(sigHash, htlcV3.TaprootKey) {
+		return nil, fmt.Errorf("cooperative signature does not verify")
+	}
+
+	return finalSig, nil
 }
 
 // findStatelessSweepKey locates the client key in the Loop key family so lnd

@@ -11,10 +11,10 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// sweepHtlcCommand exposes HTLC success-path sweeping over loop CLI.
+// sweepHtlcCommand exposes HTLC sweeping over loop CLI.
 var sweepHtlcCommand = &cli.Command{
 	Name:  "sweephtlc",
-	Usage: "sweep an HTLC output using the preimage success path",
+	Usage: "sweep an HTLC output using a preimage or cooperation",
 	Description: "Supplying any stateless-recovery flag selects " +
 		"stateless recovery mode. Both public keys, the preimage, " +
 		"CLTV expiry, and swap initiation height must then be " +
@@ -25,7 +25,10 @@ var sweepHtlcCommand = &cli.Command{
 		"sign using the client public key. If signing fails or the " +
 		"signature does not verify, Loop scans the configured " +
 		"number of keys in key family 99 and retries with the " +
-		"recovered key locator.",
+		"recovered key locator. The cooperative option instead " +
+		"requests a MuSig2 server signature and spends via the " +
+		"Taproot key path. Stateless cooperative recovery also " +
+		"requires the swap invoice payment address.",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:     "outpoint",
@@ -76,6 +79,15 @@ var sweepHtlcCommand = &cli.Command{
 			Name: "keyscanlimit",
 			Usage: "maximum family-99 keys to scan; zero uses " +
 				"loopd's default",
+		},
+		&cli.BoolFlag{
+			Name:  "cooperative",
+			Usage: "request a cooperative MuSig2 key-path sweep",
+		},
+		&cli.StringFlag{
+			Name: "paymentaddr",
+			Usage: "swap invoice payment address; required for " +
+				"stateless cooperative recovery",
 		},
 		&cli.BoolFlag{
 			Name:  "publish",
@@ -167,6 +179,39 @@ func sweepHtlc(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
+	cooperative := cmd.Bool("cooperative")
+	if cmd.IsSet("paymentaddr") && !cooperative {
+		return fmt.Errorf("--paymentaddr requires --cooperative")
+	}
+
+	var cooperativeSweep *looprpc.CooperativeSweep
+	if cooperative {
+		var paymentAddr []byte
+		if cmd.IsSet("paymentaddr") {
+			paymentAddr, err = hex.DecodeString(cmd.String("paymentaddr"))
+			if err != nil {
+				return fmt.Errorf("invalid paymentaddr: %w", err)
+			}
+			if len(paymentAddr) != 32 {
+				return fmt.Errorf("paymentaddr must be 32 bytes")
+			}
+		}
+
+		switch {
+		case stateless && len(paymentAddr) == 0:
+			return fmt.Errorf("--paymentaddr is required for stateless " +
+				"cooperative recovery")
+
+		case !stateless && len(paymentAddr) != 0:
+			return fmt.Errorf("--paymentaddr is only used for " +
+				"stateless recovery")
+		}
+
+		cooperativeSweep = &looprpc.CooperativeSweep{
+			PaymentAddress: paymentAddr,
+		}
+	}
+
 	// Call SweepHtlc on loopd trying to sweep the HTLC.
 	resp, err := client.SweepHtlc(ctx, &looprpc.SweepHtlcRequest{
 		Outpoint:          cmd.String("outpoint"),
@@ -176,6 +221,7 @@ func sweepHtlc(ctx context.Context, cmd *cli.Command) error {
 		Preimage:          preimage,
 		Publish:           cmd.Bool("publish"),
 		StatelessRecovery: recovery,
+		Cooperative:       cooperativeSweep,
 	})
 	if err != nil {
 		return err

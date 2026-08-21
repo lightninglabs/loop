@@ -38,8 +38,8 @@ type SwapClientClient interface {
 	// status.
 	ListSwaps(ctx context.Context, in *ListSwapsRequest, opts ...grpc.CallOption) (*ListSwapsResponse, error)
 	// loop: `sweephtlc`
-	// SweepHtlc spends a swap HTLC output via the preimage (success) path using
-	// the swap's known preimage or an optionally supplied one.
+	// SweepHtlc spends a swap HTLC output via either the preimage success path
+	// or the cooperative key path, using stored or stateless recovery data.
 	SweepHtlc(ctx context.Context, in *SweepHtlcRequest, opts ...grpc.CallOption) (*SweepHtlcResponse, error)
 	// loop: `swapinfo`
 	// SwapInfo returns all known details about a single swap.
@@ -498,8 +498,8 @@ type SwapClientServer interface {
 	// status.
 	ListSwaps(context.Context, *ListSwapsRequest) (*ListSwapsResponse, error)
 	// loop: `sweephtlc`
-	// SweepHtlc spends a swap HTLC output via the preimage (success) path using
-	// the swap's known preimage or an optionally supplied one.
+	// SweepHtlc spends a swap HTLC output via either the preimage success path
+	// or the cooperative key path, using stored or stateless recovery data.
 	SweepHtlc(context.Context, *SweepHtlcRequest) (*SweepHtlcResponse, error)
 	// loop: `swapinfo`
 	// SwapInfo returns all known details about a single swap.

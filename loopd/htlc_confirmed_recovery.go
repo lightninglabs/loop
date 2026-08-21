@@ -88,6 +88,7 @@ func (m *htlcConfirmedRecoveryManager) handleNotification(ctx context.Context,
 			SatPerVbyte: ntfn.SatPerVbyte,
 			Publish:     true,
 		}, m.chainParams, m.swapStore, m.notifier, m.wallet, m.signer,
+		nil, nil,
 	)
 	if err != nil {
 		debugf("Unable to recover HTLC outpoint %s: %v", outpoint, err)

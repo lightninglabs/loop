@@ -662,7 +662,7 @@
     },
     "/v1/loop/out/sweephtlc": {
       "post": {
-        "summary": "loop: `sweephtlc`\nSweepHtlc spends a swap HTLC output via the preimage (success) path using\nthe swap's known preimage or an optionally supplied one.",
+        "summary": "loop: `sweephtlc`\nSweepHtlc spends a swap HTLC output via either the preimage success path\nor the cooperative key path, using stored or stateless recovery data.",
         "operationId": "SwapClient_SweepHtlc",
         "responses": {
           "200": {
@@ -681,7 +681,7 @@
         "parameters": [
           {
             "name": "body",
-            "description": "SweepHtlcRequest instructs loopd to sweep a swap HTLC via its success path.",
+            "description": "SweepHtlcRequest instructs loopd to sweep a swap HTLC.",
             "in": "body",
             "required": true,
             "schema": {
@@ -1584,6 +1584,17 @@
           "description": "The expiry of the reservation."
         }
       }
+    },
+    "looprpcCooperativeSweep": {
+      "type": "object",
+      "properties": {
+        "payment_address": {
+          "type": "string",
+          "format": "byte",
+          "description": "The swap invoice payment address used to prove ownership to the server.\nStateful mode obtains this value from the stored swap invoice. Stateless\nmode requires it here."
+        }
+      },
+      "description": "CooperativeSweep selects a cooperative MuSig2 key-path spend."
     },
     "looprpcDeposit": {
       "type": "object",
@@ -3209,9 +3220,13 @@
         "stateless_recovery": {
           "$ref": "#/definitions/looprpcStatelessRecovery",
           "description": "If set, reconstruct the latest Loop Out HTLC without querying the swap\ndatabase."
+        },
+        "cooperative": {
+          "$ref": "#/definitions/looprpcCooperativeSweep",
+          "description": "If set, request the server's MuSig2 signature and spend the HTLC via its\ncooperative key path instead of revealing the preimage."
         }
       },
-      "description": "SweepHtlcRequest instructs loopd to sweep a swap HTLC via its success path."
+      "description": "SweepHtlcRequest instructs loopd to sweep a swap HTLC."
     },
     "looprpcSweepHtlcResponse": {
       "type": "object",
@@ -3236,7 +3251,7 @@
           "$ref": "#/definitions/looprpcPublishFailed"
         }
       },
-      "description": "SweepHtlcResponse returns the broadcast sweep transaction."
+      "description": "SweepHtlcResponse returns the signed sweep transaction and publish outcome."
     },
     "looprpcTokensResponse": {
       "type": "object",
