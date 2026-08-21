@@ -55,7 +55,9 @@ The following flags are supported:
 
 ### `out sweephtlc` subcommand
 
-sweep an HTLC output using the preimage success path.
+sweep an HTLC output using a preimage or cooperation.
+
+Supplying any stateless-recovery flag selects stateless recovery mode. Both public keys, the preimage, CLTV expiry, and swap initiation height must then be supplied. In this mode, Loop reconstructs a protocol-11 Loop Out HTLC without querying its swap database. It verifies the reconstructed address against the requested address and the actual on-chain output, then asks lnd to sign using the client public key. If signing fails or the signature does not verify, Loop scans the configured number of keys in key family 99 and retries with the recovered key locator. The cooperative option instead requests a MuSig2 server signature and spends via the Taproot key path. Stateless cooperative recovery also requires the swap invoice payment address.
 
 Usage:
 
@@ -65,15 +67,22 @@ $ loop [GLOBAL FLAGS] out sweephtlc [COMMAND FLAGS] [ARGUMENTS...]
 
 The following flags are supported:
 
-| Name             | Description                                                    | Type   | Default value |
-|------------------|----------------------------------------------------------------|--------|:-------------:|
-| `--outpoint="…"` | htlc outpoint to sweep (format: txid:vout)                     | string |
-| `--htlcaddr="…"` | htlc address corresponding to the outpoint                     | string |
-| `--feerate="…"`  | fee rate to use in sat/vbyte                                   | uint   |      `0`      |
-| `--destaddr="…"` | optional destination address; defaults to a new wallet address | string |
-| `--preimage="…"` | optional preimage hex to override stored swap preimage         | string |
-| `--publish`      | publish the sweep transaction immediately                      | bool   |    `false`    |
-| `--help` (`-h`)  | show help                                                      | bool   |    `false`    |
+| Name                     | Description                                                                   | Type   | Default value |
+|--------------------------|-------------------------------------------------------------------------------|--------|:-------------:|
+| `--outpoint="…"`         | htlc outpoint to sweep (format: txid:vout)                                    | string |
+| `--htlcaddr="…"`         | htlc address corresponding to the outpoint                                    | string |
+| `--feerate="…"`          | fee rate to use in sat/vbyte                                                  | uint   |      `0`      |
+| `--destaddr="…"`         | optional destination address; defaults to a new wallet address                | string |
+| `--preimage="…"`         | optional preimage hex to override stored swap preimage                        | string |
+| `--serverpubkey="…"`     | compressed server HTLC public key; enables stateless recovery mode            | string |
+| `--clientpubkey="…"`     | compressed client HTLC public key; enables stateless recovery mode            | string |
+| `--cltvexpiry="…"`       | absolute HTLC CLTV expiry for stateless recovery                              | int    |      `0`      |
+| `--initiationheight="…"` | block height at which the swap was initiated; required for stateless recovery | int    |      `0`      |
+| `--keyscanlimit="…"`     | maximum family-99 keys to scan; zero uses loopd's default                     | uint   |      `0`      |
+| `--cooperative`          | request a cooperative MuSig2 key-path sweep                                   | bool   |    `false`    |
+| `--paymentaddr="…"`      | swap invoice payment address; required for stateless cooperative recovery     | string |
+| `--publish`              | publish the sweep transaction immediately                                     | bool   |    `false`    |
+| `--help` (`-h`)          | show help                                                                     | bool   |    `false`    |
 
 ### `in` command
 

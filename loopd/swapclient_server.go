@@ -1563,6 +1563,7 @@ func (s *swapClientServer) SweepHtlc(ctx context.Context,
 	return sweepHtlc(
 		ctx, req, s.lnd.ChainParams, s.impl.Store,
 		s.lnd.ChainNotifier, s.lnd.WalletKit, s.lnd.Signer,
+		s.lnd.Signer, s.impl.MuSig2SignSweep,
 	)
 }
 
