@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
@@ -77,7 +78,8 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 				Hash:  chainhash.Hash{0xaa},
 				Index: 0,
 			},
-			Value: depositValue,
+			Value:         depositValue,
+			AddressParams: addrParams,
 		},
 	}
 
@@ -96,7 +98,7 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 		ClientPubkey:          clientKey.PubKey(),
 		ServerPubkey:          serverKey.PubKey(),
 		Deposits:              deposits,
-		AddressParams:         addrParams,
+		ChangeAddressParams:   addrParams,
 		HtlcTxFeeRate:         feeRate,
 		SelectedAmount:        selectedAmount,
 		PaymentTimeoutSeconds: 3600,
@@ -181,6 +183,76 @@ func TestPaymentTimeoutDuration(t *testing.T) {
 			)
 		})
 	}
+}
+
+// TestCreateHtlcSweepTxUsesConfirmedHtlcOutpoint verifies that timeout sweeps
+// spend the actual server-published HTLC tx variant once it has been recorded.
+func TestCreateHtlcSweepTxUsesConfirmedHtlcOutpoint(t *testing.T) {
+	t.Parallel()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	network := &chaincfg.RegressionNetParams
+	staticAddr, err := newStaticAddress(
+		clientKey.PubKey(), serverKey.PubKey(), 4032,
+	)
+	require.NoError(t, err)
+
+	pkScript, err := staticAddr.StaticAddressScript()
+	require.NoError(t, err)
+
+	addrParams := &address.Parameters{
+		ClientPubkey:    clientKey.PubKey(),
+		ServerPubkey:    serverKey.PubKey(),
+		PkScript:        pkScript,
+		Expiry:          4032,
+		ProtocolVersion: version.ProtocolVersion_V0,
+	}
+
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0xbb},
+			Index: 0,
+		},
+		Value:         500_000,
+		AddressParams: addrParams,
+	}
+
+	confirmedHtlcHash := chainhash.Hash{0xcc}
+	confirmedHtlcValue := btcutil.Amount(275_000)
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:        lntypes.Hash{3, 2, 1},
+		HtlcCltvExpiry:  800,
+		ClientPubkey:    clientKey.PubKey(),
+		ServerPubkey:    serverKey.PubKey(),
+		Deposits:        []*deposit.Deposit{dep},
+		HtlcTxFeeRate:   chainfee.SatPerKWeight(253),
+		HtlcTxHash:      &confirmedHtlcHash,
+		HtlcOutputIndex: 2,
+		HtlcOutputValue: confirmedHtlcValue,
+	}
+
+	sweepAddr, err := btcutil.NewAddressTaproot(make([]byte, 32), network)
+	require.NoError(t, err)
+
+	sweepTx, err := loopIn.createHtlcSweepTx(
+		t.Context(), &noopSigner{}, sweepAddr,
+		chainfee.SatPerKWeight(253), network,
+		uint32(loopIn.HtlcCltvExpiry)+1, 1,
+	)
+	require.NoError(t, err)
+	require.Len(t, sweepTx.TxIn, 1)
+	require.Equal(
+		t, wire.OutPoint{
+			Hash:  confirmedHtlcHash,
+			Index: 2,
+		}, sweepTx.TxIn[0].PreviousOutPoint,
+	)
+	require.Less(t, sweepTx.TxOut[0].Value, int64(confirmedHtlcValue))
+	require.Greater(t, sweepTx.TxOut[0].Value, int64(0))
 }
 
 // newStaticAddress creates a StaticAddress for testing.

@@ -15,11 +15,34 @@
   "events": [
     {
       "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "request",
+        "message_type": "looprpc.StaticAddressSummaryRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "error",
+        "error": "rpc error: code = Unknown desc = no static address parameters found",
+        "status": {
+          "code": 2,
+          "message": "no static address parameters found"
+        }
+      }
+    },
+    {
+      "time_ms": 1,
       "kind": "stdout",
       "data": {
         "lines": [
           "\n",
-          "WARNING: Be aware that loosing your l402.token file in .loop under your home directory will take your ability to spend funds sent to the static address via loop-ins or withdrawals. You will have to wait until the deposit expires and your loop client sweeps the funds back to your lnd wallet. The deposit expiry could be months in the future.\n",
+          "WARNING: Be aware that losing your l402.token file in .loop under your home directory will take your ability to spend funds sent to the static address via loop-ins or withdrawals. You will have to wait until the deposit expires and your loop client sweeps the funds back to your lnd wallet. The deposit expiry could be months in the future.\n",
           "\n",
           "CONTINUE WITH NEW ADDRESS? (y/n): "
         ]
@@ -40,7 +63,8 @@
         "event": "request",
         "message_type": "looprpc.NewStaticAddressRequest",
         "payload": {
-          "client_key": ""
+          "client_key": "",
+          "send_coins_request": null
         }
       }
     },
@@ -64,7 +88,8 @@
         "lines": [
           "{\n",
           "    \"address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n",
-          "    \"expiry\": 14400\n",
+          "    \"expiry\": 14400,\n",
+          "    \"send_coins_response\": null\n",
           "}\n"
         ]
       }
