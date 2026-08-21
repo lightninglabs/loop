@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
@@ -27,9 +26,15 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 
 	msgTx := wire.NewMsgTx(2)
 
-	params, err := f.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if f.deposit.AddressParams == nil {
+		return f.HandleError(fmt.Errorf("missing static address " +
+			"parameters"))
+	}
+	params := f.deposit.AddressParams
+
+	address, err := f.deposit.GetStaticAddressScript()
 	if err != nil {
-		return fsm.OnError
+		return f.HandleError(err)
 	}
 
 	// Add the deposit outpoint as input to the transaction.
@@ -96,11 +101,6 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return f.HandleError(err)
-	}
-
 	sig := rawSigs[0]
 	msgTx.TxIn[0].Witness, err = address.GenTimeoutWitness(sig)
 	if err != nil {
@@ -131,14 +131,10 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
-	var txID *chainhash.Hash
-	// Only pass the txid if we know it from our own publication.
-	if f.deposit.ExpirySweepTxid != (chainhash.Hash{}) {
-		txID = &f.deposit.ExpirySweepTxid
-	}
-
+	// Register by script only so an RBF replacement of the timeout sweep is
+	// still detected after restart with a stale ExpirySweepTxid.
 	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		ctx, txID, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
+		ctx, nil, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
 		int32(f.deposit.GetConfirmationHeight()),
 	)
 	if err != nil {
