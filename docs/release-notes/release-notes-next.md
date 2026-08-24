@@ -2,6 +2,11 @@
 
 #### New Features
 
+* The `loop out sweephtlc` recovery command can reconstruct and sweep a
+  protocol-11 Loop Out HTLC from public swap data when the local swap database
+  record is unavailable. It can also request the server's cooperative MuSig2
+  signature to spend an original Taproot HTLC through its key path.
+
 #### Breaking Changes
 
 * Instant Out and reservation RPCs now require the `loop:out` permission.
