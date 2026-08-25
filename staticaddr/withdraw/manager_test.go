@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swap"
@@ -196,6 +197,40 @@ type withdrawalConfRegistration struct {
 	heightHint int32
 }
 
+type withdrawalTransition struct {
+	deposits []*deposit.Deposit
+	event    fsm.EventType
+	state    fsm.StateType
+}
+
+type withdrawalTestDepositManager struct {
+	DepositManager
+
+	transitions chan withdrawalTransition
+	updates     chan *deposit.Deposit
+}
+
+func (m *withdrawalTestDepositManager) TransitionDeposits(_ context.Context,
+	deposits []*deposit.Deposit, event fsm.EventType,
+	state fsm.StateType) error {
+
+	m.transitions <- withdrawalTransition{
+		deposits: deposits,
+		event:    event,
+		state:    state,
+	}
+
+	return nil
+}
+
+func (m *withdrawalTestDepositManager) UpdateDeposit(_ context.Context,
+	d *deposit.Deposit) error {
+
+	m.updates <- d
+
+	return nil
+}
+
 type withdrawalTestNotifier struct {
 	lndclient.ChainNotifierClient
 
@@ -288,6 +323,94 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("confirmation registration not received: %v", ctx.Err())
 	}
+}
+
+func TestHandleWithdrawalReconcilesIncompleteSpend(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	UseLogger(btclog.Disabled)
+
+	notifier := newWithdrawalTestNotifier()
+	depositManager := &withdrawalTestDepositManager{
+		transitions: make(chan withdrawalTransition, 2),
+		updates:     make(chan *deposit.Deposit, 2),
+	}
+	manager, err := NewManager(&ManagerConfig{
+		ChainNotifier:  notifier,
+		DepositManager: depositManager,
+	}, 123)
+	require.NoError(t, err)
+
+	first := &deposit.Deposit{
+		OutPoint: wire.OutPoint{Hash: chainhash.Hash{1}, Index: 1},
+		AddressParams: &address.Parameters{
+			PkScript: []byte{0x51},
+		},
+	}
+	second := &deposit.Deposit{
+		OutPoint: wire.OutPoint{Hash: chainhash.Hash{2}, Index: 2},
+		AddressParams: &address.Parameters{
+			PkScript: []byte{0x52},
+		},
+	}
+	originalTx := wire.NewMsgTx(2)
+	first.FinalizedWithdrawalTx = originalTx
+	second.FinalizedWithdrawalTx = originalTx
+	originalTxHash := originalTx.TxHash()
+	manager.finalizedWithdrawalTxns[originalTxHash] = originalTx
+
+	err = manager.handleWithdrawal(
+		ctx, []*deposit.Deposit{first, second}, originalTxHash,
+		[]byte{0x53},
+	)
+	require.NoError(t, err)
+
+	conflictTx := wire.NewMsgTx(2)
+	conflictTx.AddTxIn(&wire.TxIn{PreviousOutPoint: first.OutPoint})
+	conflictTx.AddTxOut(&wire.TxOut{Value: 1000, PkScript: []byte{0x54}})
+	conflictHash := conflictTx.TxHash()
+	notifier.spendChan <- &chainntnfs.SpendDetail{
+		SpenderTxHash:  &conflictHash,
+		SpendingTx:     conflictTx,
+		SpendingHeight: 150,
+	}
+
+	select {
+	case <-notifier.confReq:
+	case <-ctx.Done():
+		t.Fatalf("confirmation registration not received: %v", ctx.Err())
+	}
+	notifier.confChan <- &chainntnfs.TxConfirmation{Tx: conflictTx}
+
+	var transitions []withdrawalTransition
+	for range 2 {
+		select {
+		case transition := <-depositManager.transitions:
+			transitions = append(transitions, transition)
+		case <-ctx.Done():
+			t.Fatalf("deposit transition not received: %v", ctx.Err())
+		}
+	}
+	require.Equal(t, deposit.OnWithdrawn, transitions[0].event)
+	require.Equal(t, []*deposit.Deposit{first}, transitions[0].deposits)
+	require.Equal(t, fsm.OnError, transitions[1].event)
+	require.Equal(t, []*deposit.Deposit{second}, transitions[1].deposits)
+
+	for range 2 {
+		select {
+		case <-depositManager.updates:
+		case <-ctx.Done():
+			t.Fatalf("deposit update not received: %v", ctx.Err())
+		}
+	}
+	require.Nil(t, first.FinalizedWithdrawalTx)
+	require.Nil(t, second.FinalizedWithdrawalTx)
+
+	manager.mu.Lock()
+	_, republishesOriginal := manager.finalizedWithdrawalTxns[originalTxHash]
+	manager.mu.Unlock()
+	require.False(t, republishesOriginal)
 }
 
 // TestSignMusig2Tx_MissingSigningInfo tests that signMusig2Tx should error
