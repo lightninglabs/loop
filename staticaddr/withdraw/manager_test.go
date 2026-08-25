@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -68,20 +69,48 @@ func TestNewManagerHeightValidation(t *testing.T) {
 func TestWithdrawalChangePkScript(t *testing.T) {
 	t.Parallel()
 
-	require.Nil(t, withdrawalChangePkScript(nil))
+	addrManager := &withdrawalTestAddressManager{
+		params: make(map[string]*address.Parameters),
+	}
+	pkScript, err := withdrawalChangePkScript(nil, nil, addrManager)
+	require.NoError(t, err)
+	require.Nil(t, pkScript)
 
 	tx := wire.NewMsgTx(2)
 	tx.AddTxOut(&wire.TxOut{
 		Value:    1000,
 		PkScript: []byte{0x01},
 	})
-	require.Nil(t, withdrawalChangePkScript(tx))
+	pkScript, err = withdrawalChangePkScript(tx, nil, addrManager)
+	require.NoError(t, err)
+	require.Nil(t, pkScript)
 
 	tx.AddTxOut(&wire.TxOut{
 		Value:    500,
 		PkScript: []byte{0x02},
 	})
-	require.Equal(t, []byte{0x02}, withdrawalChangePkScript(tx))
+	addrManager.params[string([]byte{0x01})] = &address.Parameters{
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticAddressChangeKeyFamily),
+		},
+	}
+	pkScript, err = withdrawalChangePkScript(
+		tx, []byte{0x02}, addrManager,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x01}, pkScript)
+}
+
+type withdrawalTestAddressManager struct {
+	AddressManager
+
+	params map[string]*address.Parameters
+}
+
+func (m *withdrawalTestAddressManager) GetParameters(
+	pkScript []byte) *address.Parameters {
+
+	return m.params[string(pkScript)]
 }
 
 // TestValidateConfirmedWithdrawalInputs verifies that a replacement

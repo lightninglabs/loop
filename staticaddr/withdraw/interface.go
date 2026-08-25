@@ -23,6 +23,9 @@ type AddressManager interface {
 	// NewChangeAddress derives and persists a fresh static address from the
 	// change key family for this operation's change output.
 	NewChangeAddress(ctx context.Context) (*address.Parameters, error)
+
+	// GetParameters returns active static address parameters for a pkScript.
+	GetParameters(pkScript []byte) *address.Parameters
 }
 
 type DepositManager interface {

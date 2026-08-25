@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
+	"github.com/lightninglabs/loop/swap"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
@@ -683,12 +684,35 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 	return true, nil
 }
 
-func withdrawalChangePkScript(tx *wire.MsgTx) []byte {
-	if tx == nil || len(tx.TxOut) < 2 {
-		return nil
+func withdrawalChangePkScript(tx *wire.MsgTx, withdrawalPkScript []byte,
+	addressManager AddressManager) ([]byte, error) {
+
+	if tx == nil || addressManager == nil {
+		return nil, nil
 	}
 
-	return tx.TxOut[1].PkScript
+	var changePkScript []byte
+	for _, txOut := range tx.TxOut {
+		if bytes.Equal(txOut.PkScript, withdrawalPkScript) {
+			continue
+		}
+
+		params := addressManager.GetParameters(txOut.PkScript)
+		if params == nil || int32(params.KeyLocator.Family) !=
+			swap.StaticAddressChangeKeyFamily {
+
+			continue
+		}
+
+		if changePkScript != nil {
+			return nil, fmt.Errorf("confirmed withdrawal %v has multiple "+
+				"static-address change outputs", tx.TxHash())
+		}
+
+		changePkScript = txOut.PkScript
+	}
+
+	return changePkScript, nil
 }
 
 // validateConfirmedWithdrawalInputs verifies that a confirmed withdrawal
@@ -796,6 +820,11 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 					return
 				}
 
+				changePkScript, changeErr := withdrawalChangePkScript(
+					confirmedTx, withdrawalPkScript,
+					m.cfg.AddressManager,
+				)
+
 				err = m.cfg.DepositManager.TransitionDeposits(
 					ctx, deposits, deposit.OnWithdrawn,
 					deposit.Withdrawn,
@@ -814,13 +843,19 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 				m.mu.Unlock()
 
 				// Persist info about the finalized withdrawal.
-				err = m.cfg.Store.UpdateWithdrawal(
-					ctx, deposits, confirmedTx, spendingHeight,
-					withdrawalChangePkScript(confirmedTx),
-				)
-				if err != nil {
+				var persistErr error
+				if changeErr != nil {
+					log.Errorf("Error identifying withdrawal change: %v",
+						changeErr)
+				} else {
+					persistErr = m.cfg.Store.UpdateWithdrawal(
+						ctx, deposits, confirmedTx, spendingHeight,
+						changePkScript,
+					)
+				}
+				if persistErr != nil {
 					log.Errorf("Error persisting "+
-						"withdrawal: %v", err)
+						"withdrawal: %v", persistErr)
 				}
 
 			case err := <-confErrChan:
