@@ -50,9 +50,10 @@ var (
 	}
 
 	loopInCommand = &cli.Command{
-		Name:      "in",
-		Usage:     "perform an on-chain to off-chain swap (loop in)",
-		ArgsUsage: "amt",
+		Name:                      "in",
+		Usage:                     "perform an on-chain to off-chain swap (loop in)",
+		ArgsUsage:                 "amt",
+		DisableSliceFlagSeparator: true,
 		Description: `
 		Send the amount in satoshis specified by the amt argument 
 		off-chain.

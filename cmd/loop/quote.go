@@ -24,9 +24,10 @@ var quoteCommand = &cli.Command{
 }
 
 var quoteInCommand = &cli.Command{
-	Name:      "in",
-	Usage:     "get a quote for the cost of a loop in swap",
-	ArgsUsage: "amt",
+	Name:                      "in",
+	Usage:                     "get a quote for the cost of a loop in swap",
+	ArgsUsage:                 "amt",
+	DisableSliceFlagSeparator: true,
 	Description: "Allows to determine the cost of a swap up front." +
 		"Either specify an amount or deposit outpoints.",
 	Flags: []cli.Flag{
@@ -86,7 +87,9 @@ func quoteIn(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if cmd.IsSet("deposit_outpoint") {
-		depositOutpoints = cmd.StringSlice("deposit_outpoint")
+		depositOutpoints = commaSeparatedStringSlice(
+			cmd, "deposit_outpoint",
+		)
 		depositAmt, err = depositAmount(ctx, client, depositOutpoints)
 		if err != nil {
 			return err

@@ -416,9 +416,10 @@ func summary(ctx context.Context, cmd *cli.Command) error {
 }
 
 var staticAddressLoopInCommand = &cli.Command{
-	Name:      "in",
-	Usage:     "Loop in funds from static address deposits.",
-	ArgsUsage: "[amt] [--all | --utxo xxx:xx]",
+	Name:                      "in",
+	Usage:                     "Loop in funds from static address deposits.",
+	ArgsUsage:                 "[amt] [--all | --utxo xxx:xx]",
+	DisableSliceFlagSeparator: true,
 	Description: `
 	Requests a loop-in swap based on static address deposits. After the
 	creation of a static address funds can be sent to it. Once the funds are
@@ -568,7 +569,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 		depositOutpoints = depositsToOutpoints(allDeposits)
 
 	case isUtxoSelected:
-		depositOutpoints = cmd.StringSlice("utxo")
+		depositOutpoints = commaSeparatedStringSlice(cmd, "utxo")
 
 	case selectedAmount > 0:
 		// If only an amount is selected, we will trigger coin

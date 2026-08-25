@@ -16,6 +16,10 @@
 
 #### Bug Fixes
 
+* Loop In commands and quotes now correctly parse, validate, and forward
+  explicit JSON route hints supplied by repeating `--route_hints`. Malformed
+  or empty hints are rejected before invoice creation.
+
 * Loop Out requests now account for channel reserves when checking outbound
   capacity, preventing swaps from starting when their off-chain payment cannot
   be funded.

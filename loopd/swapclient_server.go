@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 	"sort"
@@ -1244,14 +1245,49 @@ func unmarshallRouteHints(rpcRouteHints []*swapserverrpc.RouteHint) (
 	[][]zpay32.HopHint, error) {
 
 	routeHints := make([][]zpay32.HopHint, 0, len(rpcRouteHints))
-	for _, rpcRouteHint := range rpcRouteHints {
+	for routeIndex, rpcRouteHint := range rpcRouteHints {
+		if rpcRouteHint == nil {
+			return nil, fmt.Errorf("route hint %d is nil", routeIndex)
+		}
+
+		if len(rpcRouteHint.HopHints) == 0 {
+			return nil, fmt.Errorf(
+				"route hint %d has no hop hints", routeIndex,
+			)
+		}
+
 		routeHint := make(
 			[]zpay32.HopHint, 0, len(rpcRouteHint.HopHints),
 		)
-		for _, rpcHint := range rpcRouteHint.HopHints {
+		for hopIndex, rpcHint := range rpcRouteHint.HopHints {
+			if rpcHint == nil {
+				return nil, fmt.Errorf("hop hint %d in route hint "+
+					"%d is nil", hopIndex, routeIndex)
+			}
+
+			if rpcHint.ChanId == 0 {
+				return nil, fmt.Errorf("hop hint %d in route hint "+
+					"%d has zero channel ID", hopIndex,
+					routeIndex)
+			}
+
+			if rpcHint.CltvExpiryDelta == 0 {
+				return nil, fmt.Errorf("hop hint %d in route hint "+
+					"%d has zero CLTV expiry delta", hopIndex,
+					routeIndex)
+			}
+
+			if rpcHint.CltvExpiryDelta > math.MaxUint16 {
+				return nil, fmt.Errorf("hop hint %d in route hint "+
+					"%d CLTV expiry delta exceeds %d", hopIndex,
+					routeIndex, uint32(math.MaxUint16))
+			}
+
 			hint, err := unmarshallHopHint(rpcHint)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("invalid hop hint %d in "+
+					"route hint %d: %w", hopIndex,
+					routeIndex, err)
 			}
 
 			routeHint = append(routeHint, hint)
