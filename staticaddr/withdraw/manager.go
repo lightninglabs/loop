@@ -18,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
@@ -742,6 +743,55 @@ func validateConfirmedWithdrawalInputs(tx *wire.MsgTx,
 	return nil
 }
 
+func (m *Manager) reconcileIncompleteWithdrawal(ctx context.Context,
+	tx *wire.MsgTx, deposits []*deposit.Deposit) error {
+
+	inputs := make(map[wire.OutPoint]struct{}, len(tx.TxIn))
+	for _, txIn := range tx.TxIn {
+		inputs[txIn.PreviousOutPoint] = struct{}{}
+	}
+
+	spent := make([]*deposit.Deposit, 0, len(deposits))
+	unspent := make([]*deposit.Deposit, 0, len(deposits))
+	for _, d := range deposits {
+		if _, ok := inputs[d.OutPoint]; ok {
+			spent = append(spent, d)
+		} else {
+			unspent = append(unspent, d)
+		}
+	}
+
+	var reconcileErr error
+	if len(spent) > 0 {
+		reconcileErr = errors.Join(
+			reconcileErr,
+			m.cfg.DepositManager.TransitionDeposits(
+				ctx, spent, deposit.OnWithdrawn, deposit.Withdrawn,
+			),
+		)
+	}
+	if len(unspent) > 0 {
+		reconcileErr = errors.Join(
+			reconcileErr,
+			m.cfg.DepositManager.TransitionDeposits(
+				ctx, unspent, fsm.OnError, deposit.Deposited,
+			),
+		)
+	}
+
+	for _, d := range deposits {
+		d.Lock()
+		d.FinalizedWithdrawalTx = nil
+		d.Unlock()
+
+		reconcileErr = errors.Join(
+			reconcileErr, m.cfg.DepositManager.UpdateDeposit(ctx, d),
+		)
+	}
+
+	return reconcileErr
+}
+
 // handleWithdrawal starts a goroutine that listens for the spent of the first
 // input of the withdrawal transaction.
 func (m *Manager) handleWithdrawal(ctx context.Context,
@@ -814,8 +864,21 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 					confirmedTx, deposits,
 				)
 				if err != nil {
-					log.Errorf("Ignoring incomplete withdrawal: %v",
+					log.Errorf("Confirmed incomplete withdrawal: %v",
 						err)
+
+					m.mu.Lock()
+					delete(m.finalizedWithdrawalTxns, originalTxHash)
+					delete(m.finalizedWithdrawalTxns, spenderTxHash)
+					m.mu.Unlock()
+
+					err = m.reconcileIncompleteWithdrawal(
+						ctx, confirmedTx, deposits,
+					)
+					if err != nil {
+						log.Errorf("Error reconciling incomplete "+
+							"withdrawal: %v", err)
+					}
 
 					return
 				}
