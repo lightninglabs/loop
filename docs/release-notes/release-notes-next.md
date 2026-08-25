@@ -31,6 +31,11 @@
 
 #### Maintenance
 
+* Reserved distinct static-address receive and change key families and
+  persisted deposit address ownership metadata in preparation for multi-address
+  Static Address Loop In support.
+  [PR #1210](https://github.com/lightninglabs/loop/pull/1210)
+
 * Updated the gRPC dependency to v1.83.1.
 
 * Updated the Taproot Assets dependency to v0.8.1; asset conversions that
