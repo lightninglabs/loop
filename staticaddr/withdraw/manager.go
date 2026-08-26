@@ -874,15 +874,19 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			}
 
 			select {
-			case tx := <-confChan:
-				confirmedTx := spentTx.SpendingTx
-				if tx != nil && tx.Tx != nil {
-					confirmedTx = tx.Tx
-				}
-				if confirmedTx == nil {
+			case tx, ok := <-confChan:
+				if !ok || tx == nil || tx.Tx == nil {
 					log.Errorf("Confirmed withdrawal %v "+
 						"missing transaction",
 						spenderTxHash)
+
+					return
+				}
+				confirmedTx := tx.Tx
+				if confirmedTx.TxHash() != spenderTxHash {
+					log.Errorf("Confirmed withdrawal transaction %v "+
+						"does not match registered spender %v",
+						confirmedTx.TxHash(), spenderTxHash)
 
 					return
 				}
@@ -926,10 +930,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 						)
 				}
 
-				confirmationHeight := uint32(0)
-				if tx != nil {
-					confirmationHeight = tx.BlockHeight
-				}
+				confirmationHeight := tx.BlockHeight
 				if confirmationHeight == 0 && spendingHeight > 0 {
 					confirmationHeight = uint32(spendingHeight)
 				}
