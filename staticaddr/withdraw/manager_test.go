@@ -250,6 +250,43 @@ func (m *withdrawalTestDepositManager) TransitionDeposits(_ context.Context,
 	return nil
 }
 
+type withdrawalStoreUpdate struct {
+	deposits           []*deposit.Deposit
+	tx                 *wire.MsgTx
+	confirmationHeight uint32
+	changePkScript     []byte
+}
+
+type withdrawalTestStore struct {
+	updates chan withdrawalStoreUpdate
+}
+
+func (s *withdrawalTestStore) CreateWithdrawal(context.Context,
+	[]*deposit.Deposit) error {
+
+	return nil
+}
+
+func (s *withdrawalTestStore) UpdateWithdrawal(_ context.Context,
+	deposits []*deposit.Deposit, tx *wire.MsgTx,
+	confirmationHeight uint32, changePkScript []byte) error {
+
+	s.updates <- withdrawalStoreUpdate{
+		deposits:           deposits,
+		tx:                 tx,
+		confirmationHeight: confirmationHeight,
+		changePkScript:     changePkScript,
+	}
+
+	return nil
+}
+
+func (s *withdrawalTestStore) GetAllWithdrawals(context.Context) (
+	[]Withdrawal, error) {
+
+	return nil, nil
+}
+
 func (m *withdrawalTestDepositManager) UpdateDeposit(_ context.Context,
 	d *deposit.Deposit) error {
 
@@ -304,14 +341,35 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 
 	notifier := newWithdrawalTestNotifier()
+	depositManager := &withdrawalTestDepositManager{
+		transitions: make(chan withdrawalTransition, 1),
+		updates:     make(chan *deposit.Deposit, 1),
+	}
+	store := &withdrawalTestStore{
+		updates: make(chan withdrawalStoreUpdate, 1),
+	}
+	changePkScript := []byte{0x52}
+	addressManager := &withdrawalTestAddressManager{
+		params: map[string]*address.Parameters{
+			string(changePkScript): {
+				PkScript: changePkScript,
+				KeyLocator: keychain.KeyLocator{
+					Family: keychain.KeyFamily(
+						swap.StaticAddressChangeKeyFamily,
+					),
+				},
+			},
+		},
+	}
 	manager, err := NewManager(&ManagerConfig{
-		ChainNotifier: notifier,
+		ChainNotifier:  notifier,
+		DepositManager: depositManager,
+		AddressManager: addressManager,
+		Store:          store,
 	}, 123)
 	require.NoError(t, err)
 	cleanupWithdrawalMonitor(t, manager, cancel)
 
-	originalTxHash := chainhash.Hash{1}
-	replacementTxHash := chainhash.Hash{2}
 	dep := &deposit.Deposit{
 		OutPoint: wire.OutPoint{
 			Hash:  chainhash.Hash{3},
@@ -322,18 +380,45 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 			PkScript: []byte{0x51},
 		},
 	}
-	manager.finalizedWithdrawalTxns[originalTxHash] = wire.NewMsgTx(2)
-	withdrawalPkScript := []byte{0x51}
+	originalDestScript := []byte{0x53}
+	originalTx := wire.NewMsgTx(2)
+	originalTx.AddTxIn(&wire.TxIn{PreviousOutPoint: dep.OutPoint})
+	originalTx.AddTxOut(&wire.TxOut{
+		Value:    10_000,
+		PkScript: originalDestScript,
+	})
+	originalTxHash := originalTx.TxHash()
+
+	// The replacement deliberately pays a different destination. The
+	// confirmation registration and change identification must use this
+	// transaction rather than the original transaction's script.
+	replacementDestScript := []byte{0x54}
+	replacementTx := wire.NewMsgTx(2)
+	replacementTx.AddTxIn(&wire.TxIn{PreviousOutPoint: dep.OutPoint})
+	replacementTx.AddTxOut(&wire.TxOut{
+		Value:    9_000,
+		PkScript: replacementDestScript,
+	})
+	replacementTx.AddTxOut(&wire.TxOut{
+		Value:    500,
+		PkScript: changePkScript,
+	})
+	replacementTxHash := replacementTx.TxHash()
+
+	manager.finalizedWithdrawalTxns[originalTxHash] = originalTx
+	manager.finalizedWithdrawalTxns[replacementTxHash] = replacementTx
 
 	err = manager.handleWithdrawal(
 		ctx, []*deposit.Deposit{dep}, originalTxHash,
-		withdrawalPkScript,
 	)
 	require.NoError(t, err)
 
+	// Use an inconsistent reported hash to verify that the actual spending
+	// transaction is authoritative.
+	reportedHash := chainhash.Hash{2}
 	notifier.spendChan <- &chainntnfs.SpendDetail{
-		SpenderTxHash:  &replacementTxHash,
-		SpendingTx:     wire.NewMsgTx(2),
+		SpenderTxHash:  &reportedHash,
+		SpendingTx:     replacementTx,
 		SpendingHeight: 50,
 	}
 
@@ -341,8 +426,83 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 	case req := <-notifier.confReq:
 		require.NotNil(t, req.txID)
 		require.Equal(t, replacementTxHash, *req.txID)
-		require.Equal(t, withdrawalPkScript, req.pkScript)
+		require.Equal(t, replacementDestScript, req.pkScript)
 		require.Equal(t, MinConfs, req.numConfs)
+		require.EqualValues(t, 50, req.heightHint)
+
+	case <-ctx.Done():
+		t.Fatalf("confirmation registration not received: %v", ctx.Err())
+	}
+
+	notifier.confChan <- &chainntnfs.TxConfirmation{
+		Tx:          replacementTx,
+		BlockHeight: 55,
+	}
+
+	select {
+	case transition := <-depositManager.transitions:
+		require.Equal(t, deposit.OnWithdrawn, transition.event)
+		require.Equal(t, deposit.Withdrawn, transition.state)
+		require.Equal(t, []*deposit.Deposit{dep}, transition.deposits)
+
+	case <-ctx.Done():
+		t.Fatalf("deposit transition not received: %v", ctx.Err())
+	}
+
+	select {
+	case update := <-store.updates:
+		require.Equal(t, []*deposit.Deposit{dep}, update.deposits)
+		require.Same(t, replacementTx, update.tx)
+		require.EqualValues(t, 55, update.confirmationHeight)
+		require.Equal(t, changePkScript, update.changePkScript)
+
+	case <-ctx.Done():
+		t.Fatalf("withdrawal update not received: %v", ctx.Err())
+	}
+
+	manager.monitorWg.Wait()
+	manager.mu.Lock()
+	_, republishesOriginal := manager.finalizedWithdrawalTxns[originalTxHash]
+	_, republishesReplacement :=
+		manager.finalizedWithdrawalTxns[replacementTxHash]
+	manager.mu.Unlock()
+	require.False(t, republishesOriginal)
+	require.False(t, republishesReplacement)
+}
+
+func TestHandleWithdrawalMempoolSpendHeightHint(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	notifier := newWithdrawalTestNotifier()
+	manager, err := NewManager(&ManagerConfig{
+		ChainNotifier: notifier,
+	}, 123)
+	require.NoError(t, err)
+	cleanupWithdrawalMonitor(t, manager, cancel)
+
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{Hash: chainhash.Hash{1}},
+		AddressParams: &address.Parameters{
+			PkScript: []byte{0x51},
+		},
+	}
+	err = manager.handleWithdrawal(
+		ctx, []*deposit.Deposit{dep}, chainhash.Hash{2},
+	)
+	require.NoError(t, err)
+
+	spendingTx := wire.NewMsgTx(2)
+	spendingTx.AddTxIn(&wire.TxIn{PreviousOutPoint: dep.OutPoint})
+	spendingTx.AddTxOut(&wire.TxOut{
+		Value:    1_000,
+		PkScript: []byte{0x52},
+	})
+	notifier.spendChan <- &chainntnfs.SpendDetail{
+		SpendingTx:     spendingTx,
+		SpendingHeight: 0,
+	}
+
+	select {
+	case req := <-notifier.confReq:
 		require.EqualValues(t, 123, req.heightHint)
 
 	case <-ctx.Done():
@@ -385,7 +545,6 @@ func TestHandleWithdrawalReconcilesIncompleteSpend(t *testing.T) {
 
 	err = manager.handleWithdrawal(
 		ctx, []*deposit.Deposit{first, second}, originalTxHash,
-		[]byte{0x53},
 	)
 	require.NoError(t, err)
 
