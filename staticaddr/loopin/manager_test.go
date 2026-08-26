@@ -373,11 +373,12 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 	var psbtBuf bytes.Buffer
 	require.NoError(t, sweepPacket.Serialize(&psbtBuf))
 
+	addressMgr := &mockAddressManager{
+		getParamsErr: errors.New("legacy address parameters unavailable"),
+	}
 	mgr := &Manager{
 		cfg: &Config{
-			AddressManager: &mockAddressManager{
-				params: changeAddr,
-			},
+			AddressManager: addressMgr,
 			DepositManager: &mockDepositManager{
 				byOutpoint: map[string]*deposit.Deposit{
 					depOutpoint: dep,
@@ -411,6 +412,7 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 	err = mgr.handleLoopInSweepReq(ctx, req)
 	require.ErrorContains(t, err, "invalid server nonce")
 	require.ErrorContains(t, err, depOutpoint)
+	require.Zero(t, addressMgr.getParamsCalls.Load())
 }
 
 // TestActiveDepositsForLoopInUsesCurrentDepositOutpoints verifies that

@@ -669,7 +669,6 @@ func TestMonitorSnapshotIncludesFinalStaticAddressLoopIns(t *testing.T) {
 func TestStaticLoopInStatusUpdaterUsesSwapHtlcAddress(t *testing.T) {
 	ctx := t.Context()
 	_, staticLoopIn := newGenericStaticLoopInServer(t)
-	staticLoopIn.AddressParams = nil
 	statusChan := make(chan loop.SwapInfo, 1)
 	updater := &staticLoopInStatusUpdater{
 		statusChan:  statusChan,
@@ -916,7 +915,6 @@ func newGenericStaticLoopInServerWithStore(t *testing.T) (*swapClientServer,
 
 	_, clientPubkey := mock_lnd.CreateKey(10)
 	_, serverPubkey := mock_lnd.CreateKey(11)
-	addressParams, _ := newTestStaticAddressParams(t)
 	depositOutpoint := wire.OutPoint{
 		Hash:  chainhash.Hash{12, 13, 14},
 		Index: 2,
@@ -940,7 +938,6 @@ func newGenericStaticLoopInServerWithStore(t *testing.T) (*swapClientServer,
 		SelectedAmount:   50_000,
 		DepositOutpoints: []string{depositOutpoint.String()},
 		Deposits:         []*deposit.Deposit{staticDeposit},
-		AddressParams:    addressParams,
 	}
 	staticLoopIn.SetState(loopin.PaymentReceived)
 
