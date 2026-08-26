@@ -282,6 +282,20 @@ func ToDepositWithAddress(row sqlc.AllDepositsWithAddressRow,
 	return toDeposit(depositRowFromAll(row), lastUpdate)
 }
 
+// ToDepositForSwapHash converts the joined deposit row returned while
+// recovering a static-address Loop-In swap. Keeping this conversion beside the
+// other deposit-row converters prevents the Loop-In store from maintaining a
+// separate hand-copy of every deposit and static-address field.
+func ToDepositForSwapHash(row sqlc.DepositsForSwapHashRow) (*Deposit, error) {
+	lastUpdate := sqlc.DepositUpdate{
+		DepositID:       row.DepositID,
+		UpdateState:     row.UpdateState.String,
+		UpdateTimestamp: row.UpdateTimestamp.Time,
+	}
+
+	return toDeposit(depositRowFromSwapHash(row), lastUpdate)
+}
+
 type depositRow struct {
 	DepositID             []byte
 	TxHash                []byte
@@ -318,6 +332,29 @@ func depositRowFromDeposit(row sqlc.Deposit) depositRow {
 }
 
 func depositRowFromAll(row sqlc.AllDepositsWithAddressRow) depositRow {
+	return depositRow{
+		DepositID:             row.DepositID,
+		TxHash:                row.TxHash,
+		OutIndex:              row.OutIndex,
+		Amount:                row.Amount,
+		ConfirmationHeight:    row.ConfirmationHeight,
+		TimeoutSweepPkScript:  row.TimeoutSweepPkScript,
+		ExpirySweepTxid:       row.ExpirySweepTxid,
+		FinalizedWithdrawalTx: row.FinalizedWithdrawalTx,
+		SwapHash:              row.SwapHash,
+		StaticAddressID:       row.StaticAddressID,
+		ClientPubkey:          row.ClientPubkey,
+		ServerPubkey:          row.ServerPubkey,
+		Expiry:                row.Expiry,
+		ClientKeyFamily:       row.ClientKeyFamily,
+		ClientKeyIndex:        row.ClientKeyIndex,
+		Pkscript:              row.Pkscript,
+		ProtocolVersion:       row.ProtocolVersion,
+		InitiationHeight:      row.InitiationHeight,
+	}
+}
+
+func depositRowFromSwapHash(row sqlc.DepositsForSwapHashRow) depositRow {
 	return depositRow{
 		DepositID:             row.DepositID,
 		TxHash:                row.TxHash,

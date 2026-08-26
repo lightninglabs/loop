@@ -385,6 +385,22 @@ func TestManagerReplaysStartupBlockToRecoveredDeposits(t *testing.T) {
 	}
 }
 
+// TestManagerQuarantinesOwnerlessDeposit verifies that an ambiguous legacy
+// deposit left without a static-address owner does not prevent the deposit
+// manager from starting or reconciling the remaining wallet view.
+func TestManagerQuarantinesOwnerlessDeposit(t *testing.T) {
+	testContext := newManagerTestContext(t)
+	testContext.storedDeposits[0].AddressParams = nil
+
+	require.NoError(t, testContext.manager.recoverDeposits(t.Context()))
+	require.NoError(t, testContext.manager.reconcileDeposits(t.Context()))
+
+	testContext.manager.mu.Lock()
+	require.Len(t, testContext.manager.deposits, 1)
+	require.Empty(t, testContext.manager.activeDeposits)
+	testContext.manager.mu.Unlock()
+}
+
 // TestManagerSkipsExpiryNotificationOnReconcileFailure verifies that deposit
 // FSMs cannot make an expiry decision from stale confirmation data when wallet
 // reconciliation fails at startup or while processing a later block.
@@ -492,6 +508,7 @@ type ManagerTestContext struct {
 	confErrChan             chan error
 	blockChan               chan int32
 	blockErrChan            chan error
+	storedDeposits          []*Deposit
 }
 
 // newManagerTestContext creates a new test context for the reservation manager.
@@ -592,6 +609,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		confErrChan:             confErrChan,
 		blockChan:               blockChan,
 		blockErrChan:            blockErrChan,
+		storedDeposits:          storedDeposits,
 	}
 
 	staticAddress, err := script.NewStaticAddress(

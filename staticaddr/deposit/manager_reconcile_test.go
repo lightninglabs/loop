@@ -2,7 +2,6 @@ package deposit
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -531,10 +530,13 @@ func TestReconcileDepositsKeepsInactiveOnFSMStartFailure(t *testing.T) {
 		Index: 5,
 	}
 
+	addressParams := testAddressParameters(t, 5)
+	addressParams.ProtocolVersion = 999
 	deposit := &Deposit{
 		OutPoint:           outpoint,
 		Value:              btcutil.Amount(100_000),
 		ConfirmationHeight: 77,
+		AddressParams:      addressParams,
 	}
 	deposit.SetState(Deposited)
 
@@ -548,10 +550,6 @@ func TestReconcileDepositsKeepsInactiveOnFSMStartFailure(t *testing.T) {
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
-	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
-
 	var (
 		updateStates  []fsm.StateType
 		updateHeights []int64
@@ -596,9 +594,12 @@ func TestReconcileDepositsDeactivatesBeforeActivationFailure(t *testing.T) {
 		Index: 6,
 	}
 
+	addressParams := testAddressParameters(t, 6)
+	addressParams.ProtocolVersion = 999
 	visibleDeposit := &Deposit{
-		OutPoint: visibleOutpoint,
-		Value:    btcutil.Amount(100_000),
+		OutPoint:      visibleOutpoint,
+		Value:         btcutil.Amount(100_000),
+		AddressParams: addressParams,
 	}
 	visibleDeposit.SetState(Deposited)
 
@@ -618,10 +619,6 @@ func TestReconcileDepositsDeactivatesBeforeActivationFailure(t *testing.T) {
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
-	mockAddressManager.On(
-		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
-
 	manager := NewManager(&ManagerConfig{
 		AddressManager: mockAddressManager,
 		Store:          new(mockStore),

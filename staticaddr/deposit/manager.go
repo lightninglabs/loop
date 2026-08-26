@@ -231,6 +231,18 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 			continue
 		}
 
+		// Deposits without an owning static address are deliberately left
+		// unassigned by the ownership migration when that ownership is
+		// ambiguous. Keep these deposits in the known-deposit set so they
+		// aren't rediscovered, but don't let one ambiguous legacy row stop
+		// recovery of every other deposit.
+		if d.AddressParams == nil {
+			log.Warnf("Quarantining deposit %x: static address "+
+				"ownership is missing", d.ID)
+
+			continue
+		}
+
 		log.Debugf("Recovering deposit %x", d.ID)
 
 		// Create a state machine for a given deposit.
@@ -523,6 +535,13 @@ func (m *Manager) syncActiveDeposits(ctx context.Context,
 			}
 
 			if !deposit.IsInState(Deposited) {
+				continue
+			}
+
+			// Ownerless legacy deposits are quarantined during recovery.
+			// Avoid trying to reactivate them on every reconciliation,
+			// which would otherwise make all future reconciliations fail.
+			if deposit.AddressParams == nil {
 				continue
 			}
 

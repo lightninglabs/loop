@@ -39,7 +39,29 @@ func (s *SqlStore) CreateStaticAddress(ctx context.Context,
 		InitiationHeight: addrParams.InitiationHeight,
 	}
 
-	return s.baseDB.Queries.CreateStaticAddress(ctx, createArgs)
+	var addressID int32
+	err := s.baseDB.ExecTx(ctx, &loopdb.SqliteTxOptions{},
+		func(q *sqlc.Queries) error {
+			err := q.CreateStaticAddress(ctx, createArgs)
+			if err != nil {
+				return err
+			}
+
+			addressID, err = q.GetStaticAddressID(
+				ctx, addrParams.PkScript,
+			)
+			return err
+		})
+	if err != nil {
+		return err
+	}
+
+	// Keep the in-memory parameters consistent with rows loaded back from
+	// the database. Callers can safely attach them to a deposit immediately
+	// after creating an address, without requiring a daemon restart.
+	addrParams.ID = addressID
+
+	return nil
 }
 
 // GetStaticAddressID retrieves the database ID for a static address script.

@@ -595,41 +595,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 
 	depositList := make([]*deposit.Deposit, 0, len(deposits))
 	for _, d := range deposits {
-		id := deposit.ID{}
-		err = id.FromByteSlice(d.DepositID)
-		if err != nil {
-			return nil, err
-		}
-
-		sqlcDeposit := sqlc.AllDepositsWithAddressRow{
-			DepositID:             id[:],
-			TxHash:                d.TxHash,
-			Amount:                d.Amount,
-			OutIndex:              d.OutIndex,
-			ConfirmationHeight:    d.ConfirmationHeight,
-			TimeoutSweepPkScript:  d.TimeoutSweepPkScript,
-			ExpirySweepTxid:       d.ExpirySweepTxid,
-			FinalizedWithdrawalTx: d.FinalizedWithdrawalTx,
-			SwapHash:              d.SwapHash,
-			StaticAddressID:       d.StaticAddressID,
-			ClientPubkey:          d.ClientPubkey,
-			ServerPubkey:          d.ServerPubkey,
-			Expiry:                d.Expiry,
-			ClientKeyFamily:       d.ClientKeyFamily,
-			ClientKeyIndex:        d.ClientKeyIndex,
-			Pkscript:              d.Pkscript,
-			ProtocolVersion:       d.ProtocolVersion,
-			InitiationHeight:      d.InitiationHeight,
-		}
-
-		sqlcDepositUpdate := sqlc.DepositUpdate{
-			DepositID:       id[:],
-			UpdateState:     d.UpdateState.String,
-			UpdateTimestamp: d.UpdateTimestamp.Time,
-		}
-		deposit, err := deposit.ToDepositWithAddress(
-			sqlcDeposit, sqlcDepositUpdate,
-		)
+		deposit, err := deposit.ToDepositForSwapHash(d)
 		if err != nil {
 			return nil, err
 		}

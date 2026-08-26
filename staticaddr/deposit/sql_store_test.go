@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/jackc/pgx/v5"
@@ -179,6 +180,11 @@ func TestDepositRowConvertersStayInSync(t *testing.T) {
 	outpoint := populatedSQLRow[sqlc.DepositForOutpointWithAddressRow](t)
 	require.Equal(t, expectedDepositRow(t, outpoint),
 		depositRowFromOutpoint(outpoint))
+
+	swapHash := populatedSQLRow[sqlc.DepositsForSwapHashRow](t)
+	require.Equal(t,
+		expectedDepositRow(t, swapHash, "UpdateState", "UpdateTimestamp"),
+		depositRowFromSwapHash(swapHash))
 }
 
 func populatedSQLRow[T any](t *testing.T) T {
@@ -208,6 +214,12 @@ func populatedSQLRow[T any](t *testing.T) T {
 				Valid: true,
 			}))
 
+		case reflect.TypeOf(sql.NullTime{}):
+			field.Set(reflect.ValueOf(sql.NullTime{
+				Time:  time.Unix(n, 0).UTC(),
+				Valid: true,
+			}))
+
 		default:
 			t.Fatalf("unsupported SQL row field %s", field.Type())
 		}
@@ -216,13 +228,19 @@ func populatedSQLRow[T any](t *testing.T) T {
 	return row
 }
 
-func expectedDepositRow(t *testing.T, sqlRow any) depositRow {
+func expectedDepositRow(t *testing.T, sqlRow any,
+	additionalFields ...string) depositRow {
+
 	t.Helper()
 
 	source := reflect.ValueOf(sqlRow)
 	target := reflect.ValueOf(&depositRow{}).Elem()
-	require.Equal(t, target.NumField()+1, source.NumField())
+	require.Equal(t, target.NumField()+1+len(additionalFields),
+		source.NumField())
 	require.Equal(t, "ID", source.Type().Field(0).Name)
+	for _, fieldName := range additionalFields {
+		require.True(t, source.FieldByName(fieldName).IsValid(), fieldName)
+	}
 
 	for i := 0; i < target.NumField(); i++ {
 		targetField := target.Type().Field(i)

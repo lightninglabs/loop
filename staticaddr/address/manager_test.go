@@ -132,6 +132,13 @@ func TestManager(t *testing.T) {
 
 	// The expiry has to match.
 	require.EqualValues(t, defaultExpiry, expiry)
+
+	// A newly created address must be immediately usable as the owner of a
+	// deposit in this daemon session. In particular, its database-assigned
+	// ID must be available without requiring a restart and reload.
+	params, err := testContext.manager.GetStaticAddressParameters(ctxb)
+	require.NoError(t, err)
+	require.Positive(t, params.ID)
 }
 
 // TestNewAddressValidatesServerResponse tests that the untrusted
