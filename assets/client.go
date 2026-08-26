@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/taprpc/tapchannelrpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
@@ -45,6 +46,63 @@ type TapdConfig struct {
 	MacaroonPath string        `long:"macaroonpath" description:"Path to the admin macaroon"`
 	TLSPath      string        `long:"tlspath" description:"Path to the TLS certificate"`
 	RFQtimeout   time.Duration `long:"rfqtimeout" description:"The timeout we wait for tapd peer to accept RFQ"`
+}
+
+// AssetInvoice contains the result of creating an invoice that is payable
+// through a Taproot Asset channel.
+type AssetInvoice struct {
+	// PaymentRequest is the BOLT 11 invoice containing the asset RFQ route
+	// hint.
+	PaymentRequest string
+
+	// AcceptedBuyQuote is the quote backing the asset route hint.
+	AcceptedBuyQuote *rfqrpc.PeerAcceptedBuyQuote
+}
+
+// AddAssetInvoice creates an invoice that receives the specified asset while
+// retaining the satoshi amount set in the invoice request. If paymentHash is
+// set, a hold invoice is created instead of a regular invoice.
+func (c *TapdClient) AddAssetInvoice(ctx context.Context, assetID,
+	peerPubkey []byte, invoice *lnrpc.Invoice,
+	paymentHash *lntypes.Hash) (*AssetInvoice, error) {
+
+	if invoice == nil {
+		return nil, fmt.Errorf("invoice request must be set")
+	}
+
+	req := &tapchannelrpc.AddInvoiceRequest{
+		AssetId:        assetID,
+		PeerPubkey:     peerPubkey,
+		InvoiceRequest: invoice,
+	}
+	if paymentHash != nil {
+		req.HodlInvoice = &tapchannelrpc.HodlInvoice{
+			PaymentHash: paymentHash[:],
+		}
+	}
+
+	resp, err := c.TaprootAssetChannelsClient.AddInvoice(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("asset invoice response is nil")
+	}
+	if resp.GetAcceptedBuyQuote() == nil {
+		return nil, fmt.Errorf("asset invoice response has no accepted " +
+			"buy quote")
+	}
+	if resp.GetInvoiceResult() == nil ||
+		resp.GetInvoiceResult().GetPaymentRequest() == "" {
+
+		return nil, fmt.Errorf("asset invoice response has no payment " +
+			"request")
+	}
+
+	return &AssetInvoice{
+		PaymentRequest:   resp.InvoiceResult.PaymentRequest,
+		AcceptedBuyQuote: resp.AcceptedBuyQuote,
+	}, nil
 }
 
 // DefaultTapdConfig returns a default configuration to connect to a taproot
