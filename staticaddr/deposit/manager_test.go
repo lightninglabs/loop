@@ -267,7 +267,7 @@ func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	_ ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
 	chan error, error) {
 
-	args := m.Called(ctx, pkScript, heightHint)
+	args := m.Called(ctx, outpoint, pkScript, heightHint)
 	return args.Get(0).(chan *chainntnfs.SpendDetail),
 		args.Get(1).(chan error), args.Error(2)
 }
@@ -340,6 +340,11 @@ func TestManager(t *testing.T) {
 	}
 
 	// Ensure that the deposit is waiting for a confirmation notification.
+	testContext.spendChan <- &chainntnfs.SpendDetail{
+		SpentOutPoint:  &expiryTx.TxIn[0].PreviousOutPoint,
+		SpendingTx:     expiryTx,
+		SpendingHeight: int32(defaultDepositConfirmations + defaultExpiry),
+	}
 	testContext.confChan <- &chainntnfs.TxConfirmation{
 		BlockHeight: defaultDepositConfirmations + defaultExpiry + 3,
 		Tx:          expiryTx,
@@ -606,6 +611,8 @@ type ManagerTestContext struct {
 	mockLnd                 *test.LndMockServices
 	mockStaticAddressClient *mockStaticAddressClient
 	mockAddressManager      *mockAddressManager
+	spendChan               chan *chainntnfs.SpendDetail
+	spendErrChan            chan error
 	confChan                chan *chainntnfs.TxConfirmation
 	confErrChan             chan error
 	blockChan               chan int32
@@ -654,6 +661,8 @@ func newManagerTestContextWithStoredDeposits(t *testing.T,
 	mockAddressManager := new(mockAddressManager)
 	mockStore := new(mockStore)
 	mockChainNotifier := new(MockChainNotifier)
+	spendChan := make(chan *chainntnfs.SpendDetail)
+	spendErrChan := make(chan error)
 	confChan := make(chan *chainntnfs.TxConfirmation)
 	confErrChan := make(chan error)
 	blockChan := make(chan int32)
@@ -706,6 +715,10 @@ func newManagerTestContextWithStoredDeposits(t *testing.T,
 		"RegisterConfirmationsNtfn", mock.Anything, mock.Anything,
 		mock.Anything, mock.Anything, mock.Anything,
 	).Return(confChan, confErrChan, nil)
+	mockChainNotifier.On(
+		"RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything,
+	).Return(spendChan, spendErrChan, nil)
 
 	mockChainNotifier.On("RegisterBlockEpochNtfn", mock.Anything).Return(
 		blockChan, blockErrChan, nil,
@@ -736,6 +749,8 @@ func newManagerTestContextWithStoredDeposits(t *testing.T,
 		mockLnd:                 mockLnd,
 		mockStaticAddressClient: mockStaticAddressClient,
 		mockAddressManager:      mockAddressManager,
+		spendChan:               spendChan,
+		spendErrChan:            spendErrChan,
 		confChan:                confChan,
 		confErrChan:             confErrChan,
 		blockChan:               blockChan,
