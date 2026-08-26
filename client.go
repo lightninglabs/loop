@@ -766,10 +766,18 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 func (s *Client) LoopIn(globalCtx context.Context,
 	request *LoopInRequest) (*LoopInSwapInfo, error) {
 
-	log.Infof("Loop in %v (last hop: %v)",
-		request.Amount,
-		request.LastHop,
-	)
+	if request.AssetId != nil {
+		if s.AssetClient == nil {
+			return nil, errors.New("asset client must be set when " +
+				"using an asset id")
+		}
+
+		log.Infof("Loop in %v with asset %x (last hop: %v)",
+			request.Amount, request.AssetId, request.LastHop)
+	} else {
+		log.Infof("Loop in %v (last hop: %v)",
+			request.Amount, request.LastHop)
+	}
 
 	if err := s.waitForInitialized(globalCtx); err != nil {
 		return nil, err

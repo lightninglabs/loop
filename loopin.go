@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -21,6 +22,7 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -30,6 +32,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// assetLoopInInvoiceExpiry is the invoice lifetime an asset edge must cover
+// with its RFQ quote. If an on-chain funding transaction does not confirm in
+// this window, the swap fails safely and the client can reclaim the HTLC.
+const assetLoopInInvoiceExpiry = int64(60 * 60)
 
 var (
 	// MaxLoopInAcceptDelta configures the maximum acceptable number of
@@ -123,6 +130,45 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("private and route_hints both set")
 	}
 
+	assetLoopIn := request.AssetId != nil
+	if !assetLoopIn && len(request.AssetEdgeNode) != 0 {
+		return nil, fmt.Errorf("asset id must be set when asset edge " +
+			"node is set")
+	}
+	if assetLoopIn {
+		if len(request.AssetId) != 32 {
+			return nil, fmt.Errorf("asset id must be a 32 byte value")
+		}
+		if cfg.assets == nil {
+			return nil, fmt.Errorf("asset client must be set when " +
+				"using an asset id")
+		}
+		if request.Private || len(request.RouteHints) != 0 {
+			return nil, fmt.Errorf("private and route hints are not " +
+				"supported for asset loop ins")
+		}
+
+		if len(request.AssetEdgeNode) != 0 {
+			assetPeer, err := route.NewVertexFromBytes(
+				request.AssetEdgeNode,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("invalid asset edge node: %w", err)
+			}
+
+			if request.LastHop != nil &&
+				!bytes.Equal(request.LastHop[:], assetPeer[:]) {
+
+				return nil, fmt.Errorf("last hop and asset edge node " +
+					"must match")
+			}
+
+			request.LastHop = &assetPeer
+		}
+
+		request.Initiator += " asset_in"
+	}
+
 	// If Private is set, we generate route hints.
 	if request.Private {
 		// If last_hop is set, we'll only add channels with peers set to
@@ -191,40 +237,106 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	var senderKey [33]byte
 	copy(senderKey[:], keyDesc.PubKey.SerializeCompressed())
 
-	// Create the swap invoice in lnd.
-	_, swapInvoice, err := cfg.lnd.Client.AddInvoice(
-		globalCtx, &invoicesrpc.AddInvoiceData{
-			Preimage:   &swapPreimage,
-			Value:      lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
-			Memo:       "swap",
-			Expiry:     3600 * 24 * 365,
-			RouteHints: request.RouteHints,
-			Private:    true,
-		},
-	)
-	if err != nil {
-		return nil, err
+	var swapInvoice string
+	if assetLoopIn {
+		var assetPeer []byte
+		if request.LastHop != nil {
+			assetPeer = request.LastHop[:]
+		}
+
+		assetInvoice, err := cfg.assets.AddAssetInvoice(
+			globalCtx, request.AssetId, assetPeer, &lnrpc.Invoice{
+				Memo:      "swap",
+				RPreimage: swapPreimage[:],
+				ValueMsat: int64(lnwire.NewMSatFromSatoshis(swapInvoiceAmt)),
+				Expiry:    assetLoopInInvoiceExpiry,
+				Private:   false,
+			}, nil,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create asset swap invoice: %w", err)
+		}
+
+		quotePeer, err := route.NewVertexFromStr(
+			assetInvoice.AcceptedBuyQuote.Peer,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset invoice peer: %w", err)
+		}
+		if len(assetPeer) != 0 && !bytes.Equal(assetPeer, quotePeer[:]) {
+			return nil, fmt.Errorf("asset invoice peer does not match " +
+				"requested edge node")
+		}
+
+		// Pin the probe and the server payment to the same edge node as
+		// the swap invoice.
+		request.LastHop = &quotePeer
+		swapInvoice = assetInvoice.PaymentRequest
+	} else {
+		// Create the swap invoice in lnd.
+		_, swapInvoice, err = cfg.lnd.Client.AddInvoice(
+			globalCtx, &invoicesrpc.AddInvoiceData{
+				Preimage:   &swapPreimage,
+				Value:      lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
+				Memo:       "swap",
+				Expiry:     3600 * 24 * 365,
+				RouteHints: request.RouteHints,
+				Private:    true,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Create the probe invoice in lnd. Derive the payment hash
+	// Create the probe invoice. Derive the payment hash
 	// deterministically from the swap hash in such a way that the server
 	// can be sure that we don't know the preimage.
 	probeHash := lntypes.Hash(sha256.Sum256(swapHash[:]))
 	probeHash[0] ^= 1
 
 	log.Infof("Creating probe invoice %v", probeHash)
-	probeInvoice, err := cfg.lnd.Invoices.AddHoldInvoice(
-		globalCtx, &invoicesrpc.AddInvoiceData{
-			Hash:       &probeHash,
-			Value:      lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
-			Memo:       "loop in probe",
-			Expiry:     3600,
-			RouteHints: request.RouteHints,
-			Private:    true,
-		},
-	)
-	if err != nil {
-		return nil, err
+	var probeInvoice string
+	if assetLoopIn {
+		assetProbe, err := cfg.assets.AddAssetInvoice(
+			globalCtx, request.AssetId, request.LastHop[:],
+			&lnrpc.Invoice{
+				Memo:      "loop in probe",
+				ValueMsat: int64(lnwire.NewMSatFromSatoshis(swapInvoiceAmt)),
+				Expiry:    assetLoopInInvoiceExpiry,
+				Private:   false,
+			}, &probeHash,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create asset probe invoice: %w", err)
+		}
+
+		probePeer, err := route.NewVertexFromStr(
+			assetProbe.AcceptedBuyQuote.Peer,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset probe peer: %w", err)
+		}
+		if !bytes.Equal(request.LastHop[:], probePeer[:]) {
+			return nil, fmt.Errorf("asset probe and swap invoice peers " +
+				"do not match")
+		}
+
+		probeInvoice = assetProbe.PaymentRequest
+	} else {
+		probeInvoice, err = cfg.lnd.Invoices.AddHoldInvoice(
+			globalCtx, &invoicesrpc.AddInvoiceData{
+				Hash:       &probeHash,
+				Value:      lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
+				Memo:       "loop in probe",
+				Expiry:     3600,
+				RouteHints: request.RouteHints,
+				Private:    true,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Default the HTLC internal key to our sender key.

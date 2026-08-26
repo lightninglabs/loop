@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"testing"
 	"time"
@@ -9,17 +10,23 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
+	"github.com/lightninglabs/taproot-assets/taprpc/tapchannelrpc"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/clock"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -182,6 +189,34 @@ func TestProcessHtlcSpendIgnoresGRPCAlreadySettled(t *testing.T) {
 	require.Equal(t, loopdb.StateFailTimeout, initResult.swap.state)
 }
 
+type tapdInvoiceClientMock struct {
+	tapchannelrpc.TaprootAssetChannelsClient
+
+	peer     route.Vertex
+	requests []*tapchannelrpc.AddInvoiceRequest
+}
+
+func (m *tapdInvoiceClientMock) AddInvoice(_ context.Context,
+	req *tapchannelrpc.AddInvoiceRequest, _ ...grpc.CallOption) (
+	*tapchannelrpc.AddInvoiceResponse, error) {
+
+	m.requests = append(m.requests, req)
+
+	paymentRequest := "asset swap invoice"
+	if req.HodlInvoice != nil {
+		paymentRequest = "asset probe invoice"
+	}
+
+	return &tapchannelrpc.AddInvoiceResponse{
+		AcceptedBuyQuote: &rfqrpc.PeerAcceptedBuyQuote{
+			Peer: m.peer.String(),
+		},
+		InvoiceResult: &lnrpc.AddInvoiceResponse{
+			PaymentRequest: paymentRequest,
+		},
+	}, nil
+}
+
 // SubscribeSingleInvoice returns the mock's preconfigured channels.
 func (p *probeInvoicesMock) SubscribeSingleInvoice(_ context.Context,
 	_ lntypes.Hash) (<-chan lndclient.InvoiceUpdate, <-chan error, error) {
@@ -294,6 +329,163 @@ func TestLoopInSwapInvoiceRouteHintsMatchProbe(t *testing.T) {
 
 	test.RequireRouteHintsEqual(t, req.RouteHints, probeRouteHints)
 	test.RequireRouteHintsEqual(t, probeRouteHints, swapRouteHints)
+}
+
+// TestLoopInAssetInvoices verifies that both invoices sent to the server are
+// created by tapd and pinned to the same asset edge node.
+func TestLoopInAssetInvoices(t *testing.T) {
+	t.Parallel()
+
+	ctx := newLoopInTestContext(t)
+	assetID := make([]byte, 32)
+	assetID[0] = 1
+	assetPeer, err := route.NewVertexFromStr(ctx.lnd.NodePubkey)
+	require.NoError(t, err)
+
+	invoiceClient := &tapdInvoiceClientMock{peer: assetPeer}
+	assetClient := &assets.TapdClient{
+		TaprootAssetChannelsClient: invoiceClient,
+	}
+	cfg := newSwapConfig(
+		&ctx.lnd.LndServices, ctx.store, ctx.server, assetClient,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
+
+	req := LoopInRequest{
+		Amount:         50_000,
+		MaxSwapFee:     1_000,
+		HtlcConfTarget: 2,
+		Initiator:      "test",
+		AssetId:        assetID,
+	}
+
+	initResult, err := newLoopInSwap(t.Context(), cfg, 600, &req)
+	require.NoError(t, err)
+	require.Len(t, invoiceClient.requests, 2)
+
+	swapReq := invoiceClient.requests[0]
+	require.Equal(t, assetID, swapReq.AssetId)
+	require.Empty(t, swapReq.PeerPubkey)
+	require.Nil(t, swapReq.HodlInvoice)
+	require.Equal(t, "swap", swapReq.InvoiceRequest.Memo)
+	require.Equal(
+		t, assetLoopInInvoiceExpiry, swapReq.InvoiceRequest.Expiry,
+	)
+	require.EqualValues(
+		t, lnwire.NewMSatFromSatoshis(
+			req.Amount-testSwapFee,
+		), swapReq.InvoiceRequest.ValueMsat,
+	)
+	swapPreimage := lntypes.Preimage(swapReq.InvoiceRequest.RPreimage)
+	require.Equal(t, initResult.swap.hash, swapPreimage.Hash())
+	require.False(t, swapReq.InvoiceRequest.Private)
+
+	probeReq := invoiceClient.requests[1]
+	require.Equal(t, assetID, probeReq.AssetId)
+	require.Equal(t, assetPeer[:], probeReq.PeerPubkey)
+	require.NotNil(t, probeReq.HodlInvoice)
+	require.Equal(t, "loop in probe", probeReq.InvoiceRequest.Memo)
+	require.Equal(
+		t, assetLoopInInvoiceExpiry, probeReq.InvoiceRequest.Expiry,
+	)
+	require.False(t, probeReq.InvoiceRequest.Private)
+
+	expectedProbeHash := lntypes.Hash(sha256.Sum256(initResult.swap.hash[:]))
+	expectedProbeHash[0] ^= 1
+	require.Equal(t, expectedProbeHash[:], probeReq.HodlInvoice.PaymentHash)
+
+	require.Equal(t, "asset swap invoice", ctx.server.swapInvoice)
+	require.Equal(t, "asset probe invoice", ctx.server.probeInvoice)
+	require.Equal(t, &assetPeer, ctx.server.loopInLastHop)
+	require.Equal(t, "test asset_in", ctx.server.loopInInitiator)
+	require.Equal(t, &assetPeer, initResult.swap.LastHop)
+}
+
+func TestLoopInAssetRequestValidation(t *testing.T) {
+	t.Parallel()
+
+	ctx := newLoopInTestContext(t)
+	assetClient := &assets.TapdClient{}
+	assetID := make([]byte, 32)
+	assetID[0] = 1
+	assetPeer, err := route.NewVertexFromStr(ctx.lnd.NodePubkey)
+	require.NoError(t, err)
+	otherPeer := assetPeer
+	otherPeer[1] ^= 1
+
+	tests := []struct {
+		name        string
+		request     LoopInRequest
+		assetClient *assets.TapdClient
+		err         string
+	}{
+		{
+			name: "edge without asset id",
+			request: LoopInRequest{
+				AssetEdgeNode: assetPeer[:],
+			},
+			assetClient: assetClient,
+			err:         "asset id must be set",
+		},
+		{
+			name: "invalid asset id",
+			request: LoopInRequest{
+				AssetId: []byte{1},
+			},
+			assetClient: assetClient,
+			err:         "asset id must be a 32 byte value",
+		},
+		{
+			name: "empty asset id",
+			request: LoopInRequest{
+				AssetId: []byte{},
+			},
+			assetClient: assetClient,
+			err:         "asset id must be a 32 byte value",
+		},
+		{
+			name: "missing asset client",
+			request: LoopInRequest{
+				AssetId: assetID,
+			},
+			err: "asset client must be set",
+		},
+		{
+			name: "private asset invoice",
+			request: LoopInRequest{
+				AssetId: assetID,
+				Private: true,
+			},
+			assetClient: assetClient,
+			err:         "private and route hints are not supported",
+		},
+		{
+			name: "mismatched last hop",
+			request: LoopInRequest{
+				AssetId:       assetID,
+				AssetEdgeNode: assetPeer[:],
+				LastHop:       &otherPeer,
+			},
+			assetClient: assetClient,
+			err:         "last hop and asset edge node must match",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := newSwapConfig(
+				&ctx.lnd.LndServices, ctx.store, ctx.server,
+				testCase.assetClient,
+				clock.NewTestClock(time.Unix(123, 0)),
+			)
+			_, err := newLoopInSwap(
+				t.Context(), cfg, 600, &testCase.request,
+			)
+			require.ErrorContains(t, err, testCase.err)
+		})
+	}
 }
 
 func testLoopInSuccess(t *testing.T) {
