@@ -2,6 +2,9 @@
 
 #### New Features
 
+* Loop In can now create its swap and probe invoices through `tapd`, allowing
+  the server's Lightning payment to be delivered over a Taproot Asset channel.
+
 * The `loop out sweephtlc` recovery command can reconstruct and sweep a
   protocol-11 Loop Out HTLC from public swap data when the local swap database
   record is unavailable. It can also request the server's cooperative MuSig2
