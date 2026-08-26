@@ -14,7 +14,10 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
+	"github.com/lightninglabs/taproot-assets/taprpc/tapchannelrpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -52,11 +55,137 @@ type staticRfqClient struct {
 	response *rfqrpc.AddAssetSellOrderResponse
 }
 
+type assetInvoiceClientMock struct {
+	tapchannelrpc.TaprootAssetChannelsClient
+
+	request  *tapchannelrpc.AddInvoiceRequest
+	response *tapchannelrpc.AddInvoiceResponse
+	err      error
+}
+
+func (m *assetInvoiceClientMock) AddInvoice(_ context.Context,
+	req *tapchannelrpc.AddInvoiceRequest, _ ...grpc.CallOption) (
+	*tapchannelrpc.AddInvoiceResponse, error) {
+
+	m.request = req
+
+	return m.response, m.err
+}
+
 func (s *staticRfqClient) AddAssetSellOrder(context.Context,
 	*rfqrpc.AddAssetSellOrderRequest, ...grpc.CallOption) (
 	*rfqrpc.AddAssetSellOrderResponse, error) {
 
 	return s.response, nil
+}
+
+func TestAddAssetInvoice(t *testing.T) {
+	t.Parallel()
+
+	assetID := make([]byte, 32)
+	assetID[0] = 1
+	peer := make([]byte, 33)
+	peer[0] = 2
+	invoiceReq := &lnrpc.Invoice{
+		Memo:      "asset invoice",
+		ValueMsat: 50_000_000,
+	}
+	quote := &rfqrpc.PeerAcceptedBuyQuote{Peer: "peer"}
+
+	tests := []struct {
+		name        string
+		paymentHash *lntypes.Hash
+	}{
+		{
+			name: "regular invoice",
+		},
+		{
+			name:        "hold invoice",
+			paymentHash: &lntypes.Hash{3},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			mock := &assetInvoiceClientMock{
+				response: &tapchannelrpc.AddInvoiceResponse{
+					AcceptedBuyQuote: quote,
+					InvoiceResult: &lnrpc.AddInvoiceResponse{
+						PaymentRequest: "invoice",
+					},
+				},
+			}
+			client := &TapdClient{
+				TaprootAssetChannelsClient: mock,
+			}
+
+			invoice, err := client.AddAssetInvoice(
+				t.Context(), assetID, peer, invoiceReq,
+				test.paymentHash,
+			)
+			require.NoError(t, err)
+			require.Equal(t, "invoice", invoice.PaymentRequest)
+			require.Same(t, quote, invoice.AcceptedBuyQuote)
+
+			require.Equal(t, assetID, mock.request.AssetId)
+			require.Equal(t, peer, mock.request.PeerPubkey)
+			require.Same(t, invoiceReq, mock.request.InvoiceRequest)
+			if test.paymentHash == nil {
+				require.Nil(t, mock.request.HodlInvoice)
+			} else {
+				require.Equal(
+					t, test.paymentHash[:],
+					mock.request.HodlInvoice.PaymentHash,
+				)
+			}
+		})
+	}
+}
+
+func TestAddAssetInvoiceRejectsIncompleteResponse(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response *tapchannelrpc.AddInvoiceResponse
+		err      string
+	}{
+		{
+			name: "nil response",
+			err:  "asset invoice response is nil",
+		},
+		{
+			name:     "missing quote",
+			response: &tapchannelrpc.AddInvoiceResponse{},
+			err:      "asset invoice response has no accepted buy quote",
+		},
+		{
+			name: "missing invoice",
+			response: &tapchannelrpc.AddInvoiceResponse{
+				AcceptedBuyQuote: &rfqrpc.PeerAcceptedBuyQuote{},
+			},
+			err: "asset invoice response has no payment request",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := &TapdClient{
+				TaprootAssetChannelsClient: &assetInvoiceClientMock{
+					response: test.response,
+				},
+			}
+			_, err := client.AddAssetInvoice(
+				t.Context(), make([]byte, 32), nil,
+				&lnrpc.Invoice{}, nil,
+			)
+			require.ErrorContains(t, err, test.err)
+		})
+	}
 }
 
 // TestDefaultTapdConfig tests that the default tapd connection paths match
