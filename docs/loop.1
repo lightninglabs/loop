@@ -107,6 +107,12 @@ perform an on-chain to off-chain swap (loop in)
 \fB--amt\fP="": the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms" (default: 0)
 
 .PP
+\fB--asset_edge_node\fP="": the optional pubkey of the asset channel peer to use for the loop in
+
+.PP
+\fB--asset_id\fP="": the asset ID to receive over an asset channel; requires loopd to be connected to a Taproot Assets daemon
+
+.PP
 \fB--conf_target\fP="": the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)
 
 .PP
