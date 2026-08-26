@@ -678,7 +678,7 @@ The following flags are supported:
 
 Display a summary of static address related information.
 
-Displays various static address related information about deposits,  	withdrawals, swaps and channel openings.
+Displays various static address related information about deposits, 	withdrawals, swaps and channel openings. The deprecated static_address field 	is the legacy/root address retained for compatibility, not the current 	receive address. Use "loop static new" to derive a new receive address.
 
 Usage:
 
