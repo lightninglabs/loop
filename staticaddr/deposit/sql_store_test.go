@@ -196,25 +196,25 @@ func populatedSQLRow[T any](t *testing.T) T {
 		field := value.Field(i)
 		n := int64(i + 1)
 		switch field.Type() {
-		case reflect.TypeOf([]byte{}):
+		case reflect.TypeFor[[]byte]():
 			field.SetBytes([]byte{byte(n)})
 
-		case reflect.TypeOf(int32(0)), reflect.TypeOf(int64(0)):
+		case reflect.TypeFor[int32](), reflect.TypeFor[int64]():
 			field.SetInt(n)
 
-		case reflect.TypeOf(sql.NullString{}):
+		case reflect.TypeFor[sql.NullString]():
 			field.Set(reflect.ValueOf(sql.NullString{
 				String: "set",
 				Valid:  true,
 			}))
 
-		case reflect.TypeOf(sql.NullInt32{}):
+		case reflect.TypeFor[sql.NullInt32]():
 			field.Set(reflect.ValueOf(sql.NullInt32{
 				Int32: int32(n),
 				Valid: true,
 			}))
 
-		case reflect.TypeOf(sql.NullTime{}):
+		case reflect.TypeFor[sql.NullTime]():
 			field.Set(reflect.ValueOf(sql.NullTime{
 				Time:  time.Unix(n, 0).UTC(),
 				Valid: true,

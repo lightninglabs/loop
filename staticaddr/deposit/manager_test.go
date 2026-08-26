@@ -2,7 +2,6 @@ package deposit
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"testing"
 	"time"
@@ -25,10 +24,6 @@ import (
 )
 
 var (
-	defaultServerPubkeyBytes, _ = hex.DecodeString("021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d")
-
-	defaultServerPubkey, _ = btcec.ParsePubKey(defaultServerPubkeyBytes)
-
 	defaultExpiry = uint32(100)
 
 	defaultDepositConfirmations = uint32(3)
