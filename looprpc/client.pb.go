@@ -5655,9 +5655,14 @@ func (*StaticAddressSummaryRequest) Descriptor() ([]byte, []int) {
 
 type StaticAddressSummaryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The static address of the client.
+	// Deprecated: The legacy/root static address used as the derivation seed.
+	// New deposits should use fresh addresses returned by NewStaticAddress; this
+	// address must not be treated as the current receive address.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	StaticAddress string `protobuf:"bytes,1,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
-	// The CSV expiry of the static address.
+	// The shared CSV delay in blocks inherited by all static addresses derived
+	// from the legacy/root seed.
 	RelativeExpiryBlocks uint64 `protobuf:"varint,2,opt,name=relative_expiry_blocks,json=relativeExpiryBlocks,proto3" json:"relative_expiry_blocks,omitempty"`
 	// The total number of deposits.
 	TotalNumDeposits uint32 `protobuf:"varint,3,opt,name=total_num_deposits,json=totalNumDeposits,proto3" json:"total_num_deposits,omitempty"`
@@ -5709,6 +5714,7 @@ func (*StaticAddressSummaryResponse) Descriptor() ([]byte, []int) {
 	return file_client_proto_rawDescGZIP(), []int{69}
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetStaticAddress() string {
 	if x != nil {
 		return x.StaticAddress
@@ -7253,9 +7259,9 @@ const file_client_proto_rawDesc = "" +
 	"\x1dListStaticAddressSwapsRequest\"X\n" +
 	"\x1eListStaticAddressSwapsResponse\x126\n" +
 	"\x05swaps\x18\x01 \x03(\v2 .looprpc.StaticAddressLoopInSwapR\x05swaps\"\x1d\n" +
-	"\x1bStaticAddressSummaryRequest\"\xca\x04\n" +
-	"\x1cStaticAddressSummaryResponse\x12%\n" +
-	"\x0estatic_address\x18\x01 \x01(\tR\rstaticAddress\x124\n" +
+	"\x1bStaticAddressSummaryRequest\"\xce\x04\n" +
+	"\x1cStaticAddressSummaryResponse\x12)\n" +
+	"\x0estatic_address\x18\x01 \x01(\tB\x02\x18\x01R\rstaticAddress\x124\n" +
 	"\x16relative_expiry_blocks\x18\x02 \x01(\x04R\x14relativeExpiryBlocks\x12,\n" +
 	"\x12total_num_deposits\x18\x03 \x01(\rR\x10totalNumDeposits\x12<\n" +
 	"\x1avalue_unconfirmed_satoshis\x18\x04 \x01(\x03R\x18valueUnconfirmedSatoshis\x128\n" +
