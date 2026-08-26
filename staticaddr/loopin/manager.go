@@ -24,6 +24,7 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -723,20 +724,6 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 			loopIn.Deposits = activeDeposits
 		}
 
-		loopIn.AddressParams, err =
-			m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-		if err != nil {
-			return err
-		}
-
-		loopIn.Address, err = m.cfg.AddressManager.GetStaticAddress(
-			ctx,
-		)
-		if err != nil {
-			return err
-		}
-
 		// Create a state machine for a given loop-in.
 		recovery := true
 		fsm, err := NewFSM(ctx, loopIn, m.cfg, recovery)
@@ -944,6 +931,9 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
+		ProtocolVersion: version.AddressProtocolVersion(
+			version.CurrentRPCProtocolVersion(),
+		),
 		SelectedAmount: req.SelectedAmount,
 		// Copy into a nil slice so the swap owns a stable snapshot
 		// instead of aliasing the caller's selectedOutpoints slice.
