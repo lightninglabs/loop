@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -54,47 +55,181 @@ func TestFinalizeDepositActionDoesNotBlock(t *testing.T) {
 	}
 }
 
-func TestWaitForExpirySweepActionRegistersByScriptOnly(t *testing.T) {
+func TestWaitForExpirySweepActionTracksOutpointSpender(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
+	depositOutpoint := wire.OutPoint{Hash: chainhash.Hash{1}, Index: 2}
+	depositPkScript := []byte{0x51, 0x20, 0x00}
 	timeoutPkScript := []byte{0x51, 0x20, 0x01}
+	spendChan := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan := make(chan error, 1)
 	confChan := make(chan *chainntnfs.TxConfirmation, 1)
-	errChan := make(chan error, 1)
+	confErrChan := make(chan error, 1)
 
 	chainNotifier := &MockChainNotifier{}
+	chainNotifier.On(
+		"RegisterSpendNtfn",
+		mock.Anything,
+		mock.MatchedBy(func(outpoint *wire.OutPoint) bool {
+			return outpoint != nil && *outpoint == depositOutpoint
+		}),
+		depositPkScript,
+		int32(42),
+	).Return(spendChan, spendErrChan, nil).Once()
+
+	spendingTx := wire.NewMsgTx(2)
+	spendingTx.AddTxIn(&wire.TxIn{PreviousOutPoint: depositOutpoint})
+	spendingTx.AddTxOut(&wire.TxOut{
+		Value:    1000,
+		PkScript: timeoutPkScript,
+	})
+	spendingTxID := spendingTx.TxHash()
+
 	chainNotifier.On(
 		"RegisterConfirmationsNtfn",
 		mock.Anything,
 		mock.MatchedBy(func(txid *chainhash.Hash) bool {
-			return txid == nil
+			return txid != nil && *txid == spendingTxID
 		}),
 		timeoutPkScript,
 		int32(DefaultConfTarget),
-		int32(42),
-	).Return(confChan, errChan, nil).Once()
+		int32(50),
+	).Return(confChan, confErrChan, nil).Once()
 
 	depositFSM := &FSM{
+		StateMachine: &fsm.StateMachine{},
 		cfg: &ManagerConfig{
 			ChainNotifier: chainNotifier,
 		},
 		deposit: &Deposit{
+			OutPoint:             depositOutpoint,
 			ConfirmationHeight:   42,
 			ExpirySweepTxid:      chainhash.Hash{9},
 			TimeOutSweepPkScript: timeoutPkScript,
+			AddressParams: &address.Parameters{
+				PkScript: depositPkScript,
+			},
 		},
 	}
 
-	confirmedTx := wire.NewMsgTx(2)
-	confirmedTx.AddTxOut(&wire.TxOut{
-		Value:    1000,
-		PkScript: timeoutPkScript,
-	})
-	confChan <- &chainntnfs.TxConfirmation{Tx: confirmedTx}
+	spendChan <- &chainntnfs.SpendDetail{
+		SpendingTx:     spendingTx,
+		SpendingHeight: 50,
+	}
+	confChan <- &chainntnfs.TxConfirmation{Tx: spendingTx}
 
 	event := depositFSM.WaitForExpirySweepAction(ctx, nil)
 	require.Equal(t, OnExpirySwept, event)
-	require.Equal(t, confirmedTx.TxHash(), depositFSM.deposit.ExpirySweepTxid)
+	require.Equal(t, spendingTxID, depositFSM.deposit.ExpirySweepTxid)
+	chainNotifier.AssertExpectations(t)
+}
+
+func TestWaitForExpirySweepActionRejectsInvalidSpend(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	depositOutpoint := wire.OutPoint{Hash: chainhash.Hash{1}, Index: 2}
+	depositPkScript := []byte{0x51, 0x20, 0x00}
+	timeoutPkScript := []byte{0x51, 0x20, 0x01}
+	spendChan := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan := make(chan error, 1)
+
+	chainNotifier := &MockChainNotifier{}
+	chainNotifier.On(
+		"RegisterSpendNtfn", mock.Anything, mock.Anything,
+		depositPkScript, int32(42),
+	).Return(spendChan, spendErrChan, nil).Once()
+
+	depositFSM := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &ManagerConfig{
+			ChainNotifier: chainNotifier,
+		},
+		deposit: &Deposit{
+			OutPoint:             depositOutpoint,
+			ConfirmationHeight:   42,
+			TimeOutSweepPkScript: timeoutPkScript,
+			AddressParams: &address.Parameters{
+				PkScript: depositPkScript,
+			},
+		},
+	}
+
+	// A transaction that merely pays the timeout script must not be treated
+	// as the deposit's expiry sweep.
+	unrelatedTx := wire.NewMsgTx(2)
+	unrelatedTx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{Hash: chainhash.Hash{2}},
+	})
+	unrelatedTx.AddTxOut(&wire.TxOut{
+		Value:    1000,
+		PkScript: timeoutPkScript,
+	})
+	spendChan <- &chainntnfs.SpendDetail{SpendingTx: unrelatedTx}
+
+	event := depositFSM.WaitForExpirySweepAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.Zero(t, depositFSM.deposit.ExpirySweepTxid)
+	chainNotifier.AssertNotCalled(t, "RegisterConfirmationsNtfn")
+	chainNotifier.AssertExpectations(t)
+}
+
+func TestWaitForExpirySweepActionRejectsMissingConfirmation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	depositOutpoint := wire.OutPoint{Hash: chainhash.Hash{1}, Index: 2}
+	depositPkScript := []byte{0x51, 0x20, 0x00}
+	timeoutPkScript := []byte{0x51, 0x20, 0x01}
+	spendingTx := wire.NewMsgTx(2)
+	spendingTx.AddTxIn(&wire.TxIn{PreviousOutPoint: depositOutpoint})
+	spendingTx.AddTxOut(&wire.TxOut{
+		Value:    1000,
+		PkScript: timeoutPkScript,
+	})
+
+	spendChan := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan := make(chan error, 1)
+	confChan := make(chan *chainntnfs.TxConfirmation, 1)
+	confErrChan := make(chan error, 1)
+	spendChan <- &chainntnfs.SpendDetail{
+		SpendingTx:     spendingTx,
+		SpendingHeight: 50,
+	}
+	confChan <- nil
+
+	chainNotifier := &MockChainNotifier{}
+	chainNotifier.On(
+		"RegisterSpendNtfn", mock.Anything, mock.Anything,
+		depositPkScript, int32(42),
+	).Return(spendChan, spendErrChan, nil).Once()
+	chainNotifier.On(
+		"RegisterConfirmationsNtfn", mock.Anything, mock.Anything,
+		timeoutPkScript, int32(DefaultConfTarget), int32(50),
+	).Return(confChan, confErrChan, nil).Once()
+
+	depositFSM := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &ManagerConfig{
+			ChainNotifier: chainNotifier,
+		},
+		deposit: &Deposit{
+			OutPoint:             depositOutpoint,
+			ConfirmationHeight:   42,
+			TimeOutSweepPkScript: timeoutPkScript,
+			AddressParams: &address.Parameters{
+				PkScript: depositPkScript,
+			},
+		},
+	}
+
+	event := depositFSM.WaitForExpirySweepAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(
+		t, depositFSM.LastActionError, "confirmation missing transaction",
+	)
+	require.Zero(t, depositFSM.deposit.ExpirySweepTxid)
 	chainNotifier.AssertExpectations(t)
 }
 
