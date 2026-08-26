@@ -5,6 +5,9 @@
 * Instant Out now validates server invoices against a caller-approved maximum
   swap fee.
 
+* Loop In can now create its swap and probe invoices through `tapd`, allowing
+  the server's Lightning payment to be delivered over a Taproot Asset channel.
+
 #### Breaking Changes
 
 * Instant Out requests must now set `max_swap_fee_sat`. Requests that omit the
