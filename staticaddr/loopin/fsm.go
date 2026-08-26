@@ -37,7 +37,7 @@ type FSM struct {
 }
 
 // NewFSM creates a new loop-in state machine.
-func NewFSM(ctx context.Context, loopIn *StaticAddressLoopIn, cfg *Config,
+func NewFSM(_ context.Context, loopIn *StaticAddressLoopIn, cfg *Config,
 	recoverStateMachine bool) (*FSM, error) {
 
 	loopInFsm := &FSM{
@@ -45,14 +45,8 @@ func NewFSM(ctx context.Context, loopIn *StaticAddressLoopIn, cfg *Config,
 		loopIn: loopIn,
 	}
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
-	}
-
 	loopInStates := loopInFsm.LoopInStatesV0()
-	switch params.ProtocolVersion {
+	switch loopIn.ProtocolVersion {
 	case version.ProtocolVersion_V0:
 
 	default:
