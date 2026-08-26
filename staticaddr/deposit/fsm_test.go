@@ -185,3 +185,75 @@ func TestLoopingInTransitionsToSweepHtlcTimeout(t *testing.T) {
 	require.Equal(t, SweepHtlcTimeout, deposit.GetState())
 	store.AssertExpectations(t)
 }
+
+// TestOwnedExpiryDoesNotWaitForDepositLock verifies that an expiry self-loop
+// cannot hold the FSM lock while waiting for a deposit lock held by its owner.
+func TestOwnedExpiryDoesNotWaitForDepositLock(t *testing.T) {
+	for _, test := range []struct {
+		state      fsm.StateType
+		ownerEvent fsm.EventType
+		nextState  fsm.StateType
+	}{
+		{LoopingIn, OnSweepingHtlcTimeout, SweepHtlcTimeout},
+		{SweepHtlcTimeout, OnHtlcTimeoutSwept, HtlcTimeoutSwept},
+	} {
+		t.Run(string(test.state), func(t *testing.T) {
+			deposit := &Deposit{}
+			deposit.SetState(test.state)
+			store := new(mockStore)
+			store.On(
+				"UpdateDeposit", mock.Anything, mock.Anything,
+			).Return(nil).Once()
+			depositFSM := &FSM{
+				cfg:                  &ManagerConfig{Store: store},
+				deposit:              deposit,
+				finalizedDepositChan: make(chan wire.OutPoint, 1),
+			}
+			depositFSM.StateMachine = fsm.NewStateMachineWithState(
+				depositFSM.DepositStatesV0(), test.state,
+				DefaultObserverSize,
+			)
+			depositFSM.ActionEntryFunc = depositFSM.updateDeposit
+
+			// TransitionDeposits holds this lock before sending owner
+			// events. Expiry must not take the locks in reverse order.
+			deposit.Lock()
+			locked := true
+			defer func() {
+				if locked {
+					deposit.Unlock()
+				}
+			}()
+			done := make(chan error, 1)
+			go func() {
+				done <- depositFSM.SendEvent(t.Context(), OnExpiry, nil)
+			}()
+
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(time.Second):
+				// Release a blocked pre-fix event before failing so the
+				// regression leaves no stuck goroutine behind.
+				deposit.Unlock()
+				locked = false
+				select {
+				case <-done:
+				case <-time.After(time.Second):
+					t.Fatal("expiry event did not finish after unlocking")
+				}
+				t.Fatal("expiry self-loop waited for the deposit lock")
+			}
+			require.Equal(t, test.state, deposit.getStateNoLock())
+
+			// The owner's next event must still update and persist the
+			// deposit while its original lock remains held.
+			err := depositFSM.SendEvent(t.Context(), test.ownerEvent, nil)
+			require.NoError(t, err)
+			require.Equal(t, test.nextState, deposit.getStateNoLock())
+			deposit.Unlock()
+			locked = false
+			store.AssertExpectations(t)
+		})
+	}
+}
