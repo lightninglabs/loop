@@ -124,6 +124,10 @@ type Manager struct {
 	// mu protects access to finalizedWithdrawalTxns.
 	mu sync.Mutex
 
+	// monitorWg tracks withdrawal spend and confirmation monitors. Run
+	// cancels and joins these goroutines before returning.
+	monitorWg sync.WaitGroup
+
 	// newWithdrawalRequestChan receives a list of outpoints that should be
 	// withdrawn. The request is forwarded to the managers main loop.
 	newWithdrawalRequestChan chan newWithdrawalRequest
@@ -159,8 +163,17 @@ func NewManager(cfg *ManagerConfig, currentHeight uint32) (*Manager, error) {
 
 // Run runs the deposit withdrawal manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer func() {
+		// Stop request delivery and all monitors before allowing the
+		// manager's owner to tear down its dependencies.
+		close(m.exitChan)
+		cancel()
+		m.monitorWg.Wait()
+	}()
+
 	newBlockChan, newBlockErrChan, err :=
-		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
+		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(runCtx)
 
 	if err != nil {
 		log.Errorf("unable to register for block epoch "+
@@ -169,7 +182,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
-	err = m.recoverWithdrawals(ctx)
+	err = m.recoverWithdrawals(runCtx)
 	if err != nil {
 		log.Errorf("unable to recover withdrawals: %v", err)
 
@@ -183,7 +196,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	for {
 		select {
 		case <-newBlockChan:
-			err = m.republishWithdrawals(ctx)
+			err = m.republishWithdrawals(runCtx)
 			if err != nil {
 				log.Errorf("Error republishing withdrawals: %v",
 					err)
@@ -191,7 +204,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 		case req := <-m.newWithdrawalRequestChan:
 			txHash, withdrawalAddress, err := m.WithdrawDeposits(
-				ctx, req.outpoints, req.destAddr,
+				runCtx, req.outpoints, req.destAddr,
 				req.satPerVbyte, req.amount,
 			)
 			if err != nil {
@@ -209,22 +222,15 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			select {
 			case req.respChan <- resp:
 
-			case <-ctx.Done():
-				// Notify subroutines that the main loop has
-				// been canceled.
-				close(m.exitChan)
-
-				return ctx.Err()
+			case <-runCtx.Done():
+				return runCtx.Err()
 			}
 
 		case err = <-newBlockErrChan:
 			return err
 
-		case <-ctx.Done():
-			// Signal subroutines that the manager is exiting.
-			close(m.exitChan)
-
-			return ctx.Err()
+		case <-runCtx.Done():
+			return runCtx.Err()
 		}
 	}
 }
@@ -813,7 +819,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		return fmt.Errorf("unable to register spend ntfn: %w", err)
 	}
 
-	go func() {
+	m.monitorWg.Go(func() {
 		select {
 		case spentTx := <-spentChan:
 			spendingHeight := uint32(spentTx.SpendingHeight)
@@ -938,7 +944,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		case <-ctx.Done():
 			log.Errorf("Withdrawal tx confirmation wait canceled")
 		}
-	}()
+	})
 
 	return nil
 }

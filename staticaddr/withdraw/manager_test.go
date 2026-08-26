@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -29,6 +30,32 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	UseLogger(btclog.Disabled)
+	os.Exit(m.Run())
+}
+
+func cleanupWithdrawalMonitor(t *testing.T, manager *Manager,
+	cancel context.CancelFunc) {
+
+	t.Helper()
+	t.Cleanup(func() {
+		cancel()
+
+		done := make(chan struct{})
+		go func() {
+			manager.monitorWg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("withdrawal monitor did not stop")
+		}
+	})
+}
 
 type withdrawalCleanupSigner struct {
 	lndclient.SignerClient
@@ -274,16 +301,14 @@ func (n *withdrawalTestNotifier) RegisterConfirmationsNtfn(_ context.Context,
 }
 
 func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	UseLogger(btclog.Disabled)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 
 	notifier := newWithdrawalTestNotifier()
 	manager, err := NewManager(&ManagerConfig{
 		ChainNotifier: notifier,
 	}, 123)
 	require.NoError(t, err)
+	cleanupWithdrawalMonitor(t, manager, cancel)
 
 	originalTxHash := chainhash.Hash{1}
 	replacementTxHash := chainhash.Hash{2}
@@ -326,10 +351,7 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 }
 
 func TestHandleWithdrawalReconcilesIncompleteSpend(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	UseLogger(btclog.Disabled)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 
 	notifier := newWithdrawalTestNotifier()
 	depositManager := &withdrawalTestDepositManager{
@@ -341,6 +363,7 @@ func TestHandleWithdrawalReconcilesIncompleteSpend(t *testing.T) {
 		DepositManager: depositManager,
 	}, 123)
 	require.NoError(t, err)
+	cleanupWithdrawalMonitor(t, manager, cancel)
 
 	first := &deposit.Deposit{
 		OutPoint: wire.OutPoint{Hash: chainhash.Hash{1}, Index: 1},
@@ -411,6 +434,7 @@ func TestHandleWithdrawalReconcilesIncompleteSpend(t *testing.T) {
 	_, republishesOriginal := manager.finalizedWithdrawalTxns[originalTxHash]
 	manager.mu.Unlock()
 	require.False(t, republishesOriginal)
+	manager.monitorWg.Wait()
 }
 
 // TestSignMusig2Tx_MissingSigningInfo tests that signMusig2Tx should error
