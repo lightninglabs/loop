@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type staticAddressSummaryErrorClient struct {
@@ -119,6 +121,56 @@ func TestStaticAddressDepositForceFirstUseNonInteractive(t *testing.T) {
 	require.Empty(t, client.newAddressRequest.GetSendCoinsRequest().Addr)
 	require.Contains(t, output.String(), "WARNING")
 	require.NotContains(t, output.String(), "CONTINUE WITH NEW ADDRESS")
+}
+
+// TestIsNoStaticAddressSummaryError verifies that the CLI recognizes the
+// durable status returned by current loopd versions while keeping only the
+// exact legacy Unknown status for compatibility with older versions.
+func TestIsNoStaticAddressSummaryError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "not found",
+			err:      status.Error(codes.NotFound, "not initialized"),
+			expected: true,
+		},
+		{
+			name: "legacy unknown",
+			err: status.Error(
+				codes.Unknown, address.ErrNoStaticAddress.Error(),
+			),
+			expected: true,
+		},
+		{
+			name: "wrapped legacy message",
+			err: status.Error(
+				codes.Unknown, "lookup failed: "+
+					address.ErrNoStaticAddress.Error(),
+			),
+		},
+		{
+			name: "wrong status",
+			err: status.Error(
+				codes.Internal, address.ErrNoStaticAddress.Error(),
+			),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(
+				t, test.expected,
+				isNoStaticAddressSummaryError(test.err),
+			)
+		})
+	}
 }
 
 func TestStaticAddressDepositRequestAllowsNoUtxos(t *testing.T) {
