@@ -683,8 +683,11 @@ var summaryCommand = &cli.Command{
 	Aliases: []string{"s"},
 	Usage:   "Display a summary of static address related information.",
 	Description: `
-	Displays various static address related information about deposits, 
-	withdrawals, swaps and channel openings. 
+	Displays various static address related information about deposits,
+	withdrawals, swaps and channel openings. The legacy_root_address field is
+	the legacy/root address, not the current receive address.
+	Use "loop static new" to derive a new receive address. The RPC retains the
+	deprecated static_address field name for compatibility.
 	`,
 	Action: summary,
 }
@@ -707,7 +710,16 @@ func summary(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	printRespJSON(resp)
+	jsonBytes, err := lnrpc.ProtoJSONMarshalOpts.Marshal(resp)
+	if err != nil {
+		return err
+	}
+
+	// Relabel the root in CLI output without changing the RPC field or
+	// protobuf JSON encoding of the other summary fields.
+	output := strings.Replace(string(jsonBytes),
+		`"static_address":`, `"legacy_root_address":`, 1)
+	fmt.Println(string(maybeNormalizeJSON([]byte(output))))
 
 	return nil
 }

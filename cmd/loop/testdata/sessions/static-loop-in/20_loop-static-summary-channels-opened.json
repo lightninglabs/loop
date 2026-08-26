@@ -55,8 +55,8 @@
       "data": {
         "lines": [
           "{\n",
+          "    \"legacy_root_address\": \"bcrt1p604kzzh28764kkw45yps48weergwljggamhhe7tqfglzjzang6cs43f2m2\",\n",
           "    \"relative_expiry_blocks\": \"14400\",\n",
-          "    \"static_address\": \"bcrt1p604kzzh28764kkw45yps48weergwljggamhhe7tqfglzjzang6cs43f2m2\",\n",
           "    \"total_num_deposits\": 3,\n",
           "    \"value_channels_opened\": \"1500000\",\n",
           "    \"value_deposited_satoshis\": \"0\",\n",
