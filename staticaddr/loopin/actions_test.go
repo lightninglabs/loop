@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -919,16 +920,15 @@ func TestSignHtlcTxActionChecksDepositAvailability(t *testing.T) {
 		Value: 200_000,
 	}
 	checker := &recordingTxOutChecker{}
+	addressMgr := &mockAddressManager{
+		getParamsErr: errors.New("legacy address parameters unavailable"),
+	}
 
 	f := &FSM{
 		StateMachine: &fsm.StateMachine{},
 		cfg: &Config{
-			AddressManager: &mockAddressManager{
-				params: &script.Parameters{
-					ProtocolVersion: version.ProtocolVersion_V0,
-				},
-			},
-			TxOutChecker: checker,
+			AddressManager: addressMgr,
+			TxOutChecker:   checker,
 		},
 		loopIn: &StaticAddressLoopIn{
 			Deposits: []*deposit.Deposit{dep},
@@ -942,6 +942,7 @@ func TestSignHtlcTxActionChecksDepositAvailability(t *testing.T) {
 			dep.OutPoint.String()+" is no longer available",
 	)
 	require.Equal(t, [][]wire.OutPoint{{dep.OutPoint}}, checker.outpoints)
+	require.Zero(t, addressMgr.getParamsCalls.Load())
 }
 
 func TestCheckDepositsAvailableRejectsDivergentDepositOutpoints(
@@ -3517,21 +3518,21 @@ func TestUnlockDepositsActionReportsTransitionError(t *testing.T) {
 // mockAddressManager is a minimal AddressManager implementation used by the
 // test FSM setup.
 type mockAddressManager struct {
-	params *script.Parameters
+	params         *script.Parameters
+	getParamsErr   error
+	getParamsCalls atomic.Int32
 }
 
 // GetStaticAddressParameters returns the configured address parameters.
 func (m *mockAddressManager) GetStaticAddressParameters(_ context.Context) (
 	*script.Parameters, error) {
 
+	m.getParamsCalls.Add(1)
+	if m.getParamsErr != nil {
+		return nil, m.getParamsErr
+	}
+
 	return m.params, nil
-}
-
-// GetStaticAddress is unused for this test and returns nil.
-func (m *mockAddressManager) GetStaticAddress(_ context.Context) (
-	*script.StaticAddress, error) {
-
-	return nil, nil
 }
 
 // NewChangeAddress returns configured parameters for tests that need change.
