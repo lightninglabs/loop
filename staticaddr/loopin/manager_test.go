@@ -41,6 +41,7 @@ func TestManagerRunRejectsRequestsAfterShutdown(t *testing.T) {
 
 	mgr, err := NewManager(&Config{
 		ChainNotifier:       &silentBlockChainNotifier{},
+		DepositManager:      &mockDepositManager{},
 		NotificationManager: &mockNotificationManager{},
 		Store:               &mockStore{},
 	}, 1)
@@ -105,7 +106,8 @@ func TestManagerRunHandlesSweepRequestsConcurrently(t *testing.T) {
 	}
 
 	mgr, err := NewManager(&Config{
-		ChainNotifier: &silentBlockChainNotifier{},
+		ChainNotifier:  &silentBlockChainNotifier{},
+		DepositManager: &mockDepositManager{},
 		NotificationManager: &sweepRequestNotificationManager{
 			requests: requests,
 		},
@@ -167,7 +169,8 @@ func TestManagerRunWaitsForSweepRequestHandlers(t *testing.T) {
 	}
 
 	mgr, err := NewManager(&Config{
-		ChainNotifier: &silentBlockChainNotifier{},
+		ChainNotifier:  &silentBlockChainNotifier{},
+		DepositManager: &mockDepositManager{},
 		NotificationManager: &sweepRequestNotificationManager{
 			requests: requests,
 		},
@@ -233,7 +236,8 @@ func TestManagerRunBoundsSweepRequestConcurrency(t *testing.T) {
 	}
 
 	mgr, err := NewManager(&Config{
-		ChainNotifier: &silentBlockChainNotifier{},
+		ChainNotifier:  &silentBlockChainNotifier{},
+		DepositManager: &mockDepositManager{},
 		NotificationManager: &sweepRequestNotificationManager{
 			requests: requests,
 		},
@@ -287,10 +291,12 @@ func TestHandleLoopInSweepReqReachesPushConcurrently(t *testing.T) {
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		PkScript:     depositPkScript,
+		Expiry:       1_000,
 	}
 
 	const confirmationHeight = 1
 	currentDeposit := makeDeposit(1, 0, 10_000, confirmationHeight)
+	currentDeposit.AddressParams = addressParams
 	depositOutpoint := currentDeposit.OutPoint.String()
 	swapHash := lntypes.Hash{1}
 	loopIn := &StaticAddressLoopIn{
@@ -311,8 +317,7 @@ func TestHandleLoopInSweepReqReachesPushConcurrently(t *testing.T) {
 				release:     releasePushes,
 			},
 			AddressManager: &mockAddressManager{
-				params:        addressParams,
-				staticAddress: staticAddress,
+				params: addressParams,
 			},
 			DepositManager: &mockDepositManager{
 				byOutpoint: map[string]*deposit.Deposit{
@@ -466,6 +471,7 @@ func TestValidateSigningPrevoutsChecksLocalDeposit(t *testing.T) {
 	currentDeposit := makeDeposit(1, 0, 10_000, 1)
 	depositOutpoint := currentDeposit.OutPoint.String()
 	depositScript := []byte{0x51, 0x20}
+	currentDeposit.AddressParams = &script.Parameters{PkScript: depositScript}
 
 	testCases := []struct {
 		name        string
@@ -522,7 +528,7 @@ func TestValidateSigningPrevoutsChecksLocalDeposit(t *testing.T) {
 			// before constructing the Taproot signature hash.
 			err := validateSigningPrevouts(
 				testCase.nonces, []*deposit.Deposit{currentDeposit},
-				depositScript, prevoutMap,
+				prevoutMap,
 			)
 			if testCase.expectedErr == "" {
 				require.NoError(t, err)
@@ -1352,6 +1358,31 @@ func (m *mockDepositManager) TransitionDeposits(_ context.Context,
 	return nil
 }
 
+func (m *mockDepositManager) LockDepositsForLoopIn(ctx context.Context,
+	deposits []*deposit.Deposit, _ lntypes.Hash) error {
+
+	return m.TransitionDeposits(ctx, deposits,
+		deposit.OnLoopInInitiated, deposit.LoopingIn)
+}
+
+func (m *mockDepositManager) ReleaseLoopInDeposits(ctx context.Context,
+	deposits []*deposit.Deposit, _ lntypes.Hash) error {
+
+	return m.TransitionDeposits(ctx, deposits, fsm.OnError, deposit.Deposited)
+}
+
+func (m *mockDepositManager) RestoreLoopInClaim(context.Context,
+	[]*deposit.Deposit, lntypes.Hash) error {
+
+	return nil
+}
+
+func (m *mockDepositManager) GetLoopInClaim(wire.OutPoint) (lntypes.Hash, bool) {
+	return lntypes.Hash{}, false
+}
+
+func (m *mockDepositManager) ClearLoopInClaim(wire.OutPoint) {}
+
 func (m *mockDepositManager) DepositsForOutpoints(_ context.Context,
 	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
 
@@ -1439,6 +1470,24 @@ func (s *mockStore) GetStaticAddressLoopInSwapsByStates(_ context.Context,
 	_ []fsm.StateType) ([]*StaticAddressLoopIn, error) {
 
 	return s.swaps, nil
+}
+
+func (s *mockStore) GetPaidStaticAddressLoopInClaims(_ context.Context,
+	afterID int32) (
+	[]LoopInClaim, error) {
+
+	var claims []LoopInClaim
+	for _, swap := range s.loopIns {
+		if swap.ID > afterID && (swap.GetState() == Succeeded ||
+			swap.GetState() == SucceededTransitioningFailed) {
+
+			claims = append(claims, LoopInClaim{
+				ID: swap.ID, SwapHash: swap.SwapHash, State: swap.GetState(),
+				DepositOutpoints: swap.DepositOutpoints,
+			})
+		}
+	}
+	return claims, nil
 }
 func (s *mockStore) IsStored(_ context.Context, _ lntypes.Hash) (bool, error) {
 	return s.stored, nil
