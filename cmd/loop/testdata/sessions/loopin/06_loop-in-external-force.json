@@ -73,7 +73,8 @@
           "label": "",
           "initiator": "loop-cli",
           "route_hints": [],
-          "private": false
+          "private": false,
+          "asset_info": null
         }
       }
     },
