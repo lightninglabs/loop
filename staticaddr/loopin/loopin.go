@@ -111,6 +111,11 @@ type StaticAddressLoopIn struct {
 	// swap.
 	DepositOutpoints []string
 
+	// FundingTxs is the immutable snapshot of unconfirmed funding parents
+	// selected for the swap. Witness data is omitted when storing it. Legacy
+	// swaps have no snapshot and cannot use it to prove a funding conflict.
+	FundingTxs []*wire.MsgTx
+
 	// SelectedAmount is the amount that the user selected for the swap. If
 	// the user did not select an amount, the amount of all deposits is
 	// used.

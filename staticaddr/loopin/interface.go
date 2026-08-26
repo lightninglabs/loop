@@ -46,6 +46,20 @@ type AddressManager interface {
 
 // DepositManager handles the interaction of loop-ins with deposits.
 type DepositManager interface {
+	// LockDepositsForLoopIn claims deposited inputs for one swap, including
+	// the initialization window before that swap is stored.
+	LockDepositsForLoopIn(context.Context, []*deposit.Deposit,
+		lntypes.Hash) error
+
+	// ReleaseLoopInDeposits resets only deposits still owned by this swap.
+	ReleaseLoopInDeposits(context.Context, []*deposit.Deposit,
+		lntypes.Hash) error
+
+	// RestoreLoopInClaim repairs only in-memory ownership during startup,
+	// before recovered swaps or new requests can release the deposit.
+	RestoreLoopInClaim(context.Context, []*deposit.Deposit,
+		lntypes.Hash) error
+
 	// EnsureDepositsFresh reconciles active deposits with the wallet view.
 	EnsureDepositsFresh(ctx context.Context) error
 
@@ -76,6 +90,14 @@ type DepositManager interface {
 		error)
 }
 
+// LoopInClaim contains the ownership metadata needed to reconcile a recovered
+// deposit without loading the swap's keys, deposits and full update history.
+type LoopInClaim struct {
+	SwapHash         lntypes.Hash
+	DepositOutpoints []string
+	State            fsm.StateType
+}
+
 // StaticAddressLoopInStore provides access to the static address loop-in DB.
 type StaticAddressLoopInStore interface {
 	// CreateLoopIn creates a loop-in record in the database.
@@ -88,6 +110,10 @@ type StaticAddressLoopInStore interface {
 	// states.
 	GetStaticAddressLoopInSwapsByStates(ctx context.Context,
 		states []fsm.StateType) ([]*StaticAddressLoopIn, error)
+
+	// GetPaidStaticAddressLoopInClaims returns only the metadata for paid
+	// terminal swaps, including successful swaps whose deposit write failed.
+	GetPaidStaticAddressLoopInClaims(context.Context) ([]LoopInClaim, error)
 
 	// IsStored checks if the loop-in is already stored in the database.
 	IsStored(ctx context.Context, swapHash lntypes.Hash) (bool, error)
@@ -122,6 +148,13 @@ type TxOutChecker interface {
 	// available and unspent. Missing entries are unavailable or spent.
 	GetTxOuts(ctx context.Context, outpoints []wire.OutPoint) (
 		map[wire.OutPoint]*wire.TxOut, error)
+}
+
+// depositSpendChecker supplements availability with positive proof that an
+// original input was confirmed in a transaction that does not fund this HTLC.
+type depositSpendChecker interface {
+	CheckDepositSpend(context.Context, []wire.OutPoint, []byte, []*wire.MsgTx) (
+		map[wire.OutPoint]*wire.TxOut, bool, error)
 }
 
 type NotificationManager interface {

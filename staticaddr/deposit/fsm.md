@@ -19,7 +19,7 @@ LoopedIn
 LoopedIn --> LoopedIn: OnExpiry
 LoopingIn
 LoopingIn --> Deposited: OnError
-LoopingIn --> PublishExpirySweep: OnExpiry
+LoopingIn --> LoopingIn: OnExpiry
 LoopingIn --> LoopingIn: OnLoopInInitiated
 LoopingIn --> LoopedIn: OnLoopedIn
 LoopingIn --> LoopingIn: OnRecover
@@ -34,6 +34,7 @@ PublishExpirySweep --> Deposited: OnError
 PublishExpirySweep --> WaitForExpirySweep: OnExpiryPublished
 PublishExpirySweep --> PublishExpirySweep: OnRecover
 SweepHtlcTimeout
+SweepHtlcTimeout --> SweepHtlcTimeout: OnExpiry
 SweepHtlcTimeout --> HtlcTimeoutSwept: OnHtlcTimeoutSwept
 SweepHtlcTimeout --> SweepHtlcTimeout: OnRecover
 WaitForExpirySweep

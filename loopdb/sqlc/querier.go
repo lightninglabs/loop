@@ -39,6 +39,9 @@ type Querier interface {
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
 	GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, error)
 	GetMigration(ctx context.Context, migrationID string) (MigrationTracker, error)
+	// Startup only needs ownership metadata for paid terminal swaps, without
+	// fetching each swap's deposit rows, keys and update history.
+	GetPaidStaticAddressLoopInClaims(ctx context.Context) ([]GetPaidStaticAddressLoopInClaimsRow, error)
 	GetParentBatch(ctx context.Context, outpoint string) (SweepBatch, error)
 	GetReservation(ctx context.Context, reservationID []byte) (Reservation, error)
 	GetReservationUpdates(ctx context.Context, reservationID []byte) ([]ReservationUpdate, error)

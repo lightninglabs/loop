@@ -155,6 +155,7 @@ type StaticAddressSwap struct {
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
 	ChangeStaticAddressID        sql.NullInt32
+	FundingTxs                   []byte
 }
 
 type StaticAddressSwapUpdate struct {

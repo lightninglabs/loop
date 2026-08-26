@@ -3,6 +3,7 @@ package loopin
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -64,8 +65,8 @@ type Config struct {
 	// LndClient is used to add invoices and select hop hints.
 	LndClient lndclient.LightningClient
 
-	// TxOutChecker checks that selected deposits are still available before
-	// the client gives the server HTLC signatures.
+	// TxOutChecker checks selected deposits before signing and confirms that
+	// original inputs are still available before releasing an unfunded swap.
 	TxOutChecker TxOutChecker
 
 	// InvoicesClient is used to subscribe to invoice settlements and
@@ -701,12 +702,16 @@ func (m *Manager) checkChange(ctx context.Context,
 func (m *Manager) recoverLoopIns(ctx context.Context) error {
 	log.Infof("Recovering static address loop-ins...")
 
-	// Recover loop-ins.
-	// Recover pending static address loop-ins.
+	// Reconcile locks before starting recovered FSMs or admitting new swaps.
+	// Initialization persists the deposit lock before it creates a swap, so
+	// a crash can leave LoopingIn deposits with no recoverable owner.
 	pendingLoopIns, err := m.cfg.Store.GetStaticAddressLoopInSwapsByStates(
 		ctx, PendingStates,
 	)
 	if err != nil {
+		return err
+	}
+	if err := m.reconcileLoopInDeposits(ctx, pendingLoopIns); err != nil {
 		return err
 	}
 
@@ -741,6 +746,133 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		}()
 	}
 
+	return nil
+}
+
+// reconcileLoopInDeposits repairs initialization and final-state persistence
+// gaps. A legacy keep-first migration can map a reused deposit to an older
+// failed swap. Before releasing such a lock, consult live swap snapshots;
+// arbitrary completed historical snapshots must not reclaim reused deposits.
+func (m *Manager) reconcileLoopInDeposits(ctx context.Context,
+	loopIns []*StaticAddressLoopIn) error {
+
+	deposits, err := m.cfg.DepositManager.GetActiveDepositsInState(
+		deposit.LoopingIn,
+	)
+	if err != nil {
+		return err
+	}
+	active := make(map[wire.OutPoint]struct{}, len(deposits))
+	for _, d := range deposits {
+		active[d.OutPoint] = struct{}{}
+	}
+	owners := make(map[lntypes.Hash]*StaticAddressLoopIn)
+	claims := make(map[wire.OutPoint]map[lntypes.Hash]LoopInClaim)
+	indexClaims := func(swaps []LoopInClaim) error {
+		for _, claim := range swaps {
+			for _, encoded := range claim.DepositOutpoints {
+				outpoint, err := wire.NewOutPointFromString(encoded)
+				if err != nil {
+					return fmt.Errorf("invalid recovery outpoint for "+
+						"swap %v: %w", claim.SwapHash, err)
+				}
+				if _, ok := active[*outpoint]; !ok {
+					continue
+				}
+				if claims[*outpoint] == nil {
+					claims[*outpoint] = make(map[lntypes.Hash]LoopInClaim)
+				}
+				claims[*outpoint][claim.SwapHash] = claim
+			}
+		}
+		return nil
+	}
+	pendingClaims := make([]LoopInClaim, 0, len(loopIns))
+	for _, swap := range loopIns {
+		owners[swap.SwapHash] = swap
+		pendingClaims = append(pendingClaims, LoopInClaim{
+			SwapHash: swap.SwapHash, State: swap.GetState(),
+			DepositOutpoints: swap.DepositOutpoints,
+		})
+	}
+	if err := indexClaims(pendingClaims); err != nil {
+		return err
+	}
+	loadedPaidClaims := false
+	for _, d := range deposits {
+		if !d.IsInState(deposit.LoopingIn) {
+			continue
+		}
+		event, target := fsm.OnError, deposit.Deposited
+		var owner *StaticAddressLoopIn
+		if d.SwapHash != nil {
+			var cached bool
+			owner, cached = owners[*d.SwapHash]
+			if !cached {
+				owner, err = m.cfg.Store.GetLoopInByHash(ctx, *d.SwapHash)
+				if err != nil && !errors.Is(err, sql.ErrNoRows) &&
+					!errors.Is(err, ErrLoopInNotFound) {
+
+					return fmt.Errorf("unable to recover deposit owner: %w", err)
+				}
+				owners[*d.SwapHash] = owner
+			}
+		}
+		var ownerState fsm.StateType
+		var ownerHash lntypes.Hash
+		if owner != nil {
+			ownerState, ownerHash = owner.GetState(), owner.SwapHash
+		}
+
+		// Normal current mappings remain authoritative, including retries
+		// whose older swap still monitors its already canceled invoice.
+		atRisk := owner == nil || ownerState == Failed ||
+			ownerState == HtlcTimeoutSwept
+		if atRisk {
+			if !loadedPaidClaims {
+				paidClaims, err := m.cfg.Store.
+					GetPaidStaticAddressLoopInClaims(ctx)
+				if err != nil {
+					return err
+				}
+				if err := indexClaims(paidClaims); err != nil {
+					return err
+				}
+				loadedPaidClaims = true
+			}
+			candidates := claims[d.OutPoint]
+			if len(candidates) > 1 {
+				return fmt.Errorf("ambiguous live owners for "+
+					"loop-in deposit %v", d.OutPoint)
+			}
+			for _, candidate := range candidates {
+				ownerState, ownerHash = candidate.State, candidate.SwapHash
+			}
+		}
+		if ownerState != fsm.EmptyState {
+			switch ownerState {
+			case Succeeded, SucceededTransitioningFailed, PaymentReceived:
+				event, target = deposit.OnLoopedIn, deposit.LoopedIn
+			default:
+				if slices.Contains(PendingStates, ownerState) {
+					if err := m.cfg.DepositManager.RestoreLoopInClaim(
+						ctx, []*deposit.Deposit{d}, ownerHash,
+					); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+		}
+		log.Infof("Reconciling recovered loop-in deposit %v to %v",
+			d.OutPoint, target)
+		if err := m.cfg.DepositManager.TransitionDeposits(
+			ctx, []*deposit.Deposit{d}, event, target,
+		); err != nil {
+			return fmt.Errorf("unable to reconcile deposit %v: %w",
+				d.OutPoint, err)
+		}
+	}
 	return nil
 }
 

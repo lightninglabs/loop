@@ -1604,6 +1604,23 @@ func (s *mockStaticAddressLoopInStore) GetStaticAddressLoopInSwapsByStates(
 	return s.swaps, nil
 }
 
+// GetPaidStaticAddressLoopInClaims returns the configured paid ownership claims.
+func (s *mockStaticAddressLoopInStore) GetPaidStaticAddressLoopInClaims(
+	context.Context) ([]loopin.LoopInClaim, error) {
+
+	var claims []loopin.LoopInClaim
+	for _, swp := range s.swaps {
+		state := swp.GetState()
+		if state == loopin.Succeeded || state == loopin.SucceededTransitioningFailed {
+			claims = append(claims, loopin.LoopInClaim{
+				SwapHash: swp.SwapHash, State: state,
+				DepositOutpoints: swp.DepositOutpoints,
+			})
+		}
+	}
+	return claims, nil
+}
+
 // IsStored satisfies the static loop-in store interface.
 func (s *mockStaticAddressLoopInStore) IsStored(_ context.Context,
 	_ lntypes.Hash) (bool, error) {
