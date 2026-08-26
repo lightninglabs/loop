@@ -49,6 +49,10 @@ const (
 
 // StaticAddressLoopIn represents the in-memory loop-in information.
 type StaticAddressLoopIn struct {
+	// ID is the persisted swap identity, populated when loading from storage.
+	// It orders ownership claims without relying on timestamps.
+	ID int32
+
 	// SwapHash is the hashed preimage of the swap invoice. It represents
 	// the primary identifier of the swap.
 	SwapHash lntypes.Hash
@@ -110,6 +114,11 @@ type StaticAddressLoopIn struct {
 	// The outpoints in the format txid:vout that are part of the loop-in
 	// swap.
 	DepositOutpoints []string
+
+	// FundingTxs is the immutable snapshot of unconfirmed funding parents
+	// selected for the swap. Witness data is omitted when storing it. Legacy
+	// swaps have no snapshot and cannot use it to prove a funding conflict.
+	FundingTxs []*wire.MsgTx
 
 	// SelectedAmount is the amount that the user selected for the swap. If
 	// the user did not select an amount, the amount of all deposits is

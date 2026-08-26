@@ -375,9 +375,10 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				// final state.
 				OnLoopedIn: LoopedIn,
 
-				// If the deposit expires while the loop in is
-				// still pending, we publish the expiry sweep.
-				OnExpiry: PublishExpirySweep,
+				// The loop-in owns these deposits until it resolves
+				// the HTLC or releases unspent inputs. This also
+				// prevents startup expiry from racing HTLC recovery.
+				OnExpiry: LoopingIn,
 
 				// If the server publishes the HTLC without
 				// paying us, we need to keep the deposit locked
@@ -401,6 +402,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnHtlcTimeoutSwept: HtlcTimeoutSwept,
 				OnRecover:          SweepHtlcTimeout,
+				OnExpiry:           SweepHtlcTimeout,
 			},
 			Action: fsm.NoOpAction,
 		},
@@ -449,6 +451,13 @@ func (f *FSM) updateDeposit(ctx context.Context,
 	notification fsm.Notification) {
 
 	if f.deposit == nil {
+		return
+	}
+
+	// Self-transitions neither change nor persist the deposit. Avoid taking
+	// its lock while holding the FSM lock: an owner transition may already
+	// hold the deposit lock while waiting for this FSM.
+	if notification.PreviousState == notification.NextState {
 		return
 	}
 
