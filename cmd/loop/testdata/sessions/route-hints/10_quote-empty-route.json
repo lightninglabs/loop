@@ -1,0 +1,75 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--route_hints",
+      "[{}]",
+      "250000"
+    ],
+    "version": "0.35.0-beta commit= commit_hash=",
+    "run_error": "rpc error: code = Unknown desc = route hint 0 has no hop hints",
+    "duration": 3785371,
+    "clock_start_unix": 1787783888
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "250000",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [
+            {
+              "hop_hints": []
+            }
+          ],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 3,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "error",
+        "error": "rpc error: code = Unknown desc = route hint 0 has no hop hints",
+        "status": {
+          "code": 2,
+          "message": "route hint 0 has no hop hints"
+        }
+      }
+    },
+    {
+      "time_ms": 3,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] rpc error: code = Unknown desc = route hint 0 has no hop hints\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 3,
+      "kind": "exit",
+      "data": {
+        "run_error": "rpc error: code = Unknown desc = route hint 0 has no hop hints"
+      }
+    }
+  ]
+}

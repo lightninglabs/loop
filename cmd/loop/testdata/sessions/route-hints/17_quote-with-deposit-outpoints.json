@@ -1,0 +1,136 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--route_hints",
+      "[{\"hop_hints\":[{\"node_id\":\"022222222222222222222222222222222222222222222222222222222222222222\",\"chan_id\":\"111111111111111\",\"fee_base_msat\":1000,\"fee_proportional_millionths\":1,\"cltv_expiry_delta\":80}]}]",
+      "--deposit_outpoint",
+      "1111111111111111111111111111111111111111111111111111111111111111:0,2222222222222222222222222222222222222222222222222222222222222222:0"
+    ],
+    "version": "0.35.0-beta commit= commit_hash=",
+    "duration": 19677447,
+    "clock_start_unix": 1787783959
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "UNKNOWN_STATE",
+          "outpoints": [
+            "1111111111111111111111111111111111111111111111111111111111111111:0",
+            "2222222222222222222222222222222222222222222222222222222222222222:0"
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 8,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "ERERERERERERERERERERERERERERERERERERERERERE=",
+              "state": "DEPOSITED",
+              "outpoint": "1111111111111111111111111111111111111111111111111111111111111111:0",
+              "value": "300000",
+              "confirmation_height": "120",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            },
+            {
+              "id": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+              "state": "DEPOSITED",
+              "outpoint": "2222222222222222222222222222222222222222222222222222222222222222:0",
+              "value": "300000",
+              "confirmation_height": "120",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 8,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "0",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [
+            {
+              "hop_hints": [
+                {
+                  "node_id": "022222222222222222222222222222222222222222222222222222222222222222",
+                  "chan_id": "111111111111111",
+                  "fee_base_msat": 1000,
+                  "fee_proportional_millionths": 1,
+                  "cltv_expiry_delta": 80
+                }
+              ]
+            }
+          ],
+          "private": false,
+          "deposit_outpoints": [
+            "1111111111111111111111111111111111111111111111111111111111111111:0",
+            "2222222222222222222222222222222222222222222222222222222222222222:0"
+          ],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 19,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "3297",
+          "htlc_publish_fee_sat": "0",
+          "cltv_delta": 0,
+          "conf_target": 0,
+          "quoted_amt": "600000"
+        }
+      }
+    },
+    {
+      "time_ms": 19,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "Previously deposited on-chain:             600000 sat\n",
+          "Receive off-chain:                         596703 sat\n",
+          "Estimated total fee:                         3297 sat\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 19,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

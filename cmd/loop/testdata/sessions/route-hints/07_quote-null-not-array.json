@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--route_hints",
+      "null",
+      "250000"
+    ],
+    "version": "0.35.0-beta commit= commit_hash=",
+    "run_error": "route hints must be a JSON array",
+    "duration": 839369,
+    "clock_start_unix": 1787783872
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] route hints must be a JSON array\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 0,
+      "kind": "exit",
+      "data": {
+        "run_error": "route hints must be a JSON array"
+      }
+    }
+  ]
+}

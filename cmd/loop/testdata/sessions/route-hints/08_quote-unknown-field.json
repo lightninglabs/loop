@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--route_hints",
+      "[{\"hop_hints\":[{\"node_id\":\"022222222222222222222222222222222222222222222222222222222222222222\",\"chan_id\":\"111111111111111\",\"cltv_expiry_delat\":80}]}]",
+      "250000"
+    ],
+    "version": "0.35.0-beta commit= commit_hash=",
+    "run_error": "unable to parse route hint 0: proto: (line 1:123): unknown field \"cltv_expiry_delat\"",
+    "duration": 1073888,
+    "clock_start_unix": 1787783878
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] unable to parse route hint 0: proto: (line 1:123): unknown field \"cltv_expiry_delat\"\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "exit",
+      "data": {
+        "run_error": "unable to parse route hint 0: proto: (line 1:123): unknown field \"cltv_expiry_delat\""
+      }
+    }
+  ]
+}

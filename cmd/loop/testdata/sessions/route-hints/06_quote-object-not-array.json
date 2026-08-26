@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--route_hints",
+      "{\"hop_hints\":[]}",
+      "250000"
+    ],
+    "version": "0.35.0-beta commit= commit_hash=",
+    "run_error": "unable to parse route hints: json: cannot unmarshal object into Go value of type []json.RawMessage",
+    "duration": 764451,
+    "clock_start_unix": 1787783866
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] unable to parse route hints: json: cannot unmarshal object into Go value of type []json.RawMessage\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 0,
+      "kind": "exit",
+      "data": {
+        "run_error": "unable to parse route hints: json: cannot unmarshal object into Go value of type []json.RawMessage"
+      }
+    }
+  ]
+}

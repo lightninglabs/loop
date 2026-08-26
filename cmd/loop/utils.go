@@ -7,6 +7,7 @@ import (
 
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/urfave/cli/v3"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // showCommandHelp prints help for the current command by delegating to the
@@ -35,15 +36,24 @@ func validateRouteHints(cmd *cli.Command) ([]*swapserverrpc.RouteHint, error) {
 			)
 		}
 
-		jsonHints := cmd.StringSlice(routeHintsFlag.Name)
+		var jsonHints []json.RawMessage
+		err := json.Unmarshal(
+			[]byte(cmd.String(routeHintsFlag.Name)), &jsonHints,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse route hints: %w", err)
+		}
+		if jsonHints == nil {
+			return nil, fmt.Errorf("route hints must be a JSON array")
+		}
 
-		hints := make([]*swapserverrpc.RouteHint, len(jsonHints))
+		hints = make([]*swapserverrpc.RouteHint, len(jsonHints))
 		for i, jsonHint := range jsonHints {
 			var h swapserverrpc.RouteHint
-			err := json.Unmarshal([]byte(jsonHint), &h)
+			err := protojson.Unmarshal(jsonHint, &h)
 			if err != nil {
-				return nil, fmt.Errorf("unable to parse %d-th "+
-					"hint json %v: %w", i, jsonHint, err)
+				return nil, fmt.Errorf("unable to parse route hint "+
+					"%d: %w", i, err)
 			}
 			hints[i] = &h
 		}

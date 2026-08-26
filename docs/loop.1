@@ -128,7 +128,7 @@ perform an on-chain to off-chain swap (loop in)
 \fB--private\fP: generates and passes routehints. Should be used if the connected node is only reachable via private channels
 
 .PP
-\fB--route_hints\fP="": route hints that can each be individually used to assist in reaching the invoice's destination (default: [])
+\fB--route_hints\fP="": a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination
 
 .PP
 \fB--verbose, -v\fP: show expanded details
@@ -170,7 +170,7 @@ get a quote for the cost of a loop in swap
 \fB--private\fP: generates and passes routehints. Should be used if the connected node is only reachable via private channels
 
 .PP
-\fB--route_hints\fP="": route hints that can each be individually used to assist in reaching the invoice's destination (default: [])
+\fB--route_hints\fP="": a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination
 
 .PP
 \fB--verbose, -v\fP: show expanded details
@@ -539,7 +539,7 @@ Loop in funds from static address deposits.
 \fB--private\fP: generates and passes routehints. Should be used if the connected node is only reachable via private channels
 
 .PP
-\fB--route_hints\fP="": route hints that can each be individually used to assist in reaching the invoice's destination (default: [])
+\fB--route_hints\fP="": a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination
 
 .PP
 \fB--utxo\fP="": specify the utxos of deposits as outpoints(tx:idx) that should be looped in. (default: [])

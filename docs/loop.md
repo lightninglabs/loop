@@ -107,7 +107,7 @@ The following flags are supported:
 | `--label="…"`       | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
 | `--force`           | Assumes yes during confirmation. Using this option will result in an immediate swap                                     | bool   |    `false`    |
 | `--verbose` (`-v`)  | show expanded details                                                                                                   | bool   |    `false`    |
-| `--route_hints="…"` | route hints that can each be individually used to assist in reaching the invoice's destination                          | string |     `[]`      |
+| `--route_hints="…"` | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination          | string |
 | `--private`         | generates and passes routehints. Should be used if the connected node is only reachable via private channels            | bool   |    `false`    |
 | `--help` (`-h`)     | show help                                                                                                               | bool   |    `false`    |
 
@@ -181,7 +181,7 @@ The following flags are supported:
 | `--conf_target="…"`      | the target number of blocks the on-chain htlc broadcast by the swap client should confirm within                                                                                                               | uint   |      `0`      |
 | `--verbose` (`-v`)       | show expanded details                                                                                                                                                                                          | bool   |    `false`    |
 | `--private`              | generates and passes routehints. Should be used if the connected node is only reachable via private channels                                                                                                   | bool   |    `false`    |
-| `--route_hints="…"`      | route hints that can each be individually used to assist in reaching the invoice's destination                                                                                                                 | string |     `[]`      |
+| `--route_hints="…"`      | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination                                                                                                 | string |
 | `--deposit_outpoint="…"` | one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx | string |     `[]`      |
 | `--help` (`-h`)          | show help                                                                                                                                                                                                      | bool   |    `false`    |
 
@@ -690,7 +690,7 @@ The following flags are supported:
 | `--max_swap_fee_ppm="…"` | the maximum swap fee expressed in parts per million of the swap amount. If set together with --max_swap_fee_sat the tighter cap is used                                                               | uint     |      `0`      |
 | `--last_hop="…"`         | the pubkey of the last hop to use for this swap                                                                                                                                                       | string   |
 | `--label="…"`            | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved]                                                                               | string   |
-| `--route_hints="…"`      | route hints that can each be individually used to assist in reaching the invoice's destination                                                                                                        | string   |     `[]`      |
+| `--route_hints="…"`      | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination                                                                                        | string   |
 | `--private`              | generates and passes routehints. Should be used if the connected node is only reachable via private channels                                                                                          | bool     |    `false`    |
 | `--force`                | Assumes yes during confirmation. Using this option will result in an immediate swap                                                                                                                   | bool     |    `false`    |
 | `--verbose` (`-v`)       | show expanded details                                                                                                                                                                                 | bool     |    `false`    |
