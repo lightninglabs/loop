@@ -98,18 +98,20 @@ $ loop [GLOBAL FLAGS] in [COMMAND FLAGS] amt
 
 The following flags are supported:
 
-| Name                | Description                                                                                                             | Type   | Default value |
-|---------------------|-------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
-| `--amt="…"`         | the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms"  | uint   |      `0`      |
-| `--external`        | expect htlc to be published externally                                                                                  | bool   |    `false`    |
-| `--conf_target="…"` | the target number of blocks the on-chain htlc broadcast by the swap client should confirm within                        | uint   |      `0`      |
-| `--last_hop="…"`    | the pubkey of the last hop to use for this swap                                                                         | string |
-| `--label="…"`       | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
-| `--force`           | Assumes yes during confirmation. Using this option will result in an immediate swap                                     | bool   |    `false`    |
-| `--verbose` (`-v`)  | show expanded details                                                                                                   | bool   |    `false`    |
-| `--route_hints="…"` | route hints that can each be individually used to assist in reaching the invoice's destination                          | string |     `[]`      |
-| `--private`         | generates and passes routehints. Should be used if the connected node is only reachable via private channels            | bool   |    `false`    |
-| `--help` (`-h`)     | show help                                                                                                               | bool   |    `false`    |
+| Name                    | Description                                                                                                             | Type   | Default value |
+|-------------------------|-------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
+| `--amt="…"`             | the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms"  | uint   |      `0`      |
+| `--external`            | expect htlc to be published externally                                                                                  | bool   |    `false`    |
+| `--conf_target="…"`     | the target number of blocks the on-chain htlc broadcast by the swap client should confirm within                        | uint   |      `0`      |
+| `--last_hop="…"`        | the pubkey of the last hop to use for this swap                                                                         | string |
+| `--label="…"`           | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
+| `--force`               | Assumes yes during confirmation. Using this option will result in an immediate swap                                     | bool   |    `false`    |
+| `--verbose` (`-v`)      | show expanded details                                                                                                   | bool   |    `false`    |
+| `--route_hints="…"`     | route hints that can each be individually used to assist in reaching the invoice's destination                          | string |     `[]`      |
+| `--private`             | generates and passes routehints. Should be used if the connected node is only reachable via private channels            | bool   |    `false`    |
+| `--asset_id="…"`        | the asset ID to receive over an asset channel; requires loopd to be connected to a Taproot Assets daemon                | string |
+| `--asset_edge_node="…"` | the optional pubkey of the asset channel peer to use for the loop in                                                    | string |
+| `--help` (`-h`)         | show help                                                                                                               | bool   |    `false`    |
 
 ### `terms` command
 
