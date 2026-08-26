@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -70,7 +69,7 @@ type StaticAddressLoopIn struct {
 	// InitiationTime is the time at which the swap was initiated.
 	InitiationTime time.Time
 
-	// ProtocolVersion is the protocol version of the static address.
+	// ProtocolVersion is the protocol version selected for this loop-in.
 	ProtocolVersion version.AddressProtocolVersion
 
 	// Label contains an optional label for the swap.
@@ -158,13 +157,6 @@ type StaticAddressLoopIn struct {
 	// Deposits are the deposits that are part of the loop-in swap. They
 	// implicitly carry the swap amount.
 	Deposits []*deposit.Deposit
-
-	// AddressParams are the parameters of the address that is used for the
-	// swap.
-	AddressParams *script.Parameters
-
-	// Address is the address script that is used for the swap.
-	Address *script.StaticAddress
 
 	// ChangeAddressParams are the static address parameters for the change
 	// output that belongs to this swap. It is set only when SelectedAmount
