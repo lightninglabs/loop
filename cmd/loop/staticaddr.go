@@ -22,6 +22,8 @@ import (
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func init() {
@@ -1152,11 +1154,29 @@ func maybeDisplayNewAddressWarning(ctx context.Context,
 	case err == nil:
 		return nil
 
-	case strings.Contains(err.Error(), address.ErrNoStaticAddress.Error()):
+	case isNoStaticAddressSummaryError(err):
 		return displayNewAddressWarningTo(input, output, force)
 
 	default:
 		return err
+	}
+}
+
+// isNoStaticAddressSummaryError reports whether loopd has not initialized the
+// static address seed yet. New loopd versions return NotFound. The exact
+// Unknown status is retained for compatibility with older loopd versions that
+// returned ErrNoStaticAddress directly across the gRPC boundary.
+func isNoStaticAddressSummaryError(err error) bool {
+	switch status.Code(err) {
+	case codes.NotFound:
+		return true
+
+	case codes.Unknown:
+		return status.Convert(err).Message() ==
+			address.ErrNoStaticAddress.Error()
+
+	default:
+		return false
 	}
 }
 
