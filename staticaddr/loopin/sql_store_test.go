@@ -1,7 +1,9 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/v2"
 	"testing"
 	"time"
 
@@ -21,6 +23,166 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
+
+// TestLoopInFundingTxSnapshot persists unique unconfirmed parents atomically,
+// without witness data, and leaves absent legacy snapshots conservative.
+func TestLoopInFundingTxSnapshot(t *testing.T) {
+	for _, withSnapshot := range []bool{false, true} {
+		name := "legacy without snapshot"
+		if withSnapshot {
+			name = "shared funding parent"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			db := loopdb.NewTestDB(t)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+			store := NewSqlStore(
+				loopdb.NewTypedStore[Querier](db),
+				clock.NewTestClock(time.Now()),
+				&chaincfg.RegressionNetParams,
+			)
+			depositStore := deposit.NewSqlStore(db.BaseDB)
+			deposits := []*deposit.Deposit{
+				{ID: deposit.ID{1}, Value: 100_000},
+				{ID: deposit.ID{2}, Value: 150_000},
+			}
+			setPersistedTestDepositAddress(t, ctx, db.BaseDB, deposits...)
+			parent := wire.NewMsgTx(2)
+			parent.AddTxIn(&wire.TxIn{
+				PreviousOutPoint: wire.OutPoint{Hash: chainhash.Hash{1}},
+				Witness:          wire.TxWitness{{1, 2, 3}},
+			})
+			for i, d := range deposits {
+				parent.AddTxOut(wire.NewTxOut(
+					int64(d.Value), d.AddressParams.PkScript,
+				))
+				d.Index = uint32(i)
+			}
+			for _, d := range deposits {
+				d.Hash = parent.TxHash()
+				d.TimeOutSweepPkScript = []byte{0x51}
+				d.SetState(deposit.LoopingIn)
+				require.NoError(t, depositStore.CreateDeposit(ctx, d))
+			}
+			_, clientKey := test.CreateKey(1)
+			_, serverKey := test.CreateKey(2)
+			timeoutAddress, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+			require.NoError(t, err)
+			swap := &StaticAddressLoopIn{
+				SwapHash:     lntypes.Hash{1},
+				SwapPreimage: lntypes.Preimage{2},
+				Deposits:     deposits,
+				DepositOutpoints: []string{
+					deposits[0].OutPoint.String(),
+					deposits[1].OutPoint.String(),
+				},
+				ClientPubkey:            clientKey,
+				ServerPubkey:            serverKey,
+				HtlcTimeoutSweepAddress: timeoutAddress,
+			}
+			if withSnapshot {
+				// Both selected outputs share this parent. Witness changes
+				// do not affect its txid or create a second stored parent.
+				duplicate := parent.Copy()
+				duplicate.TxIn[0].Witness = wire.TxWitness{{4, 5, 6}}
+				swap.FundingTxs = []*wire.MsgTx{parent, duplicate}
+			}
+			swap.SetState(SignHtlcTx)
+			if withSnapshot {
+				parents := swap.FundingTxs
+				swap.FundingTxs = []*wire.MsgTx{nil}
+				require.Error(t, store.CreateLoopIn(ctx, swap))
+				stored, err := store.IsStored(ctx, swap.SwapHash)
+				require.NoError(t, err)
+				require.False(t, stored)
+				swap.FundingTxs = parents
+			}
+			require.NoError(t, store.CreateLoopIn(ctx, swap))
+
+			var raw bytes.Buffer
+			require.NoError(t, parent.SerializeNoWitness(&raw))
+			assertSnapshot := func(loaded *StaticAddressLoopIn) {
+				t.Helper()
+				if !withSnapshot {
+					require.Nil(t, loaded.FundingTxs)
+					return
+				}
+				require.Len(t, loaded.FundingTxs, 1)
+				require.Equal(t, parent.TxHash(), loaded.FundingTxs[0].TxHash())
+				require.False(t, loaded.FundingTxs[0].HasWitness())
+				var restored bytes.Buffer
+				require.NoError(t, loaded.FundingTxs[0].SerializeNoWitness(&restored))
+				require.Equal(t, raw.Bytes(), restored.Bytes())
+			}
+			assertBothReads := func() {
+				t.Helper()
+				loaded, err := store.GetLoopInByHash(ctx, swap.SwapHash)
+				require.NoError(t, err)
+				assertSnapshot(loaded)
+				loadedSwaps, err := store.GetStaticAddressLoopInSwapsByStates(
+					ctx, []fsm.StateType{swap.GetState()},
+				)
+				require.NoError(t, err)
+				require.Len(t, loadedSwaps, 1)
+				assertSnapshot(loadedSwaps[0])
+			}
+			assertBothReads()
+
+			// State updates cannot replace or remove the original snapshot.
+			if withSnapshot {
+				swap.FundingTxs = nil
+			} else {
+				swap.FundingTxs = []*wire.MsgTx{parent}
+			}
+			swap.SetState(MonitorInvoiceAndHtlcTx)
+			require.NoError(t, store.UpdateLoopIn(ctx, swap))
+			assertBothReads()
+
+			var encoded []byte
+			err = db.QueryRowContext(ctx, `SELECT funding_txs
+				FROM static_address_swaps WHERE swap_hash = $1`,
+				swap.SwapHash[:]).Scan(&encoded)
+			require.NoError(t, err)
+			if !withSnapshot {
+				require.Nil(t, encoded)
+				return
+			}
+			var rawTxs [][]byte
+			require.NoError(t, json.Unmarshal(encoded, &rawTxs))
+			require.Equal(t, [][]byte{raw.Bytes()}, rawTxs)
+
+			// Corrupt records fail both read paths instead of becoming
+			// partial evidence authorizing a release after restart.
+			withTrailingBytes, err := json.Marshal([][]byte{
+				append(bytes.Clone(raw.Bytes()), 0),
+			})
+			require.NoError(t, err)
+			duplicateInputs := parent.Copy()
+			duplicateInputs.TxIn = append(
+				duplicateInputs.TxIn, duplicateInputs.TxIn[0],
+			)
+			var duplicateRaw bytes.Buffer
+			require.NoError(t, duplicateInputs.SerializeNoWitness(&duplicateRaw))
+			withDuplicateInputs, err := json.Marshal([][]byte{duplicateRaw.Bytes()})
+			require.NoError(t, err)
+			for _, malformed := range [][]byte{
+				[]byte("{"), []byte(`{}`), []byte(`["!"]`),
+				[]byte(`[null]`), withTrailingBytes, withDuplicateInputs,
+			} {
+				_, err := db.ExecContext(ctx, `UPDATE static_address_swaps
+					SET funding_txs = $1 WHERE swap_hash = $2`,
+					malformed, swap.SwapHash[:])
+				require.NoError(t, err)
+				_, err = store.GetLoopInByHash(ctx, swap.SwapHash)
+				require.Error(t, err)
+				_, err = store.GetStaticAddressLoopInSwapsByStates(
+					ctx, []fsm.StateType{swap.GetState()},
+				)
+				require.Error(t, err)
+			}
+		})
+	}
+}
 
 // TestLoopInChangeAddressRoundTrip verifies that a generated per-swap change
 // address survives both direct lookup and state-based recovery.
