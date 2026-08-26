@@ -1951,12 +1951,15 @@ message StaticAddressSummaryRequest {
 
 message StaticAddressSummaryResponse {
     /*
-    The static address of the client.
+    Deprecated: The legacy/root static address used as the derivation seed.
+    New deposits should use fresh addresses returned by NewStaticAddress; this
+    address must not be treated as the current receive address.
     */
-    string static_address = 1;
+    string static_address = 1 [deprecated = true];
 
     /*
-    The CSV expiry of the static address.
+    The shared CSV delay in blocks inherited by all static addresses derived
+    from the legacy/root seed.
     */
     uint64 relative_expiry_blocks = 2;
 
