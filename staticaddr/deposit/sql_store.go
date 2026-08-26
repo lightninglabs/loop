@@ -47,6 +47,13 @@ func NewSqlStore(db *loopdb.BaseDB) *SqlStore {
 
 // CreateDeposit creates a static address deposit record in the database.
 func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
+	if deposit.AddressParams == nil {
+		return fmt.Errorf("static address parameters must be set")
+	}
+	if deposit.AddressParams.ID <= 0 {
+		return fmt.Errorf("static address ID must be set")
+	}
+
 	createArgs := sqlc.CreateDepositParams{
 		DepositID:            deposit.ID[:],
 		TxHash:               deposit.Hash[:],
@@ -54,17 +61,10 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		Amount:               int64(deposit.Value),
 		ConfirmationHeight:   deposit.GetConfirmationHeight(),
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
-		StaticAddressID:      sql.NullInt32{},
-	}
-	if deposit.AddressParams != nil {
-		if deposit.AddressParams.ID <= 0 {
-			return fmt.Errorf("static address ID must be set")
-		}
-
-		createArgs.StaticAddressID = sql.NullInt32{
+		StaticAddressID: sql.NullInt32{
 			Int32: deposit.AddressParams.ID,
 			Valid: true,
-		}
+		},
 	}
 
 	updateArgs := sqlc.InsertDepositUpdateParams{
@@ -151,7 +151,7 @@ func (s *SqlStore) GetDeposit(ctx context.Context, id ID) (*Deposit, error) {
 	var deposit *Deposit
 	err := s.baseDB.ExecTx(ctx, loopdb.NewSqlReadOpts(),
 		func(q *sqlc.Queries) error {
-			row, err := q.GetDeposit(ctx, id[:])
+			row, err := q.GetDepositWithAddress(ctx, id[:])
 			if err != nil {
 				return err
 			}
@@ -191,11 +191,11 @@ func (s *SqlStore) DepositForOutpoint(ctx context.Context,
 			if err != nil {
 				return err
 			}
-			params := sqlc.DepositForOutpointParams{
+			params := sqlc.DepositForOutpointWithAddressParams{
 				TxHash:   op.Hash[:],
 				OutIndex: int32(op.Index),
 			}
-			row, err := q.DepositForOutpoint(ctx, params)
+			row, err := q.DepositForOutpointWithAddress(ctx, params)
 			if err != nil {
 				if errors.Is(err, sql.ErrNoRows) {
 					return ErrDepositNotFound
@@ -235,7 +235,7 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 		func(q *sqlc.Queries) error {
 			var err error
 
-			deposits, err := q.AllDeposits(ctx)
+			deposits, err := q.AllDepositsWithAddress(ctx)
 			if err != nil {
 				return err
 			}
@@ -248,7 +248,7 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 					return err
 				}
 
-				d, err := ToDeposit(deposit, latestUpdate)
+				d, err := ToDepositWithAddress(deposit, latestUpdate)
 				if err != nil {
 					return err
 				}
@@ -265,10 +265,19 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	return allDeposits, nil
 }
 
-// ToDeposit converts an sql deposit row with joined static address metadata to
-// a deposit.
-func ToDeposit(row sqlc.AllDepositsRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
+// ToDeposit converts an SQL deposit to a deposit. This preserves the original
+// exported conversion API for callers that do not have joined static-address
+// metadata.
+func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 	error) {
+
+	return toDeposit(depositRowFromDeposit(row), lastUpdate)
+}
+
+// ToDepositWithAddress converts an SQL deposit row with joined static-address
+// metadata to a deposit.
+func ToDepositWithAddress(row sqlc.AllDepositsWithAddressRow,
+	lastUpdate sqlc.DepositUpdate) (*Deposit, error) {
 
 	return toDeposit(depositRowFromAll(row), lastUpdate)
 }
@@ -294,7 +303,21 @@ type depositRow struct {
 	InitiationHeight      sql.NullInt32
 }
 
-func depositRowFromAll(row sqlc.AllDepositsRow) depositRow {
+func depositRowFromDeposit(row sqlc.Deposit) depositRow {
+	return depositRow{
+		DepositID:             row.DepositID,
+		TxHash:                row.TxHash,
+		OutIndex:              row.OutIndex,
+		Amount:                row.Amount,
+		ConfirmationHeight:    row.ConfirmationHeight,
+		TimeoutSweepPkScript:  row.TimeoutSweepPkScript,
+		ExpirySweepTxid:       row.ExpirySweepTxid,
+		FinalizedWithdrawalTx: row.FinalizedWithdrawalTx,
+		SwapHash:              row.SwapHash,
+	}
+}
+
+func depositRowFromAll(row sqlc.AllDepositsWithAddressRow) depositRow {
 	return depositRow{
 		DepositID:             row.DepositID,
 		TxHash:                row.TxHash,
@@ -317,7 +340,7 @@ func depositRowFromAll(row sqlc.AllDepositsRow) depositRow {
 	}
 }
 
-func depositRowFromGet(row sqlc.GetDepositRow) depositRow {
+func depositRowFromGet(row sqlc.GetDepositWithAddressRow) depositRow {
 	return depositRow{
 		DepositID:             row.DepositID,
 		TxHash:                row.TxHash,
@@ -340,7 +363,7 @@ func depositRowFromGet(row sqlc.GetDepositRow) depositRow {
 	}
 }
 
-func depositRowFromOutpoint(row sqlc.DepositForOutpointRow) depositRow {
+func depositRowFromOutpoint(row sqlc.DepositForOutpointWithAddressRow) depositRow {
 	return depositRow{
 		DepositID:             row.DepositID,
 		TxHash:                row.TxHash,
@@ -459,24 +482,4 @@ func toDeposit(row depositRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
 	}
 
 	return deposit, nil
-}
-
-// BatchSetStaticAddressID sets the static address id for all deposits that
-// predate the deposit-to-address schema link.
-func (s *SqlStore) BatchSetStaticAddressID(ctx context.Context,
-	staticAddressID int32) error {
-
-	if staticAddressID <= 0 {
-		return fmt.Errorf("static address ID must be set")
-	}
-
-	return s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
-		func(q *sqlc.Queries) error {
-			return q.SetAllNullDepositsStaticAddressID(
-				ctx, sql.NullInt32{
-					Int32: staticAddressID,
-					Valid: true,
-				},
-			)
-		})
 }

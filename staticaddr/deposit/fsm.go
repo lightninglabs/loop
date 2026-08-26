@@ -181,13 +181,12 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	finalizedDepositChan chan wire.OutPoint,
 	recoverStateMachine bool) (*FSM, error) {
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
+	if deposit.AddressParams == nil {
+		return nil, fmt.Errorf("missing deposit static address parameters")
 	}
+	params := deposit.AddressParams
 
-	address, err := cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get static address: %w", err)
 	}

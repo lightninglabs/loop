@@ -13,7 +13,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/script"
-	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -521,6 +520,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		},
 	}
 	require.NoError(t, err)
+	addressParams := testAddressParameters(t, 1)
 	storedDeposits := []*Deposit{
 		{
 			ID:                   ID,
@@ -529,6 +529,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 			Value:                utxo.Value,
 			ConfirmationHeight:   3,
 			TimeOutSweepPkScript: []byte{0x42, 0x21, 0x69},
+			AddressParams:        addressParams,
 		},
 	}
 
@@ -543,9 +544,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	var manager *Manager
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return(&script.Parameters{
-		Expiry: defaultExpiry,
-	}, nil)
+	).Return(addressParams, nil)
 
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, mock.Anything, mock.Anything,
@@ -595,29 +594,14 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		blockErrChan:            blockErrChan,
 	}
 
-	staticAddress := generateStaticAddress(
-		context.Background(), testContext,
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, int64(addressParams.Expiry),
+		addressParams.ClientPubkey, addressParams.ServerPubkey,
 	)
+	require.NoError(t, err)
 	mockAddressManager.On(
 		"GetStaticAddress", mock.Anything,
 	).Return(staticAddress, nil)
 
 	return testContext
-}
-
-func generateStaticAddress(ctx context.Context,
-	t *ManagerTestContext) *script.StaticAddress {
-
-	keyDescriptor, err := t.mockLnd.WalletKit.DeriveNextKey(
-		ctx, swap.StaticAddressKeyFamily,
-	)
-	require.NoError(t.context.T, err)
-
-	staticAddress, err := script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(defaultExpiry),
-		keyDescriptor.PubKey, defaultServerPubkey,
-	)
-	require.NoError(t.context.T, err)
-
-	return staticAddress
 }

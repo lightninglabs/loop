@@ -12,6 +12,45 @@ import (
 )
 
 const allDeposits = `-- name: AllDeposits :many
+SELECT id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, static_address_id FROM deposits ORDER BY id ASC
+`
+
+func (q *Queries) AllDeposits(ctx context.Context) ([]Deposit, error) {
+	rows, err := q.db.QueryContext(ctx, allDeposits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Deposit
+	for rows.Next() {
+		var i Deposit
+		if err := rows.Scan(
+			&i.ID,
+			&i.DepositID,
+			&i.TxHash,
+			&i.OutIndex,
+			&i.Amount,
+			&i.ConfirmationHeight,
+			&i.TimeoutSweepPkScript,
+			&i.ExpirySweepTxid,
+			&i.FinalizedWithdrawalTx,
+			&i.SwapHash,
+			&i.StaticAddressID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const allDepositsWithAddress = `-- name: AllDepositsWithAddress :many
 SELECT
     d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.static_address_id,
     sa.client_pubkey     client_pubkey,
@@ -29,7 +68,7 @@ ORDER BY
     d.id ASC
 `
 
-type AllDepositsRow struct {
+type AllDepositsWithAddressRow struct {
 	ID                    int32
 	DepositID             []byte
 	TxHash                []byte
@@ -51,15 +90,15 @@ type AllDepositsRow struct {
 	InitiationHeight      sql.NullInt32
 }
 
-func (q *Queries) AllDeposits(ctx context.Context) ([]AllDepositsRow, error) {
-	rows, err := q.db.QueryContext(ctx, allDeposits)
+func (q *Queries) AllDepositsWithAddress(ctx context.Context) ([]AllDepositsWithAddressRow, error) {
+	rows, err := q.db.QueryContext(ctx, allDepositsWithAddress)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AllDepositsRow
+	var items []AllDepositsWithAddressRow
 	for rows.Next() {
-		var i AllDepositsRow
+		var i AllDepositsWithAddressRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.DepositID,
@@ -146,6 +185,34 @@ func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) er
 }
 
 const depositForOutpoint = `-- name: DepositForOutpoint :one
+SELECT id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, static_address_id FROM deposits WHERE tx_hash = $1 AND out_index = $2
+`
+
+type DepositForOutpointParams struct {
+	TxHash   []byte
+	OutIndex int32
+}
+
+func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (Deposit, error) {
+	row := q.db.QueryRowContext(ctx, depositForOutpoint, arg.TxHash, arg.OutIndex)
+	var i Deposit
+	err := row.Scan(
+		&i.ID,
+		&i.DepositID,
+		&i.TxHash,
+		&i.OutIndex,
+		&i.Amount,
+		&i.ConfirmationHeight,
+		&i.TimeoutSweepPkScript,
+		&i.ExpirySweepTxid,
+		&i.FinalizedWithdrawalTx,
+		&i.SwapHash,
+		&i.StaticAddressID,
+	)
+	return i, err
+}
+
+const depositForOutpointWithAddress = `-- name: DepositForOutpointWithAddress :one
 SELECT
     d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.static_address_id,
     sa.client_pubkey     client_pubkey,
@@ -165,12 +232,12 @@ AND
     out_index = $2
 `
 
-type DepositForOutpointParams struct {
+type DepositForOutpointWithAddressParams struct {
 	TxHash   []byte
 	OutIndex int32
 }
 
-type DepositForOutpointRow struct {
+type DepositForOutpointWithAddressRow struct {
 	ID                    int32
 	DepositID             []byte
 	TxHash                []byte
@@ -192,9 +259,9 @@ type DepositForOutpointRow struct {
 	InitiationHeight      sql.NullInt32
 }
 
-func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (DepositForOutpointRow, error) {
-	row := q.db.QueryRowContext(ctx, depositForOutpoint, arg.TxHash, arg.OutIndex)
-	var i DepositForOutpointRow
+func (q *Queries) DepositForOutpointWithAddress(ctx context.Context, arg DepositForOutpointWithAddressParams) (DepositForOutpointWithAddressRow, error) {
+	row := q.db.QueryRowContext(ctx, depositForOutpointWithAddress, arg.TxHash, arg.OutIndex)
+	var i DepositForOutpointWithAddressRow
 	err := row.Scan(
 		&i.ID,
 		&i.DepositID,
@@ -220,6 +287,29 @@ func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpoint
 }
 
 const getDeposit = `-- name: GetDeposit :one
+SELECT id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, static_address_id FROM deposits WHERE deposit_id = $1
+`
+
+func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (Deposit, error) {
+	row := q.db.QueryRowContext(ctx, getDeposit, depositID)
+	var i Deposit
+	err := row.Scan(
+		&i.ID,
+		&i.DepositID,
+		&i.TxHash,
+		&i.OutIndex,
+		&i.Amount,
+		&i.ConfirmationHeight,
+		&i.TimeoutSweepPkScript,
+		&i.ExpirySweepTxid,
+		&i.FinalizedWithdrawalTx,
+		&i.SwapHash,
+		&i.StaticAddressID,
+	)
+	return i, err
+}
+
+const getDepositWithAddress = `-- name: GetDepositWithAddress :one
 SELECT
     d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.static_address_id,
     sa.client_pubkey     client_pubkey,
@@ -237,7 +327,7 @@ WHERE
     deposit_id = $1
 `
 
-type GetDepositRow struct {
+type GetDepositWithAddressRow struct {
 	ID                    int32
 	DepositID             []byte
 	TxHash                []byte
@@ -259,9 +349,9 @@ type GetDepositRow struct {
 	InitiationHeight      sql.NullInt32
 }
 
-func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (GetDepositRow, error) {
-	row := q.db.QueryRowContext(ctx, getDeposit, depositID)
-	var i GetDepositRow
+func (q *Queries) GetDepositWithAddress(ctx context.Context, depositID []byte) (GetDepositWithAddressRow, error) {
+	row := q.db.QueryRowContext(ctx, getDepositWithAddress, depositID)
+	var i GetDepositWithAddressRow
 	err := row.Scan(
 		&i.ID,
 		&i.DepositID,
@@ -330,17 +420,6 @@ type InsertDepositUpdateParams struct {
 
 func (q *Queries) InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error {
 	_, err := q.db.ExecContext(ctx, insertDepositUpdate, arg.DepositID, arg.UpdateState, arg.UpdateTimestamp)
-	return err
-}
-
-const setAllNullDepositsStaticAddressID = `-- name: SetAllNullDepositsStaticAddressID :exec
-UPDATE deposits
-SET static_address_id = $1
-WHERE static_address_id IS NULL
-`
-
-func (q *Queries) SetAllNullDepositsStaticAddressID(ctx context.Context, staticAddressID sql.NullInt32) error {
-	_, err := q.db.ExecContext(ctx, setAllNullDepositsStaticAddressID, staticAddressID)
 	return err
 }
 

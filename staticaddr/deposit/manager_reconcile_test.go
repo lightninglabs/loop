@@ -14,7 +14,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
-	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/mock"
@@ -36,13 +35,15 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 		},
 	}
 
+	addressParams := testAddressParameters(t, 1)
+	addressParams.ProtocolVersion = 999
 	mockAddressManager := new(mockAddressManager)
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
+	).Return(addressParams, nil)
 
 	mockStore := new(mockStore)
 	var createCalls atomic.Int32
@@ -132,13 +133,15 @@ func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
 		},
 	}
 
+	addressParams := testAddressParameters(t, 2)
+	addressParams.ProtocolVersion = 999
 	mockAddressManager := new(mockAddressManager)
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
+	).Return(addressParams, nil)
 
 	mockStore := new(mockStore)
 	mockStore.On(
@@ -471,6 +474,7 @@ func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
 		OutPoint:           outpoint,
 		Value:              btcutil.Amount(100_000),
 		ConfirmationHeight: 77,
+		AddressParams:      testAddressParameters(t, 3),
 	}
 	deposit.SetState(Deposited)
 
@@ -486,9 +490,7 @@ func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return(&script.Parameters{
-		ProtocolVersion: version.ProtocolVersion_V0,
-	}, nil)
+	).Return(testAddressParameters(t, 4), nil)
 	mockAddressManager.On(
 		"GetStaticAddress", mock.Anything,
 	).Return((*script.StaticAddress)(nil), nil)
@@ -687,9 +689,7 @@ func TestReconcileReplacementDepositCreatesNewDeposit(t *testing.T) {
 	).Return([]*lnwallet.Utxo{utxo}, nil)
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return(&script.Parameters{
-		ProtocolVersion: version.ProtocolVersion_V0,
-	}, nil)
+	).Return(testAddressParameters(t, 5), nil)
 	mockAddressManager.On(
 		"GetStaticAddress", mock.Anything,
 	).Return((*script.StaticAddress)(nil), nil)

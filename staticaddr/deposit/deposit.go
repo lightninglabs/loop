@@ -1,6 +1,7 @@
 package deposit
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -166,10 +168,34 @@ func (d *Deposit) GetStaticAddressScript() (*script.StaticAddress, error) {
 		return nil, fmt.Errorf("missing static address parameters")
 	}
 
-	return script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(d.AddressParams.Expiry),
+	var muSig2Version input.MuSig2Version
+	switch d.AddressParams.ProtocolVersion {
+	case version.ProtocolVersion_V0:
+		muSig2Version = input.MuSig2Version100RC2
+
+	default:
+		return nil, fmt.Errorf("unsupported static address protocol version: %v",
+			d.AddressParams.ProtocolVersion)
+	}
+
+	staticAddress, err := script.NewStaticAddress(
+		muSig2Version, int64(d.AddressParams.Expiry),
 		d.AddressParams.ClientPubkey, d.AddressParams.ServerPubkey,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	pkScript, err := staticAddress.StaticAddressScript()
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(pkScript, d.AddressParams.PkScript) {
+		return nil, fmt.Errorf("reconstructed static address script does not " +
+			"match persisted pkScript")
+	}
+
+	return staticAddress, nil
 }
 
 // GetRandomDepositID generates a random deposit ID.

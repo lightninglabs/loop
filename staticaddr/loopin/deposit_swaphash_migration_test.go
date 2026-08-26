@@ -67,6 +67,9 @@ func TestDepositSwapHashMigration(t *testing.T) {
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
 		}
+	addressParams := persistTestAddressParameters(t, ctxb, testDb.BaseDB)
+	d1.AddressParams = addressParams
+	d2.AddressParams = addressParams
 
 	err := depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)

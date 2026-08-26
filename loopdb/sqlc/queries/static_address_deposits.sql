@@ -44,6 +44,9 @@ INSERT INTO deposit_updates (
          );
 
 -- name: GetDeposit :one
+SELECT * FROM deposits WHERE deposit_id = $1;
+
+-- name: GetDepositWithAddress :one
 SELECT
     d.*,
     sa.client_pubkey     client_pubkey,
@@ -61,6 +64,9 @@ WHERE
     deposit_id = $1;
 
 -- name: DepositForOutpoint :one
+SELECT * FROM deposits WHERE tx_hash = $1 AND out_index = $2;
+
+-- name: DepositForOutpointWithAddress :one
 SELECT
     d.*,
     sa.client_pubkey     client_pubkey,
@@ -80,6 +86,9 @@ AND
     out_index = $2;
 
 -- name: AllDeposits :many
+SELECT * FROM deposits ORDER BY id ASC;
+
+-- name: AllDepositsWithAddress :many
 SELECT
     d.*,
     sa.client_pubkey     client_pubkey,
@@ -106,8 +115,3 @@ WHERE
 ORDER BY
     update_timestamp DESC
 LIMIT 1;
-
--- name: SetAllNullDepositsStaticAddressID :exec
-UPDATE deposits
-SET static_address_id = $1
-WHERE static_address_id IS NULL;

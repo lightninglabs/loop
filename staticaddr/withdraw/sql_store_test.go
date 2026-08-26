@@ -7,7 +7,14 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	staticaddress "github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,6 +48,11 @@ func TestSqlStore(t *testing.T) {
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
 		}
+	addressParams := persistWithdrawalTestAddressParameters(
+		t, ctxb, testDb.BaseDB,
+	)
+	d1.AddressParams = addressParams
+	d2.AddressParams = addressParams
 
 	withdrawalTx := &wire.MsgTx{
 		Version: 2,
@@ -98,4 +110,38 @@ func TestSqlStore(t *testing.T) {
 	)
 	require.EqualValues(t, 100, withdrawals[0].ChangeAmount)
 	require.EqualValues(t, 6, withdrawals[0].ConfirmationHeight)
+}
+
+func persistWithdrawalTestAddressParameters(t *testing.T, ctx context.Context,
+	db *loopdb.BaseDB) *script.Parameters {
+
+	t.Helper()
+
+	_, clientKey := test.CreateKey(41)
+	_, serverKey := test.CreateKey(42)
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, 144, clientKey, serverKey,
+	)
+	require.NoError(t, err)
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	params := &script.Parameters{
+		ClientPubkey: clientKey,
+		ServerPubkey: serverKey,
+		PkScript:     pkScript,
+		Expiry:       144,
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticAddressKeyFamily),
+			Index:  41,
+		},
+		ProtocolVersion:  version.ProtocolVersion_V0,
+		InitiationHeight: 100,
+	}
+	addressStore := staticaddress.NewSqlStore(db)
+	require.NoError(t, addressStore.CreateStaticAddress(ctx, params))
+	params.ID, err = addressStore.GetStaticAddressID(ctx, pkScript)
+	require.NoError(t, err)
+
+	return params
 }

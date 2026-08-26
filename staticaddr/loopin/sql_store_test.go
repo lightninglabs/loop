@@ -10,9 +10,15 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	staticaddress "github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
@@ -88,6 +94,10 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x50,
 			},
 		}
+	addressParams := persistTestAddressParameters(t, ctxb, testDb.BaseDB)
+	for _, d := range []*deposit.Deposit{d1, d2, d3, d4} {
+		d.AddressParams = addressParams
+	}
 
 	err := depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
@@ -212,6 +222,9 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	require.Equal(t, d1.OutPoint, pendingDeposits[0].OutPoint)
 	require.Equal(t, d1.Value, pendingDeposits[0].Value)
 	require.Equal(t, deposit.LoopingIn, pendingDeposits[0].GetState())
+	require.Equal(t, addressParams.ID, pendingDeposits[0].AddressParams.ID)
+	require.Equal(t, addressParams.PkScript,
+		pendingDeposits[0].AddressParams.PkScript)
 
 	finalizedSwaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(ctxb, FinalStates)
 	require.NoError(t, err)
@@ -292,6 +305,9 @@ func TestCreateLoopIn(t *testing.T) {
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
 		}
+	addressParams := persistTestAddressParameters(t, ctx, testDb.BaseDB)
+	d1.AddressParams = addressParams
+	d2.AddressParams = addressParams
 
 	err := depositStore.CreateDeposit(ctx, d1)
 	require.NoError(t, err)
@@ -504,6 +520,9 @@ func TestGetLoopInByHashOrdersDepositsBySnapshot(t *testing.T) {
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 		},
 	}
+	addressParams := persistTestAddressParameters(t, ctx, testDb.BaseDB)
+	d1.AddressParams = addressParams
+	d2.AddressParams = addressParams
 
 	require.NoError(t, depositStore.CreateDeposit(ctx, d1))
 	require.NoError(t, depositStore.CreateDeposit(ctx, d2))
@@ -578,6 +597,7 @@ func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
 		},
 	}
+	d.AddressParams = persistTestAddressParameters(t, ctxb, testDb.BaseDB)
 	require.NoError(t, depositStore.CreateDeposit(ctxb, d))
 
 	d.SetState(deposit.LoopingIn)
@@ -615,4 +635,38 @@ func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
 	require.Len(t, storedSwap.Deposits, 1)
 	require.Equal(t, currentOutpoint, storedSwap.Deposits[0].OutPoint)
 	require.Equal(t, int64(42), storedSwap.Deposits[0].ConfirmationHeight)
+}
+
+func persistTestAddressParameters(t *testing.T, ctx context.Context,
+	db *loopdb.BaseDB) *script.Parameters {
+
+	t.Helper()
+
+	_, clientKey := test.CreateKey(31)
+	_, serverKey := test.CreateKey(32)
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, 144, clientKey, serverKey,
+	)
+	require.NoError(t, err)
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	params := &script.Parameters{
+		ClientPubkey: clientKey,
+		ServerPubkey: serverKey,
+		PkScript:     pkScript,
+		Expiry:       144,
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticAddressKeyFamily),
+			Index:  31,
+		},
+		ProtocolVersion:  version.ProtocolVersion_V0,
+		InitiationHeight: 100,
+	}
+	addressStore := staticaddress.NewSqlStore(db)
+	require.NoError(t, addressStore.CreateStaticAddress(ctx, params))
+	params.ID, err = addressStore.GetStaticAddressID(ctx, pkScript)
+	require.NoError(t, err)
+
+	return params
 }
