@@ -286,6 +286,10 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 
 		log.Debugf("Recovering deposit %x", d.ID)
 
+		// A legacy mapping alone cannot identify the owner of a timeout
+		// already in progress when the client restarted.
+		d.recoveredTimeout = d.IsInState(SweepHtlcTimeout)
+
 		// Create a state machine for a given deposit.
 		fsm, err := NewFSM(ctx, d, m.cfg, m.finalizedDepositChan, true)
 		if err != nil {
@@ -1179,6 +1183,7 @@ func (m *Manager) transitionDeposits(ctx context.Context, deposits []*Deposit,
 		if swapHash != nil && d.isInStateNoLock(expectedFinalState) {
 			hash := *swapHash
 			d.SwapHash = &hash
+			d.recoveredTimeout = false
 		}
 	}
 
@@ -1206,6 +1211,69 @@ func (m *Manager) transitionDeposits(ctx context.Context, deposits []*Deposit,
 	}
 
 	return nil
+}
+
+// RestoreLoopInClaim repairs a legacy ownership mapping in memory before
+// recovered swaps or new requests can release the deposit.
+func (m *Manager) RestoreLoopInClaim(ctx context.Context,
+	deposits []*Deposit, swapHash lntypes.Hash) error {
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	outpoints, err := depositOutpoints(deposits)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, active := m.toActiveDeposits(&outpoints)
+	if active == nil {
+		return errors.New("cannot restore an inactive loop-in deposit")
+	}
+	locked := lockDeposits(active)
+	defer unlockDeposits(locked)
+	for _, d := range active {
+		if !d.isInStateNoLock(LoopingIn) {
+			return fmt.Errorf("deposit %v is no longer looping in", d.OutPoint)
+		}
+	}
+	for _, d := range active {
+		d.SwapHash = new(swapHash)
+		d.recoveredTimeout = false
+	}
+	return nil
+}
+
+// GetLoopInClaim returns the current owner of an active loop-in or timeout.
+func (m *Manager) GetLoopInClaim(outpoint wire.OutPoint) (lntypes.Hash, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sm := m.activeDeposits[outpoint]
+	if sm == nil {
+		return lntypes.Hash{}, false
+	}
+	d := sm.deposit
+	d.Lock()
+	defer d.Unlock()
+	if d.SwapHash == nil || d.recoveredTimeout ||
+		!(d.isInStateNoLock(LoopingIn) || d.isInStateNoLock(SweepHtlcTimeout)) {
+
+		return lntypes.Hash{}, false
+	}
+	return *d.SwapHash, true
+}
+
+// ClearLoopInClaim retains an ambiguous startup lock while preventing any
+// recovered swap from releasing it.
+func (m *Manager) ClearLoopInClaim(outpoint wire.OutPoint) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sm := m.activeDeposits[outpoint]; sm != nil {
+		sm.deposit.Lock()
+		defer sm.deposit.Unlock()
+		sm.deposit.SwapHash = nil
+	}
 }
 
 // lockDeposits locks deposits in canonical outpoint order and returns the

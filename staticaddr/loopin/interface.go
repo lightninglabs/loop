@@ -46,6 +46,19 @@ type AddressManager interface {
 
 // DepositManager handles the interaction of loop-ins with deposits.
 type DepositManager interface {
+	// RestoreLoopInClaim repairs only in-memory ownership during startup,
+	// before recovered swaps or new requests can release the deposit.
+	RestoreLoopInClaim(context.Context, []*deposit.Deposit,
+		lntypes.Hash) error
+
+	// GetLoopInClaim returns the current in-memory owner, including claims
+	// made before persistence and ownership repairs made during startup.
+	GetLoopInClaim(wire.OutPoint) (lntypes.Hash, bool)
+
+	// ClearLoopInClaim prevents cleanup by any recovered swap from releasing
+	// a deposit whose owner is ambiguous at startup. It retains its lock.
+	ClearLoopInClaim(wire.OutPoint)
+
 	// EnsureDepositsFresh reconciles active deposits with the wallet view.
 	EnsureDepositsFresh(ctx context.Context) error
 
@@ -88,6 +101,15 @@ type DepositManager interface {
 		error)
 }
 
+// LoopInClaim contains the ownership metadata needed to reconcile a recovered
+// deposit without loading the swap's keys, deposits and full update history.
+type LoopInClaim struct {
+	ID               int32
+	SwapHash         lntypes.Hash
+	DepositOutpoints []string
+	State            fsm.StateType
+}
+
 // StaticAddressLoopInStore provides access to the static address loop-in DB.
 type StaticAddressLoopInStore interface {
 	// CreateLoopIn creates a loop-in record in the database.
@@ -100,6 +122,12 @@ type StaticAddressLoopInStore interface {
 	// states.
 	GetStaticAddressLoopInSwapsByStates(ctx context.Context,
 		states []fsm.StateType) ([]*StaticAddressLoopIn, error)
+
+	// GetPaidStaticAddressLoopInClaims returns only the metadata for paid
+	// terminal swaps newer than afterID, including successful swaps whose
+	// deposit write failed.
+	GetPaidStaticAddressLoopInClaims(context.Context, int32) (
+		[]LoopInClaim, error)
 
 	// IsStored checks if the loop-in is already stored in the database.
 	IsStored(ctx context.Context, swapHash lntypes.Hash) (bool, error)
@@ -148,6 +176,13 @@ type TxOutChecker interface {
 	// confirmed at or above startHeight are considered.
 	ConfirmedSpendingTx(ctx context.Context, outpoint wire.OutPoint,
 		startHeight int32) (*wire.MsgTx, error)
+}
+
+// depositSpendChecker supplements availability with positive proof that an
+// original input was confirmed in a transaction that does not fund this HTLC.
+type depositSpendChecker interface {
+	CheckDepositSpend(context.Context, []wire.OutPoint, []byte, []*wire.MsgTx) (
+		map[wire.OutPoint]*wire.TxOut, bool, error)
 }
 
 type NotificationManager interface {

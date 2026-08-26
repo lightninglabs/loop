@@ -792,10 +792,12 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	}
 
 	secondDeposit := &deposit.Deposit{
-		Hash:  chainhash.Hash{2},
-		Value: 500_000,
+		Hash:          chainhash.Hash{2},
+		Value:         500_000,
+		AddressParams: dep.AddressParams,
 	}
 
+	addTestFundingTransactions(mockLnd, dep, secondDeposit)
 	loopIn := &StaticAddressLoopIn{
 		Deposits: []*deposit.Deposit{dep, secondDeposit},
 		DepositOutpoints: []string{
@@ -831,6 +833,7 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	require.Len(t, f.htlcServerNonces, 2)
 	require.Len(t, f.htlcServerNoncesHighFee, 2)
 	require.Len(t, f.htlcServerNoncesExtremelyHighFee, 2)
+	require.Len(t, loopIn.FundingTxs, 2)
 	require.NotNil(t, server.request)
 	require.EqualValues(
 		t, swap.StaticAddressKeyFamily, loopIn.HtlcKeyLocator.Family,
@@ -885,6 +888,7 @@ func TestInitHtlcActionSendsDepositAddressDescriptors(t *testing.T) {
 	// Keep the request deliberately non-sorted to prove descriptor lookup
 	// depends on outpoint keys rather than slice order.
 	deposits := []*deposit.Deposit{depositB, depositA}
+	addTestFundingTransactions(mockLnd, deposits...)
 	loopIn := &StaticAddressLoopIn{
 		Deposits: deposits,
 		DepositOutpoints: []string{
@@ -1023,6 +1027,7 @@ func TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence(t *testing.T) {
 		},
 	}
 
+	addTestFundingTransactions(mockLnd, dep)
 	loopIn := &StaticAddressLoopIn{
 		Deposits:              []*deposit.Deposit{dep},
 		DepositOutpoints:      []string{dep.OutPoint.String()},
@@ -1098,6 +1103,7 @@ func TestInitHtlcActionSendsChangeOutput(t *testing.T) {
 		PkScript:     []byte{0x51, 0x20, 0x01},
 	}
 
+	addTestFundingTransactions(mockLnd, dep, secondDep)
 	loopIn := &StaticAddressLoopIn{
 		Deposits:              []*deposit.Deposit{dep},
 		DepositOutpoints:      []string{dep.OutPoint.String()},
@@ -1771,6 +1777,7 @@ func TestMonitorInvoiceAndHtlcTxPersistsRiskRejected(t *testing.T) {
 		},
 		Deposits: []*deposit.Deposit{{
 			OutPoint: depositOutpoint,
+			Value:    200_000,
 		}},
 	}
 	loopIn.SetState(MonitorInvoiceAndHtlcTx)
@@ -1804,6 +1811,7 @@ func TestMonitorInvoiceAndHtlcTxPersistsRiskRejected(t *testing.T) {
 				ProtocolVersion: version.ProtocolVersion_V0,
 			},
 		},
+		TxOutChecker:        unspentDepositChecker(loopIn.Deposits),
 		ChainNotifier:       mockLnd.ChainNotifier,
 		DepositManager:      &noopDepositManager{},
 		InvoicesClient:      mockLnd.LndServices.Invoices,
@@ -1897,6 +1905,7 @@ func TestMonitorInvoiceAndHtlcTxRecoversAcceptedRiskDecision(t *testing.T) {
 		},
 		Deposits: []*deposit.Deposit{{
 			OutPoint: depositOutpoint,
+			Value:    200_000,
 		}},
 	}
 	loopIn.SetState(MonitorInvoiceAndHtlcTx)
@@ -1917,6 +1926,7 @@ func TestMonitorInvoiceAndHtlcTxRecoversAcceptedRiskDecision(t *testing.T) {
 				ProtocolVersion: version.ProtocolVersion_V0,
 			},
 		},
+		TxOutChecker:   unspentDepositChecker(loopIn.Deposits),
 		ChainNotifier:  mockLnd.ChainNotifier,
 		DepositManager: depositMgr,
 		InvoicesClient: mockLnd.LndServices.Invoices,
@@ -1998,6 +2008,7 @@ func TestMonitorInvoiceAndHtlcTxRecoversRejectedRiskDecision(t *testing.T) {
 		},
 		Deposits: []*deposit.Deposit{{
 			OutPoint: depositOutpoint,
+			Value:    200_000,
 		}},
 	}
 	loopIn.SetState(MonitorInvoiceAndHtlcTx)
@@ -2018,6 +2029,7 @@ func TestMonitorInvoiceAndHtlcTxRecoversRejectedRiskDecision(t *testing.T) {
 				ProtocolVersion: version.ProtocolVersion_V0,
 			},
 		},
+		TxOutChecker:   unspentDepositChecker(loopIn.Deposits),
 		ChainNotifier:  mockLnd.ChainNotifier,
 		DepositManager: depositMgr,
 		InvoicesClient: mockLnd.LndServices.Invoices,
@@ -2793,6 +2805,7 @@ func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
 		},
 		Deposits: []*deposit.Deposit{{
 			OutPoint: depositOutpoint,
+			Value:    200_000,
 		}},
 	}
 	loopIn.SetState(MonitorInvoiceAndHtlcTx)
@@ -2811,6 +2824,7 @@ func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
 				ProtocolVersion: version.ProtocolVersion_V0,
 			},
 		},
+		TxOutChecker:   unspentDepositChecker(loopIn.Deposits),
 		ChainNotifier:  mockLnd.ChainNotifier,
 		DepositManager: depositMgr,
 		InvoicesClient: mockLnd.LndServices.Invoices,
@@ -2908,6 +2922,7 @@ func TestMonitorInvoiceAndHtlcTxTimeoutKeepsTakenDeposit(
 		},
 		ChainNotifier:  mockLnd.ChainNotifier,
 		DepositManager: depositMgr,
+		TxOutChecker:   unspentDepositChecker(loopIn.Deposits),
 		InvoicesClient: mockLnd.LndServices.Invoices,
 		LndClient:      mockLnd.Client,
 		ChainParams:    mockLnd.ChainParams,
@@ -2973,6 +2988,8 @@ func TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails(
 		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
 		mockLnd.LndServices.Invoices,
 	)
+	// A confirmed HTLC consumes every original input.
+	f.cfg.TxOutChecker = &recordingTxOutChecker{}
 	f.loopIn.HtlcCltvExpiry = mockLnd.Height
 	depositMgr.err = errors.New("transition failed")
 
@@ -3035,6 +3052,8 @@ func TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits(t *testing.T) 
 		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
 		mockLnd.LndServices.Invoices,
 	)
+	// A confirmed HTLC consumes every original input.
+	f.cfg.TxOutChecker = &recordingTxOutChecker{}
 	f.loopIn.HtlcCltvExpiry = mockLnd.Height
 
 	firstDeposit := f.loopIn.Deposits[0]
@@ -3209,6 +3228,7 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
+	depositOutpoint := wire.OutPoint{Hash: chainhash.Hash(swapHash)}
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:                     swapHash,
 		SwapInvoice:                  testSwapInvoice,
@@ -3221,8 +3241,10 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 		PaymentTimeoutSeconds:        3_600,
 		ConfirmationRiskDecision:     decision,
 		ConfirmationRiskDecisionTime: time.Now(),
+		DepositOutpoints:             []string{depositOutpoint.String()},
 		Deposits: []*deposit.Deposit{{
-			Value: 200_000,
+			OutPoint: depositOutpoint,
+			Value:    200_000,
 		}},
 	}
 	loopIn.SetState(MonitorInvoiceAndHtlcTx)
@@ -3237,6 +3259,7 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 				ProtocolVersion: version.ProtocolVersion_V0,
 			},
 		},
+		TxOutChecker:   unspentDepositChecker(loopIn.Deposits),
 		ChainNotifier:  mockLnd.ChainNotifier,
 		DepositManager: depositMgr,
 		InvoicesClient: invoicesClient,
@@ -4153,6 +4176,18 @@ func (n *noopDepositManager) ReleaseDepositsForSwap(context.Context,
 	return nil
 }
 
+func (n *noopDepositManager) RestoreLoopInClaim(context.Context,
+	[]*deposit.Deposit, lntypes.Hash) error {
+
+	return nil
+}
+
+func (n *noopDepositManager) GetLoopInClaim(wire.OutPoint) (lntypes.Hash, bool) {
+	return lntypes.Hash{}, false
+}
+
+func (n *noopDepositManager) ClearLoopInClaim(wire.OutPoint) {}
+
 // DepositsForOutpoints implements DepositManager with a no-op.
 func (n *noopDepositManager) DepositsForOutpoints(_ context.Context,
 	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
@@ -4186,6 +4221,7 @@ type recordingDepositManager struct {
 
 	// active holds the manager's own deposit objects by outpoint.
 	active map[wire.OutPoint]*deposit.Deposit
+	claims map[wire.OutPoint]lntypes.Hash
 
 	err         error
 	errs        []error
@@ -4212,6 +4248,12 @@ func newRecordingDepositManager(
 	}
 
 	return &recordingDepositManager{active: active}
+}
+
+// GetLoopInClaim returns a test's explicitly assigned owner.
+func (r *recordingDepositManager) GetLoopInClaim(outpoint wire.OutPoint) (lntypes.Hash, bool) {
+	owner, ok := r.claims[outpoint]
+	return owner, ok
 }
 
 // TransitionDeposits records the transition and returns the configured error.
@@ -4442,6 +4484,9 @@ type recordingTxOutChecker struct {
 	// htlcSpent is what SpentByTxPayingTo returns.
 	htlcSpent bool
 
+	// confirmedConflict supplies positive evidence that the HTLC cannot confirm.
+	confirmedConflict bool
+
 	// spendOutpoints, spendPkScripts and spendStartHeights record what
 	// SpentByTxPayingTo was asked about.
 	spendOutpoints    [][]wire.OutPoint
@@ -4469,6 +4514,15 @@ func (r *recordingTxOutChecker) GetTxOuts(_ context.Context,
 	}
 
 	return r.txOuts, nil
+}
+
+// CheckDepositSpend returns the available outputs and confirmed conflict proof.
+func (r *recordingTxOutChecker) CheckDepositSpend(ctx context.Context,
+	outpoints []wire.OutPoint, _ []byte, _ []*wire.MsgTx) (
+	map[wire.OutPoint]*wire.TxOut, bool, error) {
+
+	outputs, err := r.GetTxOuts(ctx, outpoints)
+	return outputs, r.confirmedConflict, err
 }
 
 // SpentByTxPayingTo records the outpoints, pkScript and start height and
@@ -4508,6 +4562,17 @@ func (r *recordingTxOutChecker) ConfirmedSpendingTx(ctx context.Context,
 	}
 
 	return r.spendingTxs[outpoint], nil
+}
+
+// unspentDepositChecker supplies a positive UTXO result for every selected
+// deposit in tests whose expected outcome releases unfunded inputs.
+func unspentDepositChecker(deposits []*deposit.Deposit) *recordingTxOutChecker {
+	outputs := make(map[wire.OutPoint]*wire.TxOut, len(deposits))
+	for _, d := range deposits {
+		outputs[d.OutPoint] = wire.NewTxOut(int64(d.Value), []byte{0x51})
+	}
+
+	return &recordingTxOutChecker{txOuts: outputs}
 }
 
 // initHtlcTestServer lets InitHtlcAction tests inject a deterministic server
@@ -4717,7 +4782,16 @@ func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
 					serverKey.SerializeCompressed(), 1,
 				),
 			}
-			dep := &deposit.Deposit{Value: depositAmount}
+			_, clientKey := test.CreateKey(22)
+			dep := &deposit.Deposit{
+				Value: depositAmount,
+				AddressParams: &script.Parameters{
+					ClientPubkey: clientKey,
+					PkScript:     []byte{0x51},
+					Expiry:       2_000,
+				},
+			}
+			addTestFundingTransactions(mockLnd, dep)
 			manager := newRecordingDepositManager(dep)
 			loopIn := &StaticAddressLoopIn{
 				Deposits: []*deposit.Deposit{dep},
@@ -4732,6 +4806,7 @@ func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
 			f := &FSM{
 				StateMachine: &fsm.StateMachine{},
 				cfg: &Config{
+					InvoicesClient: mockLnd.LndServices.Invoices,
 					Server:         server,
 					DepositManager: manager,
 					LndClient:      mockLnd.Client,
@@ -4859,7 +4934,16 @@ func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 				response = nil
 			}
 			server := &initHtlcTestServer{loopInResp: response}
-			dep := &deposit.Deposit{Value: 500_000}
+			_, clientKey := test.CreateKey(22)
+			dep := &deposit.Deposit{
+				Value: 500_000,
+				AddressParams: &script.Parameters{
+					ClientPubkey: clientKey,
+					PkScript:     []byte{0x51},
+					Expiry:       2_000,
+				},
+			}
+			addTestFundingTransactions(mockLnd, dep)
 			manager := newRecordingDepositManager(dep)
 			loopIn := &StaticAddressLoopIn{
 				Deposits: []*deposit.Deposit{dep},

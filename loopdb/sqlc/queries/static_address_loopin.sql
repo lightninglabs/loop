@@ -11,7 +11,8 @@ INSERT INTO static_address_swaps (
     htlc_timeout_sweep_tx_id,
     htlc_timeout_sweep_address,
     fast,
-    change_static_address_id
+    change_static_address_id,
+    funding_txs
 ) VALUES (
     $1,
     $2,
@@ -24,7 +25,8 @@ INSERT INTO static_address_swaps (
     $9,
     $10,
     $11,
-    $12
+    $12,
+    $13
 );
 
 -- name: UpdateStaticAddressLoopIn :exec
@@ -135,6 +137,28 @@ WHERE
     swap_hash = $1
 ORDER BY
     id ASC;
+
+-- name: GetPaidStaticAddressLoopInClaims :many
+-- Startup only needs ownership metadata for paid terminal swaps, without
+-- fetching each swap's deposit rows, keys and update history.
+SELECT
+    swaps.id AS swap_id,
+    s.swap_hash,
+    s.deposit_outpoints,
+    u.update_state
+FROM
+    static_address_swaps s
+        JOIN
+    swaps ON swaps.swap_hash = s.swap_hash
+        JOIN
+    static_address_swap_updates u ON u.id = (
+        SELECT MAX(id)
+        FROM static_address_swap_updates
+        WHERE swap_hash = s.swap_hash
+    )
+WHERE
+    swaps.id > $1 AND
+    u.update_state IN ('Succeeded', 'SucceededTransitioningFailed');
 
 -- name: IsStored :one
 SELECT EXISTS (

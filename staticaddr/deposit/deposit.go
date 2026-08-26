@@ -100,6 +100,10 @@ type Deposit struct {
 	// created.
 	SwapHash *lntypes.Hash
 
+	// recoveredTimeout marks a restored timeout whose owner has not been
+	// independently established. The deposit lock protects this flag.
+	recoveredTimeout bool
+
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.
 	FinalizedWithdrawalTx *wire.MsgTx
