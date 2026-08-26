@@ -2612,11 +2612,17 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	}
 
 	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
+
+	if errors.Is(err, address.ErrNoStaticAddress) {
+		return nil, status.Error(
+			codes.NotFound, address.ErrNoStaticAddress.Error(),
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	address, err := s.staticAddressManager.GetTaprootAddress(
+	staticAddress, err := s.staticAddressManager.GetTaprootAddress(
 		params.ClientPubkey, params.ServerPubkey, int64(params.Expiry),
 	)
 	if err != nil {
@@ -2624,7 +2630,7 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 	}
 
 	return &looprpc.StaticAddressSummaryResponse{
-		StaticAddress:                  address.String(),
+		StaticAddress:                  staticAddress.String(),
 		RelativeExpiryBlocks:           uint64(params.Expiry),
 		TotalNumDeposits:               uint32(totalNumDeposits),
 		ValueUnconfirmedSatoshis:       valueUnconfirmed,
