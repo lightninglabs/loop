@@ -481,7 +481,6 @@ func newHtlcSweepTestFSM(t *testing.T, ctx context.Context,
 	t.Helper()
 
 	cfg := &Config{
-		AddressManager:                       &mockAddressManager{params: loopIn.ChangeAddressParams},
 		ChainNotifier:                        mockLnd.ChainNotifier,
 		DepositManager:                       &noopDepositManager{},
 		LndClient:                            mockLnd.Client,

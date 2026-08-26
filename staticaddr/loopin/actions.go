@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
-	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -185,10 +184,6 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	// leave behind a live invoice with no persisted swap to recover it.
 	invoiceNeedsCleanup = true
 
-	f.loopIn.ProtocolVersion = version.AddressProtocolVersion(
-		version.CurrentRPCProtocolVersion(),
-	)
-
 	depositDescriptors, err := staticutil.DepositAddressDescriptors(
 		f.loopIn.Deposits,
 	)
@@ -200,12 +195,14 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	}
 
 	loopInReq := &swapserverrpc.ServerStaticAddressLoopInRequest{
-		SwapHash:               f.loopIn.SwapHash[:],
-		DepositOutpoints:       f.loopIn.DepositOutpoints,
-		Amount:                 uint64(f.loopIn.SelectedAmount),
-		HtlcClientPubKey:       f.loopIn.ClientPubkey.SerializeCompressed(),
-		SwapInvoice:            f.loopIn.SwapInvoice,
-		ProtocolVersion:        version.CurrentRPCProtocolVersion(),
+		SwapHash:         f.loopIn.SwapHash[:],
+		DepositOutpoints: f.loopIn.DepositOutpoints,
+		Amount:           uint64(f.loopIn.SelectedAmount),
+		HtlcClientPubKey: f.loopIn.ClientPubkey.SerializeCompressed(),
+		SwapInvoice:      f.loopIn.SwapInvoice,
+		ProtocolVersion: swapserverrpc.StaticAddressProtocolVersion(
+			f.loopIn.ProtocolVersion,
+		),
 		UserAgent:              loop.UserAgent(f.loopIn.Initiator),
 		PaymentTimeoutSeconds:  f.loopIn.PaymentTimeoutSeconds,
 		Fast:                   f.loopIn.Fast,
@@ -731,23 +728,6 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		}
 
 		return f.HandleError(err)
-	}
-
-	f.loopIn.AddressParams, err =
-		f.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-	if err != nil {
-		err = fmt.Errorf("unable to get static address parameters: "+
-			"%w", err)
-
-		return handleError(err)
-	}
-
-	f.loopIn.Address, err = f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		err = fmt.Errorf("unable to get static address: %w", err)
-
-		return handleError(err)
 	}
 
 	err = f.checkDepositsAvailable(ctx)
