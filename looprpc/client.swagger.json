@@ -2996,12 +2996,12 @@
       "properties": {
         "static_address": {
           "type": "string",
-          "description": "The static address of the client."
+          "description": "Deprecated: The legacy/root static address used as the derivation seed.\nNew deposits should use fresh addresses returned by NewStaticAddress; this\naddress must not be treated as the current receive address."
         },
         "relative_expiry_blocks": {
           "type": "string",
           "format": "uint64",
-          "description": "The CSV expiry of the static address."
+          "description": "The shared CSV delay in blocks inherited by all static addresses derived\nfrom the legacy/root seed."
         },
         "total_num_deposits": {
           "type": "integer",
