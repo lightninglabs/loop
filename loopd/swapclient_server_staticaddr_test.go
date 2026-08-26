@@ -25,6 +25,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -669,6 +671,32 @@ func TestGetStaticAddressSummaryTotalsDeposits(t *testing.T) {
 	require.EqualValues(t, 2, resp.TotalNumDeposits)
 	require.EqualValues(t, 2_000, resp.ValueUnconfirmedSatoshis)
 	require.EqualValues(t, 3_000, resp.ValueDepositedSatoshis)
+}
+
+// TestGetStaticAddressSummaryNoAddress verifies a missing static address seed
+// is exposed as a durable gRPC status instead of an application error encoded
+// in an Unknown status.
+func TestGetStaticAddressSummaryNoAddress(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, err := address.NewManager(&address.ManagerConfig{
+		Store: &mockAddressStore{},
+	}, 1)
+	require.NoError(t, err)
+
+	server := &swapClientServer{
+		depositManager:       newTestDepositManager(),
+		staticAddressManager: addrMgr,
+	}
+
+	_, err = server.GetStaticAddressSummary(
+		context.Background(), &looprpc.StaticAddressSummaryRequest{},
+	)
+	require.Equal(t, codes.NotFound, status.Code(err))
+	require.Equal(
+		t, address.ErrNoStaticAddress.Error(),
+		status.Convert(err).Message(),
+	)
 }
 
 // TestGetLoopInQuoteRejectsUnavailableSelectedDeposit verifies manual quote
