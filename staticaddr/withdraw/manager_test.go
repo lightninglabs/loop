@@ -510,6 +510,98 @@ func TestHandleWithdrawalMempoolSpendHeightHint(t *testing.T) {
 	}
 }
 
+func TestHandleWithdrawalRequiresConfirmationTransaction(t *testing.T) {
+	testCases := []struct {
+		name         string
+		confirmation *chainntnfs.TxConfirmation
+	}{
+		{
+			name: "nil confirmation",
+		},
+		{
+			name:         "missing transaction",
+			confirmation: &chainntnfs.TxConfirmation{},
+		},
+		{
+			name: "different transaction",
+			confirmation: &chainntnfs.TxConfirmation{
+				Tx: wire.NewMsgTx(2),
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			notifier := newWithdrawalTestNotifier()
+			depositManager := &withdrawalTestDepositManager{
+				transitions: make(chan withdrawalTransition, 1),
+				updates:     make(chan *deposit.Deposit, 1),
+			}
+			store := &withdrawalTestStore{
+				updates: make(chan withdrawalStoreUpdate, 1),
+			}
+			manager, err := NewManager(&ManagerConfig{
+				ChainNotifier:  notifier,
+				DepositManager: depositManager,
+				Store:          store,
+			}, 123)
+			require.NoError(t, err)
+			cleanupWithdrawalMonitor(t, manager, cancel)
+
+			dep := &deposit.Deposit{
+				OutPoint: wire.OutPoint{Hash: chainhash.Hash{1}},
+				AddressParams: &address.Parameters{
+					PkScript: []byte{0x51},
+				},
+			}
+			spendingTx := wire.NewMsgTx(2)
+			spendingTx.AddTxIn(&wire.TxIn{
+				PreviousOutPoint: dep.OutPoint,
+			})
+			spendingTx.AddTxOut(&wire.TxOut{
+				Value:    1_000,
+				PkScript: []byte{0x52},
+			})
+			spendingTxHash := spendingTx.TxHash()
+			manager.finalizedWithdrawalTxns[spendingTxHash] = spendingTx
+
+			err = manager.handleWithdrawal(
+				ctx, []*deposit.Deposit{dep}, spendingTxHash,
+			)
+			require.NoError(t, err)
+
+			notifier.spendChan <- &chainntnfs.SpendDetail{
+				SpendingTx: spendingTx,
+			}
+			select {
+			case <-notifier.confReq:
+			case <-ctx.Done():
+				t.Fatalf("confirmation registration not received: %v",
+					ctx.Err())
+			}
+			notifier.confChan <- testCase.confirmation
+			manager.monitorWg.Wait()
+
+			select {
+			case <-depositManager.transitions:
+				t.Fatal("deposit transitioned without confirmation")
+			default:
+			}
+			select {
+			case <-store.updates:
+				t.Fatal("withdrawal persisted without confirmation")
+			default:
+			}
+
+			manager.mu.Lock()
+			_, republishes := manager.finalizedWithdrawalTxns[spendingTxHash]
+			manager.mu.Unlock()
+			require.True(t, republishes)
+		})
+	}
+}
+
 func TestHandleWithdrawalReconcilesIncompleteSpend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 
