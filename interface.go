@@ -297,6 +297,15 @@ type LoopInRequest struct {
 	// RouteHints are optional route hints to reach the destination through
 	// private channels.
 	RouteHints [][]zpay32.HopHint
+
+	// AssetId is the optional asset ID to receive over a Taproot Asset
+	// channel when the server pays the swap invoice.
+	AssetId []byte
+
+	// AssetEdgeNode optionally selects the Taproot Asset channel peer that
+	// should convert the server's satoshi payment into the requested asset.
+	// If unset, tapd selects from the eligible asset channels.
+	AssetEdgeNode []byte
 }
 
 // StaticAddressLoopInRequest contains the required parameters for the swap.
