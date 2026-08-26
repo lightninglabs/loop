@@ -96,7 +96,7 @@ type ManagerConfig struct {
 
 	// Store is the store that is used to persist the finalized withdrawal
 	// transactions.
-	Store *SqlStore
+	Store WithdrawalStore
 }
 
 // newWithdrawalRequest is used to send withdrawal request to the manager main
@@ -135,7 +135,9 @@ type Manager struct {
 	// exitChan signals subroutines that the withdrawal manager is exiting.
 	exitChan chan struct{}
 
-	// initiationHeight stores the currently best known block height.
+	// initiationHeight is the manager's startup height. It is used as a
+	// fallback confirmation height hint for mempool spend notifications,
+	// which don't carry a block height.
 	initiationHeight atomic.Uint32
 
 	// finalizedWithdrawalTxns are the finalized withdrawal transactions
@@ -287,9 +289,7 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 				return err
 			}
 
-			err = m.handleWithdrawal(
-				ctx, deposits, tx.TxHash(), tx.TxOut[0].PkScript,
-			)
+			err = m.handleWithdrawal(ctx, deposits, tx.TxHash())
 			if err != nil {
 				return err
 			}
@@ -455,12 +455,6 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", nil
 	}
 
-	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
-	if err != nil {
-		return "", "", fmt.Errorf("could not get withdrawal "+
-			"pkscript: %w", err)
-	}
-
 	// If this is the first time this cluster of deposits is withdrawn, we
 	// start a goroutine that listens for the spent of the first input of
 	// the withdrawal transaction.
@@ -475,9 +469,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 				"withdrawal: %v", err)
 		}
 
-		err = m.handleWithdrawal(
-			ctx, deposits, finalizedTx.TxHash(), withdrawalPkScript,
-		)
+		err = m.handleWithdrawal(ctx, deposits, finalizedTx.TxHash())
 		if err != nil {
 			return "", "", err
 		}
@@ -722,6 +714,23 @@ func withdrawalChangePkScript(tx *wire.MsgTx, withdrawalPkScript []byte,
 	return changePkScript, nil
 }
 
+// withdrawalDestinationPkScript returns the destination script from a
+// withdrawal transaction. Locally constructed withdrawal transactions always
+// place the user-controlled destination at output zero.
+func withdrawalDestinationPkScript(tx *wire.MsgTx) ([]byte, error) {
+	if tx == nil {
+		return nil, errors.New("withdrawal transaction is nil")
+	}
+	if len(tx.TxOut) == 0 || tx.TxOut[0] == nil ||
+		len(tx.TxOut[0].PkScript) == 0 {
+
+		return nil, fmt.Errorf("withdrawal transaction %v has no "+
+			"destination output", tx.TxHash())
+	}
+
+	return tx.TxOut[0].PkScript, nil
+}
+
 // validateConfirmedWithdrawalInputs verifies that a confirmed withdrawal
 // transaction spends every deposit associated with the withdrawal. Withdrawal
 // monitoring intentionally watches only the first deposit so an RBF replacement
@@ -801,8 +810,11 @@ func (m *Manager) reconcileIncompleteWithdrawal(ctx context.Context,
 // handleWithdrawal starts a goroutine that listens for the spent of the first
 // input of the withdrawal transaction.
 func (m *Manager) handleWithdrawal(ctx context.Context,
-	deposits []*deposit.Deposit, originalTxHash chainhash.Hash,
-	withdrawalPkScript []byte) error {
+	deposits []*deposit.Deposit, originalTxHash chainhash.Hash) error {
+
+	if len(deposits) == 0 {
+		return errors.New("can't monitor withdrawal without deposits")
+	}
 
 	d := deposits[0]
 	if d.AddressParams == nil {
@@ -822,12 +834,26 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	m.monitorWg.Go(func() {
 		select {
 		case spentTx := <-spentChan:
-			spendingHeight := uint32(spentTx.SpendingHeight)
-			spenderTxHash := originalTxHash
-			if spentTx.SpenderTxHash != nil {
-				spenderTxHash = *spentTx.SpenderTxHash
-			} else if spentTx.SpendingTx != nil {
-				spenderTxHash = spentTx.SpendingTx.TxHash()
+			if spentTx == nil || spentTx.SpendingTx == nil {
+				log.Errorf("Withdrawal spend notification missing " +
+					"transaction")
+
+				return
+			}
+
+			spendingTx := spentTx.SpendingTx
+			spenderTxHash := spendingTx.TxHash()
+			withdrawalPkScript, err :=
+				withdrawalDestinationPkScript(spendingTx)
+			if err != nil {
+				log.Errorf("Invalid withdrawal spend: %v", err)
+
+				return
+			}
+			spendingHeight := spentTx.SpendingHeight
+			heightHint := spendingHeight
+			if heightHint <= 0 {
+				heightHint = int32(m.initiationHeight.Load())
 			}
 
 			// If the transaction received one confirmation, we
@@ -836,8 +862,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			confChan, confErrChan, err :=
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 					ctx, &spenderTxHash, withdrawalPkScript,
-					MinConfs,
-					int32(m.initiationHeight.Load()),
+					MinConfs, heightHint,
 				)
 			if err != nil {
 				// TODO(#1087): Retry registration on
@@ -889,10 +914,25 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 					return
 				}
 
-				changePkScript, changeErr := withdrawalChangePkScript(
-					confirmedTx, withdrawalPkScript,
-					m.cfg.AddressManager,
-				)
+				confirmedWithdrawalPkScript, changeErr :=
+					withdrawalDestinationPkScript(confirmedTx)
+				var changePkScript []byte
+				if changeErr == nil {
+					changePkScript, changeErr =
+						withdrawalChangePkScript(
+							confirmedTx,
+							confirmedWithdrawalPkScript,
+							m.cfg.AddressManager,
+						)
+				}
+
+				confirmationHeight := uint32(0)
+				if tx != nil {
+					confirmationHeight = tx.BlockHeight
+				}
+				if confirmationHeight == 0 && spendingHeight > 0 {
+					confirmationHeight = uint32(spendingHeight)
+				}
 
 				err = m.cfg.DepositManager.TransitionDeposits(
 					ctx, deposits, deposit.OnWithdrawn,
@@ -918,7 +958,8 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 						changeErr)
 				} else {
 					persistErr = m.cfg.Store.UpdateWithdrawal(
-						ctx, deposits, confirmedTx, spendingHeight,
+						ctx, deposits, confirmedTx,
+						confirmationHeight,
 						changePkScript,
 					)
 				}
