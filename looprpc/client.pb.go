@@ -6179,8 +6179,10 @@ type Deposit struct {
 	//hasn't been determined yet. The cost of a single deposit is never
 	//partial.
 	CostOnchainStatus OnchainCostStatus `protobuf:"varint,9,opt,name=cost_onchain_status,json=costOnchainStatus,proto3,enum=looprpc.OnchainCostStatus" json:"cost_onchain_status,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The static address that the deposit was sent to.
+	StaticAddress string `protobuf:"bytes,10,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Deposit) Reset() {
@@ -6274,6 +6276,13 @@ func (x *Deposit) GetCostOnchainStatus() OnchainCostStatus {
 		return x.CostOnchainStatus
 	}
 	return OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN
+}
+
+func (x *Deposit) GetStaticAddress() string {
+	if x != nil {
+		return x.StaticAddress
+	}
+	return ""
 }
 
 type StaticAddressWithdrawal struct {
@@ -7728,7 +7737,7 @@ const file_client_proto_rawDesc = "" +
 	"\x18value_looped_in_satoshis\x18\b \x01(\x03R\x15valueLoopedInSatoshis\x12J\n" +
 	"\"value_htlc_timeout_sweeps_satoshis\x18\t \x01(\x03R\x1evalueHtlcTimeoutSweepsSatoshis\x122\n" +
 	"\x15value_channels_opened\x18\n" +
-	" \x01(\x03R\x13valueChannelsOpened\"\xe5\x02\n" +
+	" \x01(\x03R\x13valueChannelsOpened\"\x8c\x03\n" +
 	"\aDeposit\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12+\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x15.looprpc.DepositStateR\x05state\x12\x1a\n" +
@@ -7738,7 +7747,9 @@ const file_client_proto_rawDesc = "" +
 	"\x13blocks_until_expiry\x18\x06 \x01(\x03R\x11blocksUntilExpiry\x12\x1b\n" +
 	"\tswap_hash\x18\a \x01(\fR\bswapHash\x12!\n" +
 	"\fcost_onchain\x18\b \x01(\x03R\vcostOnchain\x12J\n" +
-	"\x13cost_onchain_status\x18\t \x01(\x0e2\x1a.looprpc.OnchainCostStatusR\x11costOnchainStatus\"\xc2\x02\n" +
+	"\x13cost_onchain_status\x18\t \x01(\x0e2\x1a.looprpc.OnchainCostStatusR\x11costOnchainStatus\x12%\n" +
+	"\x0estatic_address\x18\n" +
+	" \x01(\tR\rstaticAddress\"\xc2\x02\n" +
 	"\x17StaticAddressWithdrawal\x12\x13\n" +
 	"\x05tx_id\x18\x01 \x01(\tR\x04txId\x12,\n" +
 	"\bdeposits\x18\x02 \x03(\v2\x10.looprpc.DepositR\bdeposits\x12A\n" +
