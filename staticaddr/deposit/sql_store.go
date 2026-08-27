@@ -47,6 +47,13 @@ func NewSqlStore(db *loopdb.BaseDB) *SqlStore {
 
 // CreateDeposit creates a static address deposit record in the database.
 func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
+	if deposit.AddressParams == nil {
+		return fmt.Errorf("static address parameters must be set")
+	}
+	if deposit.AddressParams.ID <= 0 {
+		return fmt.Errorf("static address ID must be set")
+	}
+
 	createArgs := sqlc.CreateDepositParams{
 		DepositID:            deposit.ID[:],
 		TxHash:               deposit.Hash[:],
@@ -54,17 +61,10 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		Amount:               int64(deposit.Value),
 		ConfirmationHeight:   deposit.GetConfirmationHeight(),
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
-		StaticAddressID:      sql.NullInt32{},
-	}
-	if deposit.AddressParams != nil {
-		if deposit.AddressParams.ID <= 0 {
-			return fmt.Errorf("static address ID must be set")
-		}
-
-		createArgs.StaticAddressID = sql.NullInt32{
+		StaticAddressID: sql.NullInt32{
 			Int32: deposit.AddressParams.ID,
 			Valid: true,
-		}
+		},
 	}
 
 	updateArgs := sqlc.InsertDepositUpdateParams{
@@ -413,6 +413,11 @@ func toDeposit(row depositRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		swapHash = &hash
 	}
 
+	if !row.StaticAddressID.Valid || row.StaticAddressID.Int32 <= 0 {
+		return nil, fmt.Errorf("deposit %x missing static address ID",
+			row.DepositID)
+	}
+
 	deposit := &Deposit{
 		ID:    id,
 		state: fsm.StateType(lastUpdate.UpdateState),
@@ -428,34 +433,32 @@ func toDeposit(row depositRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		FinalizedWithdrawalTx: finalizedWithdrawalTx,
 	}
 
-	if row.StaticAddressID.Valid {
-		clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
-		if err != nil {
-			return nil, err
-		}
+	clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
+	if err != nil {
+		return nil, err
+	}
 
-		serverPubkey, err := btcec.ParsePubKey(row.ServerPubkey)
-		if err != nil {
-			return nil, err
-		}
+	serverPubkey, err := btcec.ParsePubKey(row.ServerPubkey)
+	if err != nil {
+		return nil, err
+	}
 
-		deposit.AddressParams = &script.Parameters{
-			ID:           row.StaticAddressID.Int32,
-			ClientPubkey: clientPubkey,
-			ServerPubkey: serverPubkey,
-			Expiry:       uint32(row.Expiry.Int32),
-			PkScript:     row.Pkscript,
-			KeyLocator: keychain.KeyLocator{
-				Family: keychain.KeyFamily(
-					row.ClientKeyFamily.Int32,
-				),
-				Index: uint32(row.ClientKeyIndex.Int32),
-			},
-			ProtocolVersion: version.AddressProtocolVersion(
-				row.ProtocolVersion.Int32,
+	deposit.AddressParams = &script.Parameters{
+		ID:           row.StaticAddressID.Int32,
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       uint32(row.Expiry.Int32),
+		PkScript:     row.Pkscript,
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(
+				row.ClientKeyFamily.Int32,
 			),
-			InitiationHeight: row.InitiationHeight.Int32,
-		}
+			Index: uint32(row.ClientKeyIndex.Int32),
+		},
+		ProtocolVersion: version.AddressProtocolVersion(
+			row.ProtocolVersion.Int32,
+		),
+		InitiationHeight: row.InitiationHeight.Int32,
 	}
 
 	return deposit, nil

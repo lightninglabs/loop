@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -193,9 +194,11 @@ func TestSelectDeposits(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			setTestDepositParams(tc.deposits, tc.csvExpiry)
+			setTestDepositParams(tc.expected, tc.csvExpiry)
+
 			selectedDeposits, err := SelectDeposits(
-				tc.targetValue, tc.deposits, tc.csvExpiry,
-				tc.blockHeight,
+				tc.targetValue, tc.deposits, tc.blockHeight,
 			)
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
@@ -205,6 +208,58 @@ func TestSelectDeposits(t *testing.T) {
 			require.ElementsMatch(t, tc.expected, selectedDeposits)
 		})
 	}
+}
+
+// TestSelectDepositsUsesPerDepositExpiry verifies that deposit filtering and
+// tie-breaking use the expiry of the address that owns each deposit.
+func TestSelectDepositsUsesPerDepositExpiry(t *testing.T) {
+	const (
+		blockHeight        = uint32(2_000)
+		confirmationHeight = int64(1_000)
+	)
+
+	newDeposit := func(id byte, value btcutil.Amount,
+		expiry uint32) *deposit.Deposit {
+
+		return &deposit.Deposit{
+			OutPoint: wire.OutPoint{
+				Hash: chainhash.Hash{id},
+			},
+			Value:              value,
+			ConfirmationHeight: confirmationHeight,
+			AddressParams: &address.Parameters{
+				Expiry: expiry,
+			},
+		}
+	}
+
+	t.Run("filter", func(t *testing.T) {
+		// The larger deposit has only 1,000 blocks left and is not
+		// swappable. The smaller deposit has 1,050 blocks left and is
+		// exactly at the loop-in CLTV delta plus its safety buffer.
+		tooClose := newDeposit(1, 3_000_000, 2_000)
+		eligible := newDeposit(2, 2_000_000, 2_050)
+
+		selected, err := SelectDeposits(
+			1_000_000, []*deposit.Deposit{tooClose, eligible},
+			blockHeight,
+		)
+		require.NoError(t, err)
+		require.Equal(t, []*deposit.Deposit{eligible}, selected)
+	})
+
+	t.Run("tie break", func(t *testing.T) {
+		laterExpiry := newDeposit(3, 3_000_000, 2_200)
+		earlierExpiry := newDeposit(4, 3_000_000, 2_100)
+
+		selected, err := SelectDeposits(
+			1_000_000,
+			[]*deposit.Deposit{laterExpiry, earlierExpiry},
+			blockHeight,
+		)
+		require.NoError(t, err)
+		require.Equal(t, []*deposit.Deposit{earlierExpiry}, selected)
+	})
 }
 
 // TestInitiateLoopInAllowsReservedAutoloopLabel verifies that the internal
@@ -504,6 +559,14 @@ func TestGetAllSwapsPreservesStoreDeposits(t *testing.T) {
 	require.Len(t, swaps, 1)
 	require.Equal(t, []string{oldOutpoint.String()}, swaps[0].DepositOutpoints)
 	require.Equal(t, []*deposit.Deposit{currentDeposit}, swaps[0].Deposits)
+}
+
+func setTestDepositParams(deposits []*deposit.Deposit, expiry uint32) {
+	for _, d := range deposits {
+		d.AddressParams = &address.Parameters{
+			Expiry: expiry,
+		}
+	}
 }
 
 // TestIsSwappableUnconfirmed checks that an unconfirmed deposit is considered

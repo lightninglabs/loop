@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/stretchr/testify/require"
@@ -196,6 +197,9 @@ func TestWarningDepositSelectionMatchesLoopInSelection(t *testing.T) {
 			OutPoint:           outpoint,
 			Value:              btcutil.Amount(fixture.value),
 			ConfirmationHeight: fixture.confirmationHeight,
+			AddressParams: &address.Parameters{
+				Expiry: csvExpiry,
+			},
 		})
 	}
 
@@ -204,8 +208,7 @@ func TestWarningDepositSelectionMatchesLoopInSelection(t *testing.T) {
 	)
 
 	loopInSelected, err := loopin.SelectDeposits(
-		btcutil.Amount(targetAmount), loopInDeposits, csvExpiry,
-		blockHeight,
+		btcutil.Amount(targetAmount), loopInDeposits, blockHeight,
 	)
 	require.NoError(t, err)
 
