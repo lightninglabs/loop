@@ -428,7 +428,7 @@ Create a new static loop in address.
 \fB--help, -h\fP: show help
 
 .SS deposit
-Create and fund a new static loop in address.
+Create an address and print an lncli command to fund it.
 
 .PP
 \fB--amt\fP="": the number of bitcoin denominated in satoshis to send to the new static address (default: 0)
@@ -440,7 +440,7 @@ Create and fund a new static loop in address.
 \fB--conf_target\fP="": (optional) the number of blocks that the funding transaction should confirm in, will be used for fee estimation (default: 0)
 
 .PP
-\fB--force, -f\fP: if set, the funding transaction will be broadcast without asking for confirmation
+\fB--force, -f\fP: skip the new-address warning acknowledgement; only print the funding command
 
 .PP
 \fB--help, -h\fP: show help
