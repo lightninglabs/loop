@@ -119,16 +119,19 @@ func (s *SqlStore) UpdateWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit, tx *wire.MsgTx, confirmationHeight uint32,
 	changePkScript []byte) error {
 
-	// Populate the optional change amount.
+	// Populate the optional change amount without assuming a fixed output
+	// count or order, because a confirmed RBF replacement may differ from
+	// the locally constructed transaction.
 	withdrawnAmount, changeAmount := int64(0), int64(0)
-	if len(tx.TxOut) == 1 {
-		withdrawnAmount = tx.TxOut[0].Value
-	} else if len(tx.TxOut) == 2 {
-		withdrawnAmount, changeAmount = tx.TxOut[0].Value, tx.TxOut[1].Value
-		if bytes.Equal(changePkScript, tx.TxOut[0].PkScript) {
-			changeAmount = tx.TxOut[0].Value
-			withdrawnAmount = tx.TxOut[1].Value
+	for _, txOut := range tx.TxOut {
+		if len(changePkScript) > 0 &&
+			bytes.Equal(changePkScript, txOut.PkScript) {
+
+			changeAmount += txOut.Value
+			continue
 		}
+
+		withdrawnAmount += txOut.Value
 	}
 
 	updateArgs := sqlc.UpdateWithdrawalParams{
