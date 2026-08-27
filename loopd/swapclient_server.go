@@ -1080,7 +1080,6 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		selectedAmount     = btcutil.Amount(req.Amt)
 		totalDepositAmount btcutil.Amount
 		autoSelectDeposits = req.AutoSelectDeposits
-		staticAddrExpiry   uint32
 		currentHeight      uint32
 		err                error
 	)
@@ -1111,17 +1110,6 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 				err)
 		}
 
-		// TODO(hieblmi): add params to deposit for multi-address
-		//      support.
-		params, err := s.staticAddressManager.GetStaticAddressParameters(
-			ctx,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve static "+
-				"address parameters: %w", err)
-		}
-		staticAddrExpiry = params.Expiry
-
 		info, err := s.lnd.Client.GetInfo(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get lnd info: %w",
@@ -1143,8 +1131,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		}
 
 		selectedDeposits, err := loopin.SelectDeposits(
-			selectedAmount, deposits, staticAddrExpiry,
-			currentHeight,
+			selectedAmount, deposits, currentHeight,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to select deposits: %w",
