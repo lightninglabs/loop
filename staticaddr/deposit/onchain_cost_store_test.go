@@ -1,13 +1,52 @@
 package deposit
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
+
+// newOnchainCostAddress returns the persisted owner of the test deposits.
+func newOnchainCostAddress(t *testing.T, store *SqlStore) *script.Parameters {
+	t.Helper()
+
+	addressStore := address.NewSqlStore(store.baseDB)
+	params, err := addressStore.GetLegacyParameters(t.Context())
+	if err == nil {
+		return params
+	}
+	require.ErrorIs(t, err, sql.ErrNoRows)
+
+	_, clientPubkey := test.CreateKey(1)
+	_, serverPubkey := test.CreateKey(2)
+	params = &script.Parameters{
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       144,
+		KeyLocator: keychain.KeyLocator{
+			Family: 42061,
+		},
+		PkScript:         testStaticPkScript,
+		ProtocolVersion:  version.ProtocolVersion_V0,
+		InitiationHeight: 100,
+	}
+	require.NoError(t, addressStore.CreateStaticAddress(t.Context(), params))
+	params.ID, err = addressStore.GetStaticAddressID(
+		t.Context(), params.PkScript,
+	)
+	require.NoError(t, err)
+
+	return params
+}
 
 // newStoredDeposit creates a deposit in the store and returns it.
 func newStoredDeposit(t *testing.T, store *SqlStore, seed byte) *Deposit {
@@ -24,6 +63,7 @@ func newStoredDeposit(t *testing.T, store *SqlStore, seed byte) *Deposit {
 		},
 		Value:                100_000,
 		TimeOutSweepPkScript: []byte{0x00, 0x14, seed},
+		AddressParams:        newOnchainCostAddress(t, store),
 	}
 	d.SetState(Deposited)
 	require.NoError(t, store.CreateDeposit(t.Context(), d))
@@ -134,6 +174,7 @@ func TestSqlStoreCreateDepositOnchainCost(t *testing.T) {
 			},
 			Value:                100_000,
 			TimeOutSweepPkScript: []byte{0x00, 0x14, seed},
+			AddressParams:        newOnchainCostAddress(t, store),
 			OnchainCost:          cost,
 		}
 		d.SetState(Deposited)
