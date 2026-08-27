@@ -1445,6 +1445,10 @@
         "cost_onchain_status": {
           "$ref": "#/definitions/looprpcOnchainCostStatus",
           "description": "Whether cost_onchain is known: ONCHAIN_COST_STATUS_COMPLETE if the client\nwallet knows the fee of the deposit's funding transaction,\nONCHAIN_COST_STATUS_UNKNOWN if it doesn't, for example for a deposit\nfunded by an external wallet, or ONCHAIN_COST_STATUS_PENDING if the cost\nhasn't been determined yet. The cost of a single deposit is never\npartial."
+        },
+        "static_address": {
+          "type": "string",
+          "description": "The static address that the deposit was sent to."
         }
       }
     },

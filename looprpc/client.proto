@@ -2151,6 +2151,11 @@ message Deposit {
     partial.
     */
     OnchainCostStatus cost_onchain_status = 9;
+
+    /*
+    The static address that the deposit was sent to.
+    */
+    string static_address = 10;
 }
 
 message StaticAddressWithdrawal {
