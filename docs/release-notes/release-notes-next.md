@@ -36,6 +36,11 @@
 
 #### Maintenance
 
+* The Docker image build now verifies that every platform of the image index
+  holds binaries for the architecture it advertises, and gives a release its
+  tag only once that check has passed.
+  [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
+
 * Updated the gRPC dependency to v1.83.1.
 
 * Updated the Taproot Assets dependency to v0.8.1; asset conversions that

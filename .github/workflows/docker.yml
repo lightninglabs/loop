@@ -13,6 +13,11 @@ jobs:
   main:
     runs-on: ubuntu-latest
     steps:
+      # Needed for scripts/check_multiarch_image.py below. The image itself is
+      # built from the default git context, not from this checkout.
+      - name: Git checkout
+        uses: actions/checkout@v4
+
       - name: Set up QEMU
         uses: lightninglabs/gh-actions/setup-qemu-action@2021.01.25.00
 
@@ -31,14 +36,61 @@ jobs:
           DOCKER_REPO_DEFAULT=${{secrets.DOCKER_REPO}}
           echo "DOCKER_REPO=${DOCKER_REPO_DEFAULT:-lightninglabs/loop}" >> $GITHUB_ENV
 
-      - name: Build and push image
-        id: docker_build
+      # A single build with two outputs: a local OCI layout to check, and an
+      # untagged push that stages that same build in the registry. Pushing by
+      # digest publishes no tag, so nothing is reachable under the release tag
+      # until the steps below have accepted the result.
+      - name: Build image and stage it by digest
+        id: build
         uses: lightninglabs/gh-actions/build-push-action@2021.01.25.00
         with:
-          push: true
           platforms: linux/amd64,linux/arm64
-          tags: "${{ env.DOCKER_REPO }}:${{ env.RELEASE_VERSION }}"
           build-args: checkout=${{ env.RELEASE_VERSION }}
+          outputs: |
+            type=oci,dest=/tmp/loop-image.tar
+            type=image,name=${{ env.DOCKER_REPO }},push-by-digest=true,push=true
+
+      # A multi-architecture build that quietly produces the build machine's
+      # architecture for every platform still succeeds, so the result has to
+      # be checked rather than assumed. Note that running the image cannot
+      # detect that: the amd64 binaries inside a mislabelled arm64 entry run
+      # natively on this amd64 runner.
+      - name: Verify image architectures
+        run: |
+          ./scripts/check_multiarch_image.py /tmp/loop-image.tar \
+            --platforms linux/amd64,linux/arm64 \
+            --binaries /bin/loopd,/bin/loop,/bin/busybox \
+            --digests-out /tmp/verified-digests.txt
+
+      # The step above checked the local layout, so confirm that the staged
+      # image is built from exactly the same per platform manifests before any
+      # of it is tagged. The index digests are deliberately not compared: the
+      # two exporters annotate the index differently, while the manifests they
+      # point at are identical.
+      - name: Check the staged image is the one that was verified
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect --raw "${DOCKER_REPO}@${DIGEST}" \
+            > /tmp/staged-index.json
+          jq -r '.manifests[]
+                 | select(.platform.architecture != "unknown")
+                 | "\(.platform.os)/\(.platform.architecture) \(.digest)"' \
+            /tmp/staged-index.json | sort > /tmp/staged-digests.txt
+          diff /tmp/verified-digests.txt /tmp/staged-digests.txt
+
+      # Give the checked digest its release tag. This copies manifests only
+      # and builds nothing, so the tag ends up serving exactly the artifact
+      # that was verified above.
+      - name: Promote to the release tag
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker buildx imagetools create \
+            -t "${DOCKER_REPO}:${RELEASE_VERSION}" \
+            "${DOCKER_REPO}@${DIGEST}"
 
       - name: Image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "${DIGEST}"
