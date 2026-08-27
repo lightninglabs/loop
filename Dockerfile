@@ -18,7 +18,12 @@ RUN apk add --no-cache --update alpine-sdk \
     &&  make install
 
 # Start a new, final image to reduce size.
-FROM --platform=${BUILDPLATFORM} alpine as final
+#
+# This stage must resolve to the target platform, which is the default for
+# every stage. Do not pin it to ${BUILDPLATFORM}: that builds every requested
+# platform on the build machine's architecture, producing an image whose
+# manifest advertises linux/arm64 while the filesystem is amd64.
+FROM alpine as final
 
 # Expose lnd ports (server, rpc).
 EXPOSE 8081 11010
