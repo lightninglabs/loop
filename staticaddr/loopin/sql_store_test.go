@@ -190,6 +190,10 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 			},
 		}
 
+	setPersistedTestDepositAddress(
+		t, ctxb, testDb.BaseDB, d1, d2, d3, d4,
+	)
+
 	err := depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctxb, d2)
@@ -407,6 +411,8 @@ func TestCreateLoopIn(t *testing.T) {
 			},
 		}
 
+	setPersistedTestDepositAddress(t, ctx, testDb.BaseDB, d1, d2)
+
 	err := depositStore.CreateDeposit(ctx, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctx, d2)
@@ -619,6 +625,8 @@ func TestGetLoopInByHashOrdersDepositsBySnapshot(t *testing.T) {
 		},
 	}
 
+	setPersistedTestDepositAddress(t, ctx, testDb.BaseDB, d1, d2)
+
 	require.NoError(t, depositStore.CreateDeposit(ctx, d1))
 	require.NoError(t, depositStore.CreateDeposit(ctx, d2))
 
@@ -692,6 +700,7 @@ func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
 		},
 	}
+	setPersistedTestDepositAddress(t, ctxb, testDb.BaseDB, d)
 	require.NoError(t, depositStore.CreateDeposit(ctxb, d))
 
 	d.SetState(deposit.LoopingIn)
@@ -944,6 +953,7 @@ func TestLatestLoopInUpdateIsLastInserted(t *testing.T) {
 		Value:                btcutil.Amount(100_000),
 		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x01},
 	}
+	setPersistedTestDepositAddress(t, ctx, testDb.BaseDB, d)
 	d.SetState(deposit.LoopingIn)
 	require.NoError(t, depositStore.CreateDeposit(ctx, d))
 
@@ -1034,6 +1044,7 @@ func TestSqlStoreTimesOutsideUTC(t *testing.T) {
 		Value:                btcutil.Amount(100_000),
 		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x01},
 	}
+	setPersistedTestDepositAddress(t, ctx, testDb.BaseDB, d)
 	d.SetState(deposit.LoopingIn)
 	require.NoError(t, depositStore.CreateDeposit(ctx, d))
 
