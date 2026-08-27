@@ -757,6 +757,7 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	t.Parallel()
 
 	mockLnd := test.NewMockLnd()
+	_, clientPubkey := test.CreateKey(20)
 	_, serverKey := test.CreateKey(21)
 
 	server := &mockStaticAddressServer{
@@ -771,6 +772,10 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 			Index: 0,
 		},
 		Value: 500_000,
+		AddressParams: &script.Parameters{
+			ClientPubkey: clientPubkey,
+			PkScript:     []byte{0x51, 0x20, 0x01},
+		},
 	}
 
 	loopIn := &StaticAddressLoopIn{
@@ -804,13 +809,104 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	require.Equal(t, OnHtlcInitiated, event)
 	require.Nil(t, f.LastActionError)
 	require.NotNil(t, server.request)
-
+	require.EqualValues(
+		t, swap.StaticAddressKeyFamily, loopIn.HtlcKeyLocator.Family,
+	)
 	_, routeHints, _, _, err := swap.DecodeInvoice(
 		mockLnd.ChainParams, server.request.SwapInvoice,
 	)
 	require.NoError(t, err)
 
 	test.RequireRouteHintsEqual(t, loopIn.RouteHints, routeHints)
+}
+
+// TestInitHtlcActionSendsDepositAddressDescriptors verifies each selected
+// outpoint is associated with the static address descriptor that created it.
+func TestInitHtlcActionSendsDepositAddressDescriptors(t *testing.T) {
+	t.Parallel()
+
+	mockLnd := test.NewMockLnd()
+	_, clientKeyA := test.CreateKey(24)
+	_, clientKeyB := test.CreateKey(25)
+	_, serverKey := test.CreateKey(26)
+
+	server := &mockStaticAddressServer{
+		response: testStaticAddressLoopInResponse(
+			serverKey.SerializeCompressed(),
+		),
+	}
+
+	depositA := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1},
+			Index: 0,
+		},
+		Value: 300_000,
+		AddressParams: &script.Parameters{
+			ClientPubkey: clientKeyA,
+			PkScript:     []byte{0x51, 0x20, 0x01},
+		},
+	}
+	depositB := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 1,
+		},
+		Value: 400_000,
+		AddressParams: &script.Parameters{
+			ClientPubkey: clientKeyB,
+			PkScript:     []byte{0x51, 0x20, 0x02},
+		},
+	}
+
+	// Keep the request deliberately non-sorted to prove descriptor lookup
+	// depends on outpoint keys rather than slice order.
+	deposits := []*deposit.Deposit{depositB, depositA}
+	loopIn := &StaticAddressLoopIn{
+		Deposits: deposits,
+		DepositOutpoints: []string{
+			depositB.String(), depositA.String(),
+		},
+		SelectedAmount:        depositA.Value + depositB.Value,
+		QuotedSwapFee:         1_000,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		PaymentTimeoutSeconds: 3_600,
+	}
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			Server:                               server,
+			DepositManager:                       &noopDepositManager{},
+			LndClient:                            mockLnd.Client,
+			WalletKit:                            mockLnd.WalletKit,
+			ChainParams:                          mockLnd.ChainParams,
+			Store:                                &mockStore{},
+			ValidateLoopInContract:               testValidateLoopInContract,
+			MaxStaticAddrHtlcFeePercentage:       1,
+			MaxStaticAddrHtlcBackupFeePercentage: 1,
+		},
+		loopIn: loopIn,
+	}
+
+	event := f.InitHtlcAction(t.Context(), nil)
+	require.Equal(t, OnHtlcInitiated, event)
+	require.NoError(t, f.LastActionError)
+	require.Equal(t, loopIn.DepositOutpoints, server.request.DepositOutpoints)
+	require.Len(t, server.request.DepositToClientPubkeys, len(deposits))
+
+	for _, d := range deposits {
+		descriptor := server.request.DepositToClientPubkeys[d.String()]
+		require.NotNil(t, descriptor)
+		require.Equal(
+			t, d.AddressParams.ClientPubkey.SerializeCompressed(),
+			descriptor.GetPubkey(),
+		)
+		require.Equal(
+			t, d.AddressParams.PkScript, descriptor.GetPkScript(),
+		)
+	}
 }
 
 func TestSignHtlcTxActionChecksDepositAvailability(t *testing.T) {
@@ -883,6 +979,7 @@ func TestCheckDepositsAvailableRejectsDivergentDepositOutpoints(
 // update failure must not roll back the action or state transition.
 func TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence(t *testing.T) {
 	mockLnd := test.NewMockLnd()
+	_, clientKey := test.CreateKey(23)
 	_, serverKey := test.CreateKey(22)
 
 	server := &mockStaticAddressServer{
@@ -897,6 +994,10 @@ func TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence(t *testing.T) {
 			Index: 0,
 		},
 		Value: 500_000,
+		AddressParams: &script.Parameters{
+			ClientPubkey: clientKey,
+			PkScript:     []byte{0x51, 0x20, 0x02},
+		},
 	}
 
 	loopIn := &StaticAddressLoopIn{
@@ -3142,10 +3243,16 @@ func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
 
 	loopIn := &StaticAddressLoopIn{
 		Deposits: []*deposit.Deposit{{
 			Value: 200_000,
+			AddressParams: &script.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+				PkScript:     []byte{0x51},
+			},
 		}},
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
@@ -3175,6 +3282,7 @@ func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
 	// cleanup.
 	event := f.InitHtlcAction(ctx, nil)
 	require.Equal(t, fsm.OnError, event)
+	require.ErrorContains(t, f.LastActionError, "server rejected swap")
 
 	select {
 	case hash := <-mockLnd.FailInvoiceChannel:
@@ -3192,12 +3300,18 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 	defer cancel()
 
 	mockLnd := test.NewMockLnd()
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
 	serverKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	loopIn := &StaticAddressLoopIn{
 		Deposits: []*deposit.Deposit{{
 			Value: 200_000,
+			AddressParams: &script.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+				PkScript:     []byte{0x51},
+			},
 		}},
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
@@ -3243,6 +3357,7 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 	// cancel the invoice on this error path as well.
 	event := f.InitHtlcAction(ctx, nil)
 	require.Equal(t, fsm.OnError, event)
+	require.ErrorIs(t, f.LastActionError, ErrFeeTooHigh)
 
 	select {
 	case hash := <-mockLnd.FailInvoiceChannel:
