@@ -590,6 +590,7 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 	ctx := t.Context()
 	lnd := mock_lnd.NewMockLnd()
+	addrParams, _ := newTestStaticAddressParams(t)
 
 	newInvoice := func() string {
 		_, invoice, err := lnd.Client.AddInvoice(
@@ -612,8 +613,9 @@ func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 		OutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{1},
 		},
-		Value:    100_000,
-		SwapHash: &succeededHash,
+		Value:         100_000,
+		SwapHash:      &succeededHash,
+		AddressParams: addrParams,
 		OnchainCost: deposit.OnchainCost{
 			Amount: 900,
 			Status: deposit.OnchainCostKnown,
@@ -626,8 +628,9 @@ func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 		OutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{2},
 		},
-		Value:    200_000,
-		SwapHash: &succeededHash,
+		Value:         200_000,
+		SwapHash:      &succeededHash,
+		AddressParams: addrParams,
 		OnchainCost: deposit.OnchainCost{
 			Status: deposit.OnchainCostUnknown,
 		},
@@ -673,16 +676,9 @@ func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	_, clientPubkey := mock_lnd.CreateKey(1)
-	_, serverPubkey := mock_lnd.CreateKey(2)
 	addrMgr, err := address.NewManager(&address.ManagerConfig{
 		Store: &mockAddressStore{
-			params: []*script.Parameters{{
-				ClientPubkey: clientPubkey,
-				ServerPubkey: serverPubkey,
-				Expiry:       25,
-				PkScript:     []byte("pkscript"),
-			}},
+			params: []*script.Parameters{addrParams},
 		},
 		WalletKit:   lnd.WalletKit,
 		ChainParams: lnd.ChainParams,
@@ -730,6 +726,7 @@ func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 	require.Len(t, depositsResp.FilteredDeposits, 2)
 	byOutpoint := make(map[string]*looprpc.Deposit)
 	for _, d := range depositsResp.FilteredDeposits {
+		require.NotEmpty(t, d.StaticAddress)
 		byOutpoint[d.Outpoint] = d
 	}
 	require.Equal(t, int64(900), byOutpoint[outpoints[0]].CostOnchain)
