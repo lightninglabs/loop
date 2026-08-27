@@ -15,10 +15,13 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -445,6 +448,17 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	available.SetState(deposit.Deposited)
 
 	addrMgr, lnd := newTestStaticAddressContext(t)
+	addresses, err := addrMgr.GetAllAddresses(context.Background())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+	available.AddressParams = addresses[0]
+
+	expectedAddr, err := addrMgr.GetTaprootAddress(
+		addresses[0].ClientPubkey, addresses[0].ServerPubkey,
+		int64(addresses[0].Expiry),
+	)
+	require.NoError(t, err)
+
 	server := &swapClientServer{
 		depositManager:       newTestDepositManager(available),
 		staticAddressManager: addrMgr,
@@ -459,6 +473,159 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	require.Equal(
 		t, available.OutPoint.String(),
 		resp.FilteredDeposits[0].Outpoint,
+	)
+	require.Equal(
+		t, expectedAddr.String(),
+		resp.FilteredDeposits[0].StaticAddress,
+	)
+}
+
+// TestStaticAddressWithdrawalIncludesDepositAddress verifies withdrawal
+// listings use the common deposit conversion path, including the address that
+// received each deposit.
+func TestStaticAddressWithdrawalIncludesDepositAddress(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, _ := newTestStaticAddressContext(t)
+	addresses, err := addrMgr.GetAllAddresses(context.Background())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+
+	expectedAddr, err := addrMgr.GetTaprootAddress(
+		addresses[0].ClientPubkey, addresses[0].ServerPubkey,
+		int64(addresses[0].Expiry),
+	)
+	require.NoError(t, err)
+
+	d := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{3},
+			Index: 3,
+		},
+		AddressParams: addresses[0],
+	}
+	d.SetState(deposit.Withdrawn)
+
+	server := &swapClientServer{
+		staticAddressManager: addrMgr,
+	}
+	rpcWithdrawal, err := server.rpcStaticAddressWithdrawal(
+		withdraw.Withdrawal{
+			Deposits: []*deposit.Deposit{d},
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, rpcWithdrawal.Deposits, 1)
+	require.Equal(
+		t, expectedAddr.String(),
+		rpcWithdrawal.Deposits[0].StaticAddress,
+	)
+}
+
+func TestRPCDepositRequiresAddressParams(t *testing.T) {
+	t.Parallel()
+
+	d := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{7},
+			Index: 7,
+		},
+	}
+
+	server := &swapClientServer{}
+	rpcDeposit, err := server.rpcDeposit(d)
+	require.Nil(t, rpcDeposit)
+	require.ErrorContains(
+		t, err, "missing static address parameters for deposit "+
+			d.OutPoint.String(),
+	)
+}
+
+func TestPopulateBlocksUntilExpiryUsesOwningAddress(t *testing.T) {
+	t.Parallel()
+
+	const confirmationHeight = int64(590)
+	first := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{8},
+			Index: 8,
+		},
+		ConfirmationHeight: confirmationHeight,
+		AddressParams: &script.Parameters{
+			Expiry: 20,
+		},
+	}
+	second := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{9},
+			Index: 9,
+		},
+		ConfirmationHeight: confirmationHeight,
+		AddressParams: &script.Parameters{
+			Expiry: 40,
+		},
+	}
+	rpcDeposits := []*looprpc.Deposit{
+		{
+			Outpoint:           first.OutPoint.String(),
+			ConfirmationHeight: confirmationHeight,
+		},
+		{
+			Outpoint:           second.OutPoint.String(),
+			ConfirmationHeight: confirmationHeight,
+		},
+	}
+
+	lnd := mock_lnd.NewMockLnd()
+	server := &swapClientServer{lnd: &lnd.LndServices}
+	err := server.populateBlocksUntilExpiry(
+		t.Context(), []*deposit.Deposit{first, second}, rpcDeposits,
+	)
+	require.NoError(t, err)
+	require.EqualValues(t, 10, rpcDeposits[0].BlocksUntilExpiry)
+	require.EqualValues(t, 30, rpcDeposits[1].BlocksUntilExpiry)
+}
+
+func TestStaticAddressLoopInResponseIncludesDepositAddress(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, lnd := newTestStaticAddressContext(t)
+	addresses, err := addrMgr.GetAllAddresses(t.Context())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+
+	d := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{10},
+			Index: 10,
+		},
+		Value:              100_000,
+		ConfirmationHeight: 590,
+		AddressParams:      addresses[0],
+	}
+	d.SetState(deposit.LoopingIn)
+	loopIn := &loopin.StaticAddressLoopIn{
+		SwapHash: lntypes.Hash{10},
+		Deposits: []*deposit.Deposit{d},
+	}
+
+	server := &swapClientServer{
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+	resp, err := server.rpcStaticAddressLoopInResponse(
+		t.Context(), loopIn,
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.UsedDeposits, 1)
+
+	expectedAddr, err := addrMgr.GetTaprootAddress(
+		addresses[0].ClientPubkey, addresses[0].ServerPubkey,
+		int64(addresses[0].Expiry),
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t, expectedAddr.String(), resp.UsedDeposits[0].StaticAddress,
 	)
 }
 
@@ -520,13 +687,18 @@ func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {
 	locked.SetState(deposit.LoopingIn)
 
 	addrMgr, lnd := newTestStaticAddressContext(t)
+	addresses, err := addrMgr.GetAllAddresses(t.Context())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+	locked.AddressParams = addresses[0]
+
 	server := &swapClientServer{
 		depositManager:       newTestDepositManager(locked),
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
 	}
 
-	_, err := server.GetLoopInQuote(context.Background(), &looprpc.QuoteRequest{
+	_, err = server.GetLoopInQuote(context.Background(), &looprpc.QuoteRequest{
 		DepositOutpoints: []string{locked.OutPoint.String()},
 	})
 	require.ErrorContains(t, err, "is not currently available")

@@ -416,6 +416,17 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}
 	testDeposit.SetState(deposit.LoopedIn)
 
+	_, clientPubkey := mock_lnd.CreateKey(1)
+	_, serverPubkey := mock_lnd.CreateKey(2)
+	staticAddressParams := &script.Parameters{
+		ID:           1,
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       staticAddressExpiry,
+		PkScript:     []byte("pkscript"),
+	}
+	testDeposit.AddressParams = staticAddressParams
+
 	initiationTime := time.Unix(1_234, 567).UTC()
 	lastUpdateTime := time.Unix(2_345, 678).UTC()
 	staticLoopIn := &loopin.StaticAddressLoopIn{
@@ -446,21 +457,20 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	_, clientPubkey := mock_lnd.CreateKey(1)
-	_, serverPubkey := mock_lnd.CreateKey(2)
 	addrStore := &mockAddressStore{
-		params: []*script.Parameters{{
-			ClientPubkey: clientPubkey,
-			ServerPubkey: serverPubkey,
-			Expiry:       staticAddressExpiry,
-			PkScript:     []byte("pkscript"),
-		}},
+		params: []*script.Parameters{staticAddressParams},
 	}
 	addrMgr, err := address.NewManager(&address.ManagerConfig{
 		Store:       addrStore,
 		WalletKit:   lnd.WalletKit,
 		ChainParams: lnd.ChainParams,
 	}, 1)
+	require.NoError(t, err)
+	expectedStaticAddress, err := addrMgr.GetTaprootAddress(
+		staticAddressParams.ClientPubkey,
+		staticAddressParams.ServerPubkey,
+		int64(staticAddressParams.Expiry),
+	)
 	require.NoError(t, err)
 
 	server := &swapClientServer{
@@ -500,6 +510,7 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	require.Equal(t, depositConfHeight, rpcDeposit.ConfirmationHeight)
 	require.Equal(t, swapHash[:], rpcDeposit.SwapHash)
 	require.Equal(t, looprpc.DepositState_LOOPED_IN, rpcDeposit.State)
+	require.Equal(t, expectedStaticAddress.String(), rpcDeposit.StaticAddress)
 	require.Equal(
 		t, depositConfHeight+int64(staticAddressExpiry)-600,
 		rpcDeposit.BlocksUntilExpiry,
