@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -134,6 +135,21 @@ func (a *heldWithdrawalAddress) GetStaticAddress(context.Context) (
 	*script.StaticAddress, error) {
 
 	return a.addr, nil
+}
+
+func (a *heldWithdrawalAddress) NewChangeAddress(context.Context) (
+	*address.Parameters, error) {
+
+	return nil, errors.New("unexpected change address request")
+}
+
+func (a *heldWithdrawalAddress) GetParameters(
+	pkScript []byte) *address.Parameters {
+
+	if bytes.Equal(pkScript, a.params.PkScript) {
+		return a.params
+	}
+	return nil
 }
 
 type heldWithdrawalServer struct {
@@ -253,11 +269,18 @@ func TestWithdrawalHoldPreservesOrdering(t *testing.T) {
 			require.NoError(t, err)
 			destScript, err := txscript.PayToAddrScript(dest)
 			require.NoError(t, err)
+			params := &address.Parameters{
+				ClientPubkey: clientKey,
+				ServerPubkey: serverKey,
+				PkScript:     pkScript,
+				Expiry:       100,
+			}
 			d := &deposit.Deposit{
 				ID: deposit.ID{1}, Value: 100_000,
 				Hash:                 chainhash.Hash{1},
 				ConfirmationHeight:   1,
 				TimeOutSweepPkScript: destScript,
+				AddressParams:        params,
 			}
 			d.SetState(deposit.Deposited)
 			if tc.feeBump {
@@ -277,6 +300,10 @@ func TestWithdrawalHoldPreservesOrdering(t *testing.T) {
 			}
 			db := loopdb.NewTestDB(t)
 			t.Cleanup(func() { require.NoError(t, db.Close()) })
+			addressStore := address.NewSqlStore(db.BaseDB)
+			require.NoError(t, addressStore.CreateStaticAddress(ctx, params))
+			params.ID, err = addressStore.GetStaticAddressID(ctx, pkScript)
+			require.NoError(t, err)
 			depositStore := deposit.NewSqlStore(db.BaseDB)
 			require.NoError(t, depositStore.CreateDeposit(ctx, d))
 			store := NewSqlStore(
@@ -312,10 +339,7 @@ func TestWithdrawalHoldPreservesOrdering(t *testing.T) {
 				StaticAddressServerClient: &heldWithdrawalServer{},
 				ChainNotifier:             &heldWithdrawalNotifier{deposits: dm},
 				AddressManager: &heldWithdrawalAddress{
-					addr: addr, params: &script.Parameters{
-						ClientPubkey: clientKey,
-						ServerPubkey: serverKey, PkScript: pkScript,
-					},
+					addr: addr, params: params,
 				},
 			}, 1)
 			require.NoError(t, err)
