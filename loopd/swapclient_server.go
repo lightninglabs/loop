@@ -2190,7 +2190,10 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 		f := func(d *deposit.Deposit) bool {
 			return slices.Contains(outpoints, d.OutPoint.String())
 		}
-		filteredDeposits = filter(allDeposits, f)
+		filteredDeposits, err = s.filterDeposits(allDeposits, f)
+		if err != nil {
+			return nil, err
+		}
 
 		if len(outpoints) != len(filteredDeposits) {
 			return nil, fmt.Errorf("not all outpoints found in " +
@@ -2206,11 +2209,14 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 
 			return d.IsInState(toServerState(req.StateFilter))
 		}
-		filteredDeposits = filter(allDeposits, f)
+		filteredDeposits, err = s.filterDeposits(allDeposits, f)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Calculate the blocks until expiry for each deposit.
-	err = s.populateBlocksUntilExpiry(ctx, filteredDeposits)
+	err = s.populateBlocksUntilExpiry(ctx, allDeposits, filteredDeposits)
 	if err != nil {
 		infof("Failed to populate blocks until expiry: %v", err)
 	}
@@ -2239,18 +2245,11 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 		[]*looprpc.StaticAddressWithdrawal, 0, len(withdrawals),
 	)
 	for _, w := range withdrawals {
-		deposits := make([]*looprpc.Deposit, 0, len(w.Deposits))
-		for _, d := range w.Deposits {
-			deposits = append(deposits, toClientWithdrawalDeposit(d))
+		withdrawal, err := s.rpcStaticAddressWithdrawal(w)
+		if err != nil {
+			return nil, err
 		}
-		withdrawal := &looprpc.StaticAddressWithdrawal{
-			TxId:                       w.TxID.String(),
-			Deposits:                   deposits,
-			TotalDepositAmountSatoshis: int64(w.TotalDepositAmount),
-			WithdrawnAmountSatoshis:    int64(w.WithdrawnAmount),
-			ChangeAmountSatoshis:       int64(w.ChangeAmount),
-			ConfirmationHeight:         uint32(w.ConfirmationHeight),
-		}
+
 		clientWithdrawals = append(clientWithdrawals, withdrawal)
 	}
 
@@ -2274,6 +2273,29 @@ func toClientWithdrawalDeposit(d *deposit.Deposit) *looprpc.Deposit {
 	}
 }
 
+func (s *swapClientServer) rpcStaticAddressWithdrawal(
+	w withdraw.Withdrawal) (*looprpc.StaticAddressWithdrawal, error) {
+
+	deposits := make([]*looprpc.Deposit, 0, len(w.Deposits))
+	for _, d := range w.Deposits {
+		rpcDeposit, err := s.rpcDeposit(d)
+		if err != nil {
+			return nil, err
+		}
+
+		deposits = append(deposits, rpcDeposit)
+	}
+
+	return &looprpc.StaticAddressWithdrawal{
+		TxId:                       w.TxID.String(),
+		Deposits:                   deposits,
+		TotalDepositAmountSatoshis: int64(w.TotalDepositAmount),
+		WithdrawnAmountSatoshis:    int64(w.WithdrawnAmount),
+		ChangeAmountSatoshis:       int64(w.ChangeAmount),
+		ConfirmationHeight:         uint32(w.ConfirmationHeight),
+	}, nil
+}
+
 // ListStaticAddressSwaps returns a list of all swaps that are currently pending
 // or previously succeeded.
 func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
@@ -2291,13 +2313,6 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 
 	// Query lnd's info to get the current block height.
 	lndInfo, err := s.lnd.Client.GetInfo(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	addrParams, err := s.staticAddressManager.GetStaticAddressParameters(
-		ctx,
-	)
 	if err != nil {
 		return nil, err
 	}
@@ -2342,27 +2357,23 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 		if ds, ok := depositsBySwap[swp.SwapHash]; ok {
 			protoDeposits = make([]*looprpc.Deposit, 0, len(ds))
 			for _, d := range ds {
-				state := toClientDepositState(d.GetState())
 				confirmationHeight := d.GetConfirmationHeight()
+				if d.AddressParams == nil {
+					return nil, fmt.Errorf("missing static "+
+						"address parameters for deposit %v",
+						d.OutPoint)
+				}
 				blocksUntilExpiry := depositBlocksUntilExpiry(
-					confirmationHeight, addrParams.Expiry,
+					confirmationHeight,
+					d.AddressParams.Expiry,
 					int64(lndInfo.BlockHeight),
 				)
 
-				onchainCost, onchainCostStatus :=
-					depositOnchainCost(d)
-
-				pd := &looprpc.Deposit{
-					Id:                 d.ID[:],
-					State:              state,
-					Outpoint:           d.OutPoint.String(),
-					Value:              int64(d.Value),
-					ConfirmationHeight: confirmationHeight,
-					SwapHash:           d.SwapHash[:],
-					BlocksUntilExpiry:  blocksUntilExpiry,
-					CostOnchain:        onchainCost,
-					CostOnchainStatus:  onchainCostStatus,
+				pd, err := s.rpcDeposit(d)
+				if err != nil {
+					return nil, err
 				}
+				pd.BlocksUntilExpiry = blocksUntilExpiry
 				protoDeposits = append(protoDeposits, pd)
 			}
 		}
@@ -2740,12 +2751,22 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 		return nil, err
 	}
 
+	return s.rpcStaticAddressLoopInResponse(ctx, loopIn)
+}
+
+func (s *swapClientServer) rpcStaticAddressLoopInResponse(ctx context.Context,
+	loopIn *loopin.StaticAddressLoopIn) (
+	*looprpc.StaticAddressLoopInResponse, error) {
+
 	// Build a list of used deposits for the response.
-	usedDeposits := filter(
+	usedDeposits, err := s.filterDeposits(
 		loopIn.Deposits, func(d *deposit.Deposit) bool { return true },
 	)
+	if err != nil {
+		return nil, err
+	}
 
-	err = s.populateBlocksUntilExpiry(ctx, usedDeposits)
+	err = s.populateBlocksUntilExpiry(ctx, loopIn.Deposits, usedDeposits)
 	if err != nil {
 		infof("Failed to populate blocks until expiry: %v", err)
 	}
@@ -2787,21 +2808,32 @@ func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 // Calculate the blocks until expiry for each deposit and return the modified
 // StaticAddressLoopInResponse.
 func (s *swapClientServer) populateBlocksUntilExpiry(ctx context.Context,
-	deposits []*looprpc.Deposit) error {
+	sourceDeposits []*deposit.Deposit, deposits []*looprpc.Deposit) error {
 
 	lndInfo, err := s.lnd.Client.GetInfo(ctx)
 	if err != nil {
 		return err
 	}
 
-	bestBlockHeight := int64(lndInfo.BlockHeight)
-	params, err := s.staticAddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return err
+	expiryByOutpoint := make(map[string]uint32, len(sourceDeposits))
+	for _, d := range sourceDeposits {
+		if d.AddressParams == nil {
+			return fmt.Errorf("missing static address parameters for "+
+				"deposit %v", d.OutPoint)
+		}
+
+		expiryByOutpoint[d.OutPoint.String()] = d.AddressParams.Expiry
 	}
+
+	bestBlockHeight := int64(lndInfo.BlockHeight)
 	for i := range len(deposits) {
+		expiry, ok := expiryByOutpoint[deposits[i].Outpoint]
+		if !ok {
+			continue
+		}
+
 		deposits[i].BlocksUntilExpiry = depositBlocksUntilExpiry(
-			deposits[i].ConfirmationHeight, params.Expiry,
+			deposits[i].ConfirmationHeight, expiry,
 			bestBlockHeight,
 		)
 	}
@@ -2868,38 +2900,56 @@ func (s *swapClientServer) StaticOpenChannel(ctx context.Context,
 
 type filterFunc func(deposits *deposit.Deposit) bool
 
-func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
+func (s *swapClientServer) filterDeposits(deposits []*deposit.Deposit,
+	f filterFunc) ([]*looprpc.Deposit, error) {
+
 	var clientDeposits []*looprpc.Deposit
 	for _, d := range deposits {
 		if !f(d) {
 			continue
 		}
 
-		swapHash := make([]byte, 0, len(lntypes.Hash{}))
-		if d.SwapHash != nil {
-			swapHash = d.SwapHash[:]
-		}
-
-		hash := d.Hash
-		outpoint := wire.NewOutPoint(&hash, d.Index).String()
-		onchainCost, onchainCostStatus := depositOnchainCost(d)
-		deposit := &looprpc.Deposit{
-			Id: d.ID[:],
-			State: toClientDepositState(
-				d.GetState(),
-			),
-			Outpoint:           outpoint,
-			Value:              int64(d.Value),
-			ConfirmationHeight: d.GetConfirmationHeight(),
-			SwapHash:           swapHash,
-			CostOnchain:        onchainCost,
-			CostOnchainStatus:  onchainCostStatus,
+		deposit, err := s.rpcDeposit(d)
+		if err != nil {
+			return nil, err
 		}
 
 		clientDeposits = append(clientDeposits, deposit)
 	}
 
-	return clientDeposits
+	return clientDeposits, nil
+}
+
+func (s *swapClientServer) rpcDeposit(d *deposit.Deposit) (
+	*looprpc.Deposit, error) {
+
+	if d.AddressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters for "+
+			"deposit %v", d.OutPoint)
+	}
+
+	swapHash := make([]byte, 0, len(lntypes.Hash{}))
+	if d.SwapHash != nil {
+		swapHash = d.SwapHash[:]
+	}
+
+	deposit := toClientWithdrawalDeposit(d)
+	deposit.SwapHash = swapHash
+
+	if s.staticAddressManager == nil {
+		return nil, fmt.Errorf("static address manager not configured")
+	}
+
+	staticAddress, err := s.staticAddressManager.GetTaprootAddress(
+		d.AddressParams.ClientPubkey, d.AddressParams.ServerPubkey,
+		int64(d.AddressParams.Expiry),
+	)
+	if err != nil {
+		return nil, err
+	}
+	deposit.StaticAddress = staticAddress.String()
+
+	return deposit, nil
 }
 
 func toClientDepositState(state fsm.StateType) looprpc.DepositState {
