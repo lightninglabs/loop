@@ -16,6 +16,11 @@
 
 #### Bug Fixes
 
+* The official `linux/arm64` Docker images now contain arm64 binaries and an
+  arm64 userspace. Every published platform was previously built for amd64, so
+  `loopd` failed with `exec format error` on ARM hosts.
+  [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
+
 * Loop Out requests now account for channel reserves when checking outbound
   capacity, preventing swaps from starting when their off-chain payment cannot
   be funded.

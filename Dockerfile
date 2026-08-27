@@ -10,12 +10,27 @@ ENV GODEBUG netdns=cgo
 # Explicitly turn on the use of modules (until this becomes the default).
 ENV GO111MODULE on
 
+# The platform the resulting image is built for. buildx sets these
+# automatically, once per requested platform. The builder stage above stays
+# pinned to ${BUILDPLATFORM} so the Go toolchain always runs natively; we
+# cross-compile to the target platform rather than emulating the toolchain.
+ARG TARGETOS
+ARG TARGETARCH
+
 # Install dependencies and install/build lnd.
+#
+# When cross-compiling, "go install" writes to $GOPATH/bin/$GOOS_$GOARCH
+# instead of $GOPATH/bin, so the binaries are moved back to keep the COPY
+# below platform independent. GOBIN cannot be used for this: setting it while
+# cross-compiling is a hard error in the Go tool.
 RUN apk add --no-cache --update alpine-sdk \
     git \
     make \
     &&  cd /go/src/github.com/lightningnetwork/loop \
-    &&  make install
+    &&  GOOS=${TARGETOS} GOARCH=${TARGETARCH} make install \
+    &&  if [ -d /go/bin/${TARGETOS}_${TARGETARCH} ]; then \
+            mv /go/bin/${TARGETOS}_${TARGETARCH}/* /go/bin/; \
+        fi
 
 # Start a new, final image to reduce size.
 #
