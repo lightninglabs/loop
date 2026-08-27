@@ -3,9 +3,6 @@ FROM --platform=${BUILDPLATFORM} golang:1.26-alpine as builder
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightningnetwork/loop
 
-# Explicitly turn on the use of modules (until this becomes the default).
-ENV GO111MODULE on
-
 # The platform the resulting image is built for. buildx sets these
 # automatically, once per requested platform. The builder stage above stays
 # pinned to ${BUILDPLATFORM} so the Go toolchain always runs natively; we
