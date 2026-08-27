@@ -541,6 +541,56 @@ func TestValidateSigningPrevoutsChecksLocalDeposit(t *testing.T) {
 	}
 }
 
+// TestValidateSigningPrevoutsUsesEachAddress verifies mixed-address inputs
+// keep their own scripts at the signing boundary.
+func TestValidateSigningPrevoutsUsesEachAddress(t *testing.T) {
+	first := makeDeposit(1, 0, 10_000, 1)
+	first.AddressParams = &script.Parameters{PkScript: []byte{0x51, 0x20, 1}}
+	second := makeDeposit(2, 0, 20_000, 1)
+	second.AddressParams = &script.Parameters{PkScript: []byte{0x51, 0x20, 2}}
+	deposits := []*deposit.Deposit{first, second}
+	nonces := map[string][]byte{
+		first.OutPoint.String():  nil,
+		second.OutPoint.String(): nil,
+	}
+
+	for _, testCase := range []struct {
+		name         string
+		secondScript []byte
+		expectedErr  string
+	}{
+		{
+			name:         "each deposit keeps its script",
+			secondScript: second.AddressParams.PkScript,
+		},
+		{
+			name:         "another owned address is rejected",
+			secondScript: first.AddressParams.PkScript,
+			expectedErr:  "script mismatch",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			prevouts := map[wire.OutPoint]*wire.TxOut{
+				first.OutPoint: {
+					Value:    int64(first.Value),
+					PkScript: bytes.Clone(first.AddressParams.PkScript),
+				},
+				second.OutPoint: {
+					Value:    int64(second.Value),
+					PkScript: bytes.Clone(testCase.secondScript),
+				},
+			}
+
+			err := validateSigningPrevouts(nonces, deposits, prevouts)
+			if testCase.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, testCase.expectedErr)
+			}
+		})
+	}
+}
+
 // testSweepRequest returns a parseable sweep request identified by id.
 func testSweepRequest(t *testing.T,
 	id byte) *swapserverrpc.ServerStaticLoopInSweepNotification {
@@ -954,9 +1004,7 @@ func TestSelectDepositsUsesPerDepositExpiry(t *testing.T) {
 		expiry uint32) *deposit.Deposit {
 
 		return &deposit.Deposit{
-			OutPoint: wire.OutPoint{
-				Hash: chainhash.Hash{id},
-			},
+			Hash:               chainhash.Hash{id},
 			Value:              value,
 			ConfirmationHeight: confirmationHeight,
 			AddressParams: &address.AddressParameters{
@@ -1178,6 +1226,7 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 
 	const confirmationHeight = 0
 	dep := makeDeposit(7, 0, 10_000, confirmationHeight)
+	dep.AddressParams = changeAddr
 	depOutpoint := outpointString(dep)
 
 	swapHash := lntypes.Hash{9}
@@ -1688,7 +1737,9 @@ func makeSweepTx(inputs []wire.OutPoint, outputs []*wire.TxOut) *wire.MsgTx {
 
 // TestCheckChange exercises all relevant scenarios for checkChange.
 func TestCheckChange(t *testing.T) {
-	ctx := context.Background()
+	const missingExpectedChange = "couldn't find expected change"
+
+	ctx := t.Context()
 
 	// Prepare shared and per-swap change addresses, plus unrelated outputs.
 	changeAddr := &script.Parameters{PkScript: []byte{0xaa, 0xbb}}
@@ -1844,7 +1895,7 @@ func TestCheckChange(t *testing.T) {
 				},
 			},
 			expectErr:      true,
-			expectedErrMsg: "couldn't find expected change",
+			expectedErrMsg: missingExpectedChange,
 		},
 		{
 			name:   "distinct change scripts remain separate",
@@ -1869,7 +1920,7 @@ func TestCheckChange(t *testing.T) {
 			inDeps:         []*deposit.Deposit{s2d1}, // expect 500
 			outputs:        []*wire.TxOut{},
 			expectErr:      true,
-			expectedErrMsg: "couldn't find expected change",
+			expectedErrMsg: missingExpectedChange,
 		},
 		{
 			name:   "wrong address for change output",
@@ -1885,7 +1936,7 @@ func TestCheckChange(t *testing.T) {
 				},
 			},
 			expectErr:      true,
-			expectedErrMsg: "couldn't find expected change",
+			expectedErrMsg: missingExpectedChange,
 		},
 		{
 			name:   "wrong amount for change output",
@@ -1901,7 +1952,7 @@ func TestCheckChange(t *testing.T) {
 				},
 			},
 			expectErr:      true,
-			expectedErrMsg: "couldn't find expected change",
+			expectedErrMsg: missingExpectedChange,
 		},
 		{
 			name:   "mixed swaps some with change some without",
