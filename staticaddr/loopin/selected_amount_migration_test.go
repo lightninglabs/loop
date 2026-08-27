@@ -62,6 +62,8 @@ func TestMigrateSelectedSwapAmount(t *testing.T) {
 			},
 		}
 
+	setPersistedTestDepositAddress(t, ctxb, testDb.BaseDB, d1, d2)
+
 	err := depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctxb, d2)
