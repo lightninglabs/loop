@@ -45,7 +45,6 @@ jobs:
         uses: lightninglabs/gh-actions/build-push-action@2021.01.25.00
         with:
           platforms: linux/amd64,linux/arm64
-          build-args: checkout=${{ env.RELEASE_VERSION }}
           outputs: |
             type=oci,dest=/tmp/loop-image.tar
             type=image,name=${{ env.DOCKER_REPO }},push-by-digest=true,push=true
