@@ -48,6 +48,7 @@ type ConfRegistration struct {
 	NumConfs   int32
 	ConfChan   chan *chainntnfs.TxConfirmation
 	ErrChan    chan<- error
+	ReOrgChan  chan struct{}
 }
 
 func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
@@ -154,6 +155,10 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 	chan error, error) {
 
 	confErrChan := make(chan error, 1)
+	notifierOpts := lndclient.DefaultNotifierOptions()
+	for _, opt := range opts {
+		opt(notifierOpts)
+	}
 
 	reg := &ConfRegistration{
 		PkScript:   pkScript,
@@ -162,6 +167,7 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 		NumConfs:   numConfs,
 		ConfChan:   make(chan *chainntnfs.TxConfirmation, 1),
 		ErrChan:    confErrChan,
+		ReOrgChan:  notifierOpts.ReOrgChan,
 	}
 
 	c.Lock()

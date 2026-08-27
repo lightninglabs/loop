@@ -179,6 +179,16 @@ type StaticAddressLoopIn struct {
 	// HtlcTimeoutSweepTxHash is the hash of the htlc timeout sweep tx.
 	HtlcTimeoutSweepTxHash *chainhash.Hash
 
+	// HtlcTxHash is the hash of the confirmed htlc tx published by the
+	// server.
+	HtlcTxHash *chainhash.Hash
+
+	// HtlcOutputIndex is the output index of the confirmed htlc output.
+	HtlcOutputIndex uint32
+
+	// HtlcOutputValue is the value of the confirmed htlc output.
+	HtlcOutputValue btcutil.Amount
+
 	// HtlcTimeoutSweepAddress
 	HtlcTimeoutSweepAddress btcutil.Address
 
@@ -409,37 +419,18 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 		return nil, err
 	}
 
-	htlcTx, err := l.createHtlcTx(
-		network, l.HtlcTxFeeRate, maxFeePercentage,
+	htlcOutpoint, htlcOutValue, err := l.confirmedHtlcOutpoint(
+		network, maxFeePercentage,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// The HTLC output is always at index 0 (createHtlcTx adds it first).
-	// If there is a change output, it is at index 1. Verify this invariant
-	// so we fail fast if createHtlcTx's layout ever changes.
-	const htlcInputIndex = uint32(0)
-	if len(htlcTx.TxOut) == 2 && l.ChangeAddressParams != nil {
-		if bytes.Equal(
-			htlcTx.TxOut[0].PkScript,
-			l.ChangeAddressParams.PkScript,
-		) {
-
-			return nil, fmt.Errorf("htlc tx output layout " +
-				"invariant violated: expected HTLC output " +
-				"at index 0, got change output")
-		}
-	}
-
 	// Add the htlc input.
 	sweepTx.AddTxIn(&wire.TxIn{
-		PreviousOutPoint: wire.OutPoint{
-			Hash:  htlcTx.TxHash(),
-			Index: htlcInputIndex,
-		},
-		SignatureScript: htlc.SigScript,
-		Sequence:        htlc.SuccessSequence(),
+		PreviousOutPoint: htlcOutpoint,
+		SignatureScript:  htlc.SigScript,
+		Sequence:         htlc.SuccessSequence(),
 	})
 
 	// Add the sweep output.
@@ -450,7 +441,6 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 
 	fee := feeRate.FeeForWeight(weightEstimator.Weight())
 
-	htlcOutValue := htlcTx.TxOut[htlcInputIndex].Value
 	output := &wire.TxOut{
 		Value:    htlcOutValue - int64(fee),
 		PkScript: sweepPkScript,
@@ -487,6 +477,56 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 	}
 
 	return sweepTx, nil
+}
+
+// confirmedHtlcOutpoint returns the exact confirmed htlc outpoint when it has
+// been persisted. Older loop-ins fall back to reconstructing the standard-fee
+// htlc tx, which was the historical behavior before we stored the actual
+// server-published variant.
+func (l *StaticAddressLoopIn) confirmedHtlcOutpoint(
+	network *chaincfg.Params, maxFeePercentage float64) (wire.OutPoint,
+	int64, error) {
+
+	if l.HtlcTxHash != nil {
+		if l.HtlcOutputValue <= 0 {
+			return wire.OutPoint{}, 0, fmt.Errorf("missing htlc "+
+				"output value for confirmed htlc tx %v",
+				l.HtlcTxHash)
+		}
+
+		return wire.OutPoint{
+			Hash:  *l.HtlcTxHash,
+			Index: l.HtlcOutputIndex,
+		}, int64(l.HtlcOutputValue), nil
+	}
+
+	htlcTx, err := l.createHtlcTx(
+		network, l.HtlcTxFeeRate, maxFeePercentage,
+	)
+	if err != nil {
+		return wire.OutPoint{}, 0, err
+	}
+
+	// The HTLC output is always at index 0 (createHtlcTx adds it first).
+	// If there is a change output, it is at index 1. Verify this invariant
+	// so we fail fast if createHtlcTx's layout ever changes.
+	const htlcInputIndex = uint32(0)
+	if len(htlcTx.TxOut) == 2 && l.ChangeAddressParams != nil {
+		if bytes.Equal(
+			htlcTx.TxOut[0].PkScript,
+			l.ChangeAddressParams.PkScript,
+		) {
+
+			return wire.OutPoint{}, 0, fmt.Errorf("htlc tx " +
+				"output layout invariant violated: expected " +
+				"HTLC output at index 0, got change output")
+		}
+	}
+
+	return wire.OutPoint{
+		Hash:  htlcTx.TxHash(),
+		Index: htlcInputIndex,
+	}, htlcTx.TxOut[htlcInputIndex].Value, nil
 }
 
 // pubkeyTo33ByteSlice converts a pubkey to a 33 byte slice.

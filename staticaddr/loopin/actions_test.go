@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -1187,6 +1188,220 @@ func testStaticAddressLoopInResponse(
 	}
 }
 
+type recordingLoopInStore struct {
+	mockStore
+
+	updates    []recordedLoopInUpdate
+	updateChan chan recordedLoopInUpdate
+}
+
+type recordedLoopInUpdate struct {
+	htlcTxHash      *chainhash.Hash
+	htlcOutputIndex uint32
+	htlcOutputValue int64
+}
+
+func (s *recordingLoopInStore) UpdateLoopIn(_ context.Context,
+	loopIn *StaticAddressLoopIn) error {
+
+	var htlcTxHash *chainhash.Hash
+	if loopIn.HtlcTxHash != nil {
+		hashCopy := *loopIn.HtlcTxHash
+		htlcTxHash = &hashCopy
+	}
+
+	update := recordedLoopInUpdate{
+		htlcTxHash:      htlcTxHash,
+		htlcOutputIndex: loopIn.HtlcOutputIndex,
+		htlcOutputValue: int64(loopIn.HtlcOutputValue),
+	}
+	s.updates = append(s.updates, update)
+	if s.updateChan != nil {
+		s.updateChan <- update
+	}
+
+	return nil
+}
+
+// TestRecordConfirmedHtlcPersistsOutpoint verifies that the FSM records the
+// exact confirmed server HTLC output before the timeout branch can sweep it.
+func TestRecordConfirmedHtlcPersistsOutpoint(t *testing.T) {
+	t.Parallel()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:       lntypes.Hash{1, 2, 4},
+		HtlcCltvExpiry: 800,
+		ClientPubkey:   clientKey.PubKey(),
+		ServerPubkey:   serverKey.PubKey(),
+		Deposits: []*deposit.Deposit{
+			{
+				OutPoint: wire.OutPoint{
+					Hash:  chainhash.Hash{9},
+					Index: 2,
+				},
+			},
+			{
+				OutPoint: wire.OutPoint{
+					Hash:  chainhash.Hash{10},
+					Index: 3,
+				},
+			},
+		},
+	}
+	htlc, err := loopIn.getHtlc(test.NewMockLnd().ChainParams)
+	require.NoError(t, err)
+
+	htlcValue := int64(123_456)
+	tx := wire.NewMsgTx(2)
+	for _, outpoint := range loopIn.Outpoints() {
+		tx.AddTxIn(&wire.TxIn{PreviousOutPoint: outpoint})
+	}
+	tx.AddTxOut(&wire.TxOut{
+		Value:    1,
+		PkScript: []byte{0x51},
+	})
+	tx.AddTxOut(&wire.TxOut{
+		Value:    htlcValue,
+		PkScript: htlc.PkScript,
+	})
+
+	store := &recordingLoopInStore{}
+	f := &FSM{
+		cfg:    &Config{Store: store},
+		loopIn: loopIn,
+	}
+	invalidTransactions := map[string]*wire.MsgTx{
+		"missing input": func() *wire.MsgTx {
+			decoy := tx.Copy()
+			decoy.TxIn = decoy.TxIn[:1]
+
+			return decoy
+		}(),
+		"wrong input": func() *wire.MsgTx {
+			decoy := tx.Copy()
+			decoy.TxIn[0].PreviousOutPoint.Hash[0]++
+
+			return decoy
+		}(),
+		"reordered inputs": func() *wire.MsgTx {
+			decoy := tx.Copy()
+			decoy.TxIn[0], decoy.TxIn[1] =
+				decoy.TxIn[1], decoy.TxIn[0]
+
+			return decoy
+		}(),
+	}
+	for name, decoy := range invalidTransactions {
+		t.Run(name, func(t *testing.T) {
+			err := f.recordConfirmedHtlc(
+				t.Context(),
+				&chainntnfs.TxConfirmation{Tx: decoy},
+				htlc.PkScript,
+			)
+			require.Error(t, err)
+			require.Nil(t, loopIn.HtlcTxHash)
+			require.Empty(t, store.updates)
+		})
+	}
+
+	err = f.recordConfirmedHtlc(
+		t.Context(), &chainntnfs.TxConfirmation{Tx: tx},
+		htlc.PkScript,
+	)
+	require.NoError(t, err)
+
+	txHash := tx.TxHash()
+	require.NotNil(t, loopIn.HtlcTxHash)
+	require.Equal(t, txHash, *loopIn.HtlcTxHash)
+	require.EqualValues(t, 1, loopIn.HtlcOutputIndex)
+	require.EqualValues(t, htlcValue, loopIn.HtlcOutputValue)
+	require.Len(t, store.updates, 1)
+}
+
+// TestMonitorInvoiceAndHtlcTxClearsConfirmedHtlcOnReorg verifies that a reorg
+// removes the persisted HTLC outpoint before the FSM resumes confirmation
+// monitoring.
+func TestMonitorInvoiceAndHtlcTxClearsConfirmedHtlcOnReorg(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{21, 22, 23}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	f, _ := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionAccepted,
+		mockLnd.LndServices.Invoices,
+	)
+	store := f.cfg.Store.(*recordingLoopInStore)
+	store.updateChan = make(chan recordedLoopInUpdate, 2)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	var confRegistration *test.ConfRegistration
+	select {
+	case confRegistration = <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+	require.NotNil(t, confRegistration.ReOrgChan)
+	confRegistration.ConfChan <- invoiceMonitorHtlcConfirmation(
+		t, f, mockLnd,
+	)
+
+	var confirmed recordedLoopInUpdate
+	select {
+	case confirmed = <-store.updateChan:
+	case <-ctx.Done():
+		t.Fatalf("confirmed htlc not persisted: %v", ctx.Err())
+	}
+	require.NotNil(t, confirmed.htlcTxHash)
+	require.Positive(t, confirmed.htlcOutputValue)
+
+	confRegistration.ReOrgChan <- struct{}{}
+
+	var cleared recordedLoopInUpdate
+	select {
+	case cleared = <-store.updateChan:
+	case <-ctx.Done():
+		t.Fatalf("reorged htlc not cleared: %v", ctx.Err())
+	}
+	require.Nil(t, cleared.htlcTxHash)
+	require.Zero(t, cleared.htlcOutputIndex)
+	require.Zero(t, cleared.htlcOutputValue)
+
+	select {
+	case <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc confirmation not re-registered: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+	case <-time.After(testTimeout):
+		t.Fatal("monitor action did not stop")
+	}
+}
+
 // testStaticAddressRouteHints returns deterministic route hints for static
 // loop-in invoice regression tests.
 func testStaticAddressRouteHints() [][]zpay32.HopHint {
@@ -1295,10 +1510,21 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 		LndClient:           mockLnd.Client,
 		ChainParams:         mockLnd.ChainParams,
 		NotificationManager: notificationMgr,
+		Store:               &recordingLoopInStore{},
 	}
 
 	f, err := NewFSM(ctx, loopIn, cfg, false)
 	require.NoError(t, err)
+	htlc, err := loopIn.getHtlc(mockLnd.ChainParams)
+	require.NoError(t, err)
+	htlcTx := wire.NewMsgTx(2)
+	for _, outpoint := range f.loopIn.Outpoints() {
+		htlcTx.AddTxIn(&wire.TxIn{PreviousOutPoint: outpoint})
+	}
+	htlcTx.AddTxOut(&wire.TxOut{
+		Value:    1,
+		PkScript: htlc.PkScript,
+	})
 
 	resultChan := make(chan fsm.EventType, 1)
 	go func() {
@@ -1317,7 +1543,7 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
 	}
-	confRegistration.ConfChan <- nil
+	confRegistration.ConfChan <- &chainntnfs.TxConfirmation{Tx: htlcTx}
 
 	select {
 	case hash := <-mockLnd.FailInvoiceChannel:
@@ -2884,7 +3110,9 @@ func TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails(
 		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
 	}
 
-	confRegistration.ConfChan <- nil
+	confRegistration.ConfChan <- invoiceMonitorHtlcConfirmation(
+		t, f, mockLnd,
+	)
 
 	select {
 	case transition := <-depositMgr.transitionChan:
@@ -2971,7 +3199,9 @@ func TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits(t *testing.T) 
 			t.Fatalf("htlc conf registration not received: %v",
 				runCtx.Err())
 		}
-		confRegistration.ConfChan <- nil
+		confRegistration.ConfChan <- invoiceMonitorHtlcConfirmation(
+			t, f, mockLnd,
+		)
 
 		return resultChan
 	}
@@ -3128,12 +3358,35 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 		InvoicesClient: invoicesClient,
 		LndClient:      mockLnd.Client,
 		ChainParams:    mockLnd.ChainParams,
+		Store:          &recordingLoopInStore{},
 	}
 
 	f, err := NewFSM(ctx, loopIn, cfg, true)
 	require.NoError(t, err)
 
 	return f, depositMgr
+}
+
+// invoiceMonitorHtlcConfirmation returns a confirmation containing the HTLC
+// output expected by the invoice monitor.
+func invoiceMonitorHtlcConfirmation(t *testing.T, f *FSM,
+	mockLnd *test.LndMockServices) *chainntnfs.TxConfirmation {
+
+	t.Helper()
+
+	htlc, err := f.loopIn.getHtlc(mockLnd.ChainParams)
+	require.NoError(t, err)
+
+	htlcTx := wire.NewMsgTx(2)
+	for _, outpoint := range f.loopIn.Outpoints() {
+		htlcTx.AddTxIn(&wire.TxIn{PreviousOutPoint: outpoint})
+	}
+	htlcTx.AddTxOut(&wire.TxOut{
+		Value:    int64(f.loopIn.TotalDepositAmount()),
+		PkScript: htlc.PkScript,
+	})
+
+	return &chainntnfs.TxConfirmation{Tx: htlcTx}
 }
 
 // failingCancelInvoices records cancellation attempts and returns a configured
