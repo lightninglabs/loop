@@ -3,10 +3,6 @@ FROM --platform=${BUILDPLATFORM} golang:1.26-alpine as builder
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightningnetwork/loop
 
-# Force Go to use the cgo based DNS resolver. This is required to ensure DNS
-# queries required to connect to linked containers succeed.
-ENV GODEBUG netdns=cgo
-
 # Explicitly turn on the use of modules (until this becomes the default).
 ENV GO111MODULE on
 
