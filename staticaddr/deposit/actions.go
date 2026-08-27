@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
@@ -132,14 +131,10 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
-	var txID *chainhash.Hash
-	// Only pass the txid if we know it from our own publication.
-	if f.deposit.ExpirySweepTxid != (chainhash.Hash{}) {
-		txID = &f.deposit.ExpirySweepTxid
-	}
-
+	// Register by script only so an RBF replacement of the timeout sweep is
+	// still detected after restart with a stale ExpirySweepTxid.
 	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		ctx, txID, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
+		ctx, nil, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
 		int32(f.deposit.GetConfirmationHeight()),
 	)
 	if err != nil {
