@@ -8,6 +8,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,6 +52,50 @@ func TestFinalizeDepositActionDoesNotBlock(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("finalization cleanup notification was not delivered")
 	}
+}
+
+func TestWaitForExpirySweepActionRegistersByScriptOnly(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	timeoutPkScript := []byte{0x51, 0x20, 0x01}
+	confChan := make(chan *chainntnfs.TxConfirmation, 1)
+	errChan := make(chan error, 1)
+
+	chainNotifier := &MockChainNotifier{}
+	chainNotifier.On(
+		"RegisterConfirmationsNtfn",
+		mock.Anything,
+		mock.MatchedBy(func(txid *chainhash.Hash) bool {
+			return txid == nil
+		}),
+		timeoutPkScript,
+		int32(DefaultConfTarget),
+		int32(42),
+	).Return(confChan, errChan, nil).Once()
+
+	depositFSM := &FSM{
+		cfg: &ManagerConfig{
+			ChainNotifier: chainNotifier,
+		},
+		deposit: &Deposit{
+			ConfirmationHeight:   42,
+			ExpirySweepTxid:      chainhash.Hash{9},
+			TimeOutSweepPkScript: timeoutPkScript,
+		},
+	}
+
+	confirmedTx := wire.NewMsgTx(2)
+	confirmedTx.AddTxOut(&wire.TxOut{
+		Value:    1000,
+		PkScript: timeoutPkScript,
+	})
+	confChan <- &chainntnfs.TxConfirmation{Tx: confirmedTx}
+
+	event := depositFSM.WaitForExpirySweepAction(ctx, nil)
+	require.Equal(t, OnExpirySwept, event)
+	require.Equal(t, confirmedTx.TxHash(), depositFSM.deposit.ExpirySweepTxid)
+	chainNotifier.AssertExpectations(t)
 }
 
 // TestFinalizeDepositActionIgnoresRequestCancellation ensures the cleanup
