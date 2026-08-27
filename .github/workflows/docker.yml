@@ -40,11 +40,16 @@ jobs:
       # untagged push that stages that same build in the registry. Pushing by
       # digest publishes no tag, so nothing is reachable under the release tag
       # until the steps below have accepted the result.
+      #
+      # BUILDKIT_CONTEXT_KEEP_GIT_DIR makes the git context keep its .git
+      # directory, which the Makefile needs to stamp the commit into the
+      # binaries.
       - name: Build image and stage it by digest
         id: build
         uses: lightninglabs/gh-actions/build-push-action@2021.01.25.00
         with:
           platforms: linux/amd64,linux/arm64
+          build-args: BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
           outputs: |
             type=oci,dest=/tmp/loop-image.tar
             type=image,name=${{ env.DOCKER_REPO }},push-by-digest=true,push=true
