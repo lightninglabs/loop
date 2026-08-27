@@ -69,8 +69,8 @@ type Manager struct {
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
-	// reconcileMu serializes deposit reconciliation so new deposits are
-	// discovered and retained exactly once per outpoint.
+	// reconcileMu serializes startup recovery and deposit reconciliation so
+	// new deposits are discovered and retained exactly once per outpoint.
 	reconcileMu sync.Mutex
 
 	// activeDeposits contains all the active static address outputs.
@@ -213,6 +213,9 @@ func (m *Manager) notifyActiveDeposits(ctx context.Context,
 // recoverDeposits recovers static address parameters, previous deposits and
 // state machines from the database and starts the deposit notifier.
 func (m *Manager) recoverDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Infof("Recovering static address parameters and deposits...")
 
 	// Recover deposits.

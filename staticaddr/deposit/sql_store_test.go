@@ -29,6 +29,12 @@ func TestCreateDepositRejectsUnpersistedAddress(t *testing.T) {
 	require.ErrorContains(t, err, "static address ID must be set")
 }
 
+func TestCreateDepositRejectsMissingAddress(t *testing.T) {
+	store := NewSqlStore(nil)
+	err := store.CreateDeposit(context.Background(), &Deposit{})
+	require.ErrorContains(t, err, "static address parameters must be set")
+}
+
 // TestDepositAddressOwnershipRoundTrip asserts that every deposit read path
 // restores the static address parameters referenced by the deposit row.
 func TestDepositAddressOwnershipRoundTrip(t *testing.T) {
@@ -125,6 +131,45 @@ func TestToDeposit(t *testing.T) {
 
 	tx := wire.NewMsgTx(2)
 	txHash := tx.TxHash()
+	_, clientPubkey := test.CreateKey(3)
+	_, serverPubkey := test.CreateKey(4)
+
+	validRow := sqlc.AllDepositsRow{
+		DepositID:          depositID[:],
+		TxHash:             txHash[:],
+		Amount:             100000000,
+		ConfirmationHeight: 123456,
+		StaticAddressID: sql.NullInt32{
+			Int32: 1,
+			Valid: true,
+		},
+		ClientPubkey: clientPubkey.SerializeCompressed(),
+		ServerPubkey: serverPubkey.SerializeCompressed(),
+		Expiry: sql.NullInt32{
+			Int32: 144,
+			Valid: true,
+		},
+		ClientKeyFamily: sql.NullInt32{
+			Int32: 123,
+			Valid: true,
+		},
+		ClientKeyIndex: sql.NullInt32{
+			Int32: 456,
+			Valid: true,
+		},
+		Pkscript: []byte{0x51, 0x20, 0x01},
+		ProtocolVersion: sql.NullInt32{
+			Valid: true,
+		},
+		InitiationHeight: sql.NullInt32{
+			Int32: 789,
+			Valid: true,
+		},
+	}
+	validRowWithSwap := validRow
+	validRowWithSwap.SwapHash = swapHash[:]
+	rowWithoutAddress := validRow
+	rowWithoutAddress.StaticAddressID = sql.NullInt32{}
 
 	tests := []struct {
 		name       string
@@ -133,31 +178,28 @@ func TestToDeposit(t *testing.T) {
 		expectErr  bool
 	}{
 		{
-			name: "fully valid data",
-			row: sqlc.AllDepositsRow{
-				DepositID:          depositID[:],
-				TxHash:             txHash[:],
-				Amount:             100000000,
-				ConfirmationHeight: 123456,
-				SwapHash:           swapHash[:],
-			},
+			name: "valid data with swap",
+			row:  validRowWithSwap,
 			lastUpdate: sqlc.DepositUpdate{
 				UpdateState: "completed",
 			},
 			expectErr: false,
 		},
 		{
-			name: "fully valid data",
-			row: sqlc.AllDepositsRow{
-				DepositID:          depositID[:],
-				TxHash:             txHash[:],
-				Amount:             100000000,
-				ConfirmationHeight: 123456,
-			},
+			name: "valid data without swap",
+			row:  validRow,
 			lastUpdate: sqlc.DepositUpdate{
 				UpdateState: "completed",
 			},
 			expectErr: false,
+		},
+		{
+			name: "missing static address ownership",
+			row:  rowWithoutAddress,
+			lastUpdate: sqlc.DepositUpdate{
+				UpdateState: "completed",
+			},
+			expectErr: true,
 		},
 	}
 
