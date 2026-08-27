@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
@@ -204,26 +203,43 @@ func (l *StaticAddressLoopIn) signMusig2Tx(ctx context.Context,
 	musig2sessions []*input.MuSig2SessionInfo,
 	counterPartyNonces [][musig2.PubNonceSize]byte) ([][]byte, error) {
 
-	prevOuts, err := staticutil.ToPrevOuts(
-		l.Deposits, l.AddressParams.PkScript,
-	)
+	prevOuts, err := staticutil.ToPrevOuts(l.Deposits)
 	if err != nil {
 		return nil, err
 	}
 	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
 
 	outpoints := l.Outpoints()
-	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
-	sigs := make([][]byte, len(outpoints))
+	if len(tx.TxIn) != len(outpoints) {
+		return nil, fmt.Errorf("htlc tx input count %d does not "+
+			"match deposits %d", len(tx.TxIn), len(outpoints))
+	}
+	if len(musig2sessions) != len(outpoints) {
+		return nil, fmt.Errorf("musig2 session count %d does not "+
+			"match deposits %d", len(musig2sessions), len(outpoints))
+	}
+	if len(counterPartyNonces) != len(outpoints) {
+		return nil, fmt.Errorf("server nonce count %d does not "+
+			"match deposits %d", len(counterPartyNonces),
+			len(outpoints))
+	}
 
 	for idx, outpoint := range outpoints {
-		if !reflect.DeepEqual(tx.TxIn[idx].PreviousOutPoint,
-			outpoint) {
+		if musig2sessions[idx] == nil {
+			return nil, fmt.Errorf("missing musig2 session for "+
+				"deposit input %d", idx)
+		}
 
+		if tx.TxIn[idx].PreviousOutPoint != outpoint {
 			return nil, fmt.Errorf("tx input does not match " +
 				"deposits")
 		}
+	}
 
+	sigHashes := txscript.NewTxSigHashes(tx, prevOutFetcher)
+	sigs := make([][]byte, len(outpoints))
+
+	for idx := range outpoints {
 		taprootSigHash, err := txscript.CalcTaprootSignatureHash(
 			sigHashes, txscript.SigHashDefault, tx, idx,
 			prevOutFetcher,
