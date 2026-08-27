@@ -715,6 +715,33 @@ func withdrawalChangePkScript(tx *wire.MsgTx, withdrawalPkScript []byte,
 	return changePkScript, nil
 }
 
+// validateConfirmedWithdrawalInputs verifies that a confirmed withdrawal
+// transaction spends every deposit associated with the withdrawal. Withdrawal
+// monitoring intentionally watches only the first deposit so an RBF replacement
+// can be discovered without registering a new confirmation notification for
+// every replacement transaction. However, the spend notification also fires if
+// an unrelated transaction spends only that first deposit. Requiring the full
+// deposit set prevents such a partial spend from incorrectly transitioning all
+// deposits to Withdrawn while still permitting a replacement transaction with a
+// different transaction ID or additional inputs.
+func validateConfirmedWithdrawalInputs(tx *wire.MsgTx,
+	deposits []*deposit.Deposit) error {
+
+	inputs := make(map[wire.OutPoint]struct{}, len(tx.TxIn))
+	for _, txIn := range tx.TxIn {
+		inputs[txIn.PreviousOutPoint] = struct{}{}
+	}
+
+	for _, d := range deposits {
+		if _, ok := inputs[d.OutPoint]; !ok {
+			return fmt.Errorf("confirmed transaction %v does not spend "+
+				"withdrawal deposit %v", tx.TxHash(), d.OutPoint)
+		}
+	}
+
+	return nil
+}
+
 // handleWithdrawal starts a goroutine that listens for the spent of the first
 // input of the withdrawal transaction.
 func (m *Manager) handleWithdrawal(ctx context.Context,
@@ -740,14 +767,19 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		select {
 		case spentTx := <-spentChan:
 			spendingHeight := uint32(spentTx.SpendingHeight)
+			spenderTxHash := originalTxHash
+			if spentTx.SpenderTxHash != nil {
+				spenderTxHash = *spentTx.SpenderTxHash
+			} else if spentTx.SpendingTx != nil {
+				spenderTxHash = spentTx.SpendingTx.TxHash()
+			}
 
 			// If the transaction received one confirmation, we
 			// ensure re-org safety by waiting for some more
 			// confirmations.
 			confChan, confErrChan, err :=
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-					ctx, spentTx.SpenderTxHash,
-					withdrawalPkScript,
+					ctx, &spenderTxHash, withdrawalPkScript,
 					MinConfs,
 					int32(m.initiationHeight.Load()),
 				)
@@ -762,8 +794,35 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 
 			select {
 			case tx := <-confChan:
+				confirmedTx := spentTx.SpendingTx
+				if tx != nil && tx.Tx != nil {
+					confirmedTx = tx.Tx
+				}
+				if confirmedTx == nil {
+					log.Errorf("Confirmed withdrawal %v "+
+						"missing transaction",
+						spenderTxHash)
+
+					return
+				}
+
+				// Since the spend notification above only watches the
+				// first deposit, verify that the confirmed spender is the
+				// withdrawal (or one of its RBF replacements) before
+				// transitioning the complete deposit group.
+				err = validateConfirmedWithdrawalInputs(
+					confirmedTx, deposits,
+				)
+				if err != nil {
+					log.Errorf("Ignoring incomplete withdrawal: %v",
+						err)
+
+					return
+				}
+
 				changePkScript, changeErr := withdrawalChangePkScript(
-					tx.Tx, withdrawalPkScript, m.cfg.AddressManager,
+					confirmedTx, withdrawalPkScript,
+					m.cfg.AddressManager,
 				)
 
 				err = m.cfg.DepositManager.TransitionDeposits(
@@ -780,6 +839,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 				// arrivals.
 				m.mu.Lock()
 				delete(m.finalizedWithdrawalTxns, originalTxHash)
+				delete(m.finalizedWithdrawalTxns, spenderTxHash)
 				m.mu.Unlock()
 
 				// Persist info about the finalized withdrawal.
@@ -789,7 +849,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 						changeErr)
 				} else {
 					persistErr = m.cfg.Store.UpdateWithdrawal(
-						ctx, deposits, tx.Tx, spendingHeight,
+						ctx, deposits, confirmedTx, spendingHeight,
 						changePkScript,
 					)
 				}
