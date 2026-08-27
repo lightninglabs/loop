@@ -53,6 +53,52 @@ func ToPrevOuts(deposits []*deposit.Deposit) (
 	return prevOuts, nil
 }
 
+// DepositAddressDescriptors maps each deposit outpoint to the static address
+// descriptor that derives that output.
+//
+// The server receives this proof material with swap and withdrawal requests and
+// verifies it against the L402's server key and expiry before co-signing any
+// input.
+func DepositAddressDescriptors(deposits []*deposit.Deposit) (
+	map[string]*swapserverrpc.StaticAddressDescriptor, error) {
+
+	descriptors := make(
+		map[string]*swapserverrpc.StaticAddressDescriptor, len(deposits),
+	)
+	for i, d := range deposits {
+		if d == nil {
+			return nil, fmt.Errorf("nil deposit at index %d", i)
+		}
+		if d.AddressParams == nil {
+			return nil, fmt.Errorf("missing static address "+
+				"parameters for deposit %v", d.OutPoint)
+		}
+		if d.AddressParams.ClientPubkey == nil {
+			return nil, fmt.Errorf("missing static address client "+
+				"pubkey for deposit %v", d.OutPoint)
+		}
+		if len(d.AddressParams.PkScript) == 0 {
+			return nil, fmt.Errorf("missing static address pkscript "+
+				"for deposit %v", d.OutPoint)
+		}
+
+		depositKey := d.String()
+		if _, ok := descriptors[depositKey]; ok {
+			return nil, fmt.Errorf("duplicate outpoint %v",
+				depositKey)
+		}
+
+		descriptors[depositKey] =
+			&swapserverrpc.StaticAddressDescriptor{
+				Pubkey: d.AddressParams.ClientPubkey.
+					SerializeCompressed(),
+				PkScript: d.AddressParams.PkScript,
+			}
+	}
+
+	return descriptors, nil
+}
+
 // CreateMusig2Sessions creates a musig2 session for a number of deposits.
 func CreateMusig2Sessions(ctx context.Context,
 	signer lndclient.SignerClient, deposits []*deposit.Deposit) (
