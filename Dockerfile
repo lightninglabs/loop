@@ -16,7 +16,7 @@ ARG TARGETARCH
 # instead of $GOPATH/bin, so the binaries are moved back to keep the COPY
 # below platform independent. GOBIN cannot be used for this: setting it while
 # cross-compiling is a hard error in the Go tool.
-RUN apk add --no-cache --update \
+RUN apk add --no-cache \
     git \
     make \
     &&  cd /go/src/github.com/lightningnetwork/loop \
