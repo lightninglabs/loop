@@ -163,7 +163,9 @@ service SwapClient {
         returns (ListInstantOutsResponse);
 
     /* loop: `static newstaticaddress`
-    NewStaticAddress requests a new static address for loop-ins from the server.
+    NewStaticAddress derives a fresh static receive address on every request
+    without send_coins_request.addr, or funds an existing address when addr is
+    set.
     */
     rpc NewStaticAddress (NewStaticAddressRequest)
         returns (NewStaticAddressResponse);
