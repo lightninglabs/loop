@@ -609,6 +609,7 @@ func validateSigningPrevouts(depositToNonces map[string][]byte,
 		if !bytes.Equal(
 			prevout.PkScript, currentDeposit.AddressParams.PkScript,
 		) {
+
 			return fmt.Errorf("signing prevout %v script mismatch",
 				currentDeposit.OutPoint)
 		}

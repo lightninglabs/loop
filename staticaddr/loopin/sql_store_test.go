@@ -203,11 +203,9 @@ func TestLoopInChangeAddressRoundTrip(t *testing.T) {
 	depositID, err := deposit.GetRandomDepositID()
 	require.NoError(t, err)
 	ownedDeposit := &deposit.Deposit{
-		ID: depositID,
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1},
-			Index: 2,
-		},
+		ID:                   depositID,
+		Hash:                 chainhash.Hash{1},
+		Index:                2,
 		Value:                100_000,
 		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x03},
 	}
@@ -329,11 +327,9 @@ func TestMaxStaticAddressHtlcKeyIndex(t *testing.T) {
 		depositID, err := deposit.GetRandomDepositID()
 		require.NoError(t, err)
 		swapDeposit := &deposit.Deposit{
-			ID: depositID,
-			OutPoint: wire.OutPoint{
-				Hash:  chainhash.Hash{byte(i + 1)},
-				Index: uint32(i),
-			},
+			ID:                   depositID,
+			Hash:                 chainhash.Hash{byte(i + 1)},
+			Index:                uint32(i),
 			Value:                100_000,
 			TimeOutSweepPkScript: []byte{0x00, 0x14, byte(i)},
 		}
@@ -413,11 +409,9 @@ func TestLoopInDepositAddressOwnershipRoundTrip(t *testing.T) {
 	depositID, err := deposit.GetRandomDepositID()
 	require.NoError(t, err)
 	ownedDeposit := &deposit.Deposit{
-		ID: depositID,
-		OutPoint: wire.OutPoint{
-			Hash:  wire.NewMsgTx(2).TxHash(),
-			Index: 3,
-		},
+		ID:                   depositID,
+		Hash:                 wire.NewMsgTx(2).TxHash(),
+		Index:                3,
 		Value:                100_000,
 		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x03},
 		AddressParams:        addressParams,
@@ -821,11 +815,9 @@ func TestCreateLoopIn(t *testing.T) {
 	// Deposits without a swap hash or without a database row must not hide
 	// the swap of the remaining deposits.
 	unmapped := &deposit.Deposit{
-		ID: newID(),
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{0x2a, 0x2b, 0x3c, 0x4f},
-			Index: 2,
-		},
+		ID:    newID(),
+		Hash:  chainhash.Hash{0x2a, 0x2b, 0x3c, 0x4f},
+		Index: 2,
 		Value: btcutil.Amount(300_000),
 		TimeOutSweepPkScript: []byte{
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4e,
@@ -1138,6 +1130,7 @@ func TestSqlStoreDepositsForSwap(t *testing.T) {
 	knownCost := deposit.OnchainCost{
 		Amount: 1_550, Status: deposit.OnchainCostKnown,
 	}
+	var addressParams *script.Parameters
 	newDeposit := func(seed byte,
 		cost deposit.OnchainCost) *deposit.Deposit {
 
@@ -1152,6 +1145,12 @@ func TestSqlStoreDepositsForSwap(t *testing.T) {
 			Value:                100_000,
 			TimeOutSweepPkScript: []byte{0x00, 0x14, seed},
 			OnchainCost:          cost,
+		}
+		if addressParams == nil {
+			setPersistedTestDepositAddress(t, ctx, testDb.BaseDB, d)
+			addressParams = d.AddressParams
+		} else {
+			d.AddressParams = addressParams
 		}
 		require.NoError(t, depositStore.CreateDeposit(ctx, d))
 
@@ -1201,6 +1200,7 @@ func TestSqlStoreDepositsForSwap(t *testing.T) {
 	require.Len(t, deposits, 1)
 	require.Equal(t, known.ID, deposits[0].ID)
 	require.Equal(t, knownCost, deposits[0].GetOnchainCost())
+	require.Equal(t, known.AddressParams, deposits[0].AddressParams)
 	require.True(t, deposits[0].IsInState(deposit.LoopingIn))
 
 	deposits, err = swapStore.DepositsForSwap(ctx, later)
@@ -1238,6 +1238,8 @@ func TestSqlStoreFailedSwapOnchainCost(t *testing.T) {
 	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
 	require.NoError(t, err)
 
+	var addressParams *script.Parameters
+
 	// createFailedSwap stores a swap whose deposit is on the htlc timeout
 	// path and which then failed, with the given htlc timeout sweep.
 	createFailedSwap := func(seed byte,
@@ -1254,6 +1256,12 @@ func TestSqlStoreFailedSwapOnchainCost(t *testing.T) {
 			Value:                100_000,
 			TimeOutSweepPkScript: []byte{0x00, 0x14, seed},
 			OnchainCost:          knownCost,
+		}
+		if addressParams == nil {
+			setPersistedTestDepositAddress(t, ctx, testDb.BaseDB, d)
+			addressParams = d.AddressParams
+		} else {
+			d.AddressParams = addressParams
 		}
 		require.NoError(t, depositStore.CreateDeposit(ctx, d))
 
