@@ -380,9 +380,21 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 			PkScript: []byte{0x51},
 		},
 	}
+	secondDep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 1,
+		},
+		ConfirmationHeight: 43,
+		AddressParams: &address.Parameters{
+			PkScript: []byte{0x55},
+		},
+	}
+	deposits := []*deposit.Deposit{dep, secondDep}
 	originalDestScript := []byte{0x53}
 	originalTx := wire.NewMsgTx(2)
 	originalTx.AddTxIn(&wire.TxIn{PreviousOutPoint: dep.OutPoint})
+	originalTx.AddTxIn(&wire.TxIn{PreviousOutPoint: secondDep.OutPoint})
 	originalTx.AddTxOut(&wire.TxOut{
 		Value:    10_000,
 		PkScript: originalDestScript,
@@ -395,6 +407,9 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 	replacementDestScript := []byte{0x54}
 	replacementTx := wire.NewMsgTx(2)
 	replacementTx.AddTxIn(&wire.TxIn{PreviousOutPoint: dep.OutPoint})
+	replacementTx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: secondDep.OutPoint,
+	})
 	replacementTx.AddTxOut(&wire.TxOut{
 		Value:    9_000,
 		PkScript: replacementDestScript,
@@ -409,7 +424,7 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 	manager.finalizedWithdrawalTxns[replacementTxHash] = replacementTx
 
 	err = manager.handleWithdrawal(
-		ctx, []*deposit.Deposit{dep}, originalTxHash,
+		ctx, deposits, originalTxHash,
 	)
 	require.NoError(t, err)
 
@@ -443,7 +458,7 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 	case transition := <-depositManager.transitions:
 		require.Equal(t, deposit.OnWithdrawn, transition.event)
 		require.Equal(t, deposit.Withdrawn, transition.state)
-		require.Equal(t, []*deposit.Deposit{dep}, transition.deposits)
+		require.Equal(t, deposits, transition.deposits)
 
 	case <-ctx.Done():
 		t.Fatalf("deposit transition not received: %v", ctx.Err())
@@ -451,7 +466,7 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 
 	select {
 	case update := <-store.updates:
-		require.Equal(t, []*deposit.Deposit{dep}, update.deposits)
+		require.Equal(t, deposits, update.deposits)
 		require.Same(t, replacementTx, update.tx)
 		require.EqualValues(t, 55, update.confirmationHeight)
 		require.Equal(t, changePkScript, update.changePkScript)
