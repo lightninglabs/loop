@@ -4,22 +4,49 @@ import (
 	"context"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
+
+type withdrawalCleanupSigner struct {
+	lndclient.SignerClient
+
+	cleaned       [][32]byte
+	cleanupCtxErr []error
+}
+
+func (s *withdrawalCleanupSigner) MuSig2CreateSession(context.Context,
+	input.MuSig2Version, *keychain.KeyLocator, [][]byte,
+	...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo, error) {
+
+	return &input.MuSig2SessionInfo{SessionID: [32]byte{1}}, nil
+}
+
+func (s *withdrawalCleanupSigner) MuSig2Cleanup(ctx context.Context,
+	sessionID [32]byte) error {
+
+	s.cleaned = append(s.cleaned, sessionID)
+	s.cleanupCtxErr = append(s.cleanupCtxErr, ctx.Err())
+
+	return nil
+}
 
 // TestNewManagerHeightValidation ensures the constructor rejects zero heights.
 func TestNewManagerHeightValidation(t *testing.T) {
@@ -33,6 +60,63 @@ func TestNewManagerHeightValidation(t *testing.T) {
 	manager, err := NewManager(cfg, 1)
 	require.NoError(t, err)
 	require.NotNil(t, manager)
+}
+
+func TestWithdrawalChangePkScript(t *testing.T) {
+	t.Parallel()
+
+	require.Nil(t, withdrawalChangePkScript(nil))
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxOut(&wire.TxOut{
+		Value:    1000,
+		PkScript: []byte{0x01},
+	})
+	require.Nil(t, withdrawalChangePkScript(tx))
+
+	tx.AddTxOut(&wire.TxOut{
+		Value:    500,
+		PkScript: []byte{0x02},
+	})
+	require.Equal(t, []byte{0x02}, withdrawalChangePkScript(tx))
+}
+
+func TestCreateFinalizedWithdrawalTxCleansUpSessionsOnError(t *testing.T) {
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	signer := &withdrawalCleanupSigner{}
+	manager := &Manager{cfg: &ManagerConfig{Signer: signer}}
+	deposits := []*deposit.Deposit{
+		{
+			OutPoint: wire.OutPoint{Index: 1},
+			Value:    100_000,
+			AddressParams: &address.Parameters{
+				ClientPubkey: clientKey.PubKey(),
+				ServerPubkey: serverKey.PubKey(),
+				Expiry:       144,
+				PkScript:     []byte{0x51},
+				KeyLocator: keychain.KeyLocator{
+					Family: 1,
+					Index:  2,
+				},
+			},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, _, err = manager.CreateFinalizedWithdrawalTx(
+		ctx, deposits, nil, 1_000, 0,
+		lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE,
+	)
+	require.ErrorContains(
+		t, err, "either address or commitment type must be specified",
+	)
+	require.Equal(t, [][32]byte{{1}}, signer.cleaned)
+	require.Equal(t, []error{nil}, signer.cleanupCtxErr)
 }
 
 // TestSignMusig2Tx_MissingSigningInfo tests that signMusig2Tx should error
