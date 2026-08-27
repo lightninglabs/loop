@@ -7,7 +7,12 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,6 +46,29 @@ func TestSqlStore(t *testing.T) {
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4d,
 			},
 		}
+	_, clientPubkey := test.CreateKey(101)
+	_, serverPubkey := test.CreateKey(102)
+	addressParams := &script.Parameters{
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       144,
+		KeyLocator: keychain.KeyLocator{
+			Family: 123,
+			Index:  456,
+		},
+		PkScript:         []byte{0x51, 0x20, 0x01},
+		ProtocolVersion:  version.ProtocolVersion_V0,
+		InitiationHeight: 789,
+	}
+	addressStore := address.NewSqlStore(testDb.BaseDB)
+	err := addressStore.CreateStaticAddress(ctxb, addressParams)
+	require.NoError(t, err)
+	addressParams.ID, err = addressStore.GetStaticAddressID(
+		ctxb, addressParams.PkScript,
+	)
+	require.NoError(t, err)
+	d1.AddressParams = addressParams
+	d2.AddressParams = addressParams
 
 	withdrawalTx := &wire.MsgTx{
 		Version: 2,
@@ -60,7 +88,7 @@ func TestSqlStore(t *testing.T) {
 		},
 	}
 
-	err := depositStore.CreateDeposit(ctxb, d1)
+	err = depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctxb, d2)
 	require.NoError(t, err)
