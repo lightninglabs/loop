@@ -10,7 +10,7 @@ COPY . /go/src/github.com/lightningnetwork/loop
 ARG TARGETOS
 ARG TARGETARCH
 
-# Install dependencies and install/build lnd.
+# Install dependencies and build loop.
 #
 # When cross-compiling, "go install" writes to $GOPATH/bin/$GOOS_$GOARCH
 # instead of $GOPATH/bin, so the binaries are moved back to keep the COPY
@@ -33,14 +33,14 @@ RUN apk add --no-cache --update \
 # manifest advertises linux/arm64 while the filesystem is amd64.
 FROM alpine AS final
 
-# Expose lnd ports (server, rpc).
+# Expose loopd ports (REST, gRPC).
 EXPOSE 8081 11010
 
-# Copy the binaries and entrypoint from the builder image.
+# Copy the binaries from the builder image.
 COPY --from=builder /go/bin/loopd /bin/
 COPY --from=builder /go/bin/loop /bin/
 
-# Add bash.
+# Add bash and CA certificates.
 RUN apk add --no-cache \
     bash \
     ca-certificates
