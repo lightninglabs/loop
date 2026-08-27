@@ -1,6 +1,7 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -1151,8 +1152,13 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	htlcConfirmed := false
 	for {
 		select {
-		case <-htlcConfChan:
+		case conf := <-htlcConfChan:
 			f.Infof("htlc tx confirmed")
+
+			err = f.recordConfirmedHtlc(ctx, conf, htlc.PkScript)
+			if err != nil {
+				return f.HandleError(err)
+			}
 
 			htlcConfirmed = true
 			if invoiceCanceledForNonPayment {
@@ -1194,6 +1200,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			// confirmation and re-register for the next
 			// confirmation.
 			htlcConfirmed = false
+			err = f.clearConfirmedHtlc(ctx)
+			if err != nil {
+				return f.HandleError(err)
+			}
 
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
@@ -1369,6 +1379,64 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			return fsm.NoOp
 		}
 	}
+}
+
+func (f *FSM) recordConfirmedHtlc(ctx context.Context,
+	conf *chainntnfs.TxConfirmation, htlcPkScript []byte) error {
+
+	if conf == nil || conf.Tx == nil {
+		return errors.New("htlc confirmation missing transaction")
+	}
+	if f.cfg.Store == nil {
+		return errors.New("missing static address loop-in store")
+	}
+
+	tx := conf.Tx
+	txHash := tx.TxHash()
+	expectedInputs := f.loopIn.Outpoints()
+	if len(tx.TxIn) != len(expectedInputs) {
+		return fmt.Errorf("confirmed htlc tx %v has %d inputs, expected "+
+			"%d", txHash, len(tx.TxIn), len(expectedInputs))
+	}
+	for idx, expectedInput := range expectedInputs {
+		if tx.TxIn[idx].PreviousOutPoint != expectedInput {
+			return fmt.Errorf("confirmed htlc tx %v input %d spends %v, "+
+				"expected %v", txHash, idx,
+				tx.TxIn[idx].PreviousOutPoint, expectedInput)
+		}
+	}
+
+	for idx, txOut := range tx.TxOut {
+		if !bytes.Equal(txOut.PkScript, htlcPkScript) {
+			continue
+		}
+
+		f.loopIn.HtlcTxHash = &txHash
+		f.loopIn.HtlcOutputIndex = uint32(idx)
+		f.loopIn.HtlcOutputValue = btcutil.Amount(txOut.Value)
+
+		return f.cfg.Store.UpdateLoopIn(ctx, f.loopIn)
+	}
+
+	return fmt.Errorf("confirmed htlc tx %v missing expected htlc "+
+		"output", txHash)
+}
+
+func (f *FSM) clearConfirmedHtlc(ctx context.Context) error {
+	if f.loopIn.HtlcTxHash == nil && f.loopIn.HtlcOutputIndex == 0 &&
+		f.loopIn.HtlcOutputValue == 0 {
+
+		return nil
+	}
+	if f.cfg.Store == nil {
+		return errors.New("missing static address loop-in store")
+	}
+
+	f.loopIn.HtlcTxHash = nil
+	f.loopIn.HtlcOutputIndex = 0
+	f.loopIn.HtlcOutputValue = 0
+
+	return f.cfg.Store.UpdateLoopIn(ctx, f.loopIn)
 }
 
 // htlcTimeoutSweepRetryDelay is the delay between retries when publishing the

@@ -369,12 +369,29 @@ func (s *SqlStore) UpdateLoopIn(ctx context.Context,
 		htlcTimeoutSweepTxID = loopIn.HtlcTimeoutSweepTxHash.String()
 	}
 
+	var htlcTxID string
+	if loopIn.HtlcTxHash != nil {
+		htlcTxID = loopIn.HtlcTxHash.String()
+	}
+
 	updateParams := sqlc.UpdateStaticAddressLoopInParams{
 		SwapHash:           loopIn.SwapHash[:],
 		HtlcTxFeeRateSatKw: int64(loopIn.HtlcTxFeeRate),
 		HtlcTimeoutSweepTxID: sql.NullString{
 			String: htlcTimeoutSweepTxID,
 			Valid:  htlcTimeoutSweepTxID != "",
+		},
+		ConfirmedHtlcTxID: sql.NullString{
+			String: htlcTxID,
+			Valid:  htlcTxID != "",
+		},
+		ConfirmedHtlcOutputIndex: sql.NullInt32{
+			Int32: int32(loopIn.HtlcOutputIndex),
+			Valid: htlcTxID != "",
+		},
+		ConfirmedHtlcOutputValue: sql.NullInt64{
+			Int64: int64(loopIn.HtlcOutputValue),
+			Valid: htlcTxID != "",
 		},
 	}
 
@@ -587,6 +604,16 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		}
 	}
 
+	var htlcTxHash *chainhash.Hash
+	if swap.ConfirmedHtlcTxID.Valid {
+		htlcTxHash, err = chainhash.NewHashFromStr(
+			swap.ConfirmedHtlcTxID.String,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var depositOutpoints []string
 	if swap.DepositOutpoints != "" {
 		depositOutpoints = strings.Split(
@@ -687,8 +714,13 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		),
 		HtlcTimeoutSweepAddress: timeoutAddress,
 		HtlcTimeoutSweepTxHash:  htlcTimeoutSweepTxHash,
-		Deposits:                depositList,
-		ChangeAddressParams:     changeAddressParams,
+		HtlcTxHash:              htlcTxHash,
+		HtlcOutputIndex:         uint32(swap.ConfirmedHtlcOutputIndex.Int32),
+		HtlcOutputValue: btcutil.Amount(
+			swap.ConfirmedHtlcOutputValue.Int64,
+		),
+		Deposits:            depositList,
+		ChangeAddressParams: changeAddressParams,
 	}
 	if swap.ConfirmationRiskDecisionTime.Valid {
 		loopIn.ConfirmationRiskDecisionTime =
