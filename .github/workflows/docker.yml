@@ -32,9 +32,9 @@ jobs:
 
       - name: Set env
         run: |
-          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> "$GITHUB_ENV"
           DOCKER_REPO_DEFAULT=${{secrets.DOCKER_REPO}}
-          echo "DOCKER_REPO=${DOCKER_REPO_DEFAULT:-lightninglabs/loop}" >> $GITHUB_ENV
+          echo "DOCKER_REPO=${DOCKER_REPO_DEFAULT:-lightninglabs/loop}" >> "$GITHUB_ENV"
 
       # A single build with two outputs: a local OCI layout to check, and an
       # untagged push that stages that same build in the registry. Pushing by
