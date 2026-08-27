@@ -541,7 +541,7 @@ The following flags are supported:
 
 Create a new static loop in address.
 
-Creates a new static loop in address. On a fresh installation loopd 	initializes the static-address generation during startup. Funds sent to the 	address will be locked by a 2:2 multisig between us and the loop server, or 	a timeout path that we can sweep once it opens up. The funds can either be 	cooperatively spent with a signature from the server or looped in.
+Creates a new static loop in address. On a fresh installation, loopd creates 	the static-address seed lazily when the first address is requested; startup 	alone does not create an address. Funds sent to the address will be locked by 	a 2:2 multisig between us and the loop server, or a timeout path that we can 	sweep once it opens up. The funds can either be cooperatively spent with a 	signature from the server or looped in.
 
 Usage:
 
