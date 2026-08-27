@@ -54,7 +54,7 @@ func (m *Manager) reconcileKeyIndices(ctx context.Context,
 
 	// An unfiltered request includes lnd's internal 1017' accounts. The
 	// external key count is the next index, not the last allocated index.
-	// These fields are available at our minimum lnd version (v0.18.4).
+	// These fields have been available since lnd v0.18.4.
 	accounts, err := m.cfg.WalletKit.ListAccounts(
 		ctx, "", walletrpc.AddressType_UNKNOWN,
 	)
