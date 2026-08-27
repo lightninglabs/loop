@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -11,8 +14,188 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
+	"google.golang.org/grpc"
 )
+
+type staticAddressSummaryErrorClient struct {
+	looprpc.SwapClientClient
+
+	err                error
+	newAddressRequest  *looprpc.NewStaticAddressRequest
+	newAddressResponse *looprpc.NewStaticAddressResponse
+	newAddressCalls    int
+}
+
+func (c *staticAddressSummaryErrorClient) GetStaticAddressSummary(
+	context.Context, *looprpc.StaticAddressSummaryRequest,
+	...grpc.CallOption) (*looprpc.StaticAddressSummaryResponse, error) {
+
+	return nil, c.err
+}
+
+func (c *staticAddressSummaryErrorClient) NewStaticAddress(
+	_ context.Context, req *looprpc.NewStaticAddressRequest,
+	_ ...grpc.CallOption) (*looprpc.NewStaticAddressResponse, error) {
+
+	c.newAddressCalls++
+	c.newAddressRequest = req
+
+	return c.newAddressResponse, nil
+}
+
+func TestMaybeDisplayNewAddressWarningReturnsUnexpectedError(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("permission denied")
+	err := maybeDisplayNewAddressWarning(
+		context.Background(), &staticAddressSummaryErrorClient{
+			err: expectedErr,
+		},
+		false, strings.NewReader(""), &bytes.Buffer{},
+	)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestStaticAddressDepositRequiresInteractiveConfirmation(t *testing.T) {
+	client := &staticAddressSummaryErrorClient{}
+	cmd := &cli.Command{
+		Name:  "deposit",
+		Flags: depositStaticAddressCommand.Flags,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			_, err := executeStaticAddressDeposit(
+				ctx, cmd, client, strings.NewReader(""),
+				&bytes.Buffer{}, false,
+			)
+
+			return err
+		},
+	}
+
+	err := cmd.Run(t.Context(), []string{
+		"deposit", "--amt", "100000",
+	})
+	require.ErrorContains(t, err, "requires an interactive terminal")
+	require.Zero(t, client.newAddressCalls)
+}
+
+func TestStaticAddressDepositForceFirstUseNonInteractive(t *testing.T) {
+	client := &staticAddressSummaryErrorClient{
+		err: address.ErrNoStaticAddress,
+		newAddressResponse: &looprpc.NewStaticAddressResponse{
+			Address: "bcrt1ptestaddress",
+		},
+	}
+
+	var (
+		resp   *looprpc.NewStaticAddressResponse
+		output bytes.Buffer
+	)
+	cmd := &cli.Command{
+		Name:  "deposit",
+		Flags: depositStaticAddressCommand.Flags,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			var err error
+			resp, err = executeStaticAddressDeposit(
+				ctx, cmd, client, strings.NewReader(""), &output,
+				false,
+			)
+
+			return err
+		},
+	}
+
+	err := cmd.Run(t.Context(), []string{
+		"deposit", "--amt", "100000", "--force",
+	})
+	require.NoError(t, err)
+	require.Same(t, client.newAddressResponse, resp)
+	require.Equal(t, 1, client.newAddressCalls)
+	require.EqualValues(
+		t, 100_000, client.newAddressRequest.GetSendCoinsRequest().Amount,
+	)
+	require.Empty(t, client.newAddressRequest.GetSendCoinsRequest().Addr)
+	require.Contains(t, output.String(), "WARNING")
+	require.NotContains(t, output.String(), "CONTINUE WITH NEW ADDRESS")
+}
+
+func TestStaticAddressDepositRequestAllowsNoUtxos(t *testing.T) {
+	t.Parallel()
+
+	var req *looprpc.NewStaticAddressRequest
+	cmd := &cli.Command{
+		Name:  "deposit",
+		Flags: depositStaticAddressCommand.Flags,
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			var err error
+			req, err = staticAddressDepositRequest(
+				cmd, "bcrt1ptestaddress",
+			)
+
+			return err
+		},
+	}
+
+	err := cmd.Run(context.Background(), []string{
+		"deposit", "--amt", "1000000",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "bcrt1ptestaddress", req.GetSendCoinsRequest().Addr)
+	require.EqualValues(t, 1_000_000, req.GetSendCoinsRequest().Amount)
+	require.Empty(t, req.GetSendCoinsRequest().Outpoints)
+}
+
+func TestStaticAddressDepositForceAlias(t *testing.T) {
+	var forceFlag *cli.BoolFlag
+	for _, flag := range depositStaticAddressCommand.Flags {
+		boolFlag, ok := flag.(*cli.BoolFlag)
+		if ok && boolFlag.Name == "force" {
+			forceFlag = boolFlag
+			break
+		}
+	}
+	require.NotNil(t, forceFlag)
+
+	for _, flag := range []string{"--force", "-f"} {
+		t.Run(flag, func(t *testing.T) {
+			flagCopy := *forceFlag
+			var forced bool
+			cmd := &cli.Command{
+				Name:  "deposit",
+				Flags: []cli.Flag{&flagCopy},
+				Action: func(_ context.Context,
+					cmd *cli.Command) error {
+
+					forced = cmd.Bool("force")
+					return nil
+				},
+			}
+
+			err := cmd.Run(t.Context(), []string{"deposit", flag})
+			require.NoError(t, err)
+			require.True(t, forced)
+		})
+	}
+}
+
+func TestConfirmStaticAddressDeposit(t *testing.T) {
+	t.Parallel()
+
+	req := &looprpc.NewStaticAddressRequest{
+		SendCoinsRequest: &lnrpc.SendCoinsRequest{Amount: 10_000},
+	}
+
+	var output bytes.Buffer
+	confirmed, err := confirmStaticAddressDeposit(
+		req, strings.NewReader("yes\n"), &output,
+	)
+	require.NoError(t, err)
+	require.True(t, confirmed)
+	require.Contains(t, output.String(), "Amount: 10000")
+	require.Contains(t, output.String(), "newly derived static address")
+}
 
 // TestLowConfDepositWarningConfirmedOnly verifies confirmed deposits below the
 // conservative warning threshold are included in the warning text.
