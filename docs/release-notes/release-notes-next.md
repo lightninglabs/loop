@@ -33,6 +33,10 @@
 
 #### Bug Fixes
 
+* Static Address withdrawals now follow the transaction that actually replaces
+  an original withdrawal, reconcile partial conflicting spends, and wait for
+  their background monitors during shutdown.
+
 * Static Address startup now avoids reimporting wallet scripts that lnd already
   watches, address lookups remain responsive while new addresses are issued,
   and seed creation can recover from a failed wallet import.
