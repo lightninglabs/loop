@@ -350,11 +350,6 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return err
-	}
-
 	ignoreUnknownOutpoints := false
 	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
 		ctx, loopIn.DepositOutpoints, ignoreUnknownOutpoints,
@@ -362,6 +357,8 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	if err != nil {
 		return err
 	}
+
+	loopIn.Deposits = deposits
 
 	// If the loop-in is not in the Succeeded state we return an
 	// error.
@@ -396,8 +393,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	// The server supplies prevouts for the full batch, but deposit values
 	// and scripts signed by this client must match local wallet state.
 	err = validateSigningPrevouts(
-		req.DepositToNonces, deposits, addressParams.PkScript,
-		prevoutMap,
+		req.DepositToNonces, deposits, prevoutMap,
 	)
 	if err != nil {
 		return err
@@ -416,8 +412,18 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		map[string]*swapserverrpc.ClientSweeplessSigningInfo,
 		len(req.DepositToNonces),
 	)
+	depositMap := make(map[string]*deposit.Deposit, len(loopIn.Deposits))
+	for _, d := range loopIn.Deposits {
+		depositMap[d.String()] = d
+	}
 
 	for depositOutpoint, nonce := range req.DepositToNonces {
+		d, ok := depositMap[depositOutpoint]
+		if !ok {
+			return fmt.Errorf("deposit %v not found in loop-in",
+				depositOutpoint)
+		}
+
 		taprootSigHash, err := txscript.CalcTaprootSignatureHash(
 			sigHashes, txscript.SigHashDefault,
 			sweepPacket.UnsignedTx,
@@ -436,7 +442,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		}
 
 		musig2Session, err := staticutil.CreateMusig2Session(
-			ctx, m.cfg.Signer, addressParams, staticAddress,
+			ctx, m.cfg.Signer, d,
 		)
 		if err != nil {
 			return err
@@ -561,7 +567,7 @@ func validateSweepPrevouts(sweepTx *wire.MsgTx,
 // validateSigningPrevouts verifies locally known values and scripts for each
 // deposit the server asks this client to sign.
 func validateSigningPrevouts(depositToNonces map[string][]byte,
-	deposits []*deposit.Deposit, depositPkScript []byte,
+	deposits []*deposit.Deposit,
 	prevoutMap map[wire.OutPoint]*wire.TxOut) error {
 
 	depositsByOutpoint := make(map[string]*deposit.Deposit, len(deposits))
@@ -592,7 +598,13 @@ func validateSigningPrevouts(depositToNonces map[string][]byte,
 			return fmt.Errorf("signing prevout %v value mismatch",
 				currentDeposit.OutPoint)
 		}
-		if !bytes.Equal(prevout.PkScript, depositPkScript) {
+		if currentDeposit.AddressParams == nil {
+			return fmt.Errorf("missing static address parameters for "+
+				"signing prevout %v", currentDeposit.OutPoint)
+		}
+		if !bytes.Equal(
+			prevout.PkScript, currentDeposit.AddressParams.PkScript,
+		) {
 			return fmt.Errorf("signing prevout %v script mismatch",
 				currentDeposit.OutPoint)
 		}
