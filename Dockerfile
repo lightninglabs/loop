@@ -1,4 +1,4 @@
-FROM --platform=${BUILDPLATFORM} golang:1.26-alpine as builder
+FROM --platform=${BUILDPLATFORM} golang:1.26-alpine AS builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightningnetwork/loop
@@ -31,7 +31,7 @@ RUN apk add --no-cache --update \
 # every stage. Do not pin it to ${BUILDPLATFORM}: that builds every requested
 # platform on the build machine's architecture, producing an image whose
 # manifest advertises linux/arm64 while the filesystem is amd64.
-FROM alpine as final
+FROM alpine AS final
 
 # Expose lnd ports (server, rpc).
 EXPOSE 8081 11010
