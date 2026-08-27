@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/urfave/cli/v3"
@@ -52,8 +53,13 @@ func validateRouteHints(cmd *cli.Command) ([]*swapserverrpc.RouteHint, error) {
 			var h swapserverrpc.RouteHint
 			err := protojson.Unmarshal(jsonHint, &h)
 			if err != nil {
+				// Protobuf deliberately varies this separator across
+				// builds. Normalize it to keep CLI errors stable.
+				errText := strings.ReplaceAll(
+					err.Error(), "\u00a0", " ",
+				)
 				return nil, fmt.Errorf("unable to parse route hint "+
-					"%d: %w", i, err)
+					"%d: %s", i, errText)
 			}
 			hints[i] = &h
 		}
