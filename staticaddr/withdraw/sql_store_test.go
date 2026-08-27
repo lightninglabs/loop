@@ -74,15 +74,21 @@ func TestSqlStore(t *testing.T) {
 		Version: 2,
 		TxOut: []*wire.TxOut{
 			{
-				Value: int64(d1.Value + d2.Value - 100),
+				Value: 100,
+				PkScript: []byte{
+					0x01,
+				},
+			},
+			{
+				Value: 100_000,
 				PkScript: []byte{
 					0x00,
 				},
 			},
 			{
-				Value: int64(100),
+				Value: int64(d1.Value + d2.Value - 100 - 100_000),
 				PkScript: []byte{
-					0x01,
+					0x02,
 				},
 			},
 		},
