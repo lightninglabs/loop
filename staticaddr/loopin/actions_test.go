@@ -1044,13 +1044,15 @@ func TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence(t *testing.T) {
 	require.True(t, sendUpdateCalled)
 }
 
-// TestInitHtlcActionSendsChangeOutput asserts that fractional loop-ins create
-// and send an operation-specific static change output to the server.
-func TestInitHtlcActionSendsChangeOutput(t *testing.T) {
+// TestInitHtlcActionSendsMultiAddressChangeOutput asserts that fractional
+// loop-ins preserve each input's owning address and send an operation-specific
+// static change output to the server.
+func TestInitHtlcActionSendsMultiAddressChangeOutput(t *testing.T) {
 	t.Parallel()
 
 	mockLnd := test.NewMockLnd()
 	_, depositClientPubkey := test.CreateKey(31)
+	_, secondDepositClientPubkey := test.CreateKey(34)
 	_, changeClientPubkey := test.CreateKey(32)
 	_, serverKey := test.CreateKey(33)
 
@@ -1071,6 +1073,17 @@ func TestInitHtlcActionSendsChangeOutput(t *testing.T) {
 			PkScript:     []byte{0x51, 0x20, 0x02},
 		},
 	}
+	secondDep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{4},
+			Index: 1,
+		},
+		Value: 200_000,
+		AddressParams: &address.Parameters{
+			ClientPubkey: secondDepositClientPubkey,
+			PkScript:     []byte{0x51, 0x20, 0x03},
+		},
+	}
 	changeParams := &address.Parameters{
 		ID:           1,
 		ClientPubkey: changeClientPubkey,
@@ -1078,9 +1091,9 @@ func TestInitHtlcActionSendsChangeOutput(t *testing.T) {
 	}
 
 	loopIn := &StaticAddressLoopIn{
-		Deposits:              []*deposit.Deposit{dep},
-		DepositOutpoints:      []string{dep.OutPoint.String()},
-		SelectedAmount:        300_000,
+		Deposits:              []*deposit.Deposit{dep, secondDep},
+		DepositOutpoints:      []string{dep.String(), secondDep.String()},
+		SelectedAmount:        500_000,
 		QuotedSwapFee:         1_000,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
@@ -1109,6 +1122,22 @@ func TestInitHtlcActionSendsChangeOutput(t *testing.T) {
 	require.Nil(t, f.LastActionError)
 	require.NotNil(t, server.request.ChangeOutput)
 	require.EqualValues(t, 200_000, server.request.ChangeOutput.Amount)
+	require.Equal(
+		t, depositClientPubkey.SerializeCompressed(),
+		server.request.DepositToClientPubkeys[dep.String()].GetPubkey(),
+	)
+	require.Equal(
+		t, dep.AddressParams.PkScript,
+		server.request.DepositToClientPubkeys[dep.String()].GetPkScript(),
+	)
+	require.Equal(
+		t, secondDepositClientPubkey.SerializeCompressed(),
+		server.request.DepositToClientPubkeys[secondDep.String()].GetPubkey(),
+	)
+	require.Equal(
+		t, secondDep.AddressParams.PkScript,
+		server.request.DepositToClientPubkeys[secondDep.String()].GetPkScript(),
+	)
 	require.Equal(
 		t, changeClientPubkey.SerializeCompressed(),
 		server.request.ChangeOutput.StaticAddress.GetPubkey(),
