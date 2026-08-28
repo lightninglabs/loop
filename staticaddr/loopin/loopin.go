@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
@@ -164,6 +165,11 @@ type StaticAddressLoopIn struct {
 
 	// Address is the address script that is used for the swap.
 	Address *script.StaticAddress
+
+	// ChangeAddressParams are the static address parameters for the change
+	// output that belongs to this swap. It is set only when SelectedAmount
+	// leaves non-dust change.
+	ChangeAddressParams *address.Parameters
 
 	// HTLC fields.
 
