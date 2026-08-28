@@ -77,7 +77,8 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 				Hash:  chainhash.Hash{0xaa},
 				Index: 0,
 			},
-			Value: depositValue,
+			Value:         depositValue,
+			AddressParams: addrParams,
 		},
 	}
 
@@ -96,7 +97,7 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 		ClientPubkey:          clientKey.PubKey(),
 		ServerPubkey:          serverKey.PubKey(),
 		Deposits:              deposits,
-		AddressParams:         addrParams,
+		ChangeAddressParams:   addrParams,
 		HtlcTxFeeRate:         feeRate,
 		SelectedAmount:        selectedAmount,
 		PaymentTimeoutSeconds: 3600,

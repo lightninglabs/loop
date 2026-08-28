@@ -109,6 +109,29 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
+	var changeOutput *swapserverrpc.StaticAddressChangeOutput
+	if hasChange {
+		changeAmount := f.loopIn.ExpectedChangeAmount()
+		f.loopIn.ChangeAddressParams, err =
+			f.cfg.AddressManager.NewChangeAddress(ctx)
+		if err != nil {
+			err = fmt.Errorf("unable to create static address "+
+				"change output: %w", err)
+
+			return returnError(err)
+		}
+
+		changeOutput, err = staticutil.ChangeOutput(
+			f.loopIn.ChangeAddressParams, changeAmount,
+		)
+		if err != nil {
+			err = fmt.Errorf("unable to prepare static address "+
+				"change output: %w", err)
+
+			return returnError(err)
+		}
+	}
+
 	// Generate random preimage.
 	var swapPreimage lntypes.Preimage
 	if _, err = rand.Read(swapPreimage[:]); err != nil {
@@ -179,6 +202,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		PaymentTimeoutSeconds:  f.loopIn.PaymentTimeoutSeconds,
 		Fast:                   f.loopIn.Fast,
 		DepositToClientPubkeys: depositDescriptors,
+		ChangeOutput:           changeOutput,
 	}
 	if f.loopIn.LastHop != nil {
 		loopInReq.LastHop = f.loopIn.LastHop
