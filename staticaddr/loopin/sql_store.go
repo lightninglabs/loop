@@ -494,6 +494,8 @@ func (s *SqlStore) BatchMapDepositsToSwapHashes(ctx context.Context,
 }
 
 // SwapHashesForDepositIDs retrieves the swap hashes for the given deposit IDs.
+// Deposits that are unknown or not mapped to a swap are skipped, so they don't
+// hide the swaps of the remaining deposits from the caller.
 func (s *SqlStore) SwapHashesForDepositIDs(ctx context.Context,
 	depositIDs []deposit.ID) (map[lntypes.Hash][]deposit.ID, error) {
 
@@ -502,14 +504,14 @@ func (s *SqlStore) SwapHashesForDepositIDs(ctx context.Context,
 		swapHash, err := s.baseDB.SwapHashForDepositID(ctx, id[:])
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return nil, nil
+				continue
 			}
 
 			return nil, err
 		}
 
 		if swapHash == nil {
-			return nil, nil
+			continue
 		}
 
 		if len(swapHash) != lntypes.HashSize {

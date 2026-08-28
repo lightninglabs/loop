@@ -566,6 +566,35 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Contains(t, swapHashes[swapHashPending], depositIDs[0])
 	require.Contains(t, swapHashes[swapHashPending], depositIDs[1])
 
+	// Deposits without a swap hash or without a database row must not hide
+	// the swap of the remaining deposits.
+	unmapped := &deposit.Deposit{
+		ID: newID(),
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x2a, 0x2b, 0x3c, 0x4f},
+			Index: 2,
+		},
+		Value: btcutil.Amount(300_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4e,
+		},
+		AddressParams: d1.AddressParams,
+	}
+	err = depositStore.CreateDeposit(ctx, unmapped)
+	require.NoError(t, err)
+
+	swapHashes, err = swapStore.SwapHashesForDepositIDs(
+		ctx, []deposit.ID{
+			unmapped.ID, newID(), depositIDs[0], depositIDs[1],
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, swapHashes, 1)
+	require.ElementsMatch(
+		t, []deposit.ID{depositIDs[0], depositIDs[1]},
+		swapHashes[swapHashPending],
+	)
+
 	swap, err := swapStore.GetLoopInByHash(ctx, swapHashPending)
 	require.NoError(t, err)
 	require.Equal(t, swapHashPending, swap.SwapHash)
