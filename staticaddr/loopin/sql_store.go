@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/clock"
@@ -293,6 +294,17 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 		SelectedAmount:          int64(loopIn.SelectedAmount),
 		PaymentTimeoutSeconds:   int32(loopIn.PaymentTimeoutSeconds),
 		Fast:                    loopIn.Fast,
+	}
+	if loopIn.ChangeAddressParams != nil {
+		if loopIn.ChangeAddressParams.ID == 0 {
+			return errors.New("static address change parameters " +
+				"missing database ID")
+		}
+
+		staticAddressLoopInParams.ChangeStaticAddressID = sql.NullInt32{
+			Int32: loopIn.ChangeAddressParams.ID,
+			Valid: true,
+		}
 	}
 
 	updateTime := sqlStoreUpdateTime(s.clock)
@@ -638,6 +650,11 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	}
 	depositList = orderDepositsBySnapshot(depositList, depositOutpoints)
 
+	changeAddressParams, err := toChangeAddressParameters(swap)
+	if err != nil {
+		return nil, err
+	}
+
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:         swapHash,
 		SwapPreimage:     swapPreImage,
@@ -671,6 +688,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		HtlcTimeoutSweepAddress: timeoutAddress,
 		HtlcTimeoutSweepTxHash:  htlcTimeoutSweepTxHash,
 		Deposits:                depositList,
+		ChangeAddressParams:     changeAddressParams,
 	}
 	if swap.ConfirmationRiskDecisionTime.Valid {
 		loopIn.ConfirmationRiskDecisionTime =
@@ -718,4 +736,42 @@ func orderDepositsBySnapshot(deposits []*deposit.Deposit,
 	}
 
 	return orderedDeposits
+}
+
+// toChangeAddressParameters converts the optional joined static address row
+// into the change address parameters used to verify batched sweepless sweeps.
+func toChangeAddressParameters(row sqlc.GetStaticAddressLoopInSwapRow) (
+	*address.Parameters, error) {
+
+	if !row.ChangeStaticAddressID.Valid {
+		return nil, nil
+	}
+
+	clientKey, err := btcec.ParsePubKey(row.ChangeClientPubkey)
+	if err != nil {
+		return nil, err
+	}
+
+	serverKey, err := btcec.ParsePubKey(row.ChangeServerPubkey)
+	if err != nil {
+		return nil, err
+	}
+
+	return &address.Parameters{
+		ID:           row.ChangeStaticAddressID.Int32,
+		ClientPubkey: clientKey,
+		ServerPubkey: serverKey,
+		Expiry:       uint32(row.ChangeExpiry.Int32),
+		PkScript:     row.ChangePkscript,
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(
+				row.ChangeClientKeyFamily.Int32,
+			),
+			Index: uint32(row.ChangeClientKeyIndex.Int32),
+		},
+		ProtocolVersion: version.AddressProtocolVersion(
+			row.ChangeProtocolVersion.Int32,
+		),
+		InitiationHeight: row.ChangeInitiationHeight.Int32,
+	}, nil
 }
