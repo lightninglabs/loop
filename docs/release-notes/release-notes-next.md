@@ -33,6 +33,9 @@
 
 #### Bug Fixes
 
+* Static Address Loop In timeout recovery now spends the exact HTLC output
+  confirmed on chain, including server-published backup fee variants.
+
 * Static Address withdrawals now follow the transaction that actually replaces
   an original withdrawal, reconcile partial conflicting spends, and wait for
   their background monitors during shutdown.
