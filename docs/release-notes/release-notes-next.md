@@ -45,6 +45,9 @@
   `loopd` failed with `exec format error` on ARM hosts.
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
+* Static Address Loop In timeout recovery now spends the exact HTLC output
+  confirmed on chain, including server-published backup fee variants.
+
 * Static Address withdrawals now follow the transaction that actually replaces
   an original withdrawal, reconcile partial conflicting spends, durably record
   confirmed transactions before finalizing deposits, and wait for their
