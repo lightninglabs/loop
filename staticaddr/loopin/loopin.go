@@ -315,11 +315,10 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 	// change.
 	var (
 		swapAmt      = l.TotalDepositAmount()
-		changeAmount btcutil.Amount
+		changeAmount = l.ExpectedChangeAmount()
 	)
 	if l.SelectedAmount > 0 {
 		swapAmt = l.SelectedAmount
-		changeAmount = l.TotalDepositAmount() - l.SelectedAmount
 	}
 
 	// Calculate htlc tx fee for server provided fee rate.
@@ -354,9 +353,14 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 
 	// We expect change to be sent back to our static address output script.
 	if changeAmount > 0 {
+		if l.ChangeAddressParams == nil {
+			return nil, fmt.Errorf("missing static address change " +
+				"parameters")
+		}
+
 		msgTx.AddTxOut(&wire.TxOut{
 			Value:    int64(changeAmount),
-			PkScript: l.AddressParams.PkScript,
+			PkScript: l.ChangeAddressParams.PkScript,
 		})
 	}
 
@@ -586,6 +590,22 @@ func (l *StaticAddressLoopIn) TotalDepositAmount() btcutil.Amount {
 		total += d.Value
 	}
 	return total
+}
+
+// ExpectedChangeAmount returns the change that a fractional loop-in should send
+// to its generated static change address. A full-amount loop-in has no change.
+func (l *StaticAddressLoopIn) ExpectedChangeAmount() btcutil.Amount {
+	if l.SelectedAmount <= 0 {
+		return 0
+	}
+
+	totalDepositAmount := l.TotalDepositAmount()
+	changeAmount := totalDepositAmount - l.SelectedAmount
+	if changeAmount <= 0 || changeAmount >= totalDepositAmount {
+		return 0
+	}
+
+	return changeAmount
 }
 
 // RemainingPaymentTimeSeconds returns the remaining time in seconds until the

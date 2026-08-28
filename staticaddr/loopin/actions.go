@@ -128,6 +128,29 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
+	var changeOutput *swapserverrpc.StaticAddressChangeOutput
+	if hasChange {
+		changeAmount := f.loopIn.ExpectedChangeAmount()
+		f.loopIn.ChangeAddressParams, err =
+			f.cfg.AddressManager.NewChangeAddress(ctx)
+		if err != nil {
+			err = fmt.Errorf("unable to create static address "+
+				"change output: %w", err)
+
+			return returnError(err)
+		}
+
+		changeOutput, err = staticutil.ChangeOutput(
+			f.loopIn.ChangeAddressParams, changeAmount,
+		)
+		if err != nil {
+			err = fmt.Errorf("unable to prepare static address "+
+				"change output: %w", err)
+
+			return returnError(err)
+		}
+	}
+
 	// Derive a client key for the HTLC.
 	keyDesc, err := f.cfg.WalletKit.DeriveNextKey(
 		ctx, swap.StaticAddressKeyFamily,
@@ -187,6 +210,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		PaymentTimeoutSeconds:  f.loopIn.PaymentTimeoutSeconds,
 		Fast:                   f.loopIn.Fast,
 		DepositToClientPubkeys: depositDescriptors,
+		ChangeOutput:           changeOutput,
 	}
 	if f.loopIn.LastHop != nil {
 		loopInReq.LastHop = f.loopIn.LastHop
@@ -1834,18 +1858,16 @@ func (f *FSM) htlcSpendingTx(ctx context.Context,
 // client co-signed, and only the standard fee rate is persisted, so the htlc
 // tx that is swept is taken from the chain instead of being rebuilt.
 func (f *FSM) fetchHtlcTx(ctx context.Context) (*wire.MsgTx, error) {
-	outpoints := f.loopIn.Outpoints()
-	if len(outpoints) == 0 {
+	if len(f.loopIn.Deposits) == 0 {
 		return nil, errors.New("loop-in has no deposits")
 	}
 
-	if f.loopIn.AddressParams == nil {
-		return nil, errors.New("loop-in has no static address " +
-			"parameters")
+	first := f.loopIn.Deposits[0]
+	if first == nil || first.AddressParams == nil {
+		return nil, errors.New("deposit has no static address parameters")
 	}
-
 	return f.waitForSpend(
-		ctx, outpoints[0], f.loopIn.AddressParams.PkScript, "deposit",
+		ctx, first.OutPoint, first.AddressParams.PkScript, "deposit",
 		"htlc tx",
 	)
 }
