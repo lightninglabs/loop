@@ -705,22 +705,25 @@ func makeSweepTx(inputs []wire.OutPoint, outputs []*wire.TxOut) *wire.MsgTx {
 func TestCheckChange(t *testing.T) {
 	ctx := context.Background()
 
-	// Prepare a common change address and an alternate address.
+	// Prepare shared and per-swap change addresses, plus unrelated outputs.
 	changeAddr := &script.Parameters{PkScript: []byte{0xaa, 0xbb}}
+	freshChangeAddr := &script.Parameters{PkScript: []byte{0xab, 0xcd}}
 	otherAddr := &script.Parameters{PkScript: []byte{0xcc, 0xdd}}
 	serverAddr := &script.Parameters{PkScript: []byte{0xee, 0xff}}
 
 	// Prepare swaps (loop-ins) with varying deposit totals and selections.
 	// Helper to make a swap with deposits and selected amount.
 	makeSwap := func(h byte, deposits []*deposit.Deposit,
-		selected btcutil.Amount) (lntypes.Hash, *StaticAddressLoopIn) {
+		selected btcutil.Amount,
+		changeAddress *script.Parameters) (lntypes.Hash,
+		*StaticAddressLoopIn) {
 
 		var hash lntypes.Hash
 		hash[0] = h
 		li := &StaticAddressLoopIn{
-			Deposits:       deposits,
-			SelectedAmount: selected,
-			AddressParams:  changeAddr,
+			Deposits:            deposits,
+			SelectedAmount:      selected,
+			ChangeAddressParams: changeAddress,
 		}
 		return hash, li
 	}
@@ -732,16 +735,23 @@ func TestCheckChange(t *testing.T) {
 	s2d1 := makeDeposit(2, 0, 1500, confirmationHeight)
 	s3d1 := makeDeposit(3, 0, 800, confirmationHeight)
 	s4d1 := makeDeposit(4, 0, 900, confirmationHeight)
+	s5d1 := makeDeposit(5, 0, 700, confirmationHeight)
 
 	// Swaps:
 	// A: total 3000, selected 3000 => no change.
-	hA, liA := makeSwap(10, []*deposit.Deposit{s1d1, s1d2}, 3000)
+	hA, liA := makeSwap(
+		10, []*deposit.Deposit{s1d1, s1d2}, 3000, changeAddr,
+	)
 	// B: total 1500, selected 1000 => change 500.
-	hB, liB := makeSwap(11, []*deposit.Deposit{s2d1}, 1000)
+	hB, liB := makeSwap(11, []*deposit.Deposit{s2d1}, 1000, changeAddr)
 	// C: total 800, selected 400 => change 400.
-	hC, liC := makeSwap(12, []*deposit.Deposit{s3d1}, 400)
+	hC, liC := makeSwap(12, []*deposit.Deposit{s3d1}, 400, changeAddr)
 	// D: total 900, selected 500 => change 400.
-	hD, liD := makeSwap(13, []*deposit.Deposit{s4d1}, 500)
+	hD, liD := makeSwap(13, []*deposit.Deposit{s4d1}, 500, changeAddr)
+	// E: total 700, selected 400 => change 300 to a fresh address.
+	hE, liE := makeSwap(
+		14, []*deposit.Deposit{s5d1}, 400, freshChangeAddr,
+	)
 
 	// Mapping deposits -> swaps (by deposit IDs).
 	mapIDs := map[lntypes.Hash][]deposit.ID{
@@ -749,6 +759,7 @@ func TestCheckChange(t *testing.T) {
 		hB: {s2d1.ID},
 		hC: {s3d1.ID},
 		hD: {s4d1.ID},
+		hE: {s5d1.ID},
 	}
 
 	loopIns := map[lntypes.Hash]*StaticAddressLoopIn{
@@ -756,6 +767,7 @@ func TestCheckChange(t *testing.T) {
 		hB: liB,
 		hC: liC,
 		hD: liD,
+		hE: liE,
 	}
 
 	// Common manager with mocked dependencies; will change inputs per test.
@@ -775,7 +787,6 @@ func TestCheckChange(t *testing.T) {
 		name           string
 		inDeps         []*deposit.Deposit // deposits referenced by tx inputs
 		outputs        []*wire.TxOut      // outputs in sweep tx
-		addr           *script.Parameters
 		expectErr      bool
 		expectedErrMsg string
 	}
@@ -791,7 +802,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: serverAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
 			name:   "single swap change present",
@@ -806,11 +816,10 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
-			name:   "multiple swaps different change amounts",
-			inDeps: []*deposit.Deposit{s2d1, s3d1}, // B(500)+C(400)=900
+			name:   "shared script changes aggregated",
+			inDeps: []*deposit.Deposit{s2d1, s3d1}, // B(500)+C(400)
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -821,11 +830,10 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
-			name:   "two swaps with identical change values sum correctly",
-			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)=800
+			name:   "identical shared script changes aggregated",
+			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -836,13 +844,45 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
+		},
+		{
+			name:   "split shared script changes rejected",
+			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)
+			outputs: []*wire.TxOut{
+				{
+					Value:    400,
+					PkScript: changeAddr.PkScript,
+				},
+				{
+					Value:    400,
+					PkScript: changeAddr.PkScript,
+				},
+			},
+			expectErr:      true,
+			expectedErrMsg: "couldn't find expected change",
+		},
+		{
+			name:   "distinct change scripts remain separate",
+			inDeps: []*deposit.Deposit{s2d1, s5d1}, // B(500)+E(300)
+			outputs: []*wire.TxOut{
+				{
+					Value:    1337,
+					PkScript: serverAddr.PkScript,
+				},
+				{
+					Value:    500,
+					PkScript: changeAddr.PkScript,
+				},
+				{
+					Value:    300,
+					PkScript: freshChangeAddr.PkScript,
+				},
+			},
 		},
 		{
 			name:           "missing change output results in error",
 			inDeps:         []*deposit.Deposit{s2d1}, // expect 500
 			outputs:        []*wire.TxOut{},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -859,7 +899,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: otherAddr.PkScript,
 				},
 			},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -876,7 +915,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -897,7 +935,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: otherAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 	}
 
@@ -920,7 +957,7 @@ func TestCheckChange(t *testing.T) {
 			mgr.cfg.DepositManager = mdm
 
 			tx := makeSweepTx(inputs, tc.outputs)
-			err := mgr.checkChange(ctx, tx, tc.addr)
+			err := mgr.checkChange(ctx, tx)
 			if tc.expectErr {
 				require.Error(t, err)
 				if tc.expectedErrMsg != "" {
