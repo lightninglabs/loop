@@ -533,6 +533,9 @@ Loop in funds from static address deposits.
 \fB--max_swap_fee_sat\fP="": the maximum swap fee in satoshis. If set, the swap is rejected when the quoted fee exceeds this cap. The maximum allowed value is 10000000. On-chain fees for creating static deposits are unaffected. (default: 0)
 
 .PP
+\fB--min_expiry_blocks\fP="": minimum remaining blocks required for confirmed deposits selected by --all. (default: 1050)
+
+.PP
 \fB--payment_timeout\fP="": the maximum time in seconds that the server is allowed to take for the swap payment. The client can retry the swap with adjusted parameters after the payment timed out. (default: 0s)
 
 .PP

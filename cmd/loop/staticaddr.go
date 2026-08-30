@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"math"
+	"os"
 	"sort"
 	"strings"
 
@@ -17,6 +20,15 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli/v3"
+)
+
+const (
+	// defaultStaticLoopInMinExpiryBlocks preserves the shared Loop-in safety
+	// floor so the CLI's default selection rule matches the underlying swap
+	// policy.
+	defaultStaticLoopInMinExpiryBlocks = uint64(
+		loopin.DefaultLoopInOnChainCltvDelta + loopin.DepositHtlcDelta,
+	)
 )
 
 func init() {
@@ -435,6 +447,15 @@ var staticAddressLoopInCommand = &cli.Command{
 			Name:  "all",
 			Usage: "loop in all static address deposits.",
 		},
+		&cli.Uint64Flag{
+			Name: "min_expiry_blocks",
+			// Keep the default tied to the shared Loop-in safety policy;
+			// explicit --all overrides below this value are accepted with a
+			// warning.
+			Value: defaultStaticLoopInMinExpiryBlocks,
+			Usage: "minimum remaining blocks required for " +
+				"confirmed deposits selected by --all.",
+		},
 		&cli.DurationFlag{
 			Name: "payment_timeout",
 			Usage: "the maximum time in seconds that the server " +
@@ -519,6 +540,18 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 		lastHop                    []byte
 		paymentTimeoutSeconds      = uint32(loopin.DefaultPaymentTimeoutSeconds)
 	)
+	minExpiryBlocks, err := staticAddressLoopInMinExpiryBlocks(
+		isAllSelected, cmd.IsSet("min_expiry_blocks"),
+		cmd.Uint64("min_expiry_blocks"),
+	)
+	if err != nil {
+		return err
+	}
+	if cmd.IsSet("min_expiry_blocks") &&
+		minExpiryBlocks < defaultStaticLoopInMinExpiryBlocks {
+
+		writeStaticLoopInMinExpiryWarning(os.Stdout, minExpiryBlocks)
+	}
 
 	// Validate our label early so that we can fail before getting a quote.
 	if err := labels.Validate(label); err != nil {
@@ -565,7 +598,18 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 		return errors.New("cannot select all and specific utxos")
 
 	case isAllSelected:
-		depositOutpoints = depositsToOutpoints(allDeposits)
+		var skipped []skippedStaticLoopInDeposit
+		depositOutpoints, skipped, err = selectAllStaticLoopInDeposits(
+			allDeposits, minExpiryBlocks,
+		)
+		if len(skipped) > 0 {
+			writeSkippedStaticLoopInDeposits(
+				os.Stdout, skipped, minExpiryBlocks,
+			)
+		}
+		if err != nil {
+			return err
+		}
 
 	case isUtxoSelected:
 		depositOutpoints = cmd.StringSlice("utxo")
@@ -669,6 +713,106 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+// staticAddressLoopInMinExpiryBlocks validates expiry floors only for --all
+// selection and keeps them representable for int64-backed deposit comparisons;
+// below-default values are allowed and warned about separately.
+func staticAddressLoopInMinExpiryBlocks(isAllSelected bool, isMinExpirySet bool,
+	minExpiryBlocks uint64) (uint64, error) {
+
+	if isMinExpirySet && !isAllSelected {
+		return 0, errors.New("--min_expiry_blocks requires --all")
+	}
+
+	if minExpiryBlocks > uint64(math.MaxInt64) {
+		return 0, fmt.Errorf("--min_expiry_blocks cannot exceed %d",
+			math.MaxInt64)
+	}
+
+	return minExpiryBlocks, nil
+}
+
+// writeStaticLoopInMinExpiryWarning centralizes the below-default warning so the
+// CLI consistently explains the safety tradeoff for explicit lower thresholds.
+func writeStaticLoopInMinExpiryWarning(w io.Writer, minExpiryBlocks uint64) {
+	fmt.Fprintf(
+		w, "\nWARNING: --min_expiry_blocks is set to %d, below the "+
+			"default safety minimum of %d. This may select confirmed "+
+			"deposits closer to expiry than the shared Loop-in safety "+
+			"policy, increasing the risk that selected deposits expire "+
+			"before the swap completes.\n",
+		minExpiryBlocks, defaultStaticLoopInMinExpiryBlocks,
+	)
+}
+
+// skippedStaticLoopInDeposit records deposits that --all left behind so the
+// CLI can explain them back to the user in a deterministic, reviewable order.
+type skippedStaticLoopInDeposit struct {
+	outpoint        string
+	remainingBlocks int64
+}
+
+// selectAllStaticLoopInDeposits filters confirmed deposits against the expiry
+// floor so automatic --all selection only quotes safe outputs while still
+// reporting skipped entries for review.
+func selectAllStaticLoopInDeposits(deposits []*looprpc.Deposit,
+	minExpiryBlocks uint64) ([]string, []skippedStaticLoopInDeposit, error) {
+
+	depositOutpoints := make([]string, 0, len(deposits))
+	skipped := make([]skippedStaticLoopInDeposit, 0)
+	for _, deposit := range deposits {
+		if !isDepositEligibleForStaticLoopInAll(deposit, minExpiryBlocks) {
+			skipped = append(skipped, skippedStaticLoopInDeposit{
+				outpoint:        deposit.Outpoint,
+				remainingBlocks: deposit.BlocksUntilExpiry,
+			})
+			continue
+		}
+
+		depositOutpoints = append(depositOutpoints, deposit.Outpoint)
+	}
+
+	if len(depositOutpoints) == 0 {
+		return nil, skipped, fmt.Errorf("no deposited outputs meet the "+
+			"minimum expiry of %d blocks", minExpiryBlocks)
+	}
+
+	return depositOutpoints, skipped, nil
+}
+
+// isDepositEligibleForStaticLoopInAll centralizes the Loop-in expiry check so
+// automatic selection and warning selection stay in sync while unconfirmed
+// deposits remain eligible.
+func isDepositEligibleForStaticLoopInAll(deposit *looprpc.Deposit,
+	minExpiryBlocks uint64) bool {
+
+	if deposit.ConfirmationHeight <= 0 {
+		// Unconfirmed deposits have not started their relative CSV timeout,
+		// so they are not yet close to expiry.
+		return true
+	}
+
+	return deposit.BlocksUntilExpiry >= int64(minExpiryBlocks)
+}
+
+// writeSkippedStaticLoopInDeposits emits skipped deposits in a deterministic
+// order so users can compare the CLI report with the selection rules.
+func writeSkippedStaticLoopInDeposits(w io.Writer,
+	skipped []skippedStaticLoopInDeposit, minExpiryBlocks uint64) {
+
+	sortedSkipped := append([]skippedStaticLoopInDeposit(nil), skipped...)
+	sort.Slice(sortedSkipped, func(i, j int) bool {
+		return sortedSkipped[i].outpoint < sortedSkipped[j].outpoint
+	})
+
+	fmt.Fprintln(w, "Skipping static address deposits too close to expiry:")
+	for _, deposit := range sortedSkipped {
+		fmt.Fprintf(
+			w, "- %s: %d blocks remaining, requires at least %d\n",
+			deposit.outpoint, deposit.remainingBlocks, minExpiryBlocks,
+		)
+	}
+}
+
 func containsDuplicates(outpoints []string) bool {
 	found := make(map[string]struct{})
 	for _, outpoint := range outpoints {
@@ -679,15 +823,6 @@ func containsDuplicates(outpoints []string) bool {
 	}
 
 	return false
-}
-
-func depositsToOutpoints(deposits []*looprpc.Deposit) []string {
-	outpoints := make([]string, 0, len(deposits))
-	for _, deposit := range deposits {
-		outpoints = append(outpoints, deposit.Outpoint)
-	}
-
-	return outpoints
 }
 
 var warningSelectionDustLimit = int64(lnwallet.DustLimitForSize(input.P2TRSize))
@@ -754,14 +889,10 @@ func filterSwappableWarningDeposits(
 	allDeposits []*looprpc.Deposit) []*looprpc.Deposit {
 
 	swappable := make([]*looprpc.Deposit, 0, len(allDeposits))
-	minBlocksUntilExpiry := int64(
-		loopin.DefaultLoopInOnChainCltvDelta + loopin.DepositHtlcDelta,
-	)
 	for _, deposit := range allDeposits {
-		// Unconfirmed deposits remain swappable because their CSV timeout has
-		// not started yet. This mirrors loopin.IsSwappable.
-		if deposit.ConfirmationHeight > 0 &&
-			deposit.BlocksUntilExpiry < minBlocksUntilExpiry {
+		if !isDepositEligibleForStaticLoopInAll(
+			deposit, defaultStaticLoopInMinExpiryBlocks,
+		) {
 
 			continue
 		}

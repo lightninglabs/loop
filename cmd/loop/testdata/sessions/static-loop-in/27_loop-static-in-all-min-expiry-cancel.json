@@ -1,0 +1,195 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "in",
+      "--all",
+      "--min_expiry_blocks",
+      "14398",
+      "--network",
+      "regtest"
+    ],
+    "env": {},
+    "version": "0.33.3-beta commit=v0.33.3-beta-78-g41bc5f85dfb6cbb1baf6905ad1a73423043ba6a8-dirty commit_hash=41bc5f85dfb6cbb1baf6905ad1a73423043ba6a8",
+    "run_error": "swap canceled",
+    "duration": 872162875,
+    "clock_start_unix": 1784814954
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "stdin",
+      "data": {
+        "text": "n\n"
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "DEPOSITED",
+          "outpoints": []
+        }
+      }
+    },
+    {
+      "time_ms": 21,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "V/nBBK1ZOttFd6qaiHUli/ybqYE7Ox/0ml3bU06PsTQ=",
+              "state": "DEPOSITED",
+              "outpoint": "d54394c5d5638f2e72ce2f7afa8e0c604c4989da36c822bfc0026fd69bab8e62:0",
+              "value": "300000",
+              "confirmation_height": "122",
+              "blocks_until_expiry": "14395",
+              "swap_hash": ""
+            },
+            {
+              "id": "99EbTf87OKBI6G7Swb/w3/PFYnRMOKwsl1Hm2Oj9pj4=",
+              "state": "DEPOSITED",
+              "outpoint": "e55fd0ffcb73c8088141142c2ee1266e5713ce7f1384233c4d8091e6d6a7cefb:0",
+              "value": "350000",
+              "confirmation_height": "127",
+              "blocks_until_expiry": "14400",
+              "swap_hash": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 21,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "Skipping static address deposits too close to expiry:\n",
+          "- d54394c5d5638f2e72ce2f7afa8e0c604c4989da36c822bfc0026fd69bab8e62:0: 14395 blocks remaining, requires at least 14398\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 21,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "0",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [],
+          "private": false,
+          "deposit_outpoints": [
+            "e55fd0ffcb73c8088141142c2ee1266e5713ce7f1384233c4d8091e6d6a7cefb:0"
+          ],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 869,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1820",
+          "htlc_publish_fee_sat": "0",
+          "cltv_delta": 0,
+          "conf_target": 0,
+          "quoted_amt": "350000"
+        }
+      }
+    },
+    {
+      "time_ms": 869,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "request",
+        "message_type": "looprpc.StaticAddressSummaryRequest",
+        "payload": {}
+      }
+    },
+    {
+      "time_ms": 871,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetStaticAddressSummary",
+        "event": "response",
+        "message_type": "looprpc.StaticAddressSummaryResponse",
+        "payload": {
+          "static_address": "bcrt1pnehdv95rkjnfzhgevhca07fqezjsh4uctf58yv9c4sk6j80qzjxs423q2g",
+          "relative_expiry_blocks": "14400",
+          "total_num_deposits": 2,
+          "value_unconfirmed_satoshis": "0",
+          "value_deposited_satoshis": "650000",
+          "value_expired_satoshis": "0",
+          "value_withdrawn_satoshis": "0",
+          "value_looped_in_satoshis": "0",
+          "value_htlc_timeout_sweeps_satoshis": "0",
+          "value_channels_opened": "0"
+        }
+      }
+    },
+    {
+      "time_ms": 871,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "\n",
+          "WARNING: The following deposits are below the conservative 6-confirmation threshold:\n",
+          "  - e55fd0ffcb73c8088141142c2ee1266e5713ce7f1384233c4d8091e6d6a7cefb:0 (1 confirmations)\n",
+          "The swap payment for these deposits may wait for more confirmations depending on the server's confirmation-risk policy.\n",
+          "\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 871,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "Previously deposited on-chain:             350000 sat\n",
+          "Receive off-chain:                         348180 sat\n",
+          "Estimated total fee:                         1820 sat\n",
+          "\n",
+          "CONTINUE SWAP? (y/n): "
+        ]
+      }
+    },
+    {
+      "time_ms": 872,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] swap canceled\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 872,
+      "kind": "exit",
+      "data": {
+        "run_error": "swap canceled"
+      }
+    }
+  ]
+}
