@@ -16,6 +16,10 @@
 
 #### Bug Fixes
 
+* Static Address deposit reconciliation now preserves authoritative
+  first-confirmation heights while lnd is catching up, preventing premature
+  expiry decisions from mismatched wallet and block-notification heights.
+
 * `loopd --version` inside the official Docker images now reports the commit
   it was built from instead of an empty string.
 

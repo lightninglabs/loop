@@ -205,6 +205,28 @@ type MockChainNotifier struct {
 	mock.Mock
 }
 
+type testLightningClient struct {
+	getInfo func(context.Context) (*lndclient.Info, error)
+}
+
+func (c *testLightningClient) GetInfo(ctx context.Context) (*lndclient.Info,
+	error) {
+
+	return c.getInfo(ctx)
+}
+
+func syncedTestLightningClient(height uint32) LightningClient {
+	return &testLightningClient{
+		getInfo: func(context.Context) (*lndclient.Info, error) {
+			return &lndclient.Info{
+				BlockHeight:   height,
+				BestBlockHash: chainhash.Hash{1},
+				SyncedToChain: true,
+			}, nil
+		},
+	}
+}
+
 func (m *MockChainNotifier) RawClientWithMacAuth(
 	ctx context.Context) (context.Context, time.Duration,
 	chainrpc.ChainNotifierClient) {
@@ -481,6 +503,60 @@ func TestManagerSkipsExpiryNotificationOnReconcileFailure(t *testing.T) {
 	}
 }
 
+// TestManagerSkipsExpiryWhileLndIsCatchingUp verifies a recovered deposit
+// cannot act on an expiry height until its confirmation height has been
+// reconciled against a stable, chain-synced wallet tip.
+func TestManagerSkipsExpiryWhileLndIsCatchingUp(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	testContext := newManagerTestContext(t)
+	testContext.manager.cfg.LightningClient = &testLightningClient{
+		getInfo: func(context.Context) (*lndclient.Info, error) {
+			return &lndclient.Info{
+				BlockHeight: defaultDepositConfirmations +
+					defaultExpiry,
+			}, nil
+		},
+	}
+
+	initChan := make(chan struct{})
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- testContext.manager.Run(ctx, initChan)
+	}()
+
+	testContext.blockChan <- int32(
+		defaultDepositConfirmations + defaultExpiry,
+	)
+
+	select {
+	case <-initChan:
+
+	case err := <-runErrChan:
+		require.NoError(t, err, "manager failed to start")
+
+	case <-time.After(time.Second):
+		t.Fatal("manager timed out starting")
+	}
+
+	select {
+	case <-testContext.mockLnd.SignOutputRawChannel:
+		t.Fatal("expiry sweep signed while lnd was catching up")
+
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	cancel()
+	select {
+	case err := <-runErrChan:
+		require.ErrorIs(t, err, context.Canceled)
+
+	case <-time.After(time.Second):
+		t.Fatal("manager did not stop")
+	}
+}
+
 // ManagerTestContext is a helper struct that contains all the necessary
 // components to test the reservation manager.
 type ManagerTestContext struct {
@@ -574,6 +650,15 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	)
 
 	cfg := &ManagerConfig{
+		LightningClient: &testLightningClient{
+			getInfo: func(context.Context) (*lndclient.Info, error) {
+				return &lndclient.Info{
+					BlockHeight:   manager.currentHeight.Load(),
+					BestBlockHash: chainhash.Hash{1},
+					SyncedToChain: true,
+				}, nil
+			},
+		},
 		AddressManager: mockAddressManager,
 		Store:          mockStore,
 		WalletKit:      mockLnd.WalletKit,

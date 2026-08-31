@@ -5,9 +5,16 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
+
+// LightningClient exposes the lnd chain information required to reconcile
+// wallet confirmation counts against an authoritative height.
+type LightningClient interface {
+	GetInfo(ctx context.Context) (*lndclient.Info, error)
+}
 
 const (
 	IdLength = 32

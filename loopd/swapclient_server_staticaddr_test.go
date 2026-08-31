@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
@@ -17,6 +18,20 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/require"
 )
+
+type staticAddrTestLightningClient struct {
+	lndclient.LightningClient
+}
+
+func (c *staticAddrTestLightningClient) GetInfo(context.Context) (
+	*lndclient.Info, error) {
+
+	return &lndclient.Info{
+		BlockHeight:   1,
+		BestBlockHash: chainhash.Hash{1},
+		SyncedToChain: true,
+	}, nil
+}
 
 type staticAddrDepositStore struct {
 	allDeposits []*deposit.Deposit
@@ -99,7 +114,8 @@ func newTestDepositManager(
 	}
 
 	return deposit.NewManager(&deposit.ManagerConfig{
-		AddressManager: &staticAddrTestAddressManager{},
+		LightningClient: &staticAddrTestLightningClient{},
+		AddressManager:  &staticAddrTestAddressManager{},
 		Store: &staticAddrDepositStore{
 			allDeposits: deposits,
 			byOutpoint:  byOutpoint,

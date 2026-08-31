@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
@@ -59,10 +60,11 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 	})
 
 	manager := NewManager(&ManagerConfig{
-		AddressManager: mockAddressManager,
-		Store:          mockStore,
-		WalletKit:      mockLnd.WalletKit,
-		Signer:         mockLnd.Signer,
+		LightningClient: syncedTestLightningClient(100),
+		AddressManager:  mockAddressManager,
+		Store:           mockStore,
+		WalletKit:       mockLnd.WalletKit,
+		Signer:          mockLnd.Signer,
 	})
 
 	var wg sync.WaitGroup
@@ -71,14 +73,16 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 	errs := make(chan error, 2)
 	go func() {
 		defer wg.Done()
-		errs <- manager.reconcileDeposits(ctx)
+		_, err := manager.reconcileDeposits(ctx)
+		errs <- err
 	}()
 
 	<-createEntered
 
 	go func() {
 		defer wg.Done()
-		errs <- manager.reconcileDeposits(ctx)
+		_, err := manager.reconcileDeposits(ctx)
+		errs <- err
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -117,9 +121,9 @@ func TestReconcileDepositsSerialized(t *testing.T) {
 	require.Equal(t, 2, errCount)
 }
 
-// TestReconcileConfirmedDepositUsesCurrentHeight verifies confirmation heights
-// are derived from the manager's current block height.
-func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
+// TestReconcileConfirmedDepositUsesLndHeight verifies confirmation heights are
+// derived from lnd's wallet tip instead of a potentially queued block epoch.
+func TestReconcileConfirmedDepositUsesLndHeight(t *testing.T) {
 	ctx := context.Background()
 	mockLnd := test.NewMockLnd()
 	utxo := &lnwallet.Utxo{
@@ -149,15 +153,166 @@ func TestReconcileConfirmedDepositUsesCurrentHeight(t *testing.T) {
 	})
 
 	manager := NewManager(&ManagerConfig{
+		LightningClient: syncedTestLightningClient(100),
+		AddressManager:  mockAddressManager,
+		Store:           mockStore,
+		WalletKit:       mockLnd.WalletKit,
+		Signer:          mockLnd.Signer,
+	})
+	manager.currentHeight.Store(36)
+
+	_, err := manager.reconcileDeposits(ctx)
+	require.ErrorContains(t, err, "unable to start new deposit FSM")
+}
+
+// TestReconcileCatchUpPreservesConfirmationHeight verifies changing wallet
+// confirmation counts cannot corrupt a deposit's persisted first-confirmation
+// height while lnd is catching up to a fixed backend tip.
+func TestReconcileCatchUpPreservesConfirmationHeight(t *testing.T) {
+	ctx := t.Context()
+	outpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{9},
+		Index: 1,
+	}
+	deposit := &Deposit{
+		OutPoint:           outpoint,
+		ConfirmationHeight: 144,
+	}
+	deposit.SetState(Deposited)
+
+	confirmationCounts := []int64{252, 287, 241, 185, 145, 144}
+	var listCall int
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return(func() []*lnwallet.Utxo {
+		utxo := &lnwallet.Utxo{
+			OutPoint:      outpoint,
+			Confirmations: confirmationCounts[listCall],
+		}
+		listCall++
+
+		return []*lnwallet.Utxo{utxo}
+	}, nil)
+
+	infos := make([]*lndclient.Info, 0, len(confirmationCounts)*2)
+	for i := 0; i < len(confirmationCounts)-1; i++ {
+		infos = append(infos,
+			&lndclient.Info{
+				BlockHeight:   287,
+				BestBlockHash: chainhash.Hash{1},
+			},
+			&lndclient.Info{
+				BlockHeight:   287,
+				BestBlockHash: chainhash.Hash{1},
+			},
+		)
+	}
+	stableInfo := &lndclient.Info{
+		BlockHeight:   287,
+		BestBlockHash: chainhash.Hash{1},
+		SyncedToChain: true,
+	}
+	infos = append(infos, stableInfo, stableInfo)
+
+	var infoCall int
+	lightningClient := &testLightningClient{
+		getInfo: func(context.Context) (*lndclient.Info, error) {
+			info := infos[infoCall]
+			infoCall++
+
+			return info, nil
+		},
+	}
+
+	mockStore := new(mockStore)
+	manager := NewManager(&ManagerConfig{
+		LightningClient: lightningClient,
+		AddressManager:  mockAddressManager,
+		Store:           mockStore,
+	})
+	manager.deposits[outpoint] = deposit
+	manager.activeDeposits[outpoint] = &FSM{deposit: deposit}
+
+	for i := range confirmationCounts {
+		confirmationTipHeight, err := manager.reconcileDeposits(ctx)
+		require.NoError(t, err)
+		if i == len(confirmationCounts)-1 {
+			require.EqualValues(t, 287, confirmationTipHeight)
+		} else {
+			require.Zero(t, confirmationTipHeight)
+		}
+		require.EqualValues(t, 144, deposit.ConfirmationHeight)
+	}
+
+	require.Equal(t, len(confirmationCounts), listCall)
+	require.Equal(t, len(infos), infoCall)
+	mockStore.AssertNotCalled(
+		t, "UpdateDeposit", mock.Anything, mock.Anything,
+	)
+}
+
+// TestReconcileDefersConfirmedDepositWithoutStableTip verifies a confirmed
+// wallet output is not persisted with the zero height reserved for genuinely
+// unconfirmed deposits while lnd is catching up.
+func TestReconcileDefersConfirmedDepositWithoutStableTip(t *testing.T) {
+	ctx := t.Context()
+	utxo := &lnwallet.Utxo{
+		OutPoint:      wire.OutPoint{Hash: chainhash.Hash{10}},
+		Confirmations: 6,
+	}
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return([]*lnwallet.Utxo{utxo}, nil)
+
+	mockStore := new(mockStore)
+	manager := NewManager(&ManagerConfig{
+		LightningClient: &testLightningClient{
+			getInfo: func(context.Context) (*lndclient.Info, error) {
+				return &lndclient.Info{
+					BlockHeight:   287,
+					BestBlockHash: chainhash.Hash{1},
+				}, nil
+			},
+		},
 		AddressManager: mockAddressManager,
 		Store:          mockStore,
-		WalletKit:      mockLnd.WalletKit,
-		Signer:         mockLnd.Signer,
 	})
-	manager.currentHeight.Store(100)
 
-	err := manager.reconcileDeposits(ctx)
-	require.ErrorContains(t, err, "unable to start new deposit FSM")
+	confirmationTipHeight, err := manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
+	require.Zero(t, confirmationTipHeight)
+	require.Empty(t, manager.deposits)
+	mockStore.AssertNotCalled(
+		t, "CreateDeposit", mock.Anything, mock.Anything,
+	)
+
+	err = manager.EnsureDepositsFresh(ctx)
+	require.ErrorIs(t, err, ErrConfirmationSnapshotUnavailable)
+}
+
+// TestEnsureDepositsFreshRejectsTipBelowKnownHeight verifies spending paths
+// fail closed when lnd's stable wallet tip is behind a block epoch already
+// consumed by the manager.
+func TestEnsureDepositsFreshRejectsTipBelowKnownHeight(t *testing.T) {
+	ctx := t.Context()
+
+	mockAddressManager := new(mockAddressManager)
+	mockAddressManager.On(
+		"ListUnspent", mock.Anything, int32(0), int32(MaxConfs),
+	).Return([]*lnwallet.Utxo{}, nil)
+
+	manager := NewManager(&ManagerConfig{
+		LightningClient: syncedTestLightningClient(199),
+		AddressManager:  mockAddressManager,
+		Store:           new(mockStore),
+	})
+	manager.currentHeight.Store(200)
+
+	err := manager.EnsureDepositsFresh(ctx)
+	require.ErrorIs(t, err, ErrConfirmationSnapshotUnavailable)
 }
 
 // TestUpdateDepositConfirmationsResetsReorgedDeposit verifies that a deposit
@@ -264,8 +419,9 @@ func TestReconcileDepositsDeactivatesVanishedUnconfirmedDeposit(t *testing.T) {
 	).Return([]*lnwallet.Utxo{}, nil)
 
 	manager := NewManager(&ManagerConfig{
-		AddressManager: mockAddressManager,
-		Store:          new(mockStore),
+		LightningClient: syncedTestLightningClient(100),
+		AddressManager:  mockAddressManager,
+		Store:           new(mockStore),
 	})
 	manager.deposits[outpoint] = deposit
 	fsm := &FSM{
@@ -279,7 +435,9 @@ func TestReconcileDepositsDeactivatesVanishedUnconfirmedDeposit(t *testing.T) {
 	}()
 	manager.activeDeposits[outpoint] = fsm
 
-	require.NoError(t, manager.reconcileDeposits(ctx))
+	confirmationTipHeight, err := manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 100, confirmationTipHeight)
 	require.Equal(t, Deposited, deposit.GetState())
 	require.Empty(t, manager.activeDeposits)
 	select {
@@ -312,8 +470,9 @@ func TestReconcileDepositsDeactivatesVanishedConfirmedDeposit(t *testing.T) {
 	).Return([]*lnwallet.Utxo{}, nil)
 
 	manager := NewManager(&ManagerConfig{
-		AddressManager: mockAddressManager,
-		Store:          new(mockStore),
+		LightningClient: syncedTestLightningClient(100),
+		AddressManager:  mockAddressManager,
+		Store:           new(mockStore),
 	})
 	manager.deposits[outpoint] = deposit
 	fsm := &FSM{
@@ -327,7 +486,9 @@ func TestReconcileDepositsDeactivatesVanishedConfirmedDeposit(t *testing.T) {
 	}()
 	manager.activeDeposits[outpoint] = fsm
 
-	require.NoError(t, manager.reconcileDeposits(ctx))
+	confirmationTipHeight, err := manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 100, confirmationTipHeight)
 	require.Equal(t, Deposited, deposit.GetState())
 	require.EqualValues(t, 123, deposit.ConfirmationHeight)
 	require.Empty(t, manager.activeDeposits)
@@ -506,14 +667,17 @@ func TestReconcileDepositsReactivatesReappearedDeposit(t *testing.T) {
 	})
 
 	manager := NewManager(&ManagerConfig{
-		AddressManager: mockAddressManager,
-		Store:          mockStore,
+		LightningClient: syncedTestLightningClient(100),
+		AddressManager:  mockAddressManager,
+		Store:           mockStore,
 	})
 	manager.deposits[outpoint] = deposit
 
 	// Reconciliation should reactivate the existing record instead of
 	// creating a second deposit entry for the same outpoint.
-	require.NoError(t, manager.reconcileDeposits(ctx))
+	confirmationTipHeight, err := manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 100, confirmationTipHeight)
 	require.Equal(t, Deposited, deposit.GetState())
 	require.Zero(t, deposit.ConfirmationHeight)
 	require.Len(t, manager.activeDeposits, 1)
@@ -566,12 +730,13 @@ func TestReconcileDepositsKeepsInactiveOnFSMStartFailure(t *testing.T) {
 	})
 
 	manager := NewManager(&ManagerConfig{
-		AddressManager: mockAddressManager,
-		Store:          mockStore,
+		LightningClient: syncedTestLightningClient(100),
+		AddressManager:  mockAddressManager,
+		Store:           mockStore,
 	})
 	manager.deposits[outpoint] = deposit
 
-	err := manager.reconcileDeposits(ctx)
+	_, err := manager.reconcileDeposits(ctx)
 	require.ErrorContains(t, err, "unable to sync active deposits")
 	require.Equal(t, Deposited, deposit.GetState())
 	require.Zero(t, deposit.ConfirmationHeight)
@@ -621,8 +786,9 @@ func TestReconcileDepositsDeactivatesBeforeActivationFailure(t *testing.T) {
 	).Return((*script.Parameters)(nil), errors.New("fsm init failed"))
 
 	manager := NewManager(&ManagerConfig{
-		AddressManager: mockAddressManager,
-		Store:          new(mockStore),
+		LightningClient: syncedTestLightningClient(100),
+		AddressManager:  mockAddressManager,
+		Store:           new(mockStore),
 	})
 	manager.deposits[visibleOutpoint] = visibleDeposit
 	manager.deposits[vanishedOutpoint] = vanishedDeposit
@@ -638,7 +804,7 @@ func TestReconcileDepositsDeactivatesBeforeActivationFailure(t *testing.T) {
 	}()
 	manager.activeDeposits[vanishedOutpoint] = vanishedFsm
 
-	err := manager.reconcileDeposits(ctx)
+	_, err := manager.reconcileDeposits(ctx)
 	require.ErrorContains(t, err, "unable to sync active deposits")
 	require.Empty(t, manager.activeDeposits)
 
@@ -703,16 +869,19 @@ func TestReconcileReplacementDepositCreatesNewDeposit(t *testing.T) {
 	})
 
 	manager := NewManager(&ManagerConfig{
-		AddressManager: mockAddressManager,
-		Store:          mockStore,
-		WalletKit:      mockLnd.WalletKit,
-		Signer:         mockLnd.Signer,
+		LightningClient: syncedTestLightningClient(100),
+		AddressManager:  mockAddressManager,
+		Store:           mockStore,
+		WalletKit:       mockLnd.WalletKit,
+		Signer:          mockLnd.Signer,
 	})
 	manager.deposits[oldOutpoint] = deposit
 	fsm := &FSM{}
 	manager.activeDeposits[oldOutpoint] = fsm
 
-	require.NoError(t, manager.reconcileDeposits(ctx))
+	confirmationTipHeight, err := manager.reconcileDeposits(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 100, confirmationTipHeight)
 
 	require.Same(t, deposit, manager.deposits[oldOutpoint])
 	require.Equal(t, oldOutpoint, deposit.OutPoint)
