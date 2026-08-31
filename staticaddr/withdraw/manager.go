@@ -935,6 +935,28 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 					confirmationHeight = uint32(spendingHeight)
 				}
 
+				if changeErr != nil {
+					log.Errorf("Error identifying withdrawal change: %v",
+						changeErr)
+
+					return
+				}
+
+				// Persist the confirmed transaction before moving the
+				// deposits into their terminal state. Recovery only
+				// reinstates Withdrawing deposits, so doing this in the
+				// opposite order can permanently lose the transaction
+				// history if the database update fails.
+				err = m.cfg.Store.UpdateWithdrawal(
+					ctx, deposits, confirmedTx, confirmationHeight,
+					changePkScript,
+				)
+				if err != nil {
+					log.Errorf("Error persisting withdrawal: %v", err)
+
+					return
+				}
+
 				err = m.cfg.DepositManager.TransitionDeposits(
 					ctx, deposits, deposit.OnWithdrawn,
 					deposit.Withdrawn,
@@ -951,23 +973,6 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 				delete(m.finalizedWithdrawalTxns, originalTxHash)
 				delete(m.finalizedWithdrawalTxns, spenderTxHash)
 				m.mu.Unlock()
-
-				// Persist info about the finalized withdrawal.
-				var persistErr error
-				if changeErr != nil {
-					log.Errorf("Error identifying withdrawal change: %v",
-						changeErr)
-				} else {
-					persistErr = m.cfg.Store.UpdateWithdrawal(
-						ctx, deposits, confirmedTx,
-						confirmationHeight,
-						changePkScript,
-					)
-				}
-				if persistErr != nil {
-					log.Errorf("Error persisting "+
-						"withdrawal: %v", persistErr)
-				}
 
 			case err := <-confErrChan:
 				// TODO(#1087): Handle reorgs by retrying

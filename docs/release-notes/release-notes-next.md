@@ -46,8 +46,9 @@
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
 * Static Address withdrawals now follow the transaction that actually replaces
-  an original withdrawal, reconcile partial conflicting spends, and wait for
-  their background monitors during shutdown.
+  an original withdrawal, reconcile partial conflicting spends, durably record
+  confirmed transactions before finalizing deposits, and wait for their
+  background monitors during shutdown.
 
 * Static Address startup now avoids reimporting wallet scripts that lnd already
   watches, address lookups remain responsive while new addresses are issued,

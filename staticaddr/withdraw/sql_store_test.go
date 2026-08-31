@@ -3,6 +3,7 @@ package withdraw
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
@@ -16,6 +17,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type synchronizedWithdrawalUpdateQuerier struct {
+	Querier
+
+	lookupReady chan<- struct{}
+	startUpdate <-chan struct{}
+}
+
+func (q *synchronizedWithdrawalUpdateQuerier) GetWithdrawalIDByDepositID(
+	ctx context.Context, depositID []byte) ([]byte, error) {
+
+	withdrawalID, err := q.Querier.GetWithdrawalIDByDepositID(ctx, depositID)
+	if err != nil {
+		return nil, err
+	}
+
+	q.lookupReady <- struct{}{}
+	select {
+	case <-q.startUpdate:
+		return withdrawalID, nil
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+type synchronizedWithdrawalUpdateDB struct {
+	BaseDB
+
+	lookupReady chan<- struct{}
+	startUpdate <-chan struct{}
+}
+
+func (d *synchronizedWithdrawalUpdateDB) ExecTx(ctx context.Context,
+	txOptions loopdb.TxOptions, txBody func(Querier) error) error {
+
+	return d.BaseDB.ExecTx(ctx, txOptions, func(q Querier) error {
+		return txBody(&synchronizedWithdrawalUpdateQuerier{
+			Querier:     q,
+			lookupReady: d.lookupReady,
+			startUpdate: d.startUpdate,
+		})
+	})
+}
+
 // TestSqlStore tests the basic functionality of the SQLStore.
 func TestSqlStore(t *testing.T) {
 	ctxb := context.Background()
@@ -23,7 +68,8 @@ func TestSqlStore(t *testing.T) {
 	defer testDb.Close()
 
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
-	store := NewSqlStore(loopdb.NewTypedStore[Querier](testDb), depositStore)
+	baseDB := loopdb.NewTypedStore[Querier](testDb)
+	store := NewSqlStore(baseDB, depositStore)
 
 	newID := func() deposit.ID {
 		did, err := deposit.GetRandomDepositID()
@@ -132,4 +178,49 @@ func TestSqlStore(t *testing.T) {
 	)
 	require.EqualValues(t, 100, withdrawals[0].ChangeAmount)
 	require.EqualValues(t, 6, withdrawals[0].ConfirmationHeight)
+
+	// Force two old-style read-then-write transactions to finish their
+	// reads before either starts its update. On SQLite, one transaction
+	// cannot upgrade its stale read snapshot and fails with SQLITE_BUSY.
+	// UpdateWithdrawal avoids that upgrade by looking up the immutable
+	// withdrawal association before starting the write.
+	lookupReady := make(chan struct{}, 2)
+	startUpdate := make(chan struct{})
+	concurrentStore := NewSqlStore(&synchronizedWithdrawalUpdateDB{
+		BaseDB:      baseDB,
+		lookupReady: lookupReady,
+		startUpdate: startUpdate,
+	}, depositStore)
+
+	updateErrors := make(chan error, 2)
+	start := make(chan struct{})
+	for range 2 {
+		go func() {
+			<-start
+			updateErrors <- concurrentStore.UpdateWithdrawal(
+				ctxb, []*deposit.Deposit{d1, d2}, withdrawalTx,
+				6, []byte{0x01},
+			)
+		}()
+	}
+	close(start)
+
+	// The new implementation performs its lookup outside ExecTx, so it
+	// bypasses the synchronization hook and can already be complete. The
+	// timeout only serves to release an old implementation if fewer than
+	// two database connections are available.
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer timer.Stop()
+	for lookups := 0; lookups < 2; lookups++ {
+		select {
+		case <-lookupReady:
+		case <-timer.C:
+			lookups = 2
+		}
+	}
+	close(startUpdate)
+
+	for range 2 {
+		require.NoError(t, <-updateErrors)
+	}
 }

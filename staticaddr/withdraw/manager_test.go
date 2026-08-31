@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -258,7 +259,8 @@ type withdrawalStoreUpdate struct {
 }
 
 type withdrawalTestStore struct {
-	updates chan withdrawalStoreUpdate
+	updates      chan withdrawalStoreUpdate
+	updateErrors chan error
 }
 
 func (s *withdrawalTestStore) CreateWithdrawal(context.Context,
@@ -276,6 +278,10 @@ func (s *withdrawalTestStore) UpdateWithdrawal(_ context.Context,
 		tx:                 tx,
 		confirmationHeight: confirmationHeight,
 		changePkScript:     changePkScript,
+	}
+
+	if s.updateErrors != nil {
+		return <-s.updateErrors
 	}
 
 	return nil
@@ -483,6 +489,87 @@ func TestHandleWithdrawalFollowsReplacementTxid(t *testing.T) {
 	manager.mu.Unlock()
 	require.False(t, republishesOriginal)
 	require.False(t, republishesReplacement)
+}
+
+// TestHandleWithdrawalPersistsBeforeTransition verifies that a withdrawal
+// remains recoverable if persisting its confirmed transaction fails. In
+// particular, deposits must not enter their terminal state before the
+// withdrawal history contains the transaction that spent them.
+func TestHandleWithdrawalPersistsBeforeTransition(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+
+	notifier := newWithdrawalTestNotifier()
+	depositManager := &withdrawalTestDepositManager{
+		transitions: make(chan withdrawalTransition, 1),
+		updates:     make(chan *deposit.Deposit, 1),
+	}
+	store := &withdrawalTestStore{
+		updates:      make(chan withdrawalStoreUpdate, 1),
+		updateErrors: make(chan error, 1),
+	}
+	store.updateErrors <- errors.New("database is locked (SQLITE_BUSY)")
+
+	manager, err := NewManager(&ManagerConfig{
+		ChainNotifier:  notifier,
+		DepositManager: depositManager,
+		Store:          store,
+	}, 123)
+	require.NoError(t, err)
+	cleanupWithdrawalMonitor(t, manager, cancel)
+
+	dep := &deposit.Deposit{
+		OutPoint: wire.OutPoint{Hash: chainhash.Hash{1}},
+		AddressParams: &address.Parameters{
+			PkScript: []byte{0x51},
+		},
+	}
+	withdrawalTx := wire.NewMsgTx(2)
+	withdrawalTx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: dep.OutPoint,
+	})
+	withdrawalTx.AddTxOut(&wire.TxOut{
+		Value:    1_000,
+		PkScript: []byte{0x52},
+	})
+	withdrawalTxHash := withdrawalTx.TxHash()
+	manager.finalizedWithdrawalTxns[withdrawalTxHash] = withdrawalTx
+
+	err = manager.handleWithdrawal(
+		ctx, []*deposit.Deposit{dep}, withdrawalTxHash,
+	)
+	require.NoError(t, err)
+
+	notifier.spendChan <- &chainntnfs.SpendDetail{
+		SpendingTx:     withdrawalTx,
+		SpendingHeight: 50,
+	}
+	select {
+	case <-notifier.confReq:
+	case <-ctx.Done():
+		t.Fatalf("confirmation registration not received: %v", ctx.Err())
+	}
+
+	notifier.confChan <- &chainntnfs.TxConfirmation{
+		Tx:          withdrawalTx,
+		BlockHeight: 55,
+	}
+	select {
+	case <-store.updates:
+	case <-ctx.Done():
+		t.Fatalf("withdrawal update not received: %v", ctx.Err())
+	}
+	manager.monitorWg.Wait()
+
+	select {
+	case <-depositManager.transitions:
+		t.Fatal("deposit transitioned after withdrawal persistence failed")
+	default:
+	}
+
+	manager.mu.Lock()
+	_, republishes := manager.finalizedWithdrawalTxns[withdrawalTxHash]
+	manager.mu.Unlock()
+	require.True(t, republishes)
 }
 
 func TestHandleWithdrawalMempoolSpendHeightHint(t *testing.T) {
