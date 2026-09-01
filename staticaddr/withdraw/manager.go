@@ -18,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
@@ -95,7 +96,7 @@ type ManagerConfig struct {
 
 	// Store is the store that is used to persist the finalized withdrawal
 	// transactions.
-	Store *SqlStore
+	Store WithdrawalStore
 }
 
 // newWithdrawalRequest is used to send withdrawal request to the manager main
@@ -123,6 +124,10 @@ type Manager struct {
 	// mu protects access to finalizedWithdrawalTxns.
 	mu sync.Mutex
 
+	// monitorWg tracks withdrawal spend and confirmation monitors. Run
+	// cancels and joins these goroutines before returning.
+	monitorWg sync.WaitGroup
+
 	// newWithdrawalRequestChan receives a list of outpoints that should be
 	// withdrawn. The request is forwarded to the managers main loop.
 	newWithdrawalRequestChan chan newWithdrawalRequest
@@ -130,7 +135,9 @@ type Manager struct {
 	// exitChan signals subroutines that the withdrawal manager is exiting.
 	exitChan chan struct{}
 
-	// initiationHeight stores the currently best known block height.
+	// initiationHeight is the manager's startup height. It is used as a
+	// fallback confirmation height hint for mempool spend notifications,
+	// which don't carry a block height.
 	initiationHeight atomic.Uint32
 
 	// finalizedWithdrawalTxns are the finalized withdrawal transactions
@@ -158,8 +165,17 @@ func NewManager(cfg *ManagerConfig, currentHeight uint32) (*Manager, error) {
 
 // Run runs the deposit withdrawal manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer func() {
+		// Stop request delivery and all monitors before allowing the
+		// manager's owner to tear down its dependencies.
+		close(m.exitChan)
+		cancel()
+		m.monitorWg.Wait()
+	}()
+
 	newBlockChan, newBlockErrChan, err :=
-		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx)
+		m.cfg.ChainNotifier.RegisterBlockEpochNtfn(runCtx)
 
 	if err != nil {
 		log.Errorf("unable to register for block epoch "+
@@ -168,7 +184,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
-	err = m.recoverWithdrawals(ctx)
+	err = m.recoverWithdrawals(runCtx)
 	if err != nil {
 		log.Errorf("unable to recover withdrawals: %v", err)
 
@@ -182,7 +198,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	for {
 		select {
 		case <-newBlockChan:
-			err = m.republishWithdrawals(ctx)
+			err = m.republishWithdrawals(runCtx)
 			if err != nil {
 				log.Errorf("Error republishing withdrawals: %v",
 					err)
@@ -190,7 +206,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 		case req := <-m.newWithdrawalRequestChan:
 			txHash, withdrawalAddress, err := m.WithdrawDeposits(
-				ctx, req.outpoints, req.destAddr,
+				runCtx, req.outpoints, req.destAddr,
 				req.satPerVbyte, req.amount,
 			)
 			if err != nil {
@@ -208,22 +224,15 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			select {
 			case req.respChan <- resp:
 
-			case <-ctx.Done():
-				// Notify subroutines that the main loop has
-				// been canceled.
-				close(m.exitChan)
-
-				return ctx.Err()
+			case <-runCtx.Done():
+				return runCtx.Err()
 			}
 
 		case err = <-newBlockErrChan:
 			return err
 
-		case <-ctx.Done():
-			// Signal subroutines that the manager is exiting.
-			close(m.exitChan)
-
-			return ctx.Err()
+		case <-runCtx.Done():
+			return runCtx.Err()
 		}
 	}
 }
@@ -280,9 +289,7 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 				return err
 			}
 
-			err = m.handleWithdrawal(
-				ctx, deposits, tx.TxHash(), tx.TxOut[0].PkScript,
-			)
+			err = m.handleWithdrawal(ctx, deposits, tx.TxHash())
 			if err != nil {
 				return err
 			}
@@ -448,12 +455,6 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", nil
 	}
 
-	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
-	if err != nil {
-		return "", "", fmt.Errorf("could not get withdrawal "+
-			"pkscript: %w", err)
-	}
-
 	// If this is the first time this cluster of deposits is withdrawn, we
 	// start a goroutine that listens for the spent of the first input of
 	// the withdrawal transaction.
@@ -468,9 +469,7 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 				"withdrawal: %v", err)
 		}
 
-		err = m.handleWithdrawal(
-			ctx, deposits, finalizedTx.TxHash(), withdrawalPkScript,
-		)
+		err = m.handleWithdrawal(ctx, deposits, finalizedTx.TxHash())
 		if err != nil {
 			return "", "", err
 		}
@@ -715,11 +714,107 @@ func withdrawalChangePkScript(tx *wire.MsgTx, withdrawalPkScript []byte,
 	return changePkScript, nil
 }
 
+// withdrawalDestinationPkScript returns the destination script from a
+// withdrawal transaction. Locally constructed withdrawal transactions always
+// place the user-controlled destination at output zero.
+func withdrawalDestinationPkScript(tx *wire.MsgTx) ([]byte, error) {
+	if tx == nil {
+		return nil, errors.New("withdrawal transaction is nil")
+	}
+	if len(tx.TxOut) == 0 || tx.TxOut[0] == nil ||
+		len(tx.TxOut[0].PkScript) == 0 {
+
+		return nil, fmt.Errorf("withdrawal transaction %v has no "+
+			"destination output", tx.TxHash())
+	}
+
+	return tx.TxOut[0].PkScript, nil
+}
+
+// validateConfirmedWithdrawalInputs verifies that a confirmed withdrawal
+// transaction spends every deposit associated with the withdrawal. Withdrawal
+// monitoring intentionally watches only the first deposit so an RBF replacement
+// can be discovered without registering a new confirmation notification for
+// every replacement transaction. However, the spend notification also fires if
+// an unrelated transaction spends only that first deposit. Requiring the full
+// deposit set prevents such a partial spend from incorrectly transitioning all
+// deposits to Withdrawn while still permitting a replacement transaction with a
+// different transaction ID or additional inputs.
+func validateConfirmedWithdrawalInputs(tx *wire.MsgTx,
+	deposits []*deposit.Deposit) error {
+
+	inputs := make(map[wire.OutPoint]struct{}, len(tx.TxIn))
+	for _, txIn := range tx.TxIn {
+		inputs[txIn.PreviousOutPoint] = struct{}{}
+	}
+
+	for _, d := range deposits {
+		if _, ok := inputs[d.OutPoint]; !ok {
+			return fmt.Errorf("confirmed transaction %v does not spend "+
+				"withdrawal deposit %v", tx.TxHash(), d.OutPoint)
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) reconcileIncompleteWithdrawal(ctx context.Context,
+	tx *wire.MsgTx, deposits []*deposit.Deposit) error {
+
+	inputs := make(map[wire.OutPoint]struct{}, len(tx.TxIn))
+	for _, txIn := range tx.TxIn {
+		inputs[txIn.PreviousOutPoint] = struct{}{}
+	}
+
+	spent := make([]*deposit.Deposit, 0, len(deposits))
+	unspent := make([]*deposit.Deposit, 0, len(deposits))
+	for _, d := range deposits {
+		if _, ok := inputs[d.OutPoint]; ok {
+			spent = append(spent, d)
+		} else {
+			unspent = append(unspent, d)
+		}
+	}
+
+	var reconcileErr error
+	if len(spent) > 0 {
+		reconcileErr = errors.Join(
+			reconcileErr,
+			m.cfg.DepositManager.TransitionDeposits(
+				ctx, spent, deposit.OnWithdrawn, deposit.Withdrawn,
+			),
+		)
+	}
+	if len(unspent) > 0 {
+		reconcileErr = errors.Join(
+			reconcileErr,
+			m.cfg.DepositManager.TransitionDeposits(
+				ctx, unspent, fsm.OnError, deposit.Deposited,
+			),
+		)
+	}
+
+	for _, d := range deposits {
+		d.Lock()
+		d.FinalizedWithdrawalTx = nil
+		d.Unlock()
+
+		reconcileErr = errors.Join(
+			reconcileErr, m.cfg.DepositManager.UpdateDeposit(ctx, d),
+		)
+	}
+
+	return reconcileErr
+}
+
 // handleWithdrawal starts a goroutine that listens for the spent of the first
 // input of the withdrawal transaction.
 func (m *Manager) handleWithdrawal(ctx context.Context,
-	deposits []*deposit.Deposit, originalTxHash chainhash.Hash,
-	withdrawalPkScript []byte) error {
+	deposits []*deposit.Deposit, originalTxHash chainhash.Hash) error {
+
+	if len(deposits) == 0 {
+		return errors.New("can't monitor withdrawal without deposits")
+	}
 
 	d := deposits[0]
 	if d.AddressParams == nil {
@@ -736,20 +831,38 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		return fmt.Errorf("unable to register spend ntfn: %w", err)
 	}
 
-	go func() {
+	m.monitorWg.Go(func() {
 		select {
 		case spentTx := <-spentChan:
-			spendingHeight := uint32(spentTx.SpendingHeight)
+			if spentTx == nil || spentTx.SpendingTx == nil {
+				log.Errorf("Withdrawal spend notification missing " +
+					"transaction")
+
+				return
+			}
+
+			spendingTx := spentTx.SpendingTx
+			spenderTxHash := spendingTx.TxHash()
+			withdrawalPkScript, err :=
+				withdrawalDestinationPkScript(spendingTx)
+			if err != nil {
+				log.Errorf("Invalid withdrawal spend: %v", err)
+
+				return
+			}
+			spendingHeight := spentTx.SpendingHeight
+			heightHint := spendingHeight
+			if heightHint <= 0 {
+				heightHint = int32(m.initiationHeight.Load())
+			}
 
 			// If the transaction received one confirmation, we
 			// ensure re-org safety by waiting for some more
 			// confirmations.
 			confChan, confErrChan, err :=
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-					ctx, spentTx.SpenderTxHash,
-					withdrawalPkScript,
-					MinConfs,
-					int32(m.initiationHeight.Load()),
+					ctx, &spenderTxHash, withdrawalPkScript,
+					MinConfs, heightHint,
 				)
 			if err != nil {
 				// TODO(#1087): Retry registration on
@@ -761,10 +874,88 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 			}
 
 			select {
-			case tx := <-confChan:
-				changePkScript, changeErr := withdrawalChangePkScript(
-					tx.Tx, withdrawalPkScript, m.cfg.AddressManager,
+			case tx, ok := <-confChan:
+				if !ok || tx == nil || tx.Tx == nil {
+					log.Errorf("Confirmed withdrawal %v "+
+						"missing transaction",
+						spenderTxHash)
+
+					return
+				}
+				confirmedTx := tx.Tx
+				if confirmedTx.TxHash() != spenderTxHash {
+					log.Errorf("Confirmed withdrawal transaction %v "+
+						"does not match registered spender %v",
+						confirmedTx.TxHash(), spenderTxHash)
+
+					return
+				}
+
+				// Since the spend notification above only watches the
+				// first deposit, verify that the confirmed spender is the
+				// withdrawal (or one of its RBF replacements) before
+				// transitioning the complete deposit group.
+				err = validateConfirmedWithdrawalInputs(
+					confirmedTx, deposits,
 				)
+				if err != nil {
+					log.Errorf("Confirmed incomplete withdrawal: %v",
+						err)
+
+					m.mu.Lock()
+					delete(m.finalizedWithdrawalTxns, originalTxHash)
+					delete(m.finalizedWithdrawalTxns, spenderTxHash)
+					m.mu.Unlock()
+
+					err = m.reconcileIncompleteWithdrawal(
+						ctx, confirmedTx, deposits,
+					)
+					if err != nil {
+						log.Errorf("Error reconciling incomplete "+
+							"withdrawal: %v", err)
+					}
+
+					return
+				}
+
+				confirmedWithdrawalPkScript, changeErr :=
+					withdrawalDestinationPkScript(confirmedTx)
+				var changePkScript []byte
+				if changeErr == nil {
+					changePkScript, changeErr =
+						withdrawalChangePkScript(
+							confirmedTx,
+							confirmedWithdrawalPkScript,
+							m.cfg.AddressManager,
+						)
+				}
+
+				confirmationHeight := tx.BlockHeight
+				if confirmationHeight == 0 && spendingHeight > 0 {
+					confirmationHeight = uint32(spendingHeight)
+				}
+
+				if changeErr != nil {
+					log.Errorf("Error identifying withdrawal change: %v",
+						changeErr)
+
+					return
+				}
+
+				// Persist the confirmed transaction before moving the
+				// deposits into their terminal state. Recovery only
+				// reinstates Withdrawing deposits, so doing this in the
+				// opposite order can permanently lose the transaction
+				// history if the database update fails.
+				err = m.cfg.Store.UpdateWithdrawal(
+					ctx, deposits, confirmedTx, confirmationHeight,
+					changePkScript,
+				)
+				if err != nil {
+					log.Errorf("Error persisting withdrawal: %v", err)
+
+					return
+				}
 
 				err = m.cfg.DepositManager.TransitionDeposits(
 					ctx, deposits, deposit.OnWithdrawn,
@@ -780,23 +971,8 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 				// arrivals.
 				m.mu.Lock()
 				delete(m.finalizedWithdrawalTxns, originalTxHash)
+				delete(m.finalizedWithdrawalTxns, spenderTxHash)
 				m.mu.Unlock()
-
-				// Persist info about the finalized withdrawal.
-				var persistErr error
-				if changeErr != nil {
-					log.Errorf("Error identifying withdrawal change: %v",
-						changeErr)
-				} else {
-					persistErr = m.cfg.Store.UpdateWithdrawal(
-						ctx, deposits, tx.Tx, spendingHeight,
-						changePkScript,
-					)
-				}
-				if persistErr != nil {
-					log.Errorf("Error persisting "+
-						"withdrawal: %v", persistErr)
-				}
 
 			case err := <-confErrChan:
 				// TODO(#1087): Handle reorgs by retrying
@@ -815,7 +991,7 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		case <-ctx.Done():
 			log.Errorf("Withdrawal tx confirmation wait canceled")
 		}
-	}()
+	})
 
 	return nil
 }

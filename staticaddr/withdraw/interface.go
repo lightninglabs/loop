@@ -10,6 +10,23 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 )
 
+// WithdrawalStore persists withdrawal intents and their confirmed
+// transactions.
+type WithdrawalStore interface {
+	CreateWithdrawal(ctx context.Context,
+		deposits []*deposit.Deposit) error
+
+	UpdateWithdrawal(ctx context.Context, deposits []*deposit.Deposit,
+		tx *wire.MsgTx, confirmationHeight uint32,
+		changePkScript []byte) error
+
+	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
+}
+
+// Assert that the concrete SQL store continues to satisfy the manager's store
+// contract.
+var _ WithdrawalStore = (*SqlStore)(nil)
+
 // AddressManager handles fetching of address parameters.
 type AddressManager interface {
 	// GetStaticAddressParameters returns the static address parameters.

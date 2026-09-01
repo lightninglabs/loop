@@ -153,23 +153,21 @@ func (s *SqlStore) UpdateWithdrawal(ctx context.Context,
 		},
 	}
 
-	return s.baseDB.ExecTx(ctx, &loopdb.SqliteTxOptions{},
-		func(q Querier) error {
-			withdrawalID, err := q.GetWithdrawalIDByDepositID(
-				ctx, deposits[0].ID[:],
-			)
-			if err != nil {
-				return err
-			}
+	// The withdrawal-deposit association is immutable, so it does not need
+	// to be read in the same transaction as the update. Keeping both calls
+	// in one deferred SQLite transaction allows concurrent confirmation
+	// handlers to take read snapshots that one of them cannot later upgrade
+	// to a writer, resulting in SQLITE_BUSY.
+	withdrawalID, err := s.baseDB.GetWithdrawalIDByDepositID(
+		ctx, deposits[0].ID[:],
+	)
+	if err != nil {
+		return err
+	}
 
-			updateArgs.WithdrawalID = withdrawalID
-			err = q.UpdateWithdrawal(ctx, updateArgs)
-			if err != nil {
-				return err
-			}
+	updateArgs.WithdrawalID = withdrawalID
 
-			return nil
-		})
+	return s.baseDB.UpdateWithdrawal(ctx, updateArgs)
 }
 
 // GetAllWithdrawals retrieves all static address withdrawals from the
