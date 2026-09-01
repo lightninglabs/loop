@@ -342,12 +342,29 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 			return err
 		}
 
-		prevoutMap[wire.OutPoint{
+		outpoint := wire.OutPoint{
 			Hash:  *txid,
 			Index: prevout.OutputIndex,
-		}] = &wire.TxOut{
+		}
+		if _, ok := prevoutMap[outpoint]; ok {
+			return fmt.Errorf("duplicate prevout %v in sweep "+
+				"request", outpoint)
+		}
+
+		prevoutMap[outpoint] = &wire.TxOut{
 			Value:    int64(prevout.Value),
 			PkScript: prevout.PkScript,
+		}
+	}
+
+	// Every sweep input needs exactly one matching prevout. The length
+	// check above only compares counts, so we additionally reject
+	// duplicate and missing prevouts here. Otherwise the sighash
+	// computation below would dereference a nil prevout and panic.
+	for _, txIn := range sweepTx.TxIn {
+		if _, ok := prevoutMap[txIn.PreviousOutPoint]; !ok {
+			return fmt.Errorf("missing prevout for sweep input %v",
+				txIn.PreviousOutPoint)
 		}
 	}
 
