@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 
@@ -84,6 +85,17 @@ var (
 			verboseFlag,
 			routeHintsFlag,
 			privateFlag,
+			&cli.StringFlag{
+				Name: "asset_id",
+				Usage: "the asset ID to receive over an asset " +
+					"channel; requires loopd to be connected to a " +
+					"Taproot Assets daemon",
+			},
+			&cli.StringFlag{
+				Name: "asset_edge_node",
+				Usage: "the optional pubkey of the asset channel " +
+					"peer to use for the loop in",
+			},
 		},
 		Action: loopIn,
 	}
@@ -150,6 +162,38 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	var assetInfo *looprpc.AssetLoopInRequest
+	if cmd.IsSet("asset_edge_node") && !cmd.IsSet("asset_id") {
+		return fmt.Errorf("asset_id must be set when asset_edge_node " +
+			"is set")
+	}
+	if cmd.IsSet("asset_id") {
+		if cmd.Bool(privateFlag.Name) || len(hints) != 0 {
+			return fmt.Errorf("private and route_hints are not supported " +
+				"when looping in an asset")
+		}
+
+		assetID, err := hex.DecodeString(cmd.String("asset_id"))
+		if err != nil {
+			return fmt.Errorf("invalid asset id: %w", err)
+		}
+
+		var assetEdgeNode []byte
+		if cmd.IsSet("asset_edge_node") {
+			assetEdgeNode, err = hex.DecodeString(
+				cmd.String("asset_edge_node"),
+			)
+			if err != nil {
+				return fmt.Errorf("invalid asset edge node: %w", err)
+			}
+		}
+
+		assetInfo = &looprpc.AssetLoopInRequest{
+			AssetId:       assetID,
+			AssetEdgeNode: assetEdgeNode,
+		}
+	}
+
 	quoteReq := &looprpc.QuoteRequest{
 		Amt:              int64(amt),
 		ConfTarget:       htlcConfTarget,
@@ -199,6 +243,7 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 		LastHop:        lastHop,
 		RouteHints:     hints,
 		Private:        cmd.Bool(privateFlag.Name),
+		AssetInfo:      assetInfo,
 	}
 
 	resp, err := client.LoopIn(ctx, req)

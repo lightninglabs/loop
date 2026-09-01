@@ -474,6 +474,13 @@ message LoopInRequest {
     probing and payment.
     */
     bool private = 10;
+
+    /*
+    The optional asset information to use for the swap. If set, the swap and
+    probe invoices are created by the connected Taproot Assets daemon so that
+    the server's payment is delivered over an asset channel.
+    */
+    AssetLoopInRequest asset_info = 11;
 }
 
 message SwapResponse {
@@ -2435,6 +2442,20 @@ message AssetLoopOutRequest {
     An optional expiry unix timestamp for when the rfq quote should expire.
     */
     int64 expiry = 4;
+}
+
+message AssetLoopInRequest {
+    /*
+    The asset ID to receive when the swap invoice is paid. A Taproot Assets
+    client must be connected to loopd when this field is set.
+    */
+    bytes asset_id = 1;
+
+    /*
+    The optional node identity public key of the asset channel peer to use for
+    RFQ negotiation. If omitted, tapd selects from the eligible asset channels.
+    */
+    bytes asset_edge_node = 2;
 }
 
 message AssetRfqInfo {
