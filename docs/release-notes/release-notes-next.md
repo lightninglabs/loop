@@ -2,6 +2,10 @@
 
 #### New Features
 
+* Added a source-built, regtest-only Loop server and Docker environment that
+  completes real Loop Out, standard Loop In, and static-address deposit Loop In
+  swaps without the proprietary server image.
+
 #### Breaking Changes
 
 #### Bug Fixes
