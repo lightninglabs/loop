@@ -218,6 +218,9 @@ commit=$(git --git-dir "${SCRIPT_DIR}/.git" rev-parse HEAD)
 green " - Checkout commit ${commit} in ${BUILD_DIR}"
 git checkout -b build-branch "$commit"
 
+green " - Checking release notes"
+./scripts/release-notes.py release "${1:-untagged}"
+
 green " - Checking tag $1"
 check_tag $1
 

@@ -105,3 +105,13 @@ LOOPBUILDSYS='linux-amd64 windows-amd64' ./release.sh v0.32.1-beta
 This will produce the same artifacts in a `loop-<tag-of-release>` directory as
 the `make docker-release` command. The latter simply runs the `release.sh`
 script inside a Docker container.
+
+Before packaging a release, `release.sh` verifies that the matching versioned
+release-notes file exists and that `release-notes-next.md` contains no entries.
+To reproduce a historical release or build an untagged commit where that state
+does not apply, explicitly set `SKIP_RELEASE_NOTES_CHECK=1`. For Docker builds,
+set it on the `make` command so it is passed into the builder:
+
+```bash
+SKIP_RELEASE_NOTES_CHECK=1 make docker-release tag=<tag-or-git-describe-output>
+```

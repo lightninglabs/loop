@@ -57,6 +57,7 @@ DOCKER_RELEASE_BUILDER = docker run \
   -v $(shell bash -c "go env GOMODCACHE 2>/dev/null || (mkdir -p /tmp/go-modcache; echo /tmp/go-modcache)"):/tmp/build/.modcache \
   -v $$(pwd):/repo \
   -e LOOPBUILDSYS='$(buildsys)' \
+  -e SKIP_RELEASE_NOTES_CHECK \
   loop-release-builder
 
 GREEN=\033[0;32m
