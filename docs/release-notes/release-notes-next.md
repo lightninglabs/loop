@@ -20,6 +20,11 @@
 * Follow replacement static deposit expiry sweeps after a chain reorganization
   instead of waiting for the old transaction until loopd restarts.
 
+* Static Address loop-in sweep requests are now rejected unless the server
+  provides exactly one prevout for every sweep input. A duplicate or missing
+  prevout previously crashed `loopd` while computing the sweep signature
+  hashes.
+
 #### Maintenance
 
 - Update the LoopRPC requirement to the revision used by this release.
