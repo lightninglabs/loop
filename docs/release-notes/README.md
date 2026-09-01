@@ -110,4 +110,5 @@ a versioned file, then reset the next-release sections.
 | [v0.33.2-beta](release-notes-0.33.2.md) | 2026-06-08 | Exposed static swap details and hardened MuSig2 inputs |
 | [v0.33.3-beta](release-notes-0.33.3.md) | 2026-06-21 | Raised the LND floor and updated the LND dependency |
 | [v0.34.0-beta](release-notes-0.34.0.md) | 2026-07-23 | Tracked low-confirmation deposits and production Taproot channels |
+| [v0.35.0-beta](release-notes-0.35.0.md) | 2026-08-24 | Added stateless Loop Out HTLC recovery and hardened Instant Out handling |
 | [Next release](release-notes-next.md) | Unreleased | No changes yet |
