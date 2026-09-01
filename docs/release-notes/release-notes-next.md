@@ -38,6 +38,11 @@
   `loopd` failed with `exec format error` on ARM hosts.
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
+* Static Address loop-in sweep requests are now rejected unless the server
+  provides exactly one prevout for every sweep input. A duplicate or missing
+  prevout previously crashed `loopd` while computing the sweep signature
+  hashes.
+
 #### Maintenance
 
 * The Docker image build now verifies that every platform of the image index

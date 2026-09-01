@@ -504,6 +504,118 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 	require.Zero(t, addressMgr.getParamsCalls.Load())
 }
 
+// TestHandleLoopInSweepReqRejectsMalformedPrevouts verifies that a sweep
+// request whose prevout list matches the input count, but doesn't provide
+// exactly one prevout per sweep input, is rejected before the sighash
+// computation instead of panicking on a missing prevout.
+func TestHandleLoopInSweepReqRejectsMalformedPrevouts(t *testing.T) {
+	ctx := t.Context()
+
+	const confirmationHeight = 0
+	dep := makeDeposit(7, 0, 10_000, confirmationHeight)
+	depOutpoint := outpointString(dep)
+
+	// The sweep also spends an input that isn't one of our deposits, as is
+	// the case for sweeps batched across clients.
+	foreignOutpoint := wire.OutPoint{Hash: chainhash.Hash{8}, Index: 1}
+
+	swapHash := lntypes.Hash{9}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		DepositOutpoints: []string{depOutpoint},
+		SelectedAmount:   dep.Value,
+	}
+	loopIn.SetState(Succeeded)
+
+	sweepTx := makeSweepTx(
+		[]wire.OutPoint{dep.OutPoint, foreignOutpoint},
+		[]*wire.TxOut{{
+			Value:    int64(dep.Value),
+			PkScript: []byte{0xcc, 0xdd},
+		}},
+	)
+	sweepPacket, err := psbt.NewFromUnsignedTx(sweepTx)
+	require.NoError(t, err)
+
+	var psbtBuf bytes.Buffer
+	require.NoError(t, sweepPacket.Serialize(&psbtBuf))
+
+	mgr := &Manager{
+		cfg: &Config{
+			AddressManager: &mockAddressManager{},
+			DepositManager: &mockDepositManager{
+				byOutpoint: map[string]*deposit.Deposit{
+					depOutpoint: dep,
+				},
+			},
+			Store: &mockStore{
+				loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+					swapHash: loopIn,
+				},
+				mapIDs: map[lntypes.Hash][]deposit.ID{
+					swapHash: {dep.ID},
+				},
+			},
+		},
+	}
+
+	depositPrevout := &swapserverrpc.PrevoutInfo{
+		Value:       uint64(dep.Value),
+		PkScript:    []byte{0xaa, 0xbb},
+		TxidBytes:   dep.Hash[:],
+		OutputIndex: dep.Index,
+	}
+	unrelatedHash := chainhash.Hash{5}
+
+	tests := []struct {
+		name     string
+		prevouts []*swapserverrpc.PrevoutInfo
+		wantErr  string
+	}{
+		{
+			// The deposit prevout is listed twice while the foreign
+			// input has none.
+			name: "duplicate prevout",
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				depositPrevout, depositPrevout,
+			},
+			wantErr: "duplicate prevout",
+		},
+		{
+			// The second prevout references an outpoint that the
+			// sweep doesn't spend.
+			name: "missing prevout",
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				depositPrevout,
+				{
+					Value:       1_000,
+					PkScript:    []byte{0xaa, 0xbb},
+					TxidBytes:   unrelatedHash[:],
+					OutputIndex: 0,
+				},
+			},
+			wantErr: "missing prevout for sweep input " +
+				foreignOutpoint.String(),
+		},
+	}
+
+	for _, tc := range tests {
+		req := &swapserverrpc.ServerStaticLoopInSweepNotification{
+			SweepTxPsbt: psbtBuf.Bytes(),
+			SwapHash:    swapHash[:],
+			DepositToNonces: map[string][]byte{
+				depOutpoint: make([]byte, musig2.PubNonceSize),
+			},
+			PrevoutInfo: tc.prevouts,
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			err := mgr.handleLoopInSweepReq(ctx, req)
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
 // TestActiveDepositsForLoopInUsesCurrentDepositOutpoints verifies that
 // recovery checks the current deposit outpoints reconstructed by the store
 // rather than the original outpoint snapshot persisted on the swap.
