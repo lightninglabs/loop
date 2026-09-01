@@ -35,8 +35,20 @@ const (
 	PollInterval = 10 * time.Second
 )
 
+var (
+	// ErrConfirmationSnapshotUnavailable is returned to spending paths when
+	// lnd's wallet view cannot be tied to a stable, chain-synced tip.
+	ErrConfirmationSnapshotUnavailable = errors.New(
+		"authoritative deposit confirmation snapshot unavailable",
+	)
+)
+
 // ManagerConfig holds the configuration for the address manager.
 type ManagerConfig struct {
+	// LightningClient is used to obtain a chain-synced wallet height for
+	// confirmation-height reconciliation.
+	LightningClient LightningClient
+
 	// AddressManager is the address manager that is used to fetch static
 	// address parameters.
 	AddressManager AddressManager
@@ -133,14 +145,19 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 	// Reconcile immediately on startup so deposits are available
 	// before the first ticker fires.
-	err = m.reconcileDeposits(ctx)
+	confirmationTipHeight, err := m.reconcileDeposits(ctx)
 	if err != nil {
 		log.Errorf("unable to reconcile deposits: %v", err)
-	} else {
+	} else if confirmationTipHeight != 0 {
 		// The startup height was consumed before recovered deposit FSMs
 		// existed. Replay it so already-expired recovered deposits can act
-		// immediately, but only after their wallet view is fresh.
-		err = m.notifyActiveDeposits(ctx, startupHeight)
+		// immediately, but only after their wallet view and confirmation
+		// heights are fresh.
+		err = m.notifyActiveDeposits(
+			ctx, expiryNotificationHeight(
+				startupHeight, confirmationTipHeight,
+			),
+		)
 		if err != nil {
 			return err
 		}
@@ -158,13 +175,21 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		case height := <-newBlockChan:
 			m.currentHeight.Store(uint32(height))
 
-			err := m.reconcileDeposits(ctx)
+			confirmationTipHeight, err :=
+				m.reconcileDeposits(ctx)
 			if err != nil {
 				log.Errorf("unable to reconcile deposits: %v", err)
 				continue
 			}
+			if confirmationTipHeight == 0 {
+				continue
+			}
 
-			err = m.notifyActiveDeposits(ctx, uint32(height))
+			err = m.notifyActiveDeposits(
+				ctx, expiryNotificationHeight(
+					uint32(height), confirmationTipHeight,
+				),
+			)
 			if err != nil {
 				return err
 			}
@@ -271,7 +296,7 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 		for {
 			select {
 			case <-ticker.C:
-				err := m.reconcileDeposits(ctx)
+				_, err := m.reconcileDeposits(ctx)
 				if err != nil {
 					log.Errorf("unable to reconcile "+
 						"deposits: %v", err)
@@ -290,69 +315,140 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 // an unconfirmed funding transaction is replaced, a confirmed deposit is
 // reorged out, or the output was spent outside the active manager path.
 func (m *Manager) EnsureDepositsFresh(ctx context.Context) error {
-	return m.reconcileDeposits(ctx)
+	confirmationTipHeight, err := m.reconcileDeposits(ctx)
+	if err != nil {
+		return err
+	}
+	knownHeight := m.currentHeight.Load()
+	if confirmationTipHeight == 0 ||
+		confirmationTipHeight < knownHeight {
+
+		return ErrConfirmationSnapshotUnavailable
+	}
+
+	return nil
 }
 
 // reconcileDeposits fetches all spends to our static addresses from our lnd
 // wallet and matches it against the deposits in our memory that we've seen so
 // far. It picks the newly identified deposits and starts a state machine per
-// deposit to track its progress.
-func (m *Manager) reconcileDeposits(ctx context.Context) error {
+// deposit to track its progress. The returned height is the stable,
+// chain-synced lnd tip that bracketed the wallet query. A zero height means
+// confirmed deposit heights and expiry decisions must be deferred.
+func (m *Manager) reconcileDeposits(ctx context.Context) (uint32, error) {
 	m.reconcileMu.Lock()
 	defer m.reconcileMu.Unlock()
 
 	log.Tracef("Reconciling new deposits...")
 
+	if m.cfg.LightningClient == nil {
+		return 0, errors.New("lightning client unavailable")
+	}
+
+	before, err := m.cfg.LightningClient.GetInfo(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("unable to get lnd info before listing "+
+			"deposits: %w", err)
+	}
+
 	utxos, err := m.cfg.AddressManager.ListUnspent(
 		ctx, 0, MaxConfs,
 	)
 	if err != nil {
-		return fmt.Errorf("unable to list new deposits: %w", err)
+		return 0, fmt.Errorf("unable to list new deposits: %w", err)
 	}
 
-	currentHeight := m.currentHeight.Load()
-	err = m.updateDepositConfirmations(ctx, utxos, currentHeight)
+	after, err := m.cfg.LightningClient.GetInfo(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to update deposit "+
+		return 0, fmt.Errorf("unable to get lnd info after listing "+
+			"deposits: %w", err)
+	}
+
+	confirmationTipHeight := stableConfirmationTip(before, after)
+	if confirmationTipHeight == 0 {
+		log.Debugf("Deferring confirmed deposit heights while lnd's " +
+			"wallet tip is changing or unsynced")
+	}
+
+	err = m.updateDepositConfirmations(
+		ctx, utxos, confirmationTipHeight,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("unable to update deposit "+
 			"confirmations: %w", err)
 	}
 
 	err = m.syncActiveDeposits(ctx, utxos)
 	if err != nil {
-		return fmt.Errorf("unable to sync active deposits: %w", err)
+		return 0, fmt.Errorf("unable to sync active deposits: %w", err)
 	}
 
 	newDeposits := m.filterNewDeposits(utxos)
 	if len(newDeposits) == 0 {
 		log.Tracef("No new deposits...")
-		return nil
+		return confirmationTipHeight, nil
 	}
 
 	for _, utxo := range newDeposits {
-		deposit, err := m.createNewDeposit(ctx, utxo, currentHeight)
+		// A confirmed deposit must not be represented as unconfirmed just
+		// because its absolute confirmation height is not yet known. Defer
+		// retaining it until lnd provides an authoritative snapshot. Actual
+		// mempool deposits continue to be retained immediately.
+		if utxo.Confirmations > 0 && confirmationTipHeight == 0 {
+			continue
+		}
+
+		deposit, err := m.createNewDeposit(
+			ctx, utxo, confirmationTipHeight,
+		)
 		if err != nil {
-			return fmt.Errorf("unable to retain new deposit: %w",
+			return 0, fmt.Errorf("unable to retain new deposit: %w",
 				err)
 		}
 
 		log.Debugf("Received deposit: %v", deposit)
 		err = m.startDepositFsm(ctx, deposit)
 		if err != nil {
-			return fmt.Errorf("unable to start new deposit FSM: %w",
+			return 0, fmt.Errorf("unable to start new deposit FSM: %w",
 				err)
 		}
 	}
 
-	return nil
+	return confirmationTipHeight, nil
+}
+
+// stableConfirmationTip returns the lnd height that brackets a wallet query
+// only when both observations describe the same chain-synced tip. This keeps a
+// queued block epoch from being combined with a newer wallet confirmation
+// count while lnd is catching up.
+func stableConfirmationTip(before, after *lndclient.Info) uint32 {
+	if before == nil || after == nil || !before.SyncedToChain ||
+		!after.SyncedToChain || before.BlockHeight == 0 ||
+		before.BlockHeight != after.BlockHeight ||
+		before.BestBlockHash != after.BestBlockHash {
+
+		return 0
+	}
+
+	return after.BlockHeight
+}
+
+// expiryNotificationHeight caps a queued block epoch at the stable lnd tip
+// that bracketed deposit reconciliation. This prevents a stale pre-reorg epoch
+// from advancing expiry beyond lnd's current authoritative chain view.
+func expiryNotificationHeight(blockEpochHeight,
+	confirmationTipHeight uint32) uint32 {
+
+	return min(blockEpochHeight, confirmationTipHeight)
 }
 
 // createNewDeposit transforms the wallet utxo into a deposit struct and stores
 // it in our database and manager memory.
 func (m *Manager) createNewDeposit(ctx context.Context,
-	utxo *lnwallet.Utxo, currentHeight uint32) (*Deposit, error) {
+	utxo *lnwallet.Utxo, confirmationTipHeight uint32) (*Deposit, error) {
 
 	confirmationHeight, err := confirmationHeightForUtxo(
-		currentHeight, utxo,
+		confirmationTipHeight, utxo,
 	)
 	if err != nil {
 		return nil, err
@@ -398,23 +494,24 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 }
 
 // confirmationHeightForUtxo derives the first confirmation height of a wallet
-// UTXO from the manager's current block height. Unconfirmed UTXOs return 0.
-func confirmationHeightForUtxo(currentHeight uint32,
+// UTXO from a stable lnd wallet-tip height. Unconfirmed UTXOs return 0.
+func confirmationHeightForUtxo(confirmationTipHeight uint32,
 	utxo *lnwallet.Utxo) (int64, error) {
 
 	if utxo.Confirmations <= 0 {
 		return 0, nil
 	}
 
-	if currentHeight == 0 {
-		return 0, errors.New("current block height unavailable")
+	if confirmationTipHeight == 0 {
+		return 0, errors.New("confirmation tip height unavailable")
 	}
 
-	firstConfirmationHeight := int64(currentHeight) - utxo.Confirmations + 1
+	firstConfirmationHeight := int64(confirmationTipHeight) -
+		utxo.Confirmations + 1
 	if firstConfirmationHeight <= 0 {
 		return 0, fmt.Errorf("invalid confirmation height %d for %v "+
-			"with current height %d and %d confirmations",
-			firstConfirmationHeight, utxo.OutPoint, currentHeight,
+			"with wallet tip height %d and %d confirmations",
+			firstConfirmationHeight, utxo.OutPoint, confirmationTipHeight,
 			utxo.Confirmations)
 	}
 
@@ -424,7 +521,7 @@ func confirmationHeightForUtxo(currentHeight uint32,
 // updateDepositConfirmations syncs first confirmation heights for deposits that
 // are visible in lnd's wallet view.
 func (m *Manager) updateDepositConfirmations(ctx context.Context,
-	utxos []*lnwallet.Utxo, currentHeight uint32) error {
+	utxos []*lnwallet.Utxo, confirmationTipHeight uint32) error {
 
 	for _, utxo := range utxos {
 		m.mu.Lock()
@@ -438,10 +535,18 @@ func (m *Manager) updateDepositConfirmations(ctx context.Context,
 			deposit.Lock()
 			defer deposit.Unlock()
 
+			// A positive confirmation count can only be converted into an
+			// absolute height when the wallet query was bracketed by the
+			// same chain-synced lnd tip. An unconfirmed observation remains
+			// authoritative and clears a stale height after a reorg.
+			if utxo.Confirmations > 0 && confirmationTipHeight == 0 {
+				return nil
+			}
+
 			previousConfirmationHeight := deposit.ConfirmationHeight
 
 			confirmationHeight, err := confirmationHeightForUtxo(
-				currentHeight, utxo,
+				confirmationTipHeight, utxo,
 			)
 			if err != nil {
 				return err

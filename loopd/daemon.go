@@ -654,11 +654,12 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// Static address deposit manager setup.
 	depositStore := deposit.NewSqlStore(baseDb)
 	depoCfg := &deposit.ManagerConfig{
-		AddressManager: staticAddressManager,
-		Store:          depositStore,
-		WalletKit:      d.lnd.WalletKit,
-		ChainNotifier:  d.lnd.ChainNotifier,
-		Signer:         d.lnd.Signer,
+		LightningClient: d.lnd.Client,
+		AddressManager:  staticAddressManager,
+		Store:           depositStore,
+		WalletKit:       d.lnd.WalletKit,
+		ChainNotifier:   d.lnd.ChainNotifier,
+		Signer:          d.lnd.Signer,
 	}
 	depositManager = deposit.NewManager(depoCfg)
 
