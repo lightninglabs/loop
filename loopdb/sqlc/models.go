@@ -153,6 +153,9 @@ type StaticAddressSwap struct {
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
 	ChangeStaticAddressID        sql.NullInt32
+	ConfirmedHtlcTxID            sql.NullString
+	ConfirmedHtlcOutputIndex     sql.NullInt32
+	ConfirmedHtlcOutputValue     sql.NullInt64
 }
 
 type StaticAddressSwapUpdate struct {

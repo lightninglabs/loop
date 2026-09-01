@@ -2,6 +2,7 @@ package loopin
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -764,6 +765,122 @@ func TestGetLoopInByHashOrdersDepositsBySnapshot(t *testing.T) {
 	require.Len(t, storedSwap.Deposits, 2)
 	require.Equal(t, d2.ID, storedSwap.Deposits[0].ID)
 	require.Equal(t, d1.ID, storedSwap.Deposits[1].ID)
+}
+
+func TestUpdateLoopInPersistsConfirmedHtlcOutpoint(t *testing.T) {
+	ctxb := context.Background()
+	testDb := loopdb.NewTestDB(t)
+	testClock := clock.NewTestClock(time.Now())
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+
+	d := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x1a, 0x2b, 0x3c, 0x4d},
+			Index: 0,
+		},
+		Value: btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+	}
+	setPersistedTestDepositAddress(t, ctxb, testDb.BaseDB, d)
+	require.NoError(t, depositStore.CreateDeposit(ctxb, d))
+
+	d.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.UpdateDeposit(ctxb, d))
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x4, 0x2, 0x3, 0x5}
+	swap := StaticAddressLoopIn{
+		SwapHash:                swapHash,
+		SwapPreimage:            lntypes.Preimage{0x4, 0x2, 0x3, 0x5},
+		DepositOutpoints:        []string{d.OutPoint.String()},
+		Deposits:                []*deposit.Deposit{d},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	swap.SetState(MonitorInvoiceAndHtlcTx)
+	require.NoError(t, swapStore.CreateLoopIn(ctxb, &swap))
+
+	confirmedHtlcTxHash := chainhash.Hash{0x55}
+	swap.HtlcTxHash = &confirmedHtlcTxHash
+	swap.HtlcOutputIndex = 2
+	swap.HtlcOutputValue = 88_000
+	testClock.SetTime(testClock.Now().Add(time.Second))
+	require.NoError(t, swapStore.UpdateLoopIn(ctxb, &swap))
+
+	storedSwap, err := swapStore.GetLoopInByHash(ctxb, swapHash)
+	require.NoError(t, err)
+	require.NotNil(t, storedSwap.HtlcTxHash)
+	require.Equal(t, confirmedHtlcTxHash, *storedSwap.HtlcTxHash)
+	require.EqualValues(t, 2, storedSwap.HtlcOutputIndex)
+	require.EqualValues(t, 88_000, storedSwap.HtlcOutputValue)
+	require.Equal(t, MonitorInvoiceAndHtlcTx, storedSwap.GetState())
+
+	recoveredSwaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(
+		ctxb, []fsm.StateType{MonitorInvoiceAndHtlcTx},
+	)
+	require.NoError(t, err)
+	require.Len(t, recoveredSwaps, 1)
+	recoveredSwap := recoveredSwaps[0]
+	require.NotNil(t, recoveredSwap.HtlcTxHash)
+	require.Equal(t, confirmedHtlcTxHash, *recoveredSwap.HtlcTxHash)
+	require.EqualValues(t, 2, recoveredSwap.HtlcOutputIndex)
+	require.EqualValues(t, 88_000, recoveredSwap.HtlcOutputValue)
+
+	// A reorg clears the in-memory outpoint before UpdateLoopIn persists
+	// the invalidated confirmation.
+	swap.HtlcTxHash = nil
+	swap.HtlcOutputIndex = 0
+	swap.HtlcOutputValue = 0
+	testClock.SetTime(testClock.Now().Add(time.Second))
+	require.NoError(t, swapStore.UpdateLoopIn(ctxb, &swap))
+
+	storedSwap, err = swapStore.GetLoopInByHash(ctxb, swapHash)
+	require.NoError(t, err)
+	require.Nil(t, storedSwap.HtlcTxHash)
+	require.Zero(t, storedSwap.HtlcOutputIndex)
+	require.Zero(t, storedSwap.HtlcOutputValue)
+
+	recoveredSwaps, err = swapStore.GetStaticAddressLoopInSwapsByStates(
+		ctxb, []fsm.StateType{MonitorInvoiceAndHtlcTx},
+	)
+	require.NoError(t, err)
+	require.Len(t, recoveredSwaps, 1)
+	require.Nil(t, recoveredSwaps[0].HtlcTxHash)
+	require.Zero(t, recoveredSwaps[0].HtlcOutputIndex)
+	require.Zero(t, recoveredSwaps[0].HtlcOutputValue)
+
+	var (
+		txID        sql.NullString
+		outputIndex sql.NullInt64
+		outputValue sql.NullInt64
+	)
+	err = testDb.QueryRowContext(ctxb, `
+		SELECT confirmed_htlc_tx_id, confirmed_htlc_output_index,
+		       confirmed_htlc_output_value
+		FROM static_address_swaps
+		WHERE swap_hash = $1
+	`, swapHash[:]).Scan(&txID, &outputIndex, &outputValue)
+	require.NoError(t, err)
+	require.False(t, txID.Valid)
+	require.False(t, outputIndex.Valid)
+	require.False(t, outputValue.Valid)
 }
 
 // TestGetLoopInByHashPreservesStoredDepositOutpoints ensures recovered loop-ins

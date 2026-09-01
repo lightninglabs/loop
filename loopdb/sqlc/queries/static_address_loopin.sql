@@ -31,7 +31,10 @@ INSERT INTO static_address_swaps (
 UPDATE static_address_swaps
 SET
     htlc_tx_fee_rate_sat_kw = $2,
-    htlc_timeout_sweep_tx_id = $3
+    htlc_timeout_sweep_tx_id = $3,
+    confirmed_htlc_tx_id = $4,
+    confirmed_htlc_output_index = $5,
+    confirmed_htlc_output_value = $6
 WHERE
     swap_hash = $1;
 
