@@ -382,7 +382,7 @@ func TestValidateStaticAddressSendCoinsRequest(t *testing.T) {
 func TestNewStaticAddressFundsGeneratedAddress(t *testing.T) {
 	t.Parallel()
 
-	addrMgr, lnd := newTestStaticAddressContext(t)
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
 	rawClient := &sendCoinsRPCClient{
 		response: &lnrpc.SendCoinsResponse{Txid: "funding-txid"},
 	}
@@ -422,7 +422,7 @@ func TestStaticAddressForDeposit(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	addrMgr, lnd := newTestStaticAddressContext(t)
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
 	server := &swapClientServer{
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
@@ -503,7 +503,7 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 func TestStaticAddressWithdrawalIncludesDepositAddress(t *testing.T) {
 	t.Parallel()
 
-	addrMgr, _ := newTestStaticAddressContext(t)
+	addrMgr, _ := newTestStaticAddressContext(t, 10)
 	addresses, err := addrMgr.GetAllAddresses(context.Background())
 	require.NoError(t, err)
 	require.Len(t, addresses, 1)
@@ -606,7 +606,7 @@ func TestPopulateBlocksUntilExpiryUsesOwningAddress(t *testing.T) {
 func TestStaticAddressLoopInResponseIncludesDepositAddress(t *testing.T) {
 	t.Parallel()
 
-	addrMgr, lnd := newTestStaticAddressContext(t)
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
 	addresses, err := addrMgr.GetAllAddresses(t.Context())
 	require.NoError(t, err)
 	require.Len(t, addresses, 1)
@@ -765,13 +765,17 @@ func TestGetLoopInQuoteRejectsExpiringSelectedDeposit(t *testing.T) {
 	expiring.SetState(deposit.Deposited)
 
 	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	addresses, err := addrMgr.GetAllAddresses(t.Context())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+	expiring.AddressParams = addresses[0]
 	server := &swapClientServer{
 		depositManager:       newTestDepositManager(expiring),
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
 	}
 
-	_, err := server.GetLoopInQuote(t.Context(), &looprpc.QuoteRequest{
+	_, err = server.GetLoopInQuote(t.Context(), &looprpc.QuoteRequest{
 		DepositOutpoints: []string{expiring.OutPoint.String()},
 	})
 	require.ErrorContains(t, err, "expires before htlc")
@@ -801,6 +805,10 @@ func TestGetLoopInQuoteAllowsFreshSelectedDeposit(t *testing.T) {
 
 	quoter := &staticAddrTestLoopInQuoter{}
 	addrMgr, lnd := newTestStaticAddressContext(t, staticAddrExpiry)
+	addresses, err := addrMgr.GetAllAddresses(t.Context())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+	fresh.AddressParams = addresses[0]
 	server := &swapClientServer{
 		depositManager:       newTestDepositManager(fresh),
 		staticAddressManager: addrMgr,
