@@ -1185,11 +1185,16 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 			)
 		}
 
-		err = validateStaticQuoteDepositsSwappable(
-			depositList.FilteredDeposits, staticAddrExpiry,
-			currentHeight,
+		selectedDeposits, err := s.depositManager.DepositsForOutpoints(
+			ctx, req.DepositOutpoints, false,
 		)
 		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve selected "+
+				"deposits: %w", err)
+		}
+		if err := loopin.ValidateDepositsSwappable(
+			selectedDeposits, currentHeight,
+		); err != nil {
 			return nil, err
 		}
 
@@ -2832,29 +2837,6 @@ func depositBlocksUntilExpiry(confirmationHeight int64, expiry uint32,
 	}
 
 	return confirmationHeight + int64(expiry) - bestBlockHeight
-}
-
-// validateStaticQuoteDepositsSwappable rejects manual quote deposits that are
-// too close to expiry for the server's static-address loop-in HTLC timeout.
-func validateStaticQuoteDepositsSwappable(deposits []*looprpc.Deposit,
-	csvExpiry uint32, blockHeight uint32) error {
-
-	for _, deposit := range deposits {
-		if deposit.ConfirmationHeight <= 0 {
-			continue
-		}
-
-		confirmationHeight := uint32(deposit.ConfirmationHeight)
-		swappable := loopin.IsSwappable(
-			confirmationHeight, blockHeight, csvExpiry,
-		)
-		if !swappable {
-			return fmt.Errorf("deposit %s expires before htlc",
-				deposit.Outpoint)
-		}
-	}
-
-	return nil
 }
 
 // StaticOpenChannel initiates an open channel request using static address

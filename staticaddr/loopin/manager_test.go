@@ -271,6 +271,7 @@ func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 
 	const confirmationHeight = 0
 	selectedDeposit := makeDeposit(1, 0, 9_000, confirmationHeight)
+	selectedDeposit.AddressParams = &script.Parameters{Expiry: 10_000}
 	selectedOutpoint := selectedDeposit.OutPoint.String()
 	quoteErr := errors.New("quote failed")
 	quoteGetter := &mockQuoteGetter{
@@ -317,6 +318,7 @@ func TestInitiateLoopInRejectsExpiringSelectedDeposit(t *testing.T) {
 	selectedDeposit := makeDeposit(
 		2, 0, 9_000, confirmationHeight,
 	)
+	selectedDeposit.AddressParams = &script.Parameters{Expiry: csvExpiry}
 	selectedOutpoint := selectedDeposit.OutPoint.String()
 	quoteGetter := &mockQuoteGetter{
 		err: errors.New("quote should not be reached"),
@@ -324,7 +326,9 @@ func TestInitiateLoopInRejectsExpiringSelectedDeposit(t *testing.T) {
 
 	manager, err := NewManager(&Config{
 		AddressManager: &mockAddressManager{
-			params: &script.Parameters{Expiry: csvExpiry},
+			// A global expiry would make this deposit look fresh. The
+			// deposit's owning address must take precedence.
+			params: &script.Parameters{Expiry: csvExpiry * 2},
 		},
 		DepositManager: &mockDepositManager{
 			byOutpoint: map[string]*deposit.Deposit{
@@ -361,13 +365,16 @@ func TestInitiateLoopInAllowsFreshSelectedDeposit(t *testing.T) {
 	selectedDeposit := makeDeposit(
 		3, 0, 9_000, confirmationHeight,
 	)
+	selectedDeposit.AddressParams = &script.Parameters{Expiry: csvExpiry}
 	selectedOutpoint := selectedDeposit.OutPoint.String()
 	quoteErr := errors.New("quote reached")
 	quoteGetter := &mockQuoteGetter{err: quoteErr}
 
 	manager, err := NewManager(&Config{
 		AddressManager: &mockAddressManager{
-			params: &script.Parameters{Expiry: csvExpiry},
+			// A global expiry would reject this deposit. The deposit's
+			// owning address must take precedence.
+			params: &script.Parameters{Expiry: 10},
 		},
 		DepositManager: &mockDepositManager{
 			byOutpoint: map[string]*deposit.Deposit{
