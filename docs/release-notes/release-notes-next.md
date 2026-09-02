@@ -6,6 +6,9 @@
 
 #### Bug Fixes
 
+* Validate each selected static deposit's CSV expiry against the actual HTLC
+  expiry before signing.
+
 * Preserve pending loop-in ownership of deposits during expiry and restart
   recovery. Release only deposits still owned by the swap, after a positive
   unspent-input or confirmed-conflict check rules out a confirmed HTLC.

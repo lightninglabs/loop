@@ -779,6 +779,7 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 		AddressParams: &script.Parameters{
 			ClientPubkey: clientPubkey,
 			PkScript:     []byte{0x51, 0x20, 0x01},
+			Expiry:       2_000,
 		},
 	}
 
@@ -851,6 +852,7 @@ func TestInitHtlcActionSendsDepositAddressDescriptors(t *testing.T) {
 		AddressParams: &script.Parameters{
 			ClientPubkey: clientKeyA,
 			PkScript:     []byte{0x51, 0x20, 0x01},
+			Expiry:       2_000,
 		},
 	}
 	depositB := &deposit.Deposit{
@@ -862,6 +864,7 @@ func TestInitHtlcActionSendsDepositAddressDescriptors(t *testing.T) {
 		AddressParams: &script.Parameters{
 			ClientPubkey: clientKeyB,
 			PkScript:     []byte{0x51, 0x20, 0x02},
+			Expiry:       2_000,
 		},
 	}
 
@@ -1004,6 +1007,7 @@ func TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence(t *testing.T) {
 		AddressParams: &script.Parameters{
 			ClientPubkey: clientKey,
 			PkScript:     []byte{0x51, 0x20, 0x02},
+			Expiry:       2_000,
 		},
 	}
 
@@ -1077,6 +1081,7 @@ func TestInitHtlcActionSendsMultiAddressChangeOutput(t *testing.T) {
 		AddressParams: &address.Parameters{
 			ClientPubkey: depositClientPubkey,
 			PkScript:     []byte{0x51, 0x20, 0x02},
+			Expiry:       2_000,
 		},
 	}
 	secondDep := &deposit.Deposit{
@@ -1088,12 +1093,14 @@ func TestInitHtlcActionSendsMultiAddressChangeOutput(t *testing.T) {
 		AddressParams: &address.Parameters{
 			ClientPubkey: secondDepositClientPubkey,
 			PkScript:     []byte{0x51, 0x20, 0x03},
+			Expiry:       2_000,
 		},
 	}
 	changeParams := &address.Parameters{
 		ID:           1,
 		ClientPubkey: changeClientPubkey,
 		PkScript:     []byte{0x51, 0x20, 0x01},
+		Expiry:       2_000,
 	}
 
 	addTestFundingTransactions(mockLnd, dep, secondDep)
@@ -3442,6 +3449,7 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 			AddressParams: &script.Parameters{
 				ClientPubkey: clientKey.PubKey(),
 				PkScript:     []byte{0x51},
+				Expiry:       2_000,
 			},
 		}},
 		InitiationHeight:      uint32(mockLnd.Height),
@@ -3496,6 +3504,64 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 
 	case <-ctx.Done():
 		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+}
+
+// TestInitHtlcActionRejectsActualHtlcExpiry verifies that a longer server
+// contract is rejected even when the deposit passed the assumed expiry check.
+func TestInitHtlcActionRejectsActualHtlcExpiry(t *testing.T) {
+	mockLnd := test.NewMockLnd()
+	_, clientKey := test.CreateKey(40)
+	_, serverKey := test.CreateKey(41)
+	response := testStaticAddressLoopInResponse(serverKey.SerializeCompressed())
+	response.HtlcExpiry = mockLnd.Height + 1_100
+	server := &initHtlcTestServer{loopInResp: response}
+	dep := &deposit.Deposit{
+		OutPoint:           wire.OutPoint{Hash: chainhash.Hash{42}},
+		Value:              500_000,
+		ConfirmationHeight: int64(mockLnd.Height) - 200,
+		AddressParams: &script.Parameters{
+			ClientPubkey: clientKey,
+			PkScript:     []byte{0x51, 0x20, 0x01},
+			Expiry:       1_250,
+		},
+	}
+	loopIn := &StaticAddressLoopIn{
+		Deposits:         []*deposit.Deposit{dep},
+		DepositOutpoints: []string{dep.String()},
+		SelectedAmount:   dep.Value,
+		InitiationHeight: uint32(mockLnd.Height),
+		InitiationTime:   time.Now(),
+	}
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		loopIn:       loopIn,
+		cfg: &Config{
+			Server:                 server,
+			DepositManager:         &noopDepositManager{},
+			LndClient:              mockLnd.Client,
+			InvoicesClient:         mockLnd.LndServices.Invoices,
+			WalletKit:              mockLnd.WalletKit,
+			ChainParams:            mockLnd.ChainParams,
+			Store:                  &mockStore{},
+			ValidateLoopInContract: testValidateLoopInContract,
+		},
+	}
+	require.True(t, IsSwappable(uint32(dep.GetConfirmationHeight()),
+		loopIn.InitiationHeight, dep.AddressParams.Expiry))
+	require.Equal(t, fsm.OnError, f.InitHtlcAction(t.Context(), nil))
+	require.ErrorContains(t, f.LastActionError, "before htlc expiry")
+	require.Zero(t, loopIn.HtlcCltvExpiry)
+	require.Len(t, server.pushedSigs, 1)
+	require.Equal(t, loopIn.SwapHash[:], server.pushedSigs[0].SwapHash)
+	require.Nil(t, server.pushedSigs[0].StandardHtlcInfo)
+	require.Nil(t, server.pushedSigs[0].HighFeeHtlcInfo)
+	require.Nil(t, server.pushedSigs[0].ExtremeFeeHtlcInfo)
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, loopIn.SwapHash, hash)
+	default:
+		t.Fatal("rejected contract left its invoice payable")
 	}
 }
 
@@ -3978,7 +4044,7 @@ type initHtlcTestServer struct {
 
 	loopInResp *swapserverrpc.ServerStaticAddressLoopInResponse
 	loopInErr  error
-	pushed     []*swapserverrpc.PushStaticAddressHtlcSigsRequest
+	pushedSigs []*swapserverrpc.PushStaticAddressHtlcSigsRequest
 }
 
 // ServerStaticAddressLoopIn returns the canned response configured by the test.
@@ -3989,12 +4055,12 @@ func (s *initHtlcTestServer) ServerStaticAddressLoopIn(context.Context,
 	return s.loopInResp, s.loopInErr
 }
 
-// PushStaticAddressHtlcSigs records the abandonment signal in error-path tests.
+// PushStaticAddressHtlcSigs records abandonment requests from error paths.
 func (s *initHtlcTestServer) PushStaticAddressHtlcSigs(_ context.Context,
 	req *swapserverrpc.PushStaticAddressHtlcSigsRequest, _ ...grpc.CallOption,
 ) (*swapserverrpc.PushStaticAddressHtlcSigsResponse, error) {
 
-	s.pushed = append(s.pushed, req)
+	s.pushedSigs = append(s.pushedSigs, req)
 
 	return &swapserverrpc.PushStaticAddressHtlcSigsResponse{}, nil
 }
@@ -4327,11 +4393,11 @@ func TestInitHtlcActionRejectsMissingSigningInfo(t *testing.T) {
 				"server response is missing htlc signing info")
 
 			// Only an empty abandonment request is sent to the server.
-			require.Len(t, server.pushed, 1)
+			require.Len(t, server.pushedSigs, 1)
 			require.Equal(t,
 				&swapserverrpc.PushStaticAddressHtlcSigsRequest{
 					SwapHash: loopIn.SwapHash[:],
-				}, server.pushed[0])
+				}, server.pushedSigs[0])
 
 			// Invoice cancellation happens before the action returns.
 			require.NotEmpty(t, loopIn.SwapInvoice)
