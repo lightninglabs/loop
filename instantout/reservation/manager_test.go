@@ -3,6 +3,7 @@ package reservation
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -255,6 +256,43 @@ func TestManagerKeepsReservationAfterWaitTimeout(t *testing.T) {
 	require.NoError(t, activeFSM.DefaultObserver.WaitForState(
 		t.Context(), 5*time.Second, WaitForConfirmation,
 	))
+}
+
+// TestManagerReturnsInitializationError verifies that newReservation returns
+// an action failure immediately instead of waiting for the state timeout.
+func TestManagerReturnsInitializationError(t *testing.T) {
+	testContext := newManagerTestContext(t)
+	initErr := errors.New("open reservation failed")
+	testContext.mockReservationClient.ExpectedCalls = nil
+	testContext.mockReservationClient.On(
+		"OpenReservation", mock.Anything, mock.Anything, mock.Anything,
+	).Return(
+		&swapserverrpc.ServerOpenReservationResponse{}, initErr,
+	)
+
+	ctx := t.Context()
+	resultChan := make(chan error, 1)
+	go func() {
+		_, err := testContext.manager.newReservation(
+			ctx, uint32(testContext.mockLnd.Height),
+			&swapserverrpc.ServerReservationNotification{
+				ReservationId: defaultReservationId[:],
+				Value:         uint64(defaultValue),
+				ServerKey:     defaultPubkeyBytes,
+				Expiry: uint32(testContext.mockLnd.Height) +
+					defaultExpiry,
+			},
+		)
+		resultChan <- err
+	}()
+
+	select {
+	case err := <-resultChan:
+		require.ErrorIs(t, err, initErr)
+
+	case <-time.After(time.Second):
+		t.Fatal("initialization error was not returned immediately")
+	}
 }
 
 // TestManagerHandlesConfirmationDuringInitialization verifies that a funding

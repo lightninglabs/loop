@@ -40,18 +40,32 @@ type finalStateObserver struct {
 // initialization. It is registered before the FSM starts so a fast funding
 // confirmation cannot make the manager miss the intermediate state.
 type reservationInitObserver struct {
-	reached chan struct{}
-	once    sync.Once
+	result chan error
+	once   sync.Once
 }
 
 // Notify implements the fsm.Observer interface.
 func (o *reservationInitObserver) Notify(notification fsm.Notification) {
-	if notification.NextState != WaitForConfirmation {
+	var result error
+	switch {
+	case notification.NextState == WaitForConfirmation:
+
+	case isFinalState(notification.NextState):
+		if notification.LastActionError == nil {
+			result = fmt.Errorf("reservation initialization reached "+
+				"final state %v", notification.NextState)
+		} else {
+			result = fmt.Errorf("reservation initialization failed "+
+				"in state %v: %w", notification.NextState,
+				notification.LastActionError)
+		}
+
+	default:
 		return
 	}
 
 	o.once.Do(func() {
-		close(o.reached)
+		o.result <- result
 	})
 }
 
@@ -190,7 +204,7 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 		fsm:     reservationFSM,
 	})
 	initObserver := &reservationInitObserver{
-		reached: make(chan struct{}),
+		result: make(chan error, 1),
 	}
 	reservationFSM.RegisterObserver(initObserver)
 	defer reservationFSM.RemoveObserver(initObserver)
@@ -220,20 +234,17 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 	defer timeout.Stop()
 	var waitErr error
 	select {
-	case <-initObserver.reached:
+	case waitErr = <-initObserver.result:
 
 	case <-ctx.Done():
 		waitErr = ctx.Err()
 
 	case <-timeout.C:
-		waitErr = fsm.NewErrWaitingForStateTimeout(WaitForConfirmation)
+		waitErr = fsm.NewErrWaitingForStateTimeout(
+			WaitForConfirmation,
+		)
 	}
 	if waitErr != nil {
-		if reservationFSM.LastActionError != nil {
-			return nil, fmt.Errorf("error waiting for "+
-				"state: %v, last action error: %v",
-				waitErr, reservationFSM.LastActionError)
-		}
 		return nil, waitErr
 	}
 
