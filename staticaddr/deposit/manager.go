@@ -78,6 +78,10 @@ type ManagerConfig struct {
 type Manager struct {
 	cfg *ManagerConfig
 
+	// useRegistry coordinates concurrent client operations that use the
+	// same deposits.
+	useRegistry depositUseRegistry
+
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
@@ -101,6 +105,12 @@ type Manager struct {
 
 	// currentHeight stores the currently best known block height.
 	currentHeight atomic.Uint32
+}
+
+// RegisterDepositUse registers the deposits for exclusive use by one client
+// operation. The returned function unregisters only that operation's use.
+func (m *Manager) RegisterDepositUse(deposits []*Deposit) (func(), error) {
+	return m.useRegistry.register(deposits)
 }
 
 // NewManager creates a new deposit manager.

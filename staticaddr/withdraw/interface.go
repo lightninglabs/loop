@@ -24,6 +24,10 @@ type DepositManager interface {
 	// EnsureDepositsFresh reconciles active deposits with the wallet view.
 	EnsureDepositsFresh(ctx context.Context) error
 
+	// RegisterDepositUse registers the deposits for exclusive use by this
+	// client operation and returns a function that unregisters them.
+	RegisterDepositUse(deposits []*deposit.Deposit) (func(), error)
+
 	// GetActiveDepositsInState returns all active deposits in the given
 	// state.
 	GetActiveDepositsInState(stateFilter fsm.StateType) ([]*deposit.Deposit,

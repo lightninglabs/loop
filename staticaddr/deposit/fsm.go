@@ -353,8 +353,9 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				OnRecover: Withdrawing,
 
 				// A precondition for the Withdrawing state is
-				// that the withdrawal transaction has been
-				// broadcast. If the deposit expires while the
+				// that a finalized withdrawal transaction has
+				// been persisted for automatic publication and
+				// recovery. If the deposit expires while the
 				// withdrawal isn't confirmed, we can ignore the
 				// expiry.
 				OnExpiry: Withdrawing,
