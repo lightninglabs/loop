@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/liquidity"
 	"github.com/lightninglabs/loop/loopdb"
@@ -95,6 +96,19 @@ var (
 		Capacity:      1000,
 	}
 )
+
+// TestInstantOutRequiresMaxSwapFee verifies that the RPC rejects an omitted
+// fee cap before initiating the swap.
+func TestInstantOutRequiresMaxSwapFee(t *testing.T) {
+	server := &swapClientServer{
+		instantOutManager: instantout.NewInstantOutManager(nil, 0),
+	}
+
+	_, err := server.InstantOut(t.Context(), &looprpc.InstantOutRequest{})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.ErrorContains(t, err, "maximum swap fee must be specified")
+}
 
 // TestValidateConfTarget tests all failure and success cases for our conf
 // target validation function, including the case where we replace a zero

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -66,7 +67,7 @@ type InitInstantOutCtx struct {
 	outgoingChanSet loopdb.ChannelSet
 	protocolVersion ProtocolVersion
 	sweepAddress    btcutil.Address
-	maxSwapFee      *btcutil.Amount
+	maxSwapFee      btcutil.Amount
 }
 
 // RecoverInstantOutCtx marks an action as being resumed after restart.
@@ -193,11 +194,6 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	// Now we can create the instant out.
-	var maxSwapFee btcutil.Amount
-	if initCtx.maxSwapFee != nil {
-		maxSwapFee = *initCtx.maxSwapFee
-	}
-
 	instantOut := &InstantOut{
 		SwapHash:         swapHash,
 		swapPreimage:     preimage,
@@ -208,7 +204,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		clientPubkey:     keyRes.PubKey,
 		serverPubkey:     serverPubkey,
 		Value:            reservationAmt,
-		MaxSwapFee:       maxSwapFee,
+		MaxSwapFee:       initCtx.maxSwapFee,
 		htlcFeeRate:      feeRate,
 		swapInvoice:      instantOutResponse.SwapInvoice,
 		Reservations:     reservations,
@@ -230,15 +226,9 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 // charge more than the client-approved swap fee. Sub-satoshi fees are rounded
 // up so the cap cannot be bypassed with millisatoshi precision.
 func validateInstantOutInvoiceAmount(invoiceAmount lnwire.MilliSatoshi,
-	swapAmount btcutil.Amount, maxSwapFee *btcutil.Amount) error {
+	swapAmount, maxSwapFee btcutil.Amount) error {
 
-	// Omitting the cap preserves the behavior of clients that predate this
-	// field. In-tree callers set it explicitly after accepting a quote.
-	if maxSwapFee == nil {
-		return nil
-	}
-
-	if *maxSwapFee < 0 {
+	if maxSwapFee < 0 {
 		return fmt.Errorf("maximum swap fee must not be negative")
 	}
 
@@ -248,10 +238,14 @@ func validateInstantOutInvoiceAmount(invoiceAmount lnwire.MilliSatoshi,
 	}
 
 	swapFeeMsat := invoiceAmount - swapAmountMsat
+	if swapFeeMsat > math.MaxInt64 {
+		return fmt.Errorf("instant out swap fee exceeds supported range")
+	}
+
 	swapFeeSat := btcutil.Amount((int64(swapFeeMsat)-1)/1000 + 1)
-	if swapFeeSat > *maxSwapFee {
+	if swapFeeSat > maxSwapFee {
 		return fmt.Errorf("instant out swap fee %d exceeds maximum %d",
-			swapFeeSat, *maxSwapFee)
+			swapFeeSat, maxSwapFee)
 	}
 
 	return nil

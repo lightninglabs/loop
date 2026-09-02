@@ -2,7 +2,14 @@
 
 #### New Features
 
+* Instant Out now validates server invoices against a caller-approved maximum
+  swap fee.
+
 #### Breaking Changes
+
+* Instant Out requests must now set `max_swap_fee_sat`. Requests that omit the
+  fee cap are rejected; an explicit zero cap remains valid. Direct users of
+  `Manager.NewInstantOut` must pass the fee cap as a required argument.
 
 #### Bug Fixes
 

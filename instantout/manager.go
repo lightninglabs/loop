@@ -20,20 +20,6 @@ var (
 	ErrSwapDoesNotExist  = errors.New("swap does not exist")
 )
 
-type newInstantOutOptions struct {
-	maxSwapFee *btcutil.Amount
-}
-
-// NewInstantOutOption customizes an instant out request.
-type NewInstantOutOption func(*newInstantOutOptions)
-
-// WithMaxSwapFee limits the off-chain fee accepted for an instant out.
-func WithMaxSwapFee(maxSwapFee btcutil.Amount) NewInstantOutOption {
-	return func(options *newInstantOutOptions) {
-		options.maxSwapFee = &maxSwapFee
-	}
-}
-
 // Manager manages the instantout state machines.
 type Manager struct {
 	sync.Mutex
@@ -151,18 +137,9 @@ func (m *Manager) recoverInstantOuts(ctx context.Context) error {
 // NewInstantOut creates a new instantout.
 func (m *Manager) NewInstantOut(ctx context.Context,
 	reservations []reservation.ID, sweepAddress string,
-	options ...NewInstantOutOption) (*FSM, error) {
+	maxSwapFee btcutil.Amount) (*FSM, error) {
 
-	requestOptions := &newInstantOutOptions{}
-	for _, option := range options {
-		if option != nil {
-			option(requestOptions)
-		}
-	}
-
-	if requestOptions.maxSwapFee != nil &&
-		*requestOptions.maxSwapFee < 0 {
-
+	if maxSwapFee < 0 {
 		return nil, fmt.Errorf("maximum swap fee must not be negative")
 	}
 
@@ -187,7 +164,7 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 		initationHeight: m.currentHeight,
 		protocolVersion: CurrentProtocolVersion(),
 		sweepAddress:    sweepAddr,
-		maxSwapFee:      requestOptions.maxSwapFee,
+		maxSwapFee:      maxSwapFee,
 	}
 
 	instantOut, err := NewFSM(m.cfg, ProtocolVersionFullReservation)
