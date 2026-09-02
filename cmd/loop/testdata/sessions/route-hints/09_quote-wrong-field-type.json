@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--route_hints",
+      "[{\"hop_hints\":\"not-an-array\"}]",
+      "250000"
+    ],
+    "version": "0.35.0-beta commit= commit_hash=",
+    "run_error": "unable to parse route hint 0: proto: syntax error (line 1:14): unexpected token \"not-an-array\"",
+    "duration": 1265213,
+    "clock_start_unix": 1787783883
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] unable to parse route hint 0: proto: syntax error (line 1:14): unexpected token \"not-an-array\"\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "exit",
+      "data": {
+        "run_error": "unable to parse route hint 0: proto: syntax error (line 1:14): unexpected token \"not-an-array\""
+      }
+    }
+  ]
+}

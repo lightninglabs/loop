@@ -20,13 +20,37 @@
       "kind": "stdout",
       "data": {
         "lines": [
-          "NAME:\n",
+          "NAME:\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "lines": [
           "   loop quote in - get a quote for the cost of a loop in swap\n",
           "\n",
-          "USAGE:\n",
+          "USAGE:\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "lines": [
           "   loop quote in amt\n",
           "\n",
-          "DESCRIPTION:\n",
+          "DESCRIPTION:\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 1,
+      "kind": "stdout",
+      "data": {
+        "lines": [
           "   Allows to determine the cost of a swap up front.Either specify an amount or deposit outpoints.\n",
           "\n",
           "OPTIONS:\n"
@@ -42,7 +66,8 @@
           "   --conf_target uint                                       the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)\n",
           "   --verbose, -v                                            show expanded details (default: false)\n",
           "   --private                                                generates and passes routehints. Should be used if the connected node is only reachable via private channels (default: false)\n",
-          "   --route_hints string [ --route_hints string ]        "
+          "   --route_hints string                                     a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination\n",
+          "   --deposit_outpoint string [ --deposit_outpoint string ]  one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx"
         ]
       }
     },
@@ -51,35 +76,8 @@
       "kind": "stdout",
       "data": {
         "lines": [
-          "    route hints that can each be individually used to assist in reaching the invoice's destination\n",
-          "   --deposit_outpoint string [ --deposit_outpoint string ]  one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "   --help, -h                        "
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "                       "
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "show help\n"
+          "\n",
+          "   --help, -h                                               show help\n"
         ]
       }
     },

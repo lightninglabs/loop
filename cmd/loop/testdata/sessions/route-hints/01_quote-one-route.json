@@ -1,0 +1,85 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--route_hints",
+      "[{\"hop_hints\":[{\"node_id\":\"022222222222222222222222222222222222222222222222222222222222222222\",\"chan_id\":\"111111111111111\",\"fee_base_msat\":1000,\"fee_proportional_millionths\":1,\"cltv_expiry_delta\":80}]}]",
+      "250000"
+    ],
+    "version": "0.35.0-beta commit= commit_hash=",
+    "duration": 15981312,
+    "clock_start_unix": 1787783813
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "250000",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [
+            {
+              "hop_hints": [
+                {
+                  "node_id": "022222222222222222222222222222222222222222222222222222222222222222",
+                  "chan_id": "111111111111111",
+                  "fee_base_msat": 1000,
+                  "fee_proportional_millionths": 1,
+                  "cltv_expiry_delta": 80
+                }
+              ]
+            }
+          ],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 15,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "response",
+        "message_type": "looprpc.InQuoteResponse",
+        "payload": {
+          "swap_fee_sat": "1825",
+          "htlc_publish_fee_sat": "4125",
+          "cltv_delta": 0,
+          "conf_target": 6,
+          "quoted_amt": "250000"
+        }
+      }
+    },
+    {
+      "time_ms": 15,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "Send on-chain:                             250000 sat\n",
+          "Receive off-chain:                         244050 sat\n",
+          "Estimated total fee:                         5950 sat\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 15,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

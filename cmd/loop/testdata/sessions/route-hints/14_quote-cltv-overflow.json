@@ -1,0 +1,83 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "quote",
+      "in",
+      "--network",
+      "regtest",
+      "--route_hints",
+      "[{\"hop_hints\":[{\"node_id\":\"022222222222222222222222222222222222222222222222222222222222222222\",\"chan_id\":\"1\",\"cltv_expiry_delta\":65536}]}]",
+      "250000"
+    ],
+    "version": "0.35.0-beta commit= commit_hash=",
+    "run_error": "rpc error: code = Unknown desc = invalid hop hint 0 in route hint 0: CLTV expiry delta exceeds 65535",
+    "duration": 5909131,
+    "clock_start_unix": 1787783917
+  },
+  "events": [
+    {
+      "time_ms": 1,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "request",
+        "message_type": "looprpc.QuoteRequest",
+        "payload": {
+          "amt": "250000",
+          "conf_target": 0,
+          "external_htlc": false,
+          "swap_publication_deadline": "0",
+          "loop_in_last_hop": "",
+          "loop_in_route_hints": [
+            {
+              "hop_hints": [
+                {
+                  "node_id": "022222222222222222222222222222222222222222222222222222222222222222",
+                  "chan_id": "1",
+                  "fee_base_msat": 0,
+                  "fee_proportional_millionths": 0,
+                  "cltv_expiry_delta": 65536
+                }
+              ]
+            }
+          ],
+          "private": false,
+          "deposit_outpoints": [],
+          "asset_info": null,
+          "auto_select_deposits": false,
+          "fast": false
+        }
+      }
+    },
+    {
+      "time_ms": 5,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/GetLoopInQuote",
+        "event": "error",
+        "error": "rpc error: code = Unknown desc = invalid hop hint 0 in route hint 0: CLTV expiry delta exceeds 65535",
+        "status": {
+          "code": 2,
+          "message": "invalid hop hint 0 in route hint 0: CLTV expiry delta exceeds 65535"
+        }
+      }
+    },
+    {
+      "time_ms": 5,
+      "kind": "stderr",
+      "data": {
+        "lines": [
+          "[loop] rpc error: code = Unknown desc = invalid hop hint 0 in route hint 0: CLTV expiry delta exceeds 65535\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 5,
+      "kind": "exit",
+      "data": {
+        "run_error": "rpc error: code = Unknown desc = invalid hop hint 0 in route hint 0: CLTV expiry delta exceeds 65535"
+      }
+    }
+  ]
+}

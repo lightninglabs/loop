@@ -10,6 +10,9 @@
   first-confirmation heights while lnd is catching up, preventing premature
   expiry decisions from mismatched wallet and block-notification heights.
 
+* Loop In commands now parse `--route_hints` as a single JSON array and pass
+  every route and hop through unchanged.
+
 * `loopd --version` inside the official Docker images now reports the commit
   it was built from instead of an empty string.
 

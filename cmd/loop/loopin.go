@@ -31,10 +31,11 @@ var (
 			"with our reserved prefix: %v.",
 			labels.MaxLength, labels.Reserved),
 	}
-	routeHintsFlag = &cli.StringSliceFlag{
+	routeHintsFlag = &cli.StringFlag{
 		Name: "route_hints",
-		Usage: "route hints that can each be individually used " +
-			"to assist in reaching the invoice's destination",
+		Usage: "a JSON array of route hints that can each be " +
+			"individually used to assist in reaching the invoice's " +
+			"destination",
 	}
 	privateFlag = &cli.BoolFlag{
 		Name: "private",

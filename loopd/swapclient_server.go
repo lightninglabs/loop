@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 	"sort"
@@ -1244,14 +1245,27 @@ func unmarshallRouteHints(rpcRouteHints []*swapserverrpc.RouteHint) (
 	[][]zpay32.HopHint, error) {
 
 	routeHints := make([][]zpay32.HopHint, 0, len(rpcRouteHints))
-	for _, rpcRouteHint := range rpcRouteHints {
+	for routeIndex, rpcRouteHint := range rpcRouteHints {
+		if rpcRouteHint == nil {
+			return nil, fmt.Errorf("route hint %d is nil", routeIndex)
+		}
+
+		// An empty route would be encoded as an empty BOLT 11 r field,
+		// which zpay32 rejects when decoding the invoice.
+		if len(rpcRouteHint.HopHints) == 0 {
+			return nil, fmt.Errorf(
+				"route hint %d has no hop hints", routeIndex,
+			)
+		}
+
 		routeHint := make(
 			[]zpay32.HopHint, 0, len(rpcRouteHint.HopHints),
 		)
-		for _, rpcHint := range rpcRouteHint.HopHints {
+		for hopIndex, rpcHint := range rpcRouteHint.HopHints {
 			hint, err := unmarshallHopHint(rpcHint)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("invalid hop hint %d in route "+
+					"hint %d: %w", hopIndex, routeIndex, err)
 			}
 
 			routeHint = append(routeHint, hint)
@@ -1264,6 +1278,18 @@ func unmarshallRouteHints(rpcRouteHints []*swapserverrpc.RouteHint) (
 
 // unmarshallHopHint unmarshalls a single hop hint.
 func unmarshallHopHint(rpcHint *swapserverrpc.HopHint) (zpay32.HopHint, error) {
+	if rpcHint == nil {
+		return zpay32.HopHint{}, fmt.Errorf("hop hint is nil")
+	}
+	if rpcHint.ChanId == 0 {
+		return zpay32.HopHint{}, fmt.Errorf("channel ID is zero")
+	}
+	if rpcHint.CltvExpiryDelta > math.MaxUint16 {
+		return zpay32.HopHint{}, fmt.Errorf(
+			"CLTV expiry delta exceeds %d", uint32(math.MaxUint16),
+		)
+	}
+
 	pubBytes, err := hex.DecodeString(rpcHint.NodeId)
 	if err != nil {
 		return zpay32.HopHint{}, err
