@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -45,6 +46,50 @@ var (
 
 	defaultConfirmations = int32(loopdb.DefaultLoopOutHtlcConfirmations)
 )
+
+// TestParseSkippedTxns verifies that skipped txids must be fully specified.
+func TestParseSkippedTxns(t *testing.T) {
+	t.Parallel()
+
+	validTxid := strings.Repeat("01", 32)
+	validHash, err := chainhash.NewHashFromStr(validTxid)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		txids       []string
+		expected    map[chainhash.Hash]struct{}
+		expectedErr string
+	}{
+		{
+			name:  "valid",
+			txids: []string{validTxid},
+			expected: map[chainhash.Hash]struct{}{
+				*validHash: {},
+			},
+		},
+		{
+			name:        "short",
+			txids:       []string{"abcd"},
+			expectedErr: "failed to parse txid to skip abcd",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			skippedTxns, err := parseSkippedTxns(test.txids)
+			if test.expectedErr != "" {
+				require.ErrorContains(t, err, test.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, test.expected, skippedTxns)
+		})
+	}
+}
 
 var htlcKeys = func() loopdb.HtlcKeys {
 	var senderKey, receiverKey [33]byte
