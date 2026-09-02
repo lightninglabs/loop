@@ -13,6 +13,10 @@
 
 #### Bug Fixes
 
+* Instant Out now attempts to cancel server-side swaps when client
+  initialization fails, allowing locked reservations to be released without
+  waiting for the server timeout.
+
 * Static Address deposit reconciliation now preserves authoritative
   first-confirmation heights while lnd is catching up, preventing premature
   expiry decisions from mismatched wallet and block-notification heights.

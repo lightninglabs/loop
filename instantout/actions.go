@@ -144,6 +144,16 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
+	// The request may succeed server-side even if the response doesn't
+	// reach the client. Arm best-effort cleanup before sending it so the
+	// server can release any reservations it locked for this swap.
+	cancelServerSwapOnError := true
+	defer func() {
+		if cancelServerSwapOnError {
+			f.cancelServerSwap(ctx, swapHash)
+		}
+	}()
+
 	// Send the instantout request to the server.
 	instantOutResponse, err := f.cfg.InstantOutClient.RequestInstantLoopOut(
 		ctx,
@@ -159,6 +169,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	if err != nil {
 		return f.HandleError(err)
 	}
+
 	// Decode the invoice to check if the hash is valid.
 	payReq, err := f.cfg.LndClient.DecodePaymentRequest(
 		ctx, instantOutResponse.SwapInvoice,
@@ -218,6 +229,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	f.InstantOut = instantOut
+	cancelServerSwapOnError = false
 
 	return OnInit
 }
@@ -741,24 +753,8 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	}
 
 	// We're also sending the server a cancel message so that it can
-	// release the reservations. This can be done in a goroutine as we
-	// wan't to fail the fsm early.
-	go func() {
-		cancelCtx, cancel := context.WithTimeout(
-			context.WithoutCancel(ctx), time.Second*30,
-		)
-		defer cancel()
-		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
-			cancelCtx, &swapserverrpc.CancelInstantSwapRequest{
-				SwapHash: f.InstantOut.SwapHash[:],
-			},
-		)
-		if cancelErr != nil {
-			// We'll log the error but not return it as we want to return the
-			// original error.
-			f.Debugf("error sending cancel message: %v", cancelErr)
-		}
-	}()
+	// release the reservations.
+	f.cancelServerSwap(ctx, f.InstantOut.SwapHash)
 
 	// Preserve the action failure when cleanup also fails. If cleanup was
 	// the only failure, report it to the state machine.
@@ -767,6 +763,29 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	}
 
 	return f.HandleError(unlockErr)
+}
+
+// cancelServerSwap makes a best-effort request for the server to release the
+// resources held for a swap. It runs asynchronously so that cleanup cannot
+// delay the FSM's failure path. The server timeout remains the fallback if the
+// request cannot be delivered.
+func (f *FSM) cancelServerSwap(ctx context.Context, swapHash lntypes.Hash) {
+	go func() {
+		cancelCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), time.Second*30,
+		)
+		defer cancel()
+		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
+			cancelCtx, &swapserverrpc.CancelInstantSwapRequest{
+				SwapHash: swapHash[:],
+			},
+		)
+		if cancelErr != nil {
+			// We'll log the error but not return it as we want to return the
+			// original error.
+			f.Debugf("error sending cancel message: %v", cancelErr)
+		}
+	}()
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {
