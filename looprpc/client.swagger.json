@@ -1932,7 +1932,7 @@
         "max_swap_fee_sat": {
           "type": "string",
           "format": "int64",
-          "description": "The maximum off-chain swap fee that may be charged for the swap. If\nthis field is omitted, no fee cap is applied for compatibility with\nclients that predate this field. An explicitly set value of zero\nrejects any positive swap fee."
+          "description": "The maximum off-chain swap fee that may be charged for the swap. This\nfield must be set. An explicitly set value of zero rejects any\npositive swap fee."
         }
       }
     },

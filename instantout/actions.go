@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -66,7 +67,7 @@ type InitInstantOutCtx struct {
 	outgoingChanSet loopdb.ChannelSet
 	protocolVersion ProtocolVersion
 	sweepAddress    btcutil.Address
-	maxSwapFee      *btcutil.Amount
+	maxSwapFee      btcutil.Amount
 }
 
 // RecoverInstantOutCtx marks an action as being resumed after restart.
@@ -143,6 +144,16 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
+	// The request may succeed server-side even if the response doesn't
+	// reach the client. Arm best-effort cleanup before sending it so the
+	// server can release any reservations it locked for this swap.
+	cancelServerSwapOnError := true
+	defer func() {
+		if cancelServerSwapOnError {
+			f.cancelServerSwap(ctx, swapHash)
+		}
+	}()
+
 	// Send the instantout request to the server.
 	instantOutResponse, err := f.cfg.InstantOutClient.RequestInstantLoopOut(
 		ctx,
@@ -158,6 +169,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	if err != nil {
 		return f.HandleError(err)
 	}
+
 	// Decode the invoice to check if the hash is valid.
 	payReq, err := f.cfg.LndClient.DecodePaymentRequest(
 		ctx, instantOutResponse.SwapInvoice,
@@ -193,11 +205,6 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	// Now we can create the instant out.
-	var maxSwapFee btcutil.Amount
-	if initCtx.maxSwapFee != nil {
-		maxSwapFee = *initCtx.maxSwapFee
-	}
-
 	instantOut := &InstantOut{
 		SwapHash:         swapHash,
 		swapPreimage:     preimage,
@@ -208,7 +215,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 		clientPubkey:     keyRes.PubKey,
 		serverPubkey:     serverPubkey,
 		Value:            reservationAmt,
-		MaxSwapFee:       maxSwapFee,
+		MaxSwapFee:       initCtx.maxSwapFee,
 		htlcFeeRate:      feeRate,
 		swapInvoice:      instantOutResponse.SwapInvoice,
 		Reservations:     reservations,
@@ -222,6 +229,7 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 	}
 
 	f.InstantOut = instantOut
+	cancelServerSwapOnError = false
 
 	return OnInit
 }
@@ -230,15 +238,9 @@ func (f *FSM) InitInstantOutAction(ctx context.Context,
 // charge more than the client-approved swap fee. Sub-satoshi fees are rounded
 // up so the cap cannot be bypassed with millisatoshi precision.
 func validateInstantOutInvoiceAmount(invoiceAmount lnwire.MilliSatoshi,
-	swapAmount btcutil.Amount, maxSwapFee *btcutil.Amount) error {
+	swapAmount, maxSwapFee btcutil.Amount) error {
 
-	// Omitting the cap preserves the behavior of clients that predate this
-	// field. In-tree callers set it explicitly after accepting a quote.
-	if maxSwapFee == nil {
-		return nil
-	}
-
-	if *maxSwapFee < 0 {
+	if maxSwapFee < 0 {
 		return fmt.Errorf("maximum swap fee must not be negative")
 	}
 
@@ -248,10 +250,14 @@ func validateInstantOutInvoiceAmount(invoiceAmount lnwire.MilliSatoshi,
 	}
 
 	swapFeeMsat := invoiceAmount - swapAmountMsat
+	if swapFeeMsat > math.MaxInt64 {
+		return fmt.Errorf("instant out swap fee exceeds supported range")
+	}
+
 	swapFeeSat := btcutil.Amount((int64(swapFeeMsat)-1)/1000 + 1)
-	if swapFeeSat > *maxSwapFee {
+	if swapFeeSat > maxSwapFee {
 		return fmt.Errorf("instant out swap fee %d exceeds maximum %d",
-			swapFeeSat, *maxSwapFee)
+			swapFeeSat, maxSwapFee)
 	}
 
 	return nil
@@ -747,24 +753,8 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	}
 
 	// We're also sending the server a cancel message so that it can
-	// release the reservations. This can be done in a goroutine as we
-	// wan't to fail the fsm early.
-	go func() {
-		cancelCtx, cancel := context.WithTimeout(
-			context.WithoutCancel(ctx), time.Second*30,
-		)
-		defer cancel()
-		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
-			cancelCtx, &swapserverrpc.CancelInstantSwapRequest{
-				SwapHash: f.InstantOut.SwapHash[:],
-			},
-		)
-		if cancelErr != nil {
-			// We'll log the error but not return it as we want to return the
-			// original error.
-			f.Debugf("error sending cancel message: %v", cancelErr)
-		}
-	}()
+	// release the reservations.
+	f.cancelServerSwap(ctx, f.InstantOut.SwapHash)
 
 	// Preserve the action failure when cleanup also fails. If cleanup was
 	// the only failure, report it to the state machine.
@@ -773,6 +763,29 @@ func (f *FSM) handleErrorAndUnlockReservations(ctx context.Context,
 	}
 
 	return f.HandleError(unlockErr)
+}
+
+// cancelServerSwap makes a best-effort request for the server to release the
+// resources held for a swap. It runs asynchronously so that cleanup cannot
+// delay the FSM's failure path. The server timeout remains the fallback if the
+// request cannot be delivered.
+func (f *FSM) cancelServerSwap(ctx context.Context, swapHash lntypes.Hash) {
+	go func() {
+		cancelCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), time.Second*30,
+		)
+		defer cancel()
+		_, cancelErr := f.cfg.InstantOutClient.CancelInstantSwap(
+			cancelCtx, &swapserverrpc.CancelInstantSwapRequest{
+				SwapHash: swapHash[:],
+			},
+		)
+		if cancelErr != nil {
+			// We'll log the error but not return it as we want to return the
+			// original error.
+			f.Debugf("error sending cancel message: %v", cancelErr)
+		}
+	}()
 }
 
 func getMaxRoutingFee(amt btcutil.Amount) btcutil.Amount {

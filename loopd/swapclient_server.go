@@ -1775,6 +1775,10 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 		return nil, status.Error(codes.Unimplemented,
 			"Restart loop with --experimental")
 	}
+	if req.GetMaxSwapFee() == nil {
+		return nil, status.Error(codes.InvalidArgument,
+			"maximum swap fee must be specified")
+	}
 
 	reservationIds := make([]reservation.ID, len(req.ReservationIds))
 	for i, id := range req.ReservationIds {
@@ -1790,15 +1794,9 @@ func (s *swapClientServer) InstantOut(ctx context.Context,
 		reservationIds[i] = resId
 	}
 
-	var options []instantout.NewInstantOutOption
-	if req.GetMaxSwapFee() != nil {
-		options = append(options, instantout.WithMaxSwapFee(
-			btcutil.Amount(req.GetMaxSwapFeeSat()),
-		))
-	}
-
 	instantOutFsm, err := s.instantOutManager.NewInstantOut(
-		ctx, reservationIds, req.DestAddr, options...,
+		ctx, reservationIds, req.DestAddr,
+		btcutil.Amount(req.GetMaxSwapFeeSat()),
 	)
 	if err != nil {
 		return nil, err

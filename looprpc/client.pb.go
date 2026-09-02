@@ -4569,10 +4569,9 @@ type isInstantOutRequest_MaxSwapFee interface {
 }
 
 type InstantOutRequest_MaxSwapFeeSat struct {
-	// The maximum off-chain swap fee that may be charged for the swap. If
-	// this field is omitted, no fee cap is applied for compatibility with
-	// clients that predate this field. An explicitly set value of zero
-	// rejects any positive swap fee.
+	// The maximum off-chain swap fee that may be charged for the swap. This
+	// field must be set. An explicitly set value of zero rejects any
+	// positive swap fee.
 	MaxSwapFeeSat int64 `protobuf:"varint,4,opt,name=max_swap_fee_sat,json=maxSwapFeeSat,proto3,oneof"`
 }
 

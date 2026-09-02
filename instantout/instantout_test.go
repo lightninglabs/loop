@@ -203,7 +203,7 @@ func TestValidateInstantOutInvoiceAmount(t *testing.T) {
 	tests := []struct {
 		name          string
 		invoiceAmount lnwire.MilliSatoshi
-		maxSwapFee    *btcutil.Amount
+		maxSwapFee    btcutil.Amount
 		expectErr     bool
 	}{
 		{
@@ -211,14 +211,14 @@ func TestValidateInstantOutInvoiceAmount(t *testing.T) {
 			invoiceAmount: lnwire.NewMSatFromSatoshis(
 				swapAmount + maxSwapFee,
 			),
-			maxSwapFee: &maxSwapFee,
+			maxSwapFee: maxSwapFee,
 		},
 		{
 			name: "one millisatoshi over fee cap",
 			invoiceAmount: lnwire.NewMSatFromSatoshis(
 				swapAmount+maxSwapFee,
 			) + 1,
-			maxSwapFee: &maxSwapFee,
+			maxSwapFee: maxSwapFee,
 			expectErr:  true,
 		},
 		{
@@ -226,22 +226,21 @@ func TestValidateInstantOutInvoiceAmount(t *testing.T) {
 			invoiceAmount: lnwire.NewMSatFromSatoshis(
 				swapAmount - 1,
 			),
-			maxSwapFee: &zeroSwapFee,
+			maxSwapFee: zeroSwapFee,
 		},
 		{
 			name: "negative cap",
 			invoiceAmount: lnwire.NewMSatFromSatoshis(
 				swapAmount,
 			),
-			maxSwapFee: &negativeSwapFee,
+			maxSwapFee: negativeSwapFee,
 			expectErr:  true,
 		},
 		{
-			name: "omitted cap",
-			invoiceAmount: lnwire.NewMSatFromSatoshis(
-				swapAmount + maxSwapFee + 1,
-			),
-			maxSwapFee: nil,
+			name:          "swap fee exceeds signed range",
+			invoiceAmount: lnwire.MaxMilliSatoshi,
+			maxSwapFee:    maxSwapFee,
+			expectErr:     true,
 		},
 	}
 
@@ -258,4 +257,15 @@ func TestValidateInstantOutInvoiceAmount(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// TestNewInstantOutRejectsNegativeMaxSwapFee verifies that callers cannot
+// initiate an instant out with a negative maximum swap fee.
+func TestNewInstantOutRejectsNegativeMaxSwapFee(t *testing.T) {
+	// An unconfigured manager verifies that fee validation happens before
+	// any manager dependencies are accessed.
+	manager := &Manager{}
+
+	_, err := manager.NewInstantOut(t.Context(), nil, "", -1)
+	require.ErrorContains(t, err, "maximum swap fee must not be negative")
 }
