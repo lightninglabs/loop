@@ -92,6 +92,7 @@ type swapClientServer struct {
 	config               *Config
 	network              lndclient.Network
 	impl                 *loop.Client
+	loopInQuoter         loopInQuoter
 	liquidityMgr         *liquidity.Manager
 	lnd                  *lndclient.LndServices
 	reservationManager   *reservation.Manager
@@ -111,6 +112,13 @@ type swapClientServer struct {
 
 	// stopDaemon is invoked to trigger a graceful shutdown of the daemon.
 	stopDaemon func()
+}
+
+// loopInQuoter is the Loop client behavior required to retrieve a Loop In
+// quote.
+type loopInQuoter interface {
+	LoopInQuote(context.Context, *loop.LoopInQuoteRequest) (
+		*loop.LoopInQuote, error)
 }
 
 // staticAddressDepositManager is the deposit manager behavior required by the
@@ -1068,6 +1076,8 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		selectedAmount     = btcutil.Amount(req.Amt)
 		totalDepositAmount btcutil.Amount
 		autoSelectDeposits = req.AutoSelectDeposits
+		staticAddrExpiry   uint32
+		currentHeight      uint32
 		err                error
 	)
 
@@ -1088,22 +1098,13 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		}
 	}
 
-	// If deposits should be automatically selected, we do so and count the
-	// number of deposits to quote for.
-	numDeposits := 0
-	if autoSelectDeposits {
+	// Both static address quote paths require fresh deposit information,
+	// address parameters and the current block height.
+	if autoSelectDeposits || len(req.DepositOutpoints) > 0 {
 		err = s.depositManager.EnsureDepositsFresh(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("unable to refresh deposits: %w",
 				err)
-		}
-
-		deposits, err := s.depositManager.GetActiveDepositsInState(
-			deposit.Deposited,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve all "+
-				"deposits: %w", err)
 		}
 
 		// TODO(hieblmi): add params to deposit for multi-address
@@ -1115,15 +1116,31 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 			return nil, fmt.Errorf("unable to retrieve static "+
 				"address parameters: %w", err)
 		}
+		staticAddrExpiry = params.Expiry
 
 		info, err := s.lnd.Client.GetInfo(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get lnd info: %w",
 				err)
 		}
+		currentHeight = info.BlockHeight
+	}
+
+	// If deposits should be automatically selected, we do so and count the
+	// number of deposits to quote for.
+	numDeposits := 0
+	if autoSelectDeposits {
+		deposits, err := s.depositManager.GetActiveDepositsInState(
+			deposit.Deposited,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve all "+
+				"deposits: %w", err)
+		}
+
 		selectedDeposits, err := loopin.SelectDeposits(
-			selectedAmount, deposits, params.Expiry,
-			info.BlockHeight,
+			selectedAmount, deposits, staticAddrExpiry,
+			currentHeight,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to select deposits: %w",
@@ -1132,12 +1149,6 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 		numDeposits = len(selectedDeposits)
 	} else if len(req.DepositOutpoints) > 0 {
-		err = s.depositManager.EnsureDepositsFresh(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("unable to refresh deposits: %w",
-				err)
-		}
-
 		// If deposits are selected, we need to retrieve them to
 		// calculate the total value which we request a quote for.
 		depositList, err := s.ListStaticAddressDeposits(
@@ -1183,6 +1194,14 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 			)
 		}
 
+		err = validateStaticQuoteDepositsSwappable(
+			depositList.FilteredDeposits, staticAddrExpiry,
+			currentHeight,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		// If a fractional amount is also selected, we check if it
 		// leads to a dust change output.
 		selectedAmount, err = loopin.DeduceSwapAmount(
@@ -1217,17 +1236,18 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		}
 	}
 
-	quote, err := s.impl.LoopInQuote(ctx, &loop.LoopInQuoteRequest{
-		Amount:         selectedAmount,
-		HtlcConfTarget: htlcConfTarget,
-		ExternalHtlc:   req.ExternalHtlc,
-		LastHop:        lastHop,
-		RouteHints:     routeHints,
-		Private:        req.Private,
-		Initiator:      defaultLoopdInitiator,
-		NumDeposits:    uint32(numDeposits),
-		Fast:           req.Fast,
-	})
+	quote, err := s.loopInQuoter.LoopInQuote(
+		ctx, &loop.LoopInQuoteRequest{
+			Amount:         selectedAmount,
+			HtlcConfTarget: htlcConfTarget,
+			ExternalHtlc:   req.ExternalHtlc,
+			LastHop:        lastHop,
+			RouteHints:     routeHints,
+			Private:        req.Private,
+			Initiator:      defaultLoopdInitiator,
+			NumDeposits:    uint32(numDeposits),
+			Fast:           req.Fast,
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -2629,6 +2649,29 @@ func depositBlocksUntilExpiry(confirmationHeight int64, expiry uint32,
 	}
 
 	return confirmationHeight + int64(expiry) - bestBlockHeight
+}
+
+// validateStaticQuoteDepositsSwappable rejects manual quote deposits that are
+// too close to expiry for the server's static-address loop-in HTLC timeout.
+func validateStaticQuoteDepositsSwappable(deposits []*looprpc.Deposit,
+	csvExpiry uint32, blockHeight uint32) error {
+
+	for _, deposit := range deposits {
+		if deposit.ConfirmationHeight <= 0 {
+			continue
+		}
+
+		confirmationHeight := uint32(deposit.ConfirmationHeight)
+		swappable := loopin.IsSwappable(
+			confirmationHeight, blockHeight, csvExpiry,
+		)
+		if !swappable {
+			return fmt.Errorf("deposit %s expires before htlc",
+				deposit.Outpoint)
+		}
+	}
+
+	return nil
 }
 
 // StaticOpenChannel initiates an open channel request using static address
