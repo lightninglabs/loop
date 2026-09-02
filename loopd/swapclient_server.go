@@ -1158,7 +1158,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 		}
 
 		if err := loopin.ValidateDepositsSwappable(
-			selectedDeposits, staticAddrExpiry, currentHeight,
+			selectedDeposits, currentHeight,
 		); err != nil {
 			return nil, err
 		}

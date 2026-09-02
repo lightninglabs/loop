@@ -247,6 +247,15 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		return returnError(err)
 	}
 
+	expiryErr := validateDepositHtlcExpiry(
+		f.loopIn.Deposits, loopInResp.HtlcExpiry,
+		f.loopIn.InitiationHeight,
+	)
+	if expiryErr != nil {
+		pushEmptySigs()
+		return returnError(expiryErr)
+	}
+
 	f.loopIn.HtlcCltvExpiry = loopInResp.HtlcExpiry
 	f.htlcServerNonces, err = toNonces(loopInResp.StandardHtlcInfo.Nonces)
 	if err != nil {
