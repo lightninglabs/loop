@@ -23,6 +23,10 @@
 
 #### Maintenance
 
+* Release-note CI and release builds now require a versioned release-notes file
+  and an empty next release-notes file, unless explicitly overridden for
+  historical or non-release builds.
+
 * The Docker image build now verifies that every platform of the image index
   holds binaries for the architecture it advertises, and gives a release its
   tag only once that check has passed.

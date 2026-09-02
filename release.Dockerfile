@@ -1,7 +1,7 @@
 FROM golang:1.26.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git ca-certificates zip gpg && rm -rf /var/lib/apt/lists/*
+    git ca-certificates zip gpg python3 && rm -rf /var/lib/apt/lists/*
 
 # Add GPG key of Alex Bosworth to verify release tag signature.
 RUN gpg --keyserver keys.openpgp.org \

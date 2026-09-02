@@ -6,9 +6,20 @@ Contributor lists are derived from non-merge commit authors and co-authors
 between consecutive official release tags.
 
 Add user-facing changes to [release-notes-next.md](release-notes-next.md).
-When preparing a release, use
-[release-notes-template.md](release-notes-template.md) to turn those notes into
-a versioned file, then reset the next-release sections.
+When preparing a release, run
+`./scripts/release-notes.py rotate <release-tag> <release-highlights>`.
+The script moves the unreleased notes into the versioned file, updates adjacent
+links and this table, then resets the next-release file from the template. It
+uses the current date by default; pass `--date YYYY-MM-DD` when preparing notes
+for another date. The template defines the complete notes structure. The
+scripts only read or update the release date, release page, previous-release,
+and next-release fields, so adding or rearranging sections requires no script
+changes.
+
+The release-notes CI check detects version-component changes in `version.go`.
+Those release-preparation pull requests must satisfy the same rotated-notes
+check as the release builder; other pull requests need a next-release entry or
+the `no-changelog` label.
 
 | Release notes | Date | Highlights |
 | --- | --- | --- |
