@@ -14,10 +14,7 @@ import (
 	reservationrpc "github.com/lightninglabs/loop/swapserverrpc"
 )
 
-var (
-	reservationStateWaitTimeout = 5 * time.Second
-	reservationStatePollDelay   = time.Second
-)
+var reservationStateWaitTimeout = 5 * time.Second
 
 // Manager manages the reservation state machines.
 type Manager struct {
@@ -37,6 +34,25 @@ type finalStateObserver struct {
 	manager *Manager
 	id      ID
 	fsm     *FSM
+}
+
+// reservationInitObserver records when a new reservation has completed its
+// initialization. It is registered before the FSM starts so a fast funding
+// confirmation cannot make the manager miss the intermediate state.
+type reservationInitObserver struct {
+	reached chan struct{}
+	once    sync.Once
+}
+
+// Notify implements the fsm.Observer interface.
+func (o *reservationInitObserver) Notify(notification fsm.Notification) {
+	if notification.NextState != WaitForConfirmation {
+		return
+	}
+
+	o.once.Do(func() {
+		close(o.reached)
+	})
 }
 
 // Notify implements the fsm.Observer interface.
@@ -173,6 +189,11 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 		id:      reservationID,
 		fsm:     reservationFSM,
 	})
+	initObserver := &reservationInitObserver{
+		reached: make(chan struct{}),
+	}
+	reservationFSM.RegisterObserver(initObserver)
+	defer reservationFSM.RemoveObserver(initObserver)
 
 	initContext := &InitReservationContext{
 		reservationID: reservationID,
@@ -192,19 +213,28 @@ func (m *Manager) newReservation(ctx context.Context, currentHeight uint32,
 		}
 	}()
 
-	// We'll now wait for the reservation to be in the state where it is
-	// waiting to be confirmed.
-	err = reservationFSM.DefaultObserver.WaitForState(
-		ctx, reservationStateWaitTimeout, WaitForConfirmation,
-		fsm.WithWaitForStateOption(reservationStatePollDelay),
-	)
-	if err != nil {
+	// Wait until initialization reaches the confirmation monitor. The
+	// observer was registered before the initialization event, so this also
+	// succeeds if the reservation confirms before this select starts.
+	timeout := time.NewTimer(reservationStateWaitTimeout)
+	defer timeout.Stop()
+	var waitErr error
+	select {
+	case <-initObserver.reached:
+
+	case <-ctx.Done():
+		waitErr = ctx.Err()
+
+	case <-timeout.C:
+		waitErr = fsm.NewErrWaitingForStateTimeout(WaitForConfirmation)
+	}
+	if waitErr != nil {
 		if reservationFSM.LastActionError != nil {
 			return nil, fmt.Errorf("error waiting for "+
 				"state: %v, last action error: %v",
-				err, reservationFSM.LastActionError)
+				waitErr, reservationFSM.LastActionError)
 		}
-		return nil, err
+		return nil, waitErr
 	}
 
 	return reservationFSM, nil

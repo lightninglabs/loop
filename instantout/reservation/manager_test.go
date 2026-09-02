@@ -218,12 +218,9 @@ func TestManagerKeepsReservationAfterWaitTimeout(t *testing.T) {
 	testContext := newManagerTestContext(t)
 
 	originalWaitTimeout := reservationStateWaitTimeout
-	originalPollDelay := reservationStatePollDelay
 	reservationStateWaitTimeout = 20 * time.Millisecond
-	reservationStatePollDelay = time.Millisecond
 	t.Cleanup(func() {
 		reservationStateWaitTimeout = originalWaitTimeout
-		reservationStatePollDelay = originalPollDelay
 	})
 
 	releaseOpen := make(chan struct{})
@@ -257,6 +254,45 @@ func TestManagerKeepsReservationAfterWaitTimeout(t *testing.T) {
 	close(releaseOpen)
 	require.NoError(t, activeFSM.DefaultObserver.WaitForState(
 		t.Context(), 5*time.Second, WaitForConfirmation,
+	))
+}
+
+// TestManagerHandlesConfirmationDuringInitialization verifies that a funding
+// confirmation cannot make newReservation miss its initialized state.
+func TestManagerHandlesConfirmationDuringInitialization(t *testing.T) {
+	testContext := newManagerTestContext(t)
+
+	confirmed := make(chan struct{})
+	go func() {
+		confReg := <-testContext.mockLnd.RegisterConfChannel
+		confReg.ConfChan <- &chainntnfs.TxConfirmation{
+			BlockHeight: uint32(testContext.mockLnd.Height),
+			Tx: &wire.MsgTx{
+				TxOut: []*wire.TxOut{
+					{
+						Value:    int64(defaultValue),
+						PkScript: confReg.PkScript,
+					},
+				},
+			},
+		}
+		close(confirmed)
+	}()
+
+	reservationFSM, err := testContext.manager.newReservation(
+		t.Context(), uint32(testContext.mockLnd.Height),
+		&swapserverrpc.ServerReservationNotification{
+			ReservationId: defaultReservationId[:],
+			Value:         uint64(defaultValue),
+			ServerKey:     defaultPubkeyBytes,
+			Expiry: uint32(testContext.mockLnd.Height) +
+				defaultExpiry,
+		},
+	)
+	require.NoError(t, err)
+	<-confirmed
+	require.NoError(t, reservationFSM.DefaultObserver.WaitForState(
+		t.Context(), 5*time.Second, Confirmed,
 	))
 }
 
