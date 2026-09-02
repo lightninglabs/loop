@@ -11,6 +11,9 @@
 
 #### Bug Fixes
 
+* Validate each selected static deposit's CSV expiry against the actual HTLC
+  expiry before signing.
+
 * Retain active static-address deposits while a withdrawal publishes and
   records its result, preventing wallet reconciliation from removing spent
   inputs before a slow Neutrino publication returns. Defer new expiry checks
@@ -26,11 +29,6 @@
   kernels. Existing binaries can apply the same mitigation with
   `GODEBUG=multipathtcp=0` and a restart. A patched kernel is still required to
   fix the underlying vulnerability.
-
-* Bound the static Loop In risk decision replay cache to prevent unbounded
-  memory growth from swap server notifications for unknown swaps. Cached
-  decisions retain only a copy of the validated swap hash, without unknown
-  protobuf fields or oversized backing buffers.
 
 * Preserve pending loop-in ownership of deposits during expiry and restart
   recovery. Release only deposits still owned by the swap, after a positive
@@ -50,6 +48,11 @@
   provides exactly one prevout for every sweep input. A duplicate or missing
   prevout previously crashed `loopd` while computing the sweep signature
   hashes.
+
+* Bound the static Loop In risk decision replay cache to prevent unbounded
+  memory growth from swap server notifications for unknown swaps. Cached
+  decisions retain only a copy of the validated swap hash, without unknown
+  protobuf fields or oversized backing buffers.
 
 #### Maintenance
 
