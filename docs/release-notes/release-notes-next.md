@@ -13,6 +13,10 @@
 
 #### Bug Fixes
 
+* Newly initiated Instant Out swaps are now indexed by their actual swap hash,
+  and normal payment-stream closure no longer aborts a swap before the server
+  reports that it accepted the payment.
+
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
   waiting for the server timeout.
