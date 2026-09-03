@@ -73,6 +73,7 @@
           "                    \"id\": \"68262a104c9ec325de6bec37b8e31bd875bbd2f5f0b9ce2da20cf0bd636fc448\",\n",
           "                    \"outpoint\": \"edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0\",\n",
           "                    \"state\": \"WITHDRAWING\",\n",
+          "                    \"static_address\": \"\",\n",
           "                    \"swap_hash\": \"\",\n",
           "                    \"value\": \"500000\"\n",
           "                }\n",

@@ -114,7 +114,9 @@ type SwapClientClient interface {
 	// their current status.
 	ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error)
 	// loop: `static newstaticaddress`
-	// NewStaticAddress requests a new static address for loop-ins from the server.
+	// NewStaticAddress derives a fresh static receive address on every request
+	// without send_coins_request.addr, or funds an existing address when addr is
+	// set.
 	NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
 	// ListUnspentDeposits returns a list of utxos deposited at a static address.
@@ -574,7 +576,9 @@ type SwapClientServer interface {
 	// their current status.
 	ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error)
 	// loop: `static newstaticaddress`
-	// NewStaticAddress requests a new static address for loop-ins from the server.
+	// NewStaticAddress derives a fresh static receive address on every request
+	// without send_coins_request.addr, or funds an existing address when addr is
+	// set.
 	NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
 	// ListUnspentDeposits returns a list of utxos deposited at a static address.

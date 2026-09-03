@@ -81,8 +81,8 @@ type Manager struct {
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
-	// reconcileMu serializes deposit reconciliation so new deposits are
-	// discovered and retained exactly once per outpoint.
+	// reconcileMu serializes startup recovery and deposit reconciliation so
+	// new deposits are discovered and retained exactly once per outpoint.
 	reconcileMu sync.Mutex
 
 	// activeDeposits contains all the active static address outputs.
@@ -238,6 +238,9 @@ func (m *Manager) notifyActiveDeposits(ctx context.Context,
 // recoverDeposits recovers static address parameters, previous deposits and
 // state machines from the database and starts the deposit notifier.
 func (m *Manager) recoverDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Infof("Recovering static address parameters and deposits...")
 
 	// Recover deposits.
@@ -454,6 +457,16 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		return nil, err
 	}
 
+	addressParams := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if addressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters "+
+			"for deposit %v", utxo.OutPoint)
+	}
+	if addressParams.ID <= 0 {
+		return nil, fmt.Errorf("missing static address ID for deposit %v",
+			utxo.OutPoint)
+	}
+
 	// Get the sweep pk script.
 	addr, err := m.cfg.WalletKit.NextAddr(
 		ctx, lnwallet.DefaultAccountName,
@@ -472,6 +485,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
@@ -479,6 +493,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		Value:                utxo.Value,
 		ConfirmationHeight:   confirmationHeight,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        addressParams,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)

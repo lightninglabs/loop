@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -193,9 +194,11 @@ func TestSelectDeposits(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			setTestDepositParams(tc.deposits, tc.csvExpiry)
+			setTestDepositParams(tc.expected, tc.csvExpiry)
+
 			selectedDeposits, err := SelectDeposits(
-				tc.targetValue, tc.deposits, tc.csvExpiry,
-				tc.blockHeight,
+				tc.targetValue, tc.deposits, tc.blockHeight,
 			)
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
@@ -207,6 +210,58 @@ func TestSelectDeposits(t *testing.T) {
 	}
 }
 
+// TestSelectDepositsUsesPerDepositExpiry verifies that deposit filtering and
+// tie-breaking use the expiry of the address that owns each deposit.
+func TestSelectDepositsUsesPerDepositExpiry(t *testing.T) {
+	const (
+		blockHeight        = uint32(2_000)
+		confirmationHeight = int64(1_000)
+	)
+
+	newDeposit := func(id byte, value btcutil.Amount,
+		expiry uint32) *deposit.Deposit {
+
+		return &deposit.Deposit{
+			OutPoint: wire.OutPoint{
+				Hash: chainhash.Hash{id},
+			},
+			Value:              value,
+			ConfirmationHeight: confirmationHeight,
+			AddressParams: &address.Parameters{
+				Expiry: expiry,
+			},
+		}
+	}
+
+	t.Run("filter", func(t *testing.T) {
+		// The larger deposit has only 1,000 blocks left and is not
+		// swappable. The smaller deposit has 1,050 blocks left and is
+		// exactly at the loop-in CLTV delta plus its safety buffer.
+		tooClose := newDeposit(1, 3_000_000, 2_000)
+		eligible := newDeposit(2, 2_000_000, 2_050)
+
+		selected, err := SelectDeposits(
+			1_000_000, []*deposit.Deposit{tooClose, eligible},
+			blockHeight,
+		)
+		require.NoError(t, err)
+		require.Equal(t, []*deposit.Deposit{eligible}, selected)
+	})
+
+	t.Run("tie break", func(t *testing.T) {
+		laterExpiry := newDeposit(3, 3_000_000, 2_200)
+		earlierExpiry := newDeposit(4, 3_000_000, 2_100)
+
+		selected, err := SelectDeposits(
+			1_000_000,
+			[]*deposit.Deposit{laterExpiry, earlierExpiry},
+			blockHeight,
+		)
+		require.NoError(t, err)
+		require.Equal(t, []*deposit.Deposit{earlierExpiry}, selected)
+	})
+}
+
 // TestInitiateLoopInAllowsReservedAutoloopLabel verifies that the internal
 // loop-in manager path does not reject reserved autoloop labels. The RPC
 // boundary owns that validation, while internal autoloop dispatch must be able
@@ -216,6 +271,7 @@ func TestInitiateLoopInAllowsReservedAutoloopLabel(t *testing.T) {
 
 	const confirmationHeight = 0
 	selectedDeposit := makeDeposit(1, 0, 9_000, confirmationHeight)
+	selectedDeposit.AddressParams = &script.Parameters{Expiry: 10_000}
 	selectedOutpoint := selectedDeposit.OutPoint.String()
 	quoteErr := errors.New("quote failed")
 	quoteGetter := &mockQuoteGetter{
@@ -262,6 +318,7 @@ func TestInitiateLoopInRejectsExpiringSelectedDeposit(t *testing.T) {
 	selectedDeposit := makeDeposit(
 		2, 0, 9_000, confirmationHeight,
 	)
+	selectedDeposit.AddressParams = &script.Parameters{Expiry: csvExpiry}
 	selectedOutpoint := selectedDeposit.OutPoint.String()
 	quoteGetter := &mockQuoteGetter{
 		err: errors.New("quote should not be reached"),
@@ -269,7 +326,9 @@ func TestInitiateLoopInRejectsExpiringSelectedDeposit(t *testing.T) {
 
 	manager, err := NewManager(&Config{
 		AddressManager: &mockAddressManager{
-			params: &script.Parameters{Expiry: csvExpiry},
+			// A global expiry would make this deposit look fresh. The
+			// deposit's owning address must take precedence.
+			params: &script.Parameters{Expiry: csvExpiry * 2},
 		},
 		DepositManager: &mockDepositManager{
 			byOutpoint: map[string]*deposit.Deposit{
@@ -306,13 +365,16 @@ func TestInitiateLoopInAllowsFreshSelectedDeposit(t *testing.T) {
 	selectedDeposit := makeDeposit(
 		3, 0, 9_000, confirmationHeight,
 	)
+	selectedDeposit.AddressParams = &script.Parameters{Expiry: csvExpiry}
 	selectedOutpoint := selectedDeposit.OutPoint.String()
 	quoteErr := errors.New("quote reached")
 	quoteGetter := &mockQuoteGetter{err: quoteErr}
 
 	manager, err := NewManager(&Config{
 		AddressManager: &mockAddressManager{
-			params: &script.Parameters{Expiry: csvExpiry},
+			// A global expiry would reject this deposit. The deposit's
+			// owning address must take precedence.
+			params: &script.Parameters{Expiry: 10},
 		},
 		DepositManager: &mockDepositManager{
 			byOutpoint: map[string]*deposit.Deposit{
@@ -407,11 +469,12 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 	var psbtBuf bytes.Buffer
 	require.NoError(t, sweepPacket.Serialize(&psbtBuf))
 
+	addressMgr := &mockAddressManager{
+		getParamsErr: errors.New("legacy address parameters unavailable"),
+	}
 	mgr := &Manager{
 		cfg: &Config{
-			AddressManager: &mockAddressManager{
-				params: changeAddr,
-			},
+			AddressManager: addressMgr,
 			DepositManager: &mockDepositManager{
 				byOutpoint: map[string]*deposit.Deposit{
 					depOutpoint: dep,
@@ -445,6 +508,119 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 	err = mgr.handleLoopInSweepReq(ctx, req)
 	require.ErrorContains(t, err, "invalid server nonce")
 	require.ErrorContains(t, err, depOutpoint)
+	require.Zero(t, addressMgr.getParamsCalls.Load())
+}
+
+// TestHandleLoopInSweepReqRejectsMalformedPrevouts verifies that a sweep
+// request whose prevout list matches the input count, but doesn't provide
+// exactly one prevout per sweep input, is rejected before the sighash
+// computation instead of panicking on a missing prevout.
+func TestHandleLoopInSweepReqRejectsMalformedPrevouts(t *testing.T) {
+	ctx := t.Context()
+
+	const confirmationHeight = 0
+	dep := makeDeposit(7, 0, 10_000, confirmationHeight)
+	depOutpoint := outpointString(dep)
+
+	// The sweep also spends an input that isn't one of our deposits, as is
+	// the case for sweeps batched across clients.
+	foreignOutpoint := wire.OutPoint{Hash: chainhash.Hash{8}, Index: 1}
+
+	swapHash := lntypes.Hash{9}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		DepositOutpoints: []string{depOutpoint},
+		SelectedAmount:   dep.Value,
+	}
+	loopIn.SetState(Succeeded)
+
+	sweepTx := makeSweepTx(
+		[]wire.OutPoint{dep.OutPoint, foreignOutpoint},
+		[]*wire.TxOut{{
+			Value:    int64(dep.Value),
+			PkScript: []byte{0xcc, 0xdd},
+		}},
+	)
+	sweepPacket, err := psbt.NewFromUnsignedTx(sweepTx)
+	require.NoError(t, err)
+
+	var psbtBuf bytes.Buffer
+	require.NoError(t, sweepPacket.Serialize(&psbtBuf))
+
+	mgr := &Manager{
+		cfg: &Config{
+			AddressManager: &mockAddressManager{},
+			DepositManager: &mockDepositManager{
+				byOutpoint: map[string]*deposit.Deposit{
+					depOutpoint: dep,
+				},
+			},
+			Store: &mockStore{
+				loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+					swapHash: loopIn,
+				},
+				mapIDs: map[lntypes.Hash][]deposit.ID{
+					swapHash: {dep.ID},
+				},
+			},
+		},
+	}
+
+	depositPrevout := &swapserverrpc.PrevoutInfo{
+		Value:       uint64(dep.Value),
+		PkScript:    []byte{0xaa, 0xbb},
+		TxidBytes:   dep.Hash[:],
+		OutputIndex: dep.Index,
+	}
+	unrelatedHash := chainhash.Hash{5}
+
+	tests := []struct {
+		name     string
+		prevouts []*swapserverrpc.PrevoutInfo
+		wantErr  string
+	}{
+		{
+			// The deposit prevout is listed twice while the foreign
+			// input has none.
+			name: "duplicate prevout",
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				depositPrevout, depositPrevout,
+			},
+			wantErr: "duplicate prevout",
+		},
+		{
+			// The second prevout references an outpoint that the
+			// sweep doesn't spend.
+			name: "missing prevout",
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				depositPrevout,
+				{
+					Value:       1_000,
+					PkScript:    []byte{0xaa, 0xbb},
+					TxidBytes:   unrelatedHash[:],
+					OutputIndex: 0,
+				},
+			},
+			wantErr: "missing prevout for sweep input " +
+				foreignOutpoint.String(),
+		},
+	}
+
+	for _, tc := range tests {
+		req := &swapserverrpc.ServerStaticLoopInSweepNotification{
+			SweepTxPsbt: psbtBuf.Bytes(),
+			SwapHash:    swapHash[:],
+			DepositToNonces: map[string][]byte{
+				depOutpoint: make([]byte, musig2.PubNonceSize),
+			},
+			PrevoutInfo: tc.prevouts,
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			err := mgr.handleLoopInSweepReq(ctx, req)
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
 }
 
 // TestActiveDepositsForLoopInUsesCurrentDepositOutpoints verifies that
@@ -504,6 +680,14 @@ func TestGetAllSwapsPreservesStoreDeposits(t *testing.T) {
 	require.Len(t, swaps, 1)
 	require.Equal(t, []string{oldOutpoint.String()}, swaps[0].DepositOutpoints)
 	require.Equal(t, []*deposit.Deposit{currentDeposit}, swaps[0].Deposits)
+}
+
+func setTestDepositParams(deposits []*deposit.Deposit, expiry uint32) {
+	for _, d := range deposits {
+		d.AddressParams = &address.Parameters{
+			Expiry: expiry,
+		}
+	}
 }
 
 // TestIsSwappableUnconfirmed checks that an unconfirmed deposit is considered
@@ -731,22 +915,25 @@ func makeSweepTx(inputs []wire.OutPoint, outputs []*wire.TxOut) *wire.MsgTx {
 func TestCheckChange(t *testing.T) {
 	ctx := context.Background()
 
-	// Prepare a common change address and an alternate address.
+	// Prepare shared and per-swap change addresses, plus unrelated outputs.
 	changeAddr := &script.Parameters{PkScript: []byte{0xaa, 0xbb}}
+	freshChangeAddr := &script.Parameters{PkScript: []byte{0xab, 0xcd}}
 	otherAddr := &script.Parameters{PkScript: []byte{0xcc, 0xdd}}
 	serverAddr := &script.Parameters{PkScript: []byte{0xee, 0xff}}
 
 	// Prepare swaps (loop-ins) with varying deposit totals and selections.
 	// Helper to make a swap with deposits and selected amount.
 	makeSwap := func(h byte, deposits []*deposit.Deposit,
-		selected btcutil.Amount) (lntypes.Hash, *StaticAddressLoopIn) {
+		selected btcutil.Amount,
+		changeAddress *script.Parameters) (lntypes.Hash,
+		*StaticAddressLoopIn) {
 
 		var hash lntypes.Hash
 		hash[0] = h
 		li := &StaticAddressLoopIn{
-			Deposits:       deposits,
-			SelectedAmount: selected,
-			AddressParams:  changeAddr,
+			Deposits:            deposits,
+			SelectedAmount:      selected,
+			ChangeAddressParams: changeAddress,
 		}
 		return hash, li
 	}
@@ -758,16 +945,23 @@ func TestCheckChange(t *testing.T) {
 	s2d1 := makeDeposit(2, 0, 1500, confirmationHeight)
 	s3d1 := makeDeposit(3, 0, 800, confirmationHeight)
 	s4d1 := makeDeposit(4, 0, 900, confirmationHeight)
+	s5d1 := makeDeposit(5, 0, 700, confirmationHeight)
 
 	// Swaps:
 	// A: total 3000, selected 3000 => no change.
-	hA, liA := makeSwap(10, []*deposit.Deposit{s1d1, s1d2}, 3000)
+	hA, liA := makeSwap(
+		10, []*deposit.Deposit{s1d1, s1d2}, 3000, changeAddr,
+	)
 	// B: total 1500, selected 1000 => change 500.
-	hB, liB := makeSwap(11, []*deposit.Deposit{s2d1}, 1000)
+	hB, liB := makeSwap(11, []*deposit.Deposit{s2d1}, 1000, changeAddr)
 	// C: total 800, selected 400 => change 400.
-	hC, liC := makeSwap(12, []*deposit.Deposit{s3d1}, 400)
+	hC, liC := makeSwap(12, []*deposit.Deposit{s3d1}, 400, changeAddr)
 	// D: total 900, selected 500 => change 400.
-	hD, liD := makeSwap(13, []*deposit.Deposit{s4d1}, 500)
+	hD, liD := makeSwap(13, []*deposit.Deposit{s4d1}, 500, changeAddr)
+	// E: total 700, selected 400 => change 300 to a fresh address.
+	hE, liE := makeSwap(
+		14, []*deposit.Deposit{s5d1}, 400, freshChangeAddr,
+	)
 
 	// Mapping deposits -> swaps (by deposit IDs).
 	mapIDs := map[lntypes.Hash][]deposit.ID{
@@ -775,6 +969,7 @@ func TestCheckChange(t *testing.T) {
 		hB: {s2d1.ID},
 		hC: {s3d1.ID},
 		hD: {s4d1.ID},
+		hE: {s5d1.ID},
 	}
 
 	loopIns := map[lntypes.Hash]*StaticAddressLoopIn{
@@ -782,6 +977,7 @@ func TestCheckChange(t *testing.T) {
 		hB: liB,
 		hC: liC,
 		hD: liD,
+		hE: liE,
 	}
 
 	// Common manager with mocked dependencies; will change inputs per test.
@@ -801,7 +997,6 @@ func TestCheckChange(t *testing.T) {
 		name           string
 		inDeps         []*deposit.Deposit // deposits referenced by tx inputs
 		outputs        []*wire.TxOut      // outputs in sweep tx
-		addr           *script.Parameters
 		expectErr      bool
 		expectedErrMsg string
 	}
@@ -817,7 +1012,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: serverAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
 			name:   "single swap change present",
@@ -832,11 +1026,10 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
-			name:   "multiple swaps different change amounts",
-			inDeps: []*deposit.Deposit{s2d1, s3d1}, // B(500)+C(400)=900
+			name:   "shared script changes aggregated",
+			inDeps: []*deposit.Deposit{s2d1, s3d1}, // B(500)+C(400)
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -847,11 +1040,10 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 		{
-			name:   "two swaps with identical change values sum correctly",
-			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)=800
+			name:   "identical shared script changes aggregated",
+			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)
 			outputs: []*wire.TxOut{
 				{
 					Value:    1337,
@@ -862,13 +1054,45 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
+		},
+		{
+			name:   "split shared script changes rejected",
+			inDeps: []*deposit.Deposit{s3d1, s4d1}, // C(400)+D(400)
+			outputs: []*wire.TxOut{
+				{
+					Value:    400,
+					PkScript: changeAddr.PkScript,
+				},
+				{
+					Value:    400,
+					PkScript: changeAddr.PkScript,
+				},
+			},
+			expectErr:      true,
+			expectedErrMsg: "couldn't find expected change",
+		},
+		{
+			name:   "distinct change scripts remain separate",
+			inDeps: []*deposit.Deposit{s2d1, s5d1}, // B(500)+E(300)
+			outputs: []*wire.TxOut{
+				{
+					Value:    1337,
+					PkScript: serverAddr.PkScript,
+				},
+				{
+					Value:    500,
+					PkScript: changeAddr.PkScript,
+				},
+				{
+					Value:    300,
+					PkScript: freshChangeAddr.PkScript,
+				},
+			},
 		},
 		{
 			name:           "missing change output results in error",
 			inDeps:         []*deposit.Deposit{s2d1}, // expect 500
 			outputs:        []*wire.TxOut{},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -885,7 +1109,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: otherAddr.PkScript,
 				},
 			},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -902,7 +1125,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: changeAddr.PkScript,
 				},
 			},
-			addr:           changeAddr,
 			expectErr:      true,
 			expectedErrMsg: "couldn't find expected change",
 		},
@@ -923,7 +1145,6 @@ func TestCheckChange(t *testing.T) {
 					PkScript: otherAddr.PkScript,
 				},
 			},
-			addr: changeAddr,
 		},
 	}
 
@@ -946,7 +1167,7 @@ func TestCheckChange(t *testing.T) {
 			mgr.cfg.DepositManager = mdm
 
 			tx := makeSweepTx(inputs, tc.outputs)
-			err := mgr.checkChange(ctx, tx, tc.addr)
+			err := mgr.checkChange(ctx, tx)
 			if tc.expectErr {
 				require.Error(t, err)
 				if tc.expectedErrMsg != "" {
