@@ -384,14 +384,22 @@ func (d *Kit) validateProof(depositProof *proof.Proof) (
 }
 
 // VerifyProof verifies the proof commitment and binds it to this deposit's
-// asset, internal key, and timeout sibling. It returns the complete Taproot
-// Asset commitment root.
+// asset, internal key, and timeout sibling. It returns the complete anchor
+// Taproot Merkle root used to tweak the MuSig2 key for a key-path spend.
 func (d *Kit) VerifyProof(depositProof *proof.Proof) ([]byte, error) {
 	tapCommitment, err := d.validateProof(depositProof)
 	if err != nil {
 		return nil, err
 	}
-	root := tapCommitment.TapscriptRoot(nil)
+	sibling, err := d.timeoutPathSibling()
+	if err != nil {
+		return nil, err
+	}
+	siblingHash, err := sibling.TapHash()
+	if err != nil {
+		return nil, err
+	}
+	root := tapCommitment.TapscriptRoot(siblingHash)
 
 	return append([]byte(nil), root[:]...), nil
 }

@@ -346,6 +346,25 @@ func newWitnessFixture(t *testing.T) *witnessFixture {
 	}
 }
 
+// TestVerifyProofReturnsAnchorRoot verifies the proof result can be used as
+// the Taproot tweak for the deposit's cooperative MuSig2 key-path spend.
+func TestVerifyProofReturnsAnchorRoot(t *testing.T) {
+	fixture := newWitnessFixture(t)
+
+	root, err := fixture.kit.VerifyProof(fixture.proof)
+	require.NoError(t, err)
+	require.Len(t, root, chainhash.HashSize)
+
+	outputKey := txscript.ComputeTaprootOutputKey(
+		fixture.kit.muSig2Key.PreTweakedKey, root,
+	)
+	pkScript, err := txscript.PayToTaprootScript(outputKey)
+	require.NoError(t, err)
+	require.Equal(
+		t, fixture.prevOutputs[fixture.assetInIndex].PkScript, pkScript,
+	)
+}
+
 // TestCreateTimeoutWitness verifies the refund signature and witness bind to
 // the proof-selected input rather than an assumed position.
 func TestCreateTimeoutWitness(t *testing.T) {
