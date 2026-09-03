@@ -1,6 +1,7 @@
 package deposit
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -17,11 +18,13 @@ import (
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/tapscript"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -198,6 +201,23 @@ type localSigner struct {
 	invalidSet    bool
 }
 
+type proofVerifierMock struct {
+	response *taprpc.VerifyProofResponse
+	err      error
+	calls    int
+}
+
+// VerifyProof records a proof verification request and returns the configured
+// tapd response.
+func (m *proofVerifierMock) VerifyProof(_ context.Context,
+	_ *taprpc.ProofFile, _ ...grpc.CallOption) (*taprpc.VerifyProofResponse,
+	error) {
+
+	m.calls++
+
+	return m.response, m.err
+}
+
 func (s *localSigner) SignOutputRaw(_ context.Context, tx *wire.MsgTx,
 	descriptors []*lndclient.SignDescriptor,
 	prevOutputs []*wire.TxOut) ([][]byte, error) {
@@ -348,6 +368,73 @@ func newWitnessFixture(t *testing.T) *witnessFixture {
 		prevOutputs: prevOutputs, funderKey: funderKey,
 		assetInIndex: assetInIndex,
 	}
+}
+
+// TestVerifyProofReturnsAnchorRoot verifies the proof result can be used as
+// the Taproot tweak for the deposit's cooperative MuSig2 key-path spend.
+func TestVerifyProofReturnsAnchorRoot(t *testing.T) {
+	fixture := newWitnessFixture(t)
+
+	root, err := fixture.kit.VerifyProof(fixture.proof)
+	require.NoError(t, err)
+	require.Len(t, root, chainhash.HashSize)
+	boundRoot, err := fixture.kit.AnchorRootFromProofCommitment(
+		fixture.proof, fixture.proof.Asset.Amount,
+	)
+	require.NoError(t, err)
+	require.Equal(t, root, boundRoot)
+
+	_, err = fixture.kit.AnchorRootFromProofCommitment(
+		fixture.proof, fixture.proof.Asset.Amount-1,
+	)
+	require.ErrorContains(t, err, "deposit asset amount mismatch")
+
+	outputKey := txscript.ComputeTaprootOutputKey(
+		fixture.kit.muSig2Key.PreTweakedKey, root,
+	)
+	pkScript, err := txscript.PayToTaprootScript(outputKey)
+	require.NoError(t, err)
+	require.Equal(
+		t, fixture.prevOutputs[fixture.assetInIndex].PkScript, pkScript,
+	)
+}
+
+// TestVerifyProofFile verifies that untrusted proof files are first delegated
+// to tapd and then bound to the expected deposit outpoint and amount.
+func TestVerifyProofFile(t *testing.T) {
+	fixture := newWitnessFixture(t)
+	proofFile, err := proof.NewFile(proof.V0, *fixture.proof)
+	require.NoError(t, err)
+	var encodedProof bytes.Buffer
+	require.NoError(t, proofFile.Encode(&encodedProof))
+	rpcProofFile := &taprpc.ProofFile{RawProofFile: encodedProof.Bytes()}
+	expectedOutpoint := fixture.proof.OutPoint()
+
+	verifier := &proofVerifierMock{
+		response: &taprpc.VerifyProofResponse{Valid: true},
+	}
+	root, err := fixture.kit.VerifyProofFile(
+		t.Context(), verifier, rpcProofFile, &expectedOutpoint,
+		fixture.proof.Asset.Amount,
+	)
+	require.NoError(t, err)
+	require.Len(t, root, chainhash.HashSize)
+	require.Equal(t, 1, verifier.calls)
+
+	wrongOutpoint := expectedOutpoint
+	wrongOutpoint.Index++
+	_, err = fixture.kit.VerifyProofFile(
+		t.Context(), verifier, rpcProofFile, &wrongOutpoint,
+		fixture.proof.Asset.Amount,
+	)
+	require.ErrorContains(t, err, "deposit proof outpoint mismatch")
+
+	verifier.response.Valid = false
+	_, err = fixture.kit.VerifyProofFile(
+		t.Context(), verifier, rpcProofFile, &expectedOutpoint,
+		fixture.proof.Asset.Amount,
+	)
+	require.ErrorContains(t, err, "invalid deposit proof file")
 }
 
 // TestCreateTimeoutWitness verifies the refund signature and witness bind to
