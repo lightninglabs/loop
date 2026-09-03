@@ -69,6 +69,9 @@ func NewKit(funderKey, coSignerKey *btcec.PublicKey,
 	if csvExpiry == 0 {
 		return nil, fmt.Errorf("CSV expiry must be positive")
 	}
+	if csvExpiry > wire.SequenceLockTimeMask {
+		return nil, fmt.Errorf("CSV expiry exceeds block-based BIP68 range")
+	}
 	if chainParams == nil || chainParams.Params == nil ||
 		chainParams.TapHRP == "" {
 

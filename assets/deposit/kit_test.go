@@ -145,6 +145,12 @@ func TestNewKitValidation(t *testing.T) {
 			chainParams: params,
 		},
 		{
+			name: "non-block expiry", funder: funderKey,
+			coSigner: coSignerKey, assetID: assetID,
+			expiry:      wire.SequenceLockTimeMask + 1,
+			chainParams: params,
+		},
+		{
 			name: "nil chain parameters", funder: funderKey,
 			coSigner: coSignerKey, assetID: assetID, expiry: 1,
 		},
@@ -442,7 +448,7 @@ func TestCreateTimeoutWitnessRejectsInvalidInputs(t *testing.T) {
 			)
 			require.Error(t, err)
 			require.Equal(
-				t, uint32(wire.MaxTxInSequenceNum),
+				t, wire.MaxTxInSequenceNum,
 				fixture.packet.UnsignedTx.
 					TxIn[fixture.assetInIndex].Sequence,
 			)
