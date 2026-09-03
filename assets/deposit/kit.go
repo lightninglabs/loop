@@ -37,6 +37,15 @@ type AddressProofClient interface {
 		...grpc.CallOption) (*taprpc.ProofFile, error)
 }
 
+// ProofVerifier is the narrow tapd boundary needed to verify a complete proof
+// file against tapd's chain backend and asset transition verifier.
+type ProofVerifier interface {
+	VerifyProof(context.Context, *taprpc.ProofFile,
+		...grpc.CallOption) (*taprpc.VerifyProofResponse, error)
+}
+
+var _ ProofVerifier = (taprpc.TaprootAssetsClient)(nil)
+
 // Kit contains the immutable information needed to create and operate a
 // two-party MuSig2 asset deposit.
 type Kit struct {
@@ -399,17 +408,118 @@ func (d *Kit) validateProof(depositProof *proof.Proof) (
 	return tapCommitment, nil
 }
 
-// VerifyProof verifies the proof commitment and binds it to this deposit's
-// asset, internal key, and timeout sibling. It returns the complete Taproot
-// Asset commitment root.
-func (d *Kit) VerifyProof(depositProof *proof.Proof) ([]byte, error) {
+// anchorRootFromProofCommitment verifies the proof's commitment structure and
+// returns the complete anchor Taproot Merkle root.
+func (d *Kit) anchorRootFromProofCommitment(depositProof *proof.Proof) (
+	[]byte, error) {
+
 	tapCommitment, err := d.validateProof(depositProof)
 	if err != nil {
 		return nil, err
 	}
-	root := tapCommitment.TapscriptRoot(nil)
+	sibling, err := d.timeoutPathSibling()
+	if err != nil {
+		return nil, err
+	}
+	siblingHash, err := sibling.TapHash()
+	if err != nil {
+		return nil, err
+	}
+	root := tapCommitment.TapscriptRoot(siblingHash)
 
 	return append([]byte(nil), root[:]...), nil
+}
+
+// AnchorRootFromProofCommitment verifies the proof's commitment structure,
+// binds its asset ID, script key, internal key, timeout sibling, and exact
+// amount to this deposit, then returns the complete anchor Taproot Merkle root.
+// It does not verify the proof's chain inclusion, provenance, state transition,
+// confirmation depth, or whether the anchor outpoint remains unspent. Use
+// VerifyProofFile when a proof file has not already been fully verified.
+func (d *Kit) AnchorRootFromProofCommitment(depositProof *proof.Proof,
+	expectedAmount uint64) ([]byte, error) {
+
+	if d == nil {
+		return nil, fmt.Errorf("deposit kit is required")
+	}
+	if expectedAmount == 0 {
+		return nil, fmt.Errorf("expected deposit amount must be positive")
+	}
+	if depositProof == nil {
+		return nil, fmt.Errorf("deposit proof is required")
+	}
+	if depositProof.Asset.Amount != expectedAmount {
+		return nil, fmt.Errorf(
+			"deposit asset amount mismatch: expected %d, got %d",
+			expectedAmount, depositProof.Asset.Amount,
+		)
+	}
+
+	return d.anchorRootFromProofCommitment(depositProof)
+}
+
+// VerifyProofFile asks tapd to fully verify a proof file, binds its terminal
+// proof to the expected deposit outpoint and amount, and returns the complete
+// anchor Taproot Merkle root. The caller must still enforce confirmation depth
+// and verify that the anchor outpoint remains unspent.
+func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
+	proofFile *taprpc.ProofFile, expectedOutpoint *wire.OutPoint,
+	expectedAmount uint64) ([]byte, error) {
+
+	if d == nil {
+		return nil, fmt.Errorf("deposit kit is required")
+	}
+	if verifier == nil {
+		return nil, fmt.Errorf("proof verifier is required")
+	}
+	if proofFile == nil || len(proofFile.RawProofFile) == 0 {
+		return nil, fmt.Errorf("proof file is required")
+	}
+	if expectedOutpoint == nil {
+		return nil, fmt.Errorf("expected deposit outpoint is required")
+	}
+	if expectedAmount == 0 {
+		return nil, fmt.Errorf("expected deposit amount must be positive")
+	}
+
+	proofFileCopy := &taprpc.ProofFile{
+		RawProofFile: append([]byte(nil), proofFile.RawProofFile...),
+		GenesisPoint: proofFile.GenesisPoint,
+	}
+	verifyResponse, err := verifier.VerifyProof(ctx, proofFileCopy)
+	if err != nil {
+		return nil, fmt.Errorf("unable to verify deposit proof file: %w", err)
+	}
+	if verifyResponse == nil || !verifyResponse.Valid {
+		return nil, fmt.Errorf("invalid deposit proof file")
+	}
+
+	decodedFile, err := proof.DecodeFile(proofFile.RawProofFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode deposit proof file: %w", err)
+	}
+	depositProof, err := decodedFile.LastProof()
+	if err != nil {
+		return nil, fmt.Errorf("unable to read terminal deposit proof: %w", err)
+	}
+	if depositProof.OutPoint() != *expectedOutpoint {
+		return nil, fmt.Errorf(
+			"deposit proof outpoint mismatch: expected %v, got %v",
+			*expectedOutpoint, depositProof.OutPoint(),
+		)
+	}
+
+	return d.AnchorRootFromProofCommitment(depositProof, expectedAmount)
+}
+
+// VerifyProof verifies only the proof commitment and binds it to this
+// deposit's asset, internal key, and timeout sibling. It does not validate the
+// expected amount, provenance, chain inclusion, or unspent status.
+//
+// Deprecated: use VerifyProofFile for untrusted proof files, or
+// AnchorRootFromProofCommitment for proofs that were already fully verified.
+func (d *Kit) VerifyProof(depositProof *proof.Proof) ([]byte, error) {
+	return d.anchorRootFromProofCommitment(depositProof)
 }
 
 // GenTimeoutBtcControlBlock creates the deposit timeout-path control block.
