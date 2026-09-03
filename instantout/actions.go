@@ -299,9 +299,20 @@ func (f *FSM) PollPaymentAcceptedAction(ctx context.Context,
 
 	// We want to poll quickly the first time.
 	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+
 	for {
 		select {
-		case payRes := <-payChan:
+		case payRes, ok := <-payChan:
+			if !ok {
+				// The router closes both payment channels after the
+				// payment stream reaches a terminal state. Stop selecting
+				// on this channel and let the server poll determine whether
+				// it accepted the payment.
+				payChan = nil
+				continue
+			}
+
 			f.Debugf("payment result: %v", payRes)
 			if payRes.State == lnrpc.Payment_FAILED {
 				return f.handleErrorAndUnlockReservations(
@@ -309,12 +320,21 @@ func (f *FSM) PollPaymentAcceptedAction(ctx context.Context,
 						payRes.FailureReason),
 				)
 			}
-		case err := <-paymentErrChan:
+		case err, ok := <-paymentErrChan:
+			if !ok {
+				// Channel closure is the normal end-of-stream signal.
+				paymentErrChan = nil
+				continue
+			}
+			if err == nil {
+				err = errors.New("payment error channel returned nil")
+			}
+
 			f.Errorf("error sending payment: %v", err)
 			return f.handleErrorAndUnlockReservations(ctx, err)
 
 		case <-ctx.Done():
-			return f.handleErrorAndUnlockReservations(ctx, nil)
+			return f.handleErrorAndUnlockReservations(ctx, ctx.Err())
 
 		case <-timer.C:
 			res, err := f.cfg.InstantOutClient.PollPaymentAccepted(
