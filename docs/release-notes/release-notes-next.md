@@ -37,6 +37,9 @@
 
 #### Maintenance
 
+* Update Taproot Assets to v0.8.3, taprpc to v1.3.3, and the LND dependency to
+  v0.21.3-beta. The minimum Go build version is now 1.25.13.
+
 * The Docker image build now verifies that every platform of the image index
   holds binaries for the architecture it advertises, and gives a release its
   tag only once that check has passed.
