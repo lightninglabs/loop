@@ -1,11 +1,11 @@
 module github.com/lightninglabs/loop/looprpc
 
-go 1.25.12
+go 1.25.13
 
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
-	github.com/lightningnetwork/lnd v0.21.0-beta
+	github.com/lightningnetwork/lnd v0.21.3-beta
 	google.golang.org/grpc v1.83.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/macaroon-bakery.v2 v2.3.0
@@ -28,7 +28,7 @@ require (
 	github.com/btcsuite/btcd/v2transport v1.0.1 // indirect
 	github.com/btcsuite/btclog v1.0.0 // indirect
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b // indirect
-	github.com/btcsuite/btcwallet v0.16.18 // indirect
+	github.com/btcsuite/btcwallet v0.16.19 // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.5 // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.2 // indirect
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.5 // indirect
@@ -98,7 +98,7 @@ require (
 	github.com/lightningnetwork/lnd/sqldb v1.0.13 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
 	github.com/lightningnetwork/lnd/tlv v1.3.2 // indirect
-	github.com/lightningnetwork/lnd/tor v1.1.6 // indirect
+	github.com/lightningnetwork/lnd/tor v1.1.7 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
