@@ -127,7 +127,8 @@ type SwapClientClient interface {
 	// deposits.
 	ListStaticAddressDeposits(ctx context.Context, in *ListStaticAddressDepositsRequest, opts ...grpc.CallOption) (*ListStaticAddressDepositsResponse, error)
 	// loop:`listwithdrawals`
-	// ListStaticAddressWithdrawals returns a list of static address withdrawals.
+	// ListStaticAddressWithdrawals returns a list of static address withdrawals,
+	// including pending withdrawals that have not yet been confirmed.
 	ListStaticAddressWithdrawals(ctx context.Context, in *ListStaticAddressWithdrawalRequest, opts ...grpc.CallOption) (*ListStaticAddressWithdrawalResponse, error)
 	// loop:`listswaps`
 	// ListStaticAddressSwaps returns a list of filtered static address
@@ -587,7 +588,8 @@ type SwapClientServer interface {
 	// deposits.
 	ListStaticAddressDeposits(context.Context, *ListStaticAddressDepositsRequest) (*ListStaticAddressDepositsResponse, error)
 	// loop:`listwithdrawals`
-	// ListStaticAddressWithdrawals returns a list of static address withdrawals.
+	// ListStaticAddressWithdrawals returns a list of static address withdrawals,
+	// including pending withdrawals that have not yet been confirmed.
 	ListStaticAddressWithdrawals(context.Context, *ListStaticAddressWithdrawalRequest) (*ListStaticAddressWithdrawalResponse, error)
 	// loop:`listswaps`
 	// ListStaticAddressSwaps returns a list of filtered static address

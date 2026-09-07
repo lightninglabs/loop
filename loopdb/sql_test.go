@@ -535,6 +535,58 @@ func TestBatchUpdateCost(t *testing.T) {
 	require.Equal(t, updateMap[hash2], swapsMap[hash2].State().Cost)
 }
 
+// TestSqliteRejectsTruncatedHtlcTxHash verifies that a persisted short HTLC
+// txid is rejected instead of being accepted as a padded hash.
+func TestSqliteRejectsTruncatedHtlcTxHash(t *testing.T) {
+	store := NewTestDB(t)
+
+	destAddr := test.GetDestAddr(t, 0)
+	pendingSwap := LoopOutContract{
+		SwapContract: SwapContract{
+			AmountRequested: 100,
+			Preimage:        testPreimage,
+			CltvExpiry:      144,
+			HtlcKeys: HtlcKeys{
+				SenderScriptKey:        senderKey,
+				ReceiverScriptKey:      receiverKey,
+				SenderInternalPubKey:   senderInternalKey,
+				ReceiverInternalPubKey: receiverInternalKey,
+				ClientScriptKeyLocator: keychain.KeyLocator{
+					Family: 1,
+					Index:  2,
+				},
+			},
+			MaxMinerFee:      10,
+			MaxSwapFee:       20,
+			InitiationHeight: 99,
+			InitiationTime:   testTime,
+			ProtocolVersion:  ProtocolVersionMuSig2,
+		},
+		PrepayInvoice:     "prepayinvoice",
+		DestAddr:          destAddr,
+		SwapInvoice:       "swapinvoice",
+		SweepConfTarget:   2,
+		HtlcConfirmations: 2,
+	}
+
+	ctxb := t.Context()
+	hash := pendingSwap.Preimage.Hash()
+
+	err := store.CreateLoopOut(ctxb, hash, &pendingSwap)
+	require.NoError(t, err)
+
+	err = store.Queries.InsertSwapUpdate(ctxb, sqlc.InsertSwapUpdateParams{
+		SwapHash:        hash[:],
+		UpdateTimestamp: testTime,
+		UpdateState:     int32(StatePreimageRevealed),
+		HtlcTxhash:      "abcd",
+	})
+	require.NoError(t, err)
+
+	_, err = store.FetchLoopOutSwap(ctxb, hash)
+	require.ErrorContains(t, err, "invalid htlc tx hash")
+}
+
 // TestMigrationTracker tests the migration tracker functionality.
 func TestMigrationTracker(t *testing.T) {
 	ctxb := context.Background()
