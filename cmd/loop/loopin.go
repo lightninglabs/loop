@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/looprpc"
@@ -85,6 +88,22 @@ var (
 			verboseFlag,
 			routeHintsFlag,
 			privateFlag,
+			&cli.StringFlag{
+				Name: "asset_id",
+				Usage: "the asset ID to receive over an asset " +
+					"channel; requires loopd to be connected to a " +
+					"Taproot Assets daemon",
+			},
+			&cli.StringFlag{
+				Name: "asset_edge_node",
+				Usage: "the required pubkey of the asset channel " +
+					"peer to use for the loop in",
+			},
+			&cli.Uint64Flag{
+				Name: "min_asset_amount",
+				Usage: "minimum output in indivisible asset units; " +
+					"required with asset_id",
+			},
 		},
 		Action: loopIn,
 	}
@@ -151,6 +170,57 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	var assetInfo *looprpc.AssetLoopInRequest
+	if (cmd.IsSet("asset_edge_node") || cmd.IsSet("min_asset_amount")) &&
+		!cmd.IsSet("asset_id") {
+
+		return fmt.Errorf("asset_id must be set with asset options")
+	}
+	if cmd.IsSet("asset_id") {
+		if cmd.Bool(privateFlag.Name) || len(hints) != 0 {
+			return fmt.Errorf("private and route_hints are not supported " +
+				"when looping in an asset")
+		}
+
+		assetID, err := hex.DecodeString(cmd.String("asset_id"))
+		if err != nil {
+			return fmt.Errorf("invalid asset id: %w", err)
+		}
+		if len(assetID) != 32 {
+			return fmt.Errorf("asset id must be a 32 byte value")
+		}
+
+		var assetEdgeNode []byte
+		if cmd.IsSet("asset_edge_node") {
+			assetEdgeNode, err = hex.DecodeString(
+				cmd.String("asset_edge_node"),
+			)
+			if err != nil {
+				return fmt.Errorf("invalid asset edge node: %w", err)
+			}
+		}
+		if len(assetEdgeNode) != 33 {
+			return fmt.Errorf("asset_edge_node is required and must " +
+				"be a 33 byte public key")
+		}
+		if _, err := btcec.ParsePubKey(assetEdgeNode); err != nil {
+			return fmt.Errorf("invalid asset edge node: %w", err)
+		}
+		if len(lastHop) != 0 && !bytes.Equal(lastHop, assetEdgeNode) {
+			return fmt.Errorf("last_hop and asset_edge_node must match")
+		}
+		lastHop = assetEdgeNode
+		if cmd.Uint64("min_asset_amount") == 0 {
+			return fmt.Errorf("min_asset_amount must be positive")
+		}
+
+		assetInfo = &looprpc.AssetLoopInRequest{
+			AssetId:        assetID,
+			AssetEdgeNode:  assetEdgeNode,
+			MinAssetAmount: cmd.Uint64("min_asset_amount"),
+		}
+	}
+
 	quoteReq := &looprpc.QuoteRequest{
 		Amt:              int64(amt),
 		ConfTarget:       htlcConfTarget,
@@ -180,6 +250,10 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	limits := getInLimits(quote)
+	if assetInfo != nil {
+		fmt.Printf("Minimum asset output: %d units of %x\n",
+			assetInfo.MinAssetAmount, assetInfo.AssetId)
+	}
 
 	// Skip showing details if configured
 	if !(cmd.Bool("force") || cmd.Bool("f")) {
@@ -200,6 +274,7 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 		LastHop:        lastHop,
 		RouteHints:     hints,
 		Private:        cmd.Bool(privateFlag.Name),
+		AssetInfo:      assetInfo,
 	}
 
 	resp, err := client.LoopIn(ctx, req)
@@ -209,6 +284,9 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 
 	fmt.Printf("Swap initiated\n")
 	fmt.Printf("ID:           %x\n", resp.IdBytes)
+	if assetInfo != nil {
+		fmt.Printf("Quoted asset output: %d units\n", resp.AssetAmount)
+	}
 
 	if resp.HtlcAddressP2Tr != "" {
 		fmt.Printf("HTLC address (P2TR): %v\n", resp.HtlcAddressP2Tr)

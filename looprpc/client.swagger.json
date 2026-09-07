@@ -1449,6 +1449,26 @@
       "description": "- `unknown`: Unknown address type\n- `p2tr`: Pay to taproot pubkey (`TAPROOT_PUBKEY` = 1)",
       "title": "`AddressType` has to be one of:"
     },
+    "looprpcAssetLoopInRequest": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The asset ID to receive when the swap invoice is paid. A Taproot Assets\nclient must be connected to loopd when this field is set."
+        },
+        "asset_edge_node": {
+          "type": "string",
+          "format": "byte",
+          "description": "The required node identity public key of the asset channel peer to use for\nRFQ negotiation and the server's fee quote."
+        },
+        "min_asset_amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Required minimum output in indivisible asset units. The invoice remains\nBTC-denominated; the negotiated rate must yield at least this many units\nafter the swap fee. Enforced before the swap is committed or funded."
+        }
+      }
+    },
     "looprpcAssetLoopOutInfo": {
       "type": "object",
       "properties": {
@@ -2374,6 +2394,10 @@
         "private": {
           "type": "boolean",
           "description": "Private indicates whether the destination node should be considered\nprivate. In which case, loop will generate hophints to assist with\nprobing and payment."
+        },
+        "asset_info": {
+          "$ref": "#/definitions/looprpcAssetLoopInRequest",
+          "description": "The optional asset information to use for the swap. If set, the swap and\nprobe invoices are created by the connected Taproot Assets daemon so that\nthe server's payment is delivered over an asset channel."
         }
       }
     },
@@ -3045,6 +3069,11 @@
     "looprpcSwapResponse": {
       "type": "object",
       "properties": {
+        "asset_amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The quoted asset output for an asset Loop In, in indivisible asset units.\nZero for swaps that do not receive assets."
+        },
         "id": {
           "type": "string",
           "description": "Swap identifier to track status in the update stream that is returned from\nthe Start() call. Currently this is the hash that locks the htlcs.\nDEPRECATED: To make the API more consistent, this field is deprecated in\nfavor of id_bytes and will be removed in a future release."
