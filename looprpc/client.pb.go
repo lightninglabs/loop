@@ -1332,6 +1332,9 @@ func (x *LoopInRequest) GetAssetInfo() *AssetLoopInRequest {
 
 type SwapResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	// The quoted asset output for an asset Loop In, in indivisible asset units.
+	// Zero for swaps that do not receive assets.
+	AssetAmount uint64 `protobuf:"varint,8,opt,name=asset_amount,json=assetAmount,proto3" json:"asset_amount,omitempty"`
 	// Swap identifier to track status in the update stream that is returned from
 	// the Start() call. Currently this is the hash that locks the htlcs.
 	// DEPRECATED: To make the API more consistent, this field is deprecated in
@@ -1390,6 +1393,13 @@ func (x *SwapResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SwapResponse.ProtoReflect.Descriptor instead.
 func (*SwapResponse) Descriptor() ([]byte, []int) {
 	return file_client_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SwapResponse) GetAssetAmount() uint64 {
+	if x != nil {
+		return x.AssetAmount
+	}
+	return 0
 }
 
 // Deprecated: Marked as deprecated in client.proto.
@@ -6509,11 +6519,15 @@ type AssetLoopInRequest struct {
 	// The asset ID to receive when the swap invoice is paid. A Taproot Assets
 	// client must be connected to loopd when this field is set.
 	AssetId []byte `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	// The optional node identity public key of the asset channel peer to use for
-	// RFQ negotiation. If omitted, tapd selects from the eligible asset channels.
+	// The required node identity public key of the asset channel peer to use for
+	// RFQ negotiation and the server's fee quote.
 	AssetEdgeNode []byte `protobuf:"bytes,2,opt,name=asset_edge_node,json=assetEdgeNode,proto3" json:"asset_edge_node,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Required minimum output in indivisible asset units. The invoice remains
+	// BTC-denominated; the negotiated rate must yield at least this many units
+	// after the swap fee. Enforced before the swap is committed or funded.
+	MinAssetAmount uint64 `protobuf:"varint,3,opt,name=min_asset_amount,json=minAssetAmount,proto3" json:"min_asset_amount,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AssetLoopInRequest) Reset() {
@@ -6558,6 +6572,13 @@ func (x *AssetLoopInRequest) GetAssetEdgeNode() []byte {
 		return x.AssetEdgeNode
 	}
 	return nil
+}
+
+func (x *AssetLoopInRequest) GetMinAssetAmount() uint64 {
+	if x != nil {
+		return x.MinAssetAmount
+	}
+	return 0
 }
 
 type AssetRfqInfo struct {
@@ -6989,8 +7010,9 @@ const file_client_proto_rawDesc = "" +
 	"\aprivate\x18\n" +
 	" \x01(\bR\aprivate\x12:\n" +
 	"\n" +
-	"asset_info\x18\v \x01(\v2\x1b.looprpc.AssetLoopInRequestR\tassetInfo\"\xeb\x01\n" +
-	"\fSwapResponse\x12\x12\n" +
+	"asset_info\x18\v \x01(\v2\x1b.looprpc.AssetLoopInRequestR\tassetInfo\"\x8e\x02\n" +
+	"\fSwapResponse\x12!\n" +
+	"\fasset_amount\x18\b \x01(\x04R\vassetAmount\x12\x12\n" +
 	"\x02id\x18\x01 \x01(\tB\x02\x18\x01R\x02id\x12\x19\n" +
 	"\bid_bytes\x18\x03 \x01(\fR\aidBytes\x12%\n" +
 	"\fhtlc_address\x18\x02 \x01(\tB\x02\x18\x01R\vhtlcAddress\x12,\n" +
@@ -7366,10 +7388,11 @@ const file_client_proto_rawDesc = "" +
 	"\basset_id\x18\x01 \x01(\fR\aassetId\x12&\n" +
 	"\x0fasset_edge_node\x18\x02 \x01(\fR\rassetEdgeNode\x120\n" +
 	"\x14max_limit_multiplier\x18\x03 \x01(\x01R\x12maxLimitMultiplier\x12\x16\n" +
-	"\x06expiry\x18\x04 \x01(\x03R\x06expiry\"W\n" +
+	"\x06expiry\x18\x04 \x01(\x03R\x06expiry\"\x81\x01\n" +
 	"\x12AssetLoopInRequest\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\fR\aassetId\x12&\n" +
-	"\x0fasset_edge_node\x18\x02 \x01(\fR\rassetEdgeNode\"\xcd\x02\n" +
+	"\x0fasset_edge_node\x18\x02 \x01(\fR\rassetEdgeNode\x12(\n" +
+	"\x10min_asset_amount\x18\x03 \x01(\x04R\x0eminAssetAmount\"\xcd\x02\n" +
 	"\fAssetRfqInfo\x12\"\n" +
 	"\rprepay_rfq_id\x18\x01 \x01(\fR\vprepayRfqId\x12/\n" +
 	"\x14max_prepay_asset_amt\x18\x02 \x01(\x04R\x11maxPrepayAssetAmt\x12?\n" +
