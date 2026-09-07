@@ -809,6 +809,7 @@ func (s *Client) LoopIn(globalCtx context.Context,
 	swapInfo := &LoopInSwapInfo{
 		SwapHash:      swap.hash,
 		ServerMessage: initResult.serverMessage,
+		AssetAmount:   initResult.assetAmount,
 	}
 
 	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {

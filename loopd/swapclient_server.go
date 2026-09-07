@@ -1404,15 +1404,14 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 			return nil, fmt.Errorf("asset id must be set to a 32 byte " +
 				"value")
 		}
-		if len(in.AssetInfo.AssetEdgeNode) != 0 &&
-			len(in.AssetInfo.AssetEdgeNode) != 33 {
-
+		if len(in.AssetInfo.AssetEdgeNode) != 33 {
 			return nil, fmt.Errorf("asset edge node must be a 33 byte " +
 				"public key")
 		}
 
 		req.AssetId = in.AssetInfo.AssetId
 		req.AssetEdgeNode = in.AssetInfo.AssetEdgeNode
+		req.MinAssetAmount = in.AssetInfo.MinAssetAmount
 	}
 	if in.LastHop != nil {
 		lastHop, err := route.NewVertexFromBytes(in.LastHop)
@@ -1431,6 +1430,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		Id:            swapInfo.SwapHash.String(),
 		IdBytes:       swapInfo.SwapHash[:],
 		ServerMessage: swapInfo.ServerMessage,
+		AssetAmount:   swapInfo.AssetAmount,
 	}
 
 	if loopdb.CurrentProtocolVersion() < loopdb.ProtocolVersionHtlcV3 {

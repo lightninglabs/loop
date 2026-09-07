@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets"
@@ -194,6 +196,8 @@ type tapdInvoiceClientMock struct {
 
 	peer     route.Vertex
 	requests []*tapchannelrpc.AddInvoiceRequest
+	expiry   time.Duration
+	rate     string
 }
 
 func (m *tapdInvoiceClientMock) AddInvoice(_ context.Context,
@@ -202,14 +206,42 @@ func (m *tapdInvoiceClientMock) AddInvoice(_ context.Context,
 
 	m.requests = append(m.requests, req)
 
-	paymentRequest := "asset swap invoice"
-	if req.HodlInvoice != nil {
-		paymentRequest = "asset probe invoice"
+	peer, err := btcec.ParsePubKey(m.peer[:])
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().Truncate(time.Second)
+	preimage := lntypes.Preimage(req.InvoiceRequest.RPreimage)
+	inv, err := zpay32.NewInvoice(
+		&chaincfg.TestNet3Params,
+		preimage.Hash(), now,
+		zpay32.Description("swap"),
+		zpay32.Amount(lnwire.MilliSatoshi(req.InvoiceRequest.ValueMsat)),
+		zpay32.Expiry(time.Duration(req.InvoiceRequest.Expiry)*time.Second),
+		zpay32.RouteHint([]zpay32.HopHint{{NodeID: peer, ChannelID: 123}}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	paymentRequest, err := test.EncodePayReq(inv)
+	if err != nil {
+		return nil, err
+	}
+	lifetime := time.Duration(req.InvoiceRequest.Expiry) * time.Second
+	if m.expiry != 0 {
+		lifetime = m.expiry
+	}
+	rate := m.rate
+	if rate == "" {
+		rate = "1000000"
 	}
 
 	return &tapchannelrpc.AddInvoiceResponse{
 		AcceptedBuyQuote: &rfqrpc.PeerAcceptedBuyQuote{
-			Peer: m.peer.String(),
+			Peer:         m.peer.String(),
+			Scid:         123,
+			AskAssetRate: &rfqrpc.FixedPoint{Coefficient: rate},
+			Expiry:       uint64(now.Add(lifetime).Unix()),
 		},
 		InvoiceResult: &lnrpc.AddInvoiceResponse{
 			PaymentRequest: paymentRequest,
@@ -357,15 +389,18 @@ func TestLoopInAssetInvoices(t *testing.T) {
 		HtlcConfTarget: 2,
 		Initiator:      "test",
 		AssetId:        assetID,
+		AssetEdgeNode:  assetPeer[:],
+		MinAssetAmount: 490,
 	}
 
 	initResult, err := newLoopInSwap(t.Context(), cfg, 600, &req)
 	require.NoError(t, err)
-	require.Len(t, invoiceClient.requests, 2)
+	require.Len(t, invoiceClient.requests, 1)
 
 	swapReq := invoiceClient.requests[0]
 	require.Equal(t, assetID, swapReq.AssetId)
-	require.Empty(t, swapReq.PeerPubkey)
+	require.Equal(t, assetPeer[:], swapReq.PeerPubkey)
+	require.NotNil(t, swapReq.AssetRateLimit)
 	require.Nil(t, swapReq.HodlInvoice)
 	require.Equal(t, "swap", swapReq.InvoiceRequest.Memo)
 	require.Equal(
@@ -380,22 +415,17 @@ func TestLoopInAssetInvoices(t *testing.T) {
 	require.Equal(t, initResult.swap.hash, swapPreimage.Hash())
 	require.False(t, swapReq.InvoiceRequest.Private)
 
-	probeReq := invoiceClient.requests[1]
-	require.Equal(t, assetID, probeReq.AssetId)
-	require.Equal(t, assetPeer[:], probeReq.PeerPubkey)
-	require.NotNil(t, probeReq.HodlInvoice)
-	require.Equal(t, "loop in probe", probeReq.InvoiceRequest.Memo)
-	require.Equal(
-		t, assetLoopInInvoiceExpiry, probeReq.InvoiceRequest.Expiry,
-	)
-	require.False(t, probeReq.InvoiceRequest.Private)
+	probe, err := zpay32.Decode(ctx.server.probeInvoice, ctx.lnd.ChainParams)
+	require.NoError(t, err)
+	swapInvoice, err := zpay32.Decode(ctx.server.swapInvoice, ctx.lnd.ChainParams)
+	require.NoError(t, err)
+	test.RequireRouteHintsEqual(t, swapInvoice.RouteHints, probe.RouteHints)
+	require.Equal(t, *swapInvoice.MilliSat, *probe.MilliSat)
+	require.EqualValues(t, 497, initResult.assetAmount)
 
 	expectedProbeHash := lntypes.Hash(sha256.Sum256(initResult.swap.hash[:]))
 	expectedProbeHash[0] ^= 1
-	require.Equal(t, expectedProbeHash[:], probeReq.HodlInvoice.PaymentHash)
-
-	require.Equal(t, "asset swap invoice", ctx.server.swapInvoice)
-	require.Equal(t, "asset probe invoice", ctx.server.probeInvoice)
+	require.Equal(t, expectedProbeHash[:], probe.PaymentHash[:])
 	require.Equal(t, &assetPeer, ctx.server.loopInLastHop)
 	require.Equal(t, "test asset_in", ctx.server.loopInInitiator)
 	require.Equal(t, &assetPeer, initResult.swap.LastHop)
@@ -419,6 +449,18 @@ func TestLoopInAssetRequestValidation(t *testing.T) {
 		assetClient *assets.TapdClient
 		err         string
 	}{
+		{
+			name:        "missing asset edge",
+			request:     LoopInRequest{AssetId: assetID},
+			assetClient: assetClient,
+			err:         "asset edge node is required",
+		},
+		{
+			name:        "missing minimum output",
+			request:     LoopInRequest{AssetId: assetID, AssetEdgeNode: assetPeer[:]},
+			assetClient: assetClient,
+			err:         "minimum asset amount must be positive",
+		},
 		{
 			name: "edge without asset id",
 			request: LoopInRequest{
@@ -484,6 +526,46 @@ func TestLoopInAssetRequestValidation(t *testing.T) {
 				t.Context(), cfg, 600, &testCase.request,
 			)
 			require.ErrorContains(t, err, testCase.err)
+		})
+	}
+}
+
+// TestLoopInAssetQuoteRejection verifies invalid quotes never reach the
+// server's swap admission or the local store, before any HTLC can be funded.
+func TestLoopInAssetQuoteRejection(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		rate   string
+		expiry time.Duration
+		err    string
+	}{
+		{name: "short quote", expiry: time.Hour, err: "full invoice lifetime"},
+		{name: "below minimum", rate: "900000", err: "below minimum"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := newLoopInTestContext(t)
+			peer, err := route.NewVertexFromStr(ctx.lnd.NodePubkey)
+			require.NoError(t, err)
+			mock := &tapdInvoiceClientMock{
+				peer: peer, rate: tc.rate, expiry: tc.expiry,
+			}
+			cfg := newSwapConfig(
+				&ctx.lnd.LndServices, ctx.store, ctx.server,
+				&assets.TapdClient{TaprootAssetChannelsClient: mock},
+				clock.NewTestClock(time.Unix(123, 0)),
+			)
+			req := LoopInRequest{
+				Amount: 50_000, MaxSwapFee: 1_000,
+				HtlcConfTarget: 2, Initiator: "test",
+			}
+			req.AssetId = make([]byte, 32)
+			req.AssetEdgeNode = peer[:]
+			req.MinAssetAmount = 490
+			_, err = newLoopInSwap(t.Context(), cfg, 600, &req)
+			require.ErrorContains(t, err, tc.err)
+			require.Empty(t, ctx.server.swapInvoice)
 		})
 	}
 }

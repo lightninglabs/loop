@@ -484,6 +484,10 @@ message LoopInRequest {
 }
 
 message SwapResponse {
+    // The quoted asset output for an asset Loop In, in indivisible asset units.
+    // Zero for swaps that do not receive assets.
+    uint64 asset_amount = 8;
+
     /*
     Swap identifier to track status in the update stream that is returned from
     the Start() call. Currently this is the hash that locks the htlcs.
@@ -2451,10 +2455,17 @@ message AssetLoopInRequest {
     bytes asset_id = 1;
 
     /*
-    The optional node identity public key of the asset channel peer to use for
-    RFQ negotiation. If omitted, tapd selects from the eligible asset channels.
+    The required node identity public key of the asset channel peer to use for
+    RFQ negotiation and the server's fee quote.
     */
     bytes asset_edge_node = 2;
+
+    /*
+    Required minimum output in indivisible asset units. The invoice remains
+    BTC-denominated; the negotiated rate must yield at least this many units
+    after the swap fee. Enforced before the swap is committed or funded.
+    */
+    uint64 min_asset_amount = 3;
 }
 
 message AssetRfqInfo {

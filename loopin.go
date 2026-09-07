@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -29,14 +30,16 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 // assetLoopInInvoiceExpiry is the invoice lifetime an asset edge must cover
-// with its RFQ quote. If an on-chain funding transaction does not confirm in
-// this window, the swap fails safely and the client can reclaim the HTLC.
-const assetLoopInInvoiceExpiry = int64(60 * 60)
+// with its RFQ quote. Thirty days covers the maximum accepted 1500-block
+// contract at more than twice the target block interval, including payment
+// retries. Edges that cannot honor this lifetime must reject before funding.
+const assetLoopInInvoiceExpiry = int64(30 * 24 * 60 * 60)
 
 var (
 	// MaxLoopInAcceptDelta configures the maximum acceptable number of
@@ -115,6 +118,7 @@ type loopInSwap struct {
 type loopInInitResult struct {
 	swap          *loopInSwap
 	serverMessage string
+	assetAmount   uint64
 }
 
 // newLoopInSwap initiates a new loop in swap.
@@ -131,9 +135,11 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	}
 
 	assetLoopIn := request.AssetId != nil
-	if !assetLoopIn && len(request.AssetEdgeNode) != 0 {
-		return nil, fmt.Errorf("asset id must be set when asset edge " +
-			"node is set")
+	if !assetLoopIn && (len(request.AssetEdgeNode) != 0 ||
+		request.MinAssetAmount != 0) {
+
+		return nil, fmt.Errorf("asset id must be set when asset " +
+			"options are set")
 	}
 	if assetLoopIn {
 		if len(request.AssetId) != 32 {
@@ -147,23 +153,26 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 			return nil, fmt.Errorf("private and route hints are not " +
 				"supported for asset loop ins")
 		}
+		if len(request.AssetEdgeNode) != 33 {
+			return nil, fmt.Errorf("asset edge node is required and " +
+				"must be a 33 byte public key")
+		}
 
-		if len(request.AssetEdgeNode) != 0 {
-			assetPeer, err := route.NewVertexFromBytes(
-				request.AssetEdgeNode,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("invalid asset edge node: %w", err)
-			}
+		pubKey, err := btcec.ParsePubKey(request.AssetEdgeNode)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset edge node: %w", err)
+		}
+		assetPeer := route.NewVertex(pubKey)
 
-			if request.LastHop != nil &&
-				!bytes.Equal(request.LastHop[:], assetPeer[:]) {
+		if request.LastHop != nil &&
+			!bytes.Equal(request.LastHop[:], assetPeer[:]) {
 
-				return nil, fmt.Errorf("last hop and asset edge node " +
-					"must match")
-			}
-
-			request.LastHop = &assetPeer
+			return nil, fmt.Errorf("last hop and asset edge node " +
+				"must match")
+		}
+		request.LastHop = &assetPeer
+		if request.MinAssetAmount == 0 {
+			return nil, fmt.Errorf("minimum asset amount must be positive")
 		}
 
 		request.Initiator += " asset_in"
@@ -237,7 +246,11 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	var senderKey [33]byte
 	copy(senderKey[:], keyDesc.PubKey.SerializeCompressed())
 
-	var swapInvoice string
+	var (
+		swapInvoice     string
+		assetAmount     uint64
+		assetRouteHints [][]zpay32.HopHint
+	)
 	if assetLoopIn {
 		var assetPeer []byte
 		if request.LastHop != nil {
@@ -251,7 +264,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 				ValueMsat: int64(lnwire.NewMSatFromSatoshis(swapInvoiceAmt)),
 				Expiry:    assetLoopInInvoiceExpiry,
 				Private:   false,
-			}, nil,
+			}, nil, request.MinAssetAmount,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("create asset swap invoice: %w", err)
@@ -272,6 +285,37 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		// the swap invoice.
 		request.LastHop = &quotePeer
 		swapInvoice = assetInvoice.PaymentRequest
+		assetAmount = assetInvoice.AssetAmount
+		decoded, err := zpay32.Decode(swapInvoice, cfg.lnd.ChainParams)
+		if err != nil {
+			return nil, fmt.Errorf("decode asset invoice: %w", err)
+		}
+		if decoded.MilliSat == nil || *decoded.MilliSat !=
+			lnwire.NewMSatFromSatoshis(swapInvoiceAmt) {
+
+			return nil, fmt.Errorf("asset invoice amount mismatch")
+		}
+		invoiceExpiry := time.Duration(assetLoopInInvoiceExpiry) * time.Second
+		quoteExpiry := time.Unix(
+			int64(assetInvoice.AcceptedBuyQuote.Expiry), 0,
+		)
+		if decoded.Expiry() < invoiceExpiry ||
+			quoteExpiry.Before(decoded.Timestamp.Add(decoded.Expiry())) {
+
+			return nil, fmt.Errorf("asset quote must cover the full " +
+				"invoice lifetime")
+		}
+		assetRouteHints = decoded.RouteHints
+		if len(assetRouteHints) != 1 || len(assetRouteHints[0]) != 1 {
+			return nil, fmt.Errorf("asset invoice must have one RFQ hint")
+		}
+		hint := assetRouteHints[0][0]
+		if hint.ChannelID != assetInvoice.AcceptedBuyQuote.Scid ||
+			!bytes.Equal(hint.NodeID.SerializeCompressed(), assetPeer) {
+
+			return nil, fmt.Errorf("asset invoice must use the " +
+				"accepted edge RFQ")
+		}
 	} else {
 		// Create the swap invoice in lnd.
 		_, swapInvoice, err = cfg.lnd.Client.AddInvoice(
@@ -298,31 +342,21 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	log.Infof("Creating probe invoice %v", probeHash)
 	var probeInvoice string
 	if assetLoopIn {
-		assetProbe, err := cfg.assets.AddAssetInvoice(
-			globalCtx, request.AssetId, request.LastHop[:],
-			&lnrpc.Invoice{
-				Memo:      "loop in probe",
-				ValueMsat: int64(lnwire.NewMSatFromSatoshis(swapInvoiceAmt)),
-				Expiry:    assetLoopInInvoiceExpiry,
-				Private:   false,
-			}, &probeHash,
+		// Reuse the exact RFQ hint. Negotiating another quote would
+		// probe a different rate, capacity limit and virtual SCID.
+		probeInvoice, err = cfg.lnd.Invoices.AddHoldInvoice(
+			globalCtx, &invoicesrpc.AddInvoiceData{
+				Hash:       &probeHash,
+				Memo:       "loop in probe",
+				Value:      lnwire.NewMSatFromSatoshis(swapInvoiceAmt),
+				Expiry:     3600,
+				RouteHints: assetRouteHints,
+				Private:    false,
+			},
 		)
 		if err != nil {
 			return nil, fmt.Errorf("create asset probe invoice: %w", err)
 		}
-
-		probePeer, err := route.NewVertexFromStr(
-			assetProbe.AcceptedBuyQuote.Peer,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("invalid asset probe peer: %w", err)
-		}
-		if !bytes.Equal(request.LastHop[:], probePeer[:]) {
-			return nil, fmt.Errorf("asset probe and swap invoice peers " +
-				"do not match")
-		}
-
-		probeInvoice = assetProbe.PaymentRequest
 	} else {
 		probeInvoice, err = cfg.lnd.Invoices.AddHoldInvoice(
 			globalCtx, &invoicesrpc.AddInvoiceData{
@@ -461,6 +495,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	return &loopInInitResult{
 		swap:          swap,
 		serverMessage: swapResp.serverMessage,
+		assetAmount:   assetAmount,
 	}, nil
 }
 

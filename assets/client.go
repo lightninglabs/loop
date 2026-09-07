@@ -13,6 +13,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
+	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/priceoraclerpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
@@ -51,6 +52,9 @@ type TapdConfig struct {
 // AssetInvoice contains the result of creating an invoice that is payable
 // through a Taproot Asset channel.
 type AssetInvoice struct {
+	// AssetAmount is the quoted output in indivisible asset units.
+	AssetAmount uint64
+
 	// PaymentRequest is the BOLT 11 invoice containing the asset RFQ route
 	// hint.
 	PaymentRequest string
@@ -61,10 +65,12 @@ type AssetInvoice struct {
 
 // AddAssetInvoice creates an invoice that receives the specified asset while
 // retaining the satoshi amount set in the invoice request. If paymentHash is
-// set, a hold invoice is created instead of a regular invoice.
+// set, a hold invoice is created instead of a regular invoice. A nonzero
+// minAssetAmount sets the RFQ rate floor and verifies the quoted output in
+// indivisible asset units.
 func (c *TapdClient) AddAssetInvoice(ctx context.Context, assetID,
 	peerPubkey []byte, invoice *lnrpc.Invoice,
-	paymentHash *lntypes.Hash) (*AssetInvoice, error) {
+	paymentHash *lntypes.Hash, minAssetAmount uint64) (*AssetInvoice, error) {
 
 	if invoice == nil {
 		return nil, fmt.Errorf("invoice request must be set")
@@ -74,6 +80,28 @@ func (c *TapdClient) AddAssetInvoice(ctx context.Context, assetID,
 		AssetId:        assetID,
 		PeerPubkey:     peerPubkey,
 		InvoiceRequest: invoice,
+	}
+	if minAssetAmount != 0 {
+		amt, err := lnrpc.UnmarshallAmt(invoice.Value, invoice.ValueMsat)
+		if err != nil || amt == 0 {
+			return nil, fmt.Errorf("positive invoice amount required " +
+				"for minimum asset output")
+		}
+
+		// Round the rate floor up at eleven decimal places so the
+		// minimum output cannot be weakened by fixed-point truncation.
+		const scale = 11
+		precision := new(big.Int).Exp(big.NewInt(10), big.NewInt(scale), nil)
+		numerator := new(big.Int).SetUint64(minAssetAmount)
+		numerator.Mul(numerator, big.NewInt(btcutil.SatoshiPerBitcoin*1000))
+		numerator.Mul(numerator, precision)
+		denominator := new(big.Int).SetUint64(uint64(amt))
+		numerator.Add(numerator, new(big.Int).Sub(denominator, big.NewInt(1)))
+		numerator.Div(numerator, denominator)
+		req.AssetRateLimit = &rfqrpc.FixedPoint{
+			Coefficient: numerator.String(),
+			Scale:       scale,
+		}
 	}
 	if paymentHash != nil {
 		req.HodlInvoice = &tapchannelrpc.HodlInvoice{
@@ -99,7 +127,32 @@ func (c *TapdClient) AddAssetInvoice(ctx context.Context, assetID,
 			"request")
 	}
 
+	var assetAmount uint64
+	if minAssetAmount != 0 {
+		rate, err := rpcutils.UnmarshalRfqFixedPoint(
+			resp.AcceptedBuyQuote.AskAssetRate,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset rate: %w", err)
+		}
+		amt, err := lnrpc.UnmarshallAmt(invoice.Value, invoice.ValueMsat)
+		if err != nil {
+			return nil, err
+		}
+		units := rfqmath.MilliSatoshiToUnits(amt, *rate).ScaleTo(0)
+		var ok bool
+		assetAmount, ok = units.ToUint64Checked()
+		if !ok {
+			return nil, fmt.Errorf("quoted asset output overflows uint64")
+		}
+		if assetAmount < minAssetAmount {
+			return nil, fmt.Errorf("quoted asset output %d is below "+
+				"minimum %d", assetAmount, minAssetAmount)
+		}
+	}
+
 	return &AssetInvoice{
+		AssetAmount:      assetAmount,
 		PaymentRequest:   resp.InvoiceResult.PaymentRequest,
 		AcceptedBuyQuote: resp.AcceptedBuyQuote,
 	}, nil
