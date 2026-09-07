@@ -123,7 +123,7 @@ func TestAddAssetInvoice(t *testing.T) {
 
 			invoice, err := client.AddAssetInvoice(
 				t.Context(), assetID, peer, invoiceReq,
-				test.paymentHash,
+				test.paymentHash, 0,
 			)
 			require.NoError(t, err)
 			require.Equal(t, "invoice", invoice.PaymentRequest)
@@ -181,9 +181,52 @@ func TestAddAssetInvoiceRejectsIncompleteResponse(t *testing.T) {
 			}
 			_, err := client.AddAssetInvoice(
 				t.Context(), make([]byte, 32), nil,
-				&lnrpc.Invoice{}, nil,
+				&lnrpc.Invoice{}, nil, 0,
 			)
 			require.ErrorContains(t, err, test.err)
+		})
+	}
+}
+
+// TestAssetInvoiceMinimum verifies per-swap limits reach tapd and an
+// out-of-limit response is rejected before the caller can commit a swap.
+func TestAssetInvoiceMinimum(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		minimum uint64
+		err     string
+	}{
+		{name: "exact minimum", minimum: 500},
+		{name: "under minimum", minimum: 501, err: "below minimum"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mock := &assetInvoiceClientMock{
+				response: &tapchannelrpc.AddInvoiceResponse{
+					AcceptedBuyQuote: &rfqrpc.PeerAcceptedBuyQuote{
+						AskAssetRate: &rfqrpc.FixedPoint{Coefficient: "1000000"},
+					},
+					InvoiceResult: &lnrpc.AddInvoiceResponse{PaymentRequest: "invoice"},
+				},
+			}
+			client := &TapdClient{TaprootAssetChannelsClient: mock}
+			invoice, err := client.AddAssetInvoice(
+				t.Context(), make([]byte, 32), nil,
+				&lnrpc.Invoice{ValueMsat: 50_000_000}, nil, tc.minimum,
+			)
+			require.NotNil(t, mock.request.AssetRateLimit)
+			if tc.err != "" {
+				require.ErrorContains(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			require.EqualValues(t, 500, invoice.AssetAmount)
+			require.Equal(
+				t, "100000000000000000",
+				mock.request.AssetRateLimit.Coefficient,
+			)
+			require.EqualValues(t, 11, mock.request.AssetRateLimit.Scale)
 		})
 	}
 }
