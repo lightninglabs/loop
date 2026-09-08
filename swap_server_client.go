@@ -16,6 +16,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/l402"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -28,6 +29,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"gopkg.in/macaroon.v2"
 )
 
 var (
@@ -151,6 +153,135 @@ type grpcSwapServerClient struct {
 	wg sync.WaitGroup
 }
 
+// l402ClientInterceptor permits authenticated unary calls to run concurrently
+// while delegating token acquisition and stream authentication to Aperture's
+// serialized interceptor.
+type l402ClientInterceptor struct {
+	// tokenStore provides the currently paid L402 token for the concurrent
+	// unary fast path.
+	tokenStore l402.Store
+
+	// callTimeout bounds each unary attempt made by the concurrent fast
+	// path.
+	callTimeout time.Duration
+
+	// allowInsecure controls whether the L402 credential may be sent over
+	// an insecure transport.
+	allowInsecure bool
+
+	// fallbackUnary serializes calls that may need to acquire an L402
+	// token.
+	fallbackUnary grpc.UnaryClientInterceptor
+
+	// fallbackStream handles L402 authentication for streaming RPCs.
+	fallbackStream grpc.StreamClientInterceptor
+
+	// loadPaidMacaroon loads the credential used by the concurrent unary
+	// fast path. Tests replace it to exercise the fast path without relying
+	// on Aperture's private token serialization.
+	loadPaidMacaroon func() (*macaroon.Macaroon, bool, error)
+}
+
+// newL402ClientInterceptor creates an interceptor that only serializes calls
+// when they may need to acquire or resume payment for an L402 token.
+func newL402ClientInterceptor(lnd *lndclient.LndServices, store l402.Store,
+	callTimeout time.Duration, maxCost, maxFee btcutil.Amount,
+	allowInsecure bool) *l402ClientInterceptor {
+
+	fallback := l402.NewInterceptor(
+		lnd, store, callTimeout, maxCost, maxFee, allowInsecure,
+	)
+	interceptor := &l402ClientInterceptor{
+		tokenStore:     store,
+		callTimeout:    callTimeout,
+		allowInsecure:  allowInsecure,
+		fallbackUnary:  fallback.UnaryInterceptor,
+		fallbackStream: fallback.StreamInterceptor,
+	}
+	interceptor.loadPaidMacaroon = interceptor.currentPaidMacaroon
+
+	return interceptor
+}
+
+// currentPaidMacaroon returns the current token's paid macaroon. The boolean
+// is false when the store has no token or its token payment is still pending.
+func (i *l402ClientInterceptor) currentPaidMacaroon() (*macaroon.Macaroon,
+	bool, error) {
+
+	token, err := i.tokenStore.CurrentToken()
+	switch {
+	case errors.Is(err, l402.ErrNoToken):
+		return nil, false, nil
+
+	case err != nil:
+		return nil, false, err
+
+	case token == nil:
+		return nil, false, errors.New(
+			"L402 token store returned nil token",
+		)
+
+	case token.Preimage == (lntypes.Preimage{}):
+		return nil, false, nil
+	}
+
+	paidMacaroon, err := token.PaidMacaroon()
+	if err != nil {
+		return nil, false, err
+	}
+
+	return paidMacaroon, true, nil
+}
+
+// UnaryInterceptor runs calls with an existing paid token concurrently and
+// falls back to serialized token handling when authentication may be needed.
+func (i *l402ClientInterceptor) UnaryInterceptor(ctx context.Context,
+	method string, req, reply any, cc *grpc.ClientConn,
+	invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+
+	// Aperture's file store does not make token promotion atomic. A
+	// concurrent read can therefore fail while the serialized fallback is
+	// storing a paid token. Retrying through that fallback waits for the
+	// token operation and reads the completed file.
+	paidMacaroon, paid, err := i.loadPaidMacaroon()
+	if err != nil || !paid {
+		return i.fallbackUnary(
+			ctx, method, req, reply, cc, invoker, opts...,
+		)
+	}
+
+	// Authenticate the common paid-token path directly so independent RPCs
+	// don't wait behind Aperture's token-acquisition mutex.
+	callOpts := append([]grpc.CallOption(nil), opts...)
+	callOpts = append(callOpts, grpc.PerRPCCredentials(
+		l402.NewMacaroonCredential(paidMacaroon, i.allowInsecure),
+	))
+	rpcCtx, cancel := context.WithTimeout(ctx, i.callTimeout)
+	defer cancel()
+
+	err = invoker(rpcCtx, method, req, reply, cc, callOpts...)
+	if !l402.IsPaymentRequired(err) {
+		return err
+	}
+
+	// A challenge can mean the token must be acquired or resumed. Delegate
+	// that uncommon path to the serialized interceptor to prevent duplicate
+	// payments from concurrent calls.
+	return i.fallbackUnary(
+		ctx, method, req, reply, cc, invoker, opts...,
+	)
+}
+
+// StreamInterceptor delegates stream establishment to Aperture's serialized
+// L402 interceptor. The lock is released once the stream has been established.
+func (i *l402ClientInterceptor) StreamInterceptor(ctx context.Context,
+	desc *grpc.StreamDesc, cc *grpc.ClientConn, method string,
+	streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream,
+	error) {
+
+	return i.fallbackStream(ctx, desc, cc, method, streamer, opts...)
+}
+
 // stop sends the signal for the server's goroutines to shutdown and waits for
 // them to complete.
 func (s *grpcSwapServerClient) stop() {
@@ -168,7 +299,7 @@ func newSwapServerClient(cfg *ClientConfig, l402Store l402.Store) (
 
 	// Create the server connection with the interceptor that will handle
 	// the L402 protocol for us.
-	clientInterceptor := l402.NewInterceptor(
+	clientInterceptor := newL402ClientInterceptor(
 		cfg.Lnd, l402Store, serverRPCTimeout, cfg.MaxL402Cost,
 		cfg.MaxL402Fee, false,
 	)
@@ -922,7 +1053,7 @@ func rpcRouteCancel(details *outCancelDetails) (
 // proxyAddr indicates that a SOCKS proxy found at the address should be used to
 // establish the connection.
 func getSwapServerConn(address, proxyAddress string, skipCertCheck bool,
-	tlsPath string, interceptor *l402.ClientInterceptor) (*grpc.ClientConn,
+	tlsPath string, interceptor *l402ClientInterceptor) (*grpc.ClientConn,
 	error) {
 
 	// Create a dial options array.
