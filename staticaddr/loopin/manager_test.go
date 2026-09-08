@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -23,6 +24,215 @@ import (
 	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
 )
+
+// TestManagerRunHandlesSweepRequestsConcurrently verifies that a blocked
+// sweep request doesn't prevent other requests from being handled and that a
+// request error doesn't stop notification intake.
+func TestManagerRunHandlesSweepRequestsConcurrently(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	requests := make(
+		chan *swapserverrpc.ServerStaticLoopInSweepNotification, 3,
+	)
+	requestStarted := make(chan byte, 3)
+	firstRequestRelease := make(chan struct{})
+	requestErr := errors.New("request failed")
+
+	store := &sweepRequestStore{
+		mockStore: &mockStore{},
+		getLoopInByHash: func(ctx context.Context,
+			swapHash lntypes.Hash) (*StaticAddressLoopIn, error) {
+
+			requestStarted <- swapHash[0]
+			if swapHash[0] == 1 {
+				// Hold the first handler open while later requests
+				// enter the store lookup.
+				select {
+				case <-firstRequestRelease:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+
+			return nil, requestErr
+		},
+	}
+
+	mgr, err := NewManager(&Config{
+		ChainNotifier: &silentBlockChainNotifier{},
+		NotificationManager: &sweepRequestNotificationManager{
+			requests: requests,
+		},
+		Store: store,
+	}, 1)
+	require.NoError(t, err)
+
+	// Wait until Run has subscribed before publishing requests.
+	initChan := make(chan struct{})
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- mgr.Run(ctx, initChan)
+	}()
+	<-initChan
+
+	// Start and hold the first request in the store lookup.
+	requests <- testSweepRequest(1)
+	require.Equal(t, byte(1), receiveOrFail(t, requestStarted))
+
+	// The second request must enter while the first remains blocked.
+	requests <- testSweepRequest(2)
+	require.Equal(t, byte(2), receiveOrFail(t, requestStarted))
+
+	// A failed second request must not stop subsequent notification intake.
+	requests <- testSweepRequest(3)
+	require.Equal(t, byte(3), receiveOrFail(t, requestStarted))
+
+	// Release the blocked handler before stopping and draining the manager.
+	close(firstRequestRelease)
+	cancel()
+	require.ErrorIs(t, receiveOrFail(t, runErr), context.Canceled)
+}
+
+// TestManagerRunWaitsForSweepRequestHandlers verifies that all active sweep
+// request handlers are canceled and drained before the manager exits.
+func TestManagerRunWaitsForSweepRequestHandlers(t *testing.T) {
+	requests := make(
+		chan *swapserverrpc.ServerStaticLoopInSweepNotification, 1,
+	)
+	handlerStarted := make(chan struct{})
+	handlerCanceled := make(chan struct{})
+	handlerRelease := make(chan struct{})
+
+	store := &sweepRequestStore{
+		mockStore: &mockStore{},
+		getLoopInByHash: func(ctx context.Context,
+			_ lntypes.Hash) (*StaticAddressLoopIn, error) {
+
+			close(handlerStarted)
+			<-ctx.Done()
+
+			// Report cancellation before holding the handler open so
+			// the test can distinguish cancellation from draining.
+			close(handlerCanceled)
+			<-handlerRelease
+
+			return nil, ctx.Err()
+		},
+	}
+
+	mgr, err := NewManager(&Config{
+		ChainNotifier: &silentBlockChainNotifier{},
+		NotificationManager: &sweepRequestNotificationManager{
+			requests: requests,
+		},
+		Store: store,
+	}, 1)
+	require.NoError(t, err)
+
+	// Wait until Run has subscribed before publishing the request.
+	initChan := make(chan struct{})
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- mgr.Run(t.Context(), initChan)
+	}()
+	<-initChan
+
+	// Closing the subscription makes Run cancel the active handler.
+	requests <- testSweepRequest(1)
+	<-handlerStarted
+	close(requests)
+	<-handlerCanceled
+
+	// Run must wait until the canceled handler is allowed to return.
+	require.Never(t, func() bool {
+		select {
+		case <-runErr:
+			return true
+		default:
+			return false
+		}
+	}, 100*time.Millisecond, 10*time.Millisecond)
+
+	// Releasing the handler lets Run finish its deferred drain.
+	close(handlerRelease)
+	require.ErrorContains(t, receiveOrFail(t, runErr), "ntfnChan closed")
+}
+
+// testSweepRequest returns a minimal sweep request identified by id.
+func testSweepRequest(
+	id byte) *swapserverrpc.ServerStaticLoopInSweepNotification {
+
+	swapHash := lntypes.Hash{id}
+
+	return &swapserverrpc.ServerStaticLoopInSweepNotification{
+		SwapHash: swapHash[:],
+	}
+}
+
+// receiveOrFail returns the next channel value or fails when the test context
+// ends.
+func receiveOrFail[T any](t *testing.T, ch <-chan T) T {
+	t.Helper()
+
+	select {
+	case value := <-ch:
+		return value
+
+	case <-t.Context().Done():
+		var zero T
+		t.Fatalf("waiting for test value: %v", t.Context().Err())
+
+		return zero
+	}
+}
+
+// sweepRequestStore lets manager tests control loop-in lookups.
+type sweepRequestStore struct {
+	// mockStore supplies the remaining store methods.
+	*mockStore
+
+	// getLoopInByHash handles loop-in lookups for each test.
+	getLoopInByHash func(context.Context, lntypes.Hash) (
+		*StaticAddressLoopIn, error)
+}
+
+// GetLoopInByHash delegates the lookup to the test's configured function.
+func (s *sweepRequestStore) GetLoopInByHash(ctx context.Context,
+	swapHash lntypes.Hash) (*StaticAddressLoopIn, error) {
+
+	return s.getLoopInByHash(ctx, swapHash)
+}
+
+// sweepRequestNotificationManager supplies sweep requests to manager tests.
+type sweepRequestNotificationManager struct {
+	// requests is the test-controlled sweep request stream.
+	requests chan *swapserverrpc.ServerStaticLoopInSweepNotification
+}
+
+// SubscribeStaticLoopInSweepRequests returns the test sweep request stream.
+func (m *sweepRequestNotificationManager) SubscribeStaticLoopInSweepRequests(
+	context.Context,
+) <-chan *swapserverrpc.ServerStaticLoopInSweepNotification {
+
+	return m.requests
+}
+
+// SubscribeStaticLoopInRiskAccepted is unused by these manager tests.
+func (*sweepRequestNotificationManager) SubscribeStaticLoopInRiskAccepted(
+	context.Context, lntypes.Hash,
+) <-chan *swapserverrpc.ServerStaticLoopInRiskAcceptedNotification {
+
+	return nil
+}
+
+// SubscribeStaticLoopInRiskRejected is unused by these manager tests.
+func (*sweepRequestNotificationManager) SubscribeStaticLoopInRiskRejected(
+	context.Context, lntypes.Hash,
+) <-chan *swapserverrpc.ServerStaticLoopInRiskRejectedNotification {
+
+	return nil
+}
 
 type testCase struct {
 	name        string

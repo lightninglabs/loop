@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -187,6 +188,15 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	sweepReqs := m.cfg.NotificationManager.
 		SubscribeStaticLoopInSweepRequests(ctx)
 
+	// Track active sweep handlers so shutdown cancels and drains them before
+	// their manager-owned resources can be released.
+	sweepCtx, cancelSweepHandlers := context.WithCancel(ctx)
+	var sweepHandlers sync.WaitGroup
+	defer func() {
+		cancelSweepHandlers()
+		sweepHandlers.Wait()
+	}()
+
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
 	close(initChan)
@@ -238,11 +248,18 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 				return fmt.Errorf("ntfnChan closed")
 			}
 
-			err = m.handleLoopInSweepReq(ctx, sweepReq)
-			if err != nil {
-				log.Errorf("Error handling loop-in sweep "+
-					"request: %v", err)
-			}
+			// Process each request independently so a slow signing flow
+			// doesn't block later sweep notifications.
+			sweepHandlers.Add(1)
+			go func(req *swapserverrpc.ServerStaticLoopInSweepNotification) {
+				defer sweepHandlers.Done()
+
+				err := m.handleLoopInSweepReq(sweepCtx, req)
+				if err != nil {
+					log.Errorf("Error handling loop-in sweep "+
+						"request: %v", err)
+				}
+			}(sweepReq)
 
 		case <-ctx.Done():
 			return ctx.Err()
@@ -284,26 +301,24 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	loopIn.AddressParams, err =
-		m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
+	addressParams, err := m.cfg.AddressManager.
+		GetStaticAddressParameters(ctx)
 	if err != nil {
 		return err
 	}
 
-	loopIn.Address, err = m.cfg.AddressManager.GetStaticAddress(ctx)
+	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
 	if err != nil {
 		return err
 	}
 
 	ignoreUnknownOutpoints := false
-	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
+	_, err = m.cfg.DepositManager.DepositsForOutpoints(
 		ctx, loopIn.DepositOutpoints, ignoreUnknownOutpoints,
 	)
 	if err != nil {
 		return err
 	}
-	loopIn.Deposits = deposits
 
 	reader := bytes.NewReader(req.SweepTxPsbt)
 	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
@@ -333,7 +348,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	// If the user selected an amount that is less than the total deposit
 	// amount we'll check that the server sends us the correct change amount
 	// back to our static address.
-	err = m.checkChange(ctx, sweepTx, loopIn.AddressParams)
+	err = m.checkChange(ctx, sweepTx, addressParams)
 	if err != nil {
 		return err
 	}
@@ -396,7 +411,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		}
 
 		musig2Session, err := staticutil.CreateMusig2Session(
-			ctx, m.cfg.Signer, loopIn.AddressParams, loopIn.Address,
+			ctx, m.cfg.Signer, addressParams, staticAddress,
 		)
 		if err != nil {
 			return err
