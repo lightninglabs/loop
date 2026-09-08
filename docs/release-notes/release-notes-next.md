@@ -13,6 +13,9 @@
 
 #### Bug Fixes
 
+* Shared Taproot Asset sweep packets now preserve the destination address
+  version and use the required non-interactive split-root layout.
+
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
   waiting for the server timeout.
@@ -39,6 +42,9 @@
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
 #### Maintenance
+
+* Update Taproot Assets to v0.8.3, taprpc to v1.3.3, and the LND dependency to
+  v0.21.3-beta. The minimum Go build version is now 1.25.13.
 
 * The Docker image build now verifies that every platform of the image index
   holds binaries for the architecture it advertises, and gives a release its
