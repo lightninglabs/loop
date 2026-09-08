@@ -3324,7 +3324,12 @@ func TestUnlockDepositsActionReportsTransitionError(t *testing.T) {
 // mockAddressManager is a minimal AddressManager implementation used by the
 // test FSM setup.
 type mockAddressManager struct {
+	// params contains the address parameters returned to the test.
 	params *script.Parameters
+
+	// staticAddress contains the derived static address returned to the
+	// test.
+	staticAddress *script.StaticAddress
 }
 
 // GetStaticAddressParameters returns the configured address parameters.
@@ -3334,11 +3339,11 @@ func (m *mockAddressManager) GetStaticAddressParameters(_ context.Context) (
 	return m.params, nil
 }
 
-// GetStaticAddress is unused for this test and returns nil.
+// GetStaticAddress returns the configured derived static address.
 func (m *mockAddressManager) GetStaticAddress(_ context.Context) (
 	*script.StaticAddress, error) {
 
-	return nil, nil
+	return m.staticAddress, nil
 }
 
 // noopDepositManager is a stub DepositManager used to satisfy FSM config.
