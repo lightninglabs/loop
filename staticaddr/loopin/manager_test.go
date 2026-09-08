@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/labels"
@@ -19,10 +23,13 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 // TestManagerRunHandlesSweepRequestsConcurrently verifies that a blocked
@@ -74,18 +81,18 @@ func TestManagerRunHandlesSweepRequestsConcurrently(t *testing.T) {
 	go func() {
 		runErr <- mgr.Run(ctx, initChan)
 	}()
-	<-initChan
+	receiveOrFail(t, initChan)
 
 	// Start and hold the first request in the store lookup.
-	requests <- testSweepRequest(1)
+	requests <- testSweepRequest(t, 1)
 	require.Equal(t, byte(1), receiveOrFail(t, requestStarted))
 
 	// The second request must enter while the first remains blocked.
-	requests <- testSweepRequest(2)
+	requests <- testSweepRequest(t, 2)
 	require.Equal(t, byte(2), receiveOrFail(t, requestStarted))
 
 	// A failed second request must not stop subsequent notification intake.
-	requests <- testSweepRequest(3)
+	requests <- testSweepRequest(t, 3)
 	require.Equal(t, byte(3), receiveOrFail(t, requestStarted))
 
 	// Release the blocked handler before stopping and draining the manager.
@@ -136,13 +143,13 @@ func TestManagerRunWaitsForSweepRequestHandlers(t *testing.T) {
 	go func() {
 		runErr <- mgr.Run(t.Context(), initChan)
 	}()
-	<-initChan
+	receiveOrFail(t, initChan)
 
 	// Closing the subscription makes Run cancel the active handler.
-	requests <- testSweepRequest(1)
-	<-handlerStarted
+	requests <- testSweepRequest(t, 1)
+	receiveOrFail(t, handlerStarted)
 	close(requests)
-	<-handlerCanceled
+	receiveOrFail(t, handlerCanceled)
 
 	// Run must wait until the canceled handler is allowed to return.
 	require.Never(t, func() bool {
@@ -159,19 +166,361 @@ func TestManagerRunWaitsForSweepRequestHandlers(t *testing.T) {
 	require.ErrorContains(t, receiveOrFail(t, runErr), "ntfnChan closed")
 }
 
-// testSweepRequest returns a minimal sweep request identified by id.
-func testSweepRequest(
-	id byte) *swapserverrpc.ServerStaticLoopInSweepNotification {
+// TestManagerRunBoundsSweepRequestConcurrency verifies that the worker pool
+// applies backpressure instead of creating an unbounded goroutine per request.
+func TestManagerRunBoundsSweepRequestConcurrency(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	swapHash := lntypes.Hash{id}
+	requests := make(
+		chan *swapserverrpc.ServerStaticLoopInSweepNotification, 3,
+	)
+	requestStarted := make(chan byte, 3)
+	releaseRequest := make(chan struct{})
 
-	return &swapserverrpc.ServerStaticLoopInSweepNotification{
-		SwapHash: swapHash[:],
+	store := &sweepRequestStore{
+		mockStore: &mockStore{},
+		getLoopInByHash: func(ctx context.Context,
+			swapHash lntypes.Hash) (*StaticAddressLoopIn, error) {
+
+			requestStarted <- swapHash[0]
+			select {
+			case <-releaseRequest:
+				return nil, errors.New("released request")
+
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+
+	mgr, err := NewManager(&Config{
+		ChainNotifier: &silentBlockChainNotifier{},
+		NotificationManager: &sweepRequestNotificationManager{
+			requests: requests,
+		},
+		Store: store,
+	}, 1)
+	require.NoError(t, err)
+	mgr.sweepRequestConcurrency = 2
+
+	initChan := make(chan struct{})
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- mgr.Run(ctx, initChan)
+	}()
+	receiveOrFail(t, initChan)
+
+	// Fill both worker slots and leave a third request queued.
+	requests <- testSweepRequest(t, 1)
+	requests <- testSweepRequest(t, 2)
+	requests <- testSweepRequest(t, 3)
+	receiveOrFail(t, requestStarted)
+	receiveOrFail(t, requestStarted)
+
+	// The third store lookup cannot begin until one bounded worker exits.
+	require.Never(t, func() bool {
+		return len(requestStarted) != 0
+	}, 100*time.Millisecond, 10*time.Millisecond)
+
+	releaseRequest <- struct{}{}
+	require.Equal(t, byte(3), receiveOrFail(t, requestStarted))
+
+	cancel()
+	require.ErrorIs(t, receiveOrFail(t, runErr), context.Canceled)
+}
+
+// TestHandleLoopInSweepReqReachesPushConcurrently verifies that two complete
+// signing flows overlap at the final response RPC.
+func TestHandleLoopInSweepReqReachesPushConcurrently(t *testing.T) {
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, 1_000, clientKey.PubKey(),
+		serverKey.PubKey(),
+	)
+	require.NoError(t, err)
+	depositPkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+	addressParams := &script.Parameters{
+		ClientPubkey: clientKey.PubKey(),
+		ServerPubkey: serverKey.PubKey(),
+		PkScript:     depositPkScript,
+	}
+
+	const confirmationHeight = 1
+	currentDeposit := makeDeposit(1, 0, 10_000, confirmationHeight)
+	depositOutpoint := currentDeposit.OutPoint.String()
+	swapHash := lntypes.Hash{1}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:         swapHash,
+		DepositOutpoints: []string{depositOutpoint},
+		Deposits:         []*deposit.Deposit{currentDeposit},
+		SelectedAmount:   currentDeposit.Value,
+	}
+	loopIn.SetState(Succeeded)
+
+	pushStarted := make(chan *swapserverrpc.PushStaticAddressSweeplessSigsRequest,
+		2)
+	releasePushes := make(chan struct{})
+	mgr := &Manager{
+		cfg: &Config{
+			Server: &blockingSweepResponseServer{
+				pushStarted: pushStarted,
+				release:     releasePushes,
+			},
+			AddressManager: &mockAddressManager{
+				params:        addressParams,
+				staticAddress: staticAddress,
+			},
+			DepositManager: &mockDepositManager{
+				byOutpoint: map[string]*deposit.Deposit{
+					depositOutpoint: currentDeposit,
+				},
+			},
+			Signer: &sweepRequestSigner{},
+			Store: &mockStore{
+				loopIns: map[lntypes.Hash]*StaticAddressLoopIn{
+					swapHash: loopIn,
+				},
+				mapIDs: map[lntypes.Hash][]deposit.ID{
+					swapHash: {currentDeposit.ID},
+				},
+			},
+		},
+	}
+
+	firstReq := successfulSweepRequest(
+		t, swapHash, currentDeposit, depositPkScript, 9_000,
+	)
+	secondReq := successfulSweepRequest(
+		t, swapHash, currentDeposit, depositPkScript, 8_000,
+	)
+
+	handlerErr := make(chan error, 2)
+	go func() {
+		handlerErr <- mgr.handleLoopInSweepReq(t.Context(), firstReq)
+	}()
+	go func() {
+		handlerErr <- mgr.handleLoopInSweepReq(t.Context(), secondReq)
+	}()
+
+	// Both responses must reach Push while neither RPC has returned. This
+	// covers validation, sighash construction, MuSig2 signing and response
+	// assembly rather than only the initial store lookup.
+	firstPush := receiveOrFail(t, pushStarted)
+	secondPush := receiveOrFail(t, pushStarted)
+	require.NotEqual(t, firstPush.Txid, secondPush.Txid)
+	require.Contains(t, firstPush.SigningInfo, depositOutpoint)
+	require.Contains(t, secondPush.SigningInfo, depositOutpoint)
+
+	close(releasePushes)
+	require.NoError(t, receiveOrFail(t, handlerErr))
+	require.NoError(t, receiveOrFail(t, handlerErr))
+}
+
+// TestValidateSweepPrevoutsRejectsMalformedMappings verifies malformed server
+// prevout lists fail before btcd's sighash constructor can dereference them.
+func TestValidateSweepPrevoutsRejectsMalformedMappings(t *testing.T) {
+	firstOutpoint := wire.OutPoint{Hash: chainhash.Hash{1}, Index: 0}
+	secondOutpoint := wire.OutPoint{Hash: chainhash.Hash{2}, Index: 1}
+	validScript := []byte{0x51}
+
+	testCases := []struct {
+		name        string
+		tx          *wire.MsgTx
+		prevouts    []*swapserverrpc.PrevoutInfo
+		expectedErr string
+	}{
+		{
+			name: "exact mapping",
+			tx: makeSweepTx(
+				[]wire.OutPoint{firstOutpoint}, nil,
+			),
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				testPrevoutInfo(firstOutpoint, 1_000, validScript),
+			},
+		},
+		{
+			name: "missing transaction input",
+			tx: makeSweepTx(
+				[]wire.OutPoint{firstOutpoint}, nil,
+			),
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				testPrevoutInfo(secondOutpoint, 1_000, validScript),
+			},
+			expectedErr: "missing prevout",
+		},
+		{
+			name: "duplicate prevout",
+			tx: makeSweepTx(
+				[]wire.OutPoint{firstOutpoint, secondOutpoint}, nil,
+			),
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				testPrevoutInfo(firstOutpoint, 1_000, validScript),
+				testPrevoutInfo(firstOutpoint, 1_000, validScript),
+			},
+			expectedErr: "duplicate prevout",
+		},
+		{
+			name: "nil prevout",
+			tx: makeSweepTx(
+				[]wire.OutPoint{firstOutpoint}, nil,
+			),
+			prevouts:    []*swapserverrpc.PrevoutInfo{nil},
+			expectedErr: "prevout 0 is nil",
+		},
+		{
+			name: "value overflow",
+			tx: makeSweepTx(
+				[]wire.OutPoint{firstOutpoint}, nil,
+			),
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				testPrevoutInfo(
+					firstOutpoint, math.MaxInt64+1, validScript,
+				),
+			},
+			expectedErr: "value overflows int64",
+		},
+		{
+			name: "duplicate transaction input",
+			tx: makeSweepTx(
+				[]wire.OutPoint{firstOutpoint, firstOutpoint}, nil,
+			),
+			prevouts: []*swapserverrpc.PrevoutInfo{
+				testPrevoutInfo(firstOutpoint, 1_000, validScript),
+				testPrevoutInfo(secondOutpoint, 1_000, validScript),
+			},
+			expectedErr: "duplicate transaction input",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var err error
+			var prevoutMap map[wire.OutPoint]*wire.TxOut
+
+			// In particular, an exact-length but mismatched mapping must
+			// return an error instead of reaching the prior nil dereference.
+			require.NotPanics(t, func() {
+				prevoutMap, err = validateSweepPrevouts(
+					testCase.tx, testCase.prevouts,
+				)
+			})
+			if testCase.expectedErr == "" {
+				require.NoError(t, err)
+				require.Len(t, prevoutMap, len(testCase.prevouts))
+
+				return
+			}
+
+			require.ErrorContains(t, err, testCase.expectedErr)
+		})
 	}
 }
 
-// receiveOrFail returns the next channel value or fails when the test context
-// ends.
+// TestValidateSigningPrevoutsChecksLocalDeposit verifies that owned inputs use
+// locally known values and scripts rather than trusting the server's prevouts.
+func TestValidateSigningPrevoutsChecksLocalDeposit(t *testing.T) {
+	currentDeposit := makeDeposit(1, 0, 10_000, 1)
+	depositOutpoint := currentDeposit.OutPoint.String()
+	depositScript := []byte{0x51, 0x20}
+
+	testCases := []struct {
+		name        string
+		nonces      map[string][]byte
+		prevout     *wire.TxOut
+		expectedErr string
+	}{
+		{
+			name:   "local value and script",
+			nonces: map[string][]byte{depositOutpoint: nil},
+			prevout: &wire.TxOut{
+				Value:    int64(currentDeposit.Value),
+				PkScript: bytes.Clone(depositScript),
+			},
+		},
+		{
+			name:   "server value mismatch",
+			nonces: map[string][]byte{depositOutpoint: nil},
+			prevout: &wire.TxOut{
+				Value:    int64(currentDeposit.Value) - 1,
+				PkScript: bytes.Clone(depositScript),
+			},
+			expectedErr: "value mismatch",
+		},
+		{
+			name:   "server script mismatch",
+			nonces: map[string][]byte{depositOutpoint: nil},
+			prevout: &wire.TxOut{
+				Value:    int64(currentDeposit.Value),
+				PkScript: []byte{0x52},
+			},
+			expectedErr: "script mismatch",
+		},
+		{
+			name: "unknown signing deposit",
+			nonces: map[string][]byte{
+				wire.OutPoint{Hash: chainhash.Hash{2}}.String(): nil,
+			},
+			prevout: &wire.TxOut{
+				Value:    int64(currentDeposit.Value),
+				PkScript: bytes.Clone(depositScript),
+			},
+			expectedErr: "no local deposit",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			prevoutMap := map[wire.OutPoint]*wire.TxOut{
+				currentDeposit.OutPoint: testCase.prevout,
+			}
+
+			// These comparisons are the final trusted-data boundary
+			// before constructing the Taproot signature hash.
+			err := validateSigningPrevouts(
+				testCase.nonces, []*deposit.Deposit{currentDeposit},
+				depositScript, prevoutMap,
+			)
+			if testCase.expectedErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, testCase.expectedErr)
+		})
+	}
+}
+
+// testSweepRequest returns a parseable sweep request identified by id.
+func testSweepRequest(t *testing.T,
+	id byte) *swapserverrpc.ServerStaticLoopInSweepNotification {
+
+	t.Helper()
+
+	swapHash := lntypes.Hash{id}
+	sweepTx := makeSweepTx(
+		[]wire.OutPoint{{Hash: chainhash.Hash{id}}},
+		[]*wire.TxOut{{Value: int64(id) + 1}},
+	)
+	sweepPacket, err := psbt.NewFromUnsignedTx(sweepTx)
+	require.NoError(t, err)
+
+	var psbtBuffer bytes.Buffer
+	require.NoError(t, sweepPacket.Serialize(&psbtBuffer))
+
+	return &swapserverrpc.ServerStaticLoopInSweepNotification{
+		SwapHash:    swapHash[:],
+		SweepTxPsbt: psbtBuffer.Bytes(),
+	}
+}
+
+// receiveOrFail returns the next channel value or fails after one second.
 func receiveOrFail[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
 
@@ -179,12 +528,142 @@ func receiveOrFail[T any](t *testing.T, ch <-chan T) T {
 	case value := <-ch:
 		return value
 
-	case <-t.Context().Done():
+	case <-time.After(time.Second):
 		var zero T
-		t.Fatalf("waiting for test value: %v", t.Context().Err())
+		t.Fatal("timed out waiting for test value")
 
 		return zero
 	}
+}
+
+// successfulSweepRequest creates a complete sweepless request for one deposit
+// and varies the output value to produce distinct transaction IDs.
+func successfulSweepRequest(t *testing.T, swapHash lntypes.Hash,
+	currentDeposit *deposit.Deposit, depositPkScript []byte,
+	outputValue int64) *swapserverrpc.ServerStaticLoopInSweepNotification {
+
+	t.Helper()
+
+	sweepTx := makeSweepTx(
+		[]wire.OutPoint{currentDeposit.OutPoint},
+		[]*wire.TxOut{{Value: outputValue, PkScript: []byte{0x51}}},
+	)
+	sweepPacket, err := psbt.NewFromUnsignedTx(sweepTx)
+	require.NoError(t, err)
+
+	var psbtBuffer bytes.Buffer
+	require.NoError(t, sweepPacket.Serialize(&psbtBuffer))
+
+	depositOutpoint := currentDeposit.OutPoint.String()
+
+	return &swapserverrpc.ServerStaticLoopInSweepNotification{
+		SwapHash:    swapHash[:],
+		SweepTxPsbt: psbtBuffer.Bytes(),
+		DepositToNonces: map[string][]byte{
+			depositOutpoint: make([]byte, musig2.PubNonceSize),
+		},
+		PrevoutInfo: []*swapserverrpc.PrevoutInfo{
+			testPrevoutInfo(
+				currentDeposit.OutPoint, uint64(currentDeposit.Value),
+				depositPkScript,
+			),
+		},
+	}
+}
+
+// testPrevoutInfo returns protobuf prevout information for one transaction
+// outpoint.
+func testPrevoutInfo(outpoint wire.OutPoint, value uint64,
+	pkScript []byte) *swapserverrpc.PrevoutInfo {
+
+	return &swapserverrpc.PrevoutInfo{
+		Value:       value,
+		PkScript:    bytes.Clone(pkScript),
+		TxidBytes:   outpoint.Hash[:],
+		OutputIndex: outpoint.Index,
+	}
+}
+
+// blockingSweepResponseServer records response RPCs and blocks them until the
+// test releases all calls.
+type blockingSweepResponseServer struct {
+	// StaticAddressServerClient supplies methods unused by the test.
+	swapserverrpc.StaticAddressServerClient
+
+	// pushStarted receives each response that reaches the RPC boundary.
+	pushStarted chan<- *swapserverrpc.PushStaticAddressSweeplessSigsRequest
+
+	// release blocks response RPCs so their overlap can be observed.
+	release <-chan struct{}
+}
+
+// PushStaticAddressSweeplessSigs records a response and waits for the test to
+// release it.
+func (s *blockingSweepResponseServer) PushStaticAddressSweeplessSigs(
+	ctx context.Context,
+	req *swapserverrpc.PushStaticAddressSweeplessSigsRequest,
+	_ ...grpc.CallOption) (*swapserverrpc.PushStaticAddressSweeplessSigsResponse,
+	error) {
+
+	select {
+	case s.pushStarted <- req:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	select {
+	case <-s.release:
+		return &swapserverrpc.PushStaticAddressSweeplessSigsResponse{}, nil
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// sweepRequestSigner supplies deterministic MuSig2 session data for complete
+// sweep-request tests.
+type sweepRequestSigner struct {
+	// SignerClient supplies signer methods unused by the test.
+	lndclient.SignerClient
+
+	// nextSession gives concurrent signing flows distinct session IDs.
+	nextSession atomic.Uint32
+}
+
+// MuSig2CreateSession returns a deterministic, size-correct session.
+func (s *sweepRequestSigner) MuSig2CreateSession(context.Context,
+	input.MuSig2Version, *keychain.KeyLocator, [][]byte,
+	...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo, error) {
+
+	sessionNumber := s.nextSession.Add(1)
+	var sessionID [32]byte
+	sessionID[0] = byte(sessionNumber)
+	var publicNonce [musig2.PubNonceSize]byte
+	publicNonce[0] = byte(sessionNumber)
+
+	return &input.MuSig2SessionInfo{
+		SessionID:   sessionID,
+		PublicNonce: publicNonce,
+	}, nil
+}
+
+// MuSig2RegisterNonces reports that the deterministic session has all nonces.
+func (*sweepRequestSigner) MuSig2RegisterNonces(context.Context, [32]byte,
+	[][musig2.PubNonceSize]byte) (bool, error) {
+
+	return true, nil
+}
+
+// MuSig2Sign returns a deterministic size-correct partial signature.
+func (*sweepRequestSigner) MuSig2Sign(context.Context, [32]byte, [32]byte,
+	bool) ([]byte, error) {
+
+	return make([]byte, 32), nil
+}
+
+// MuSig2Cleanup accepts cleanup of the deterministic session.
+func (*sweepRequestSigner) MuSig2Cleanup(context.Context, [32]byte) error {
+	return nil
 }
 
 // sweepRequestStore lets manager tests control loop-in lookups.

@@ -13,9 +13,10 @@
 
 #### Bug Fixes
 
-* Static Address loop-in sweep signing requests are now processed concurrently,
-  preventing slow connections from delaying later signing responses until the
-  server times them out.
+* Static Address loop-in sweep signing requests and their authenticated
+  responses are now processed concurrently, preventing slow connections from
+  delaying later responses until the server times them out. Sweep work is
+  bounded, and server-provided prevouts are validated before signing.
 
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
