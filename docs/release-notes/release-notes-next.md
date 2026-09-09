@@ -44,6 +44,10 @@
 
 #### Maintenance
 
+* Update the `looprpc` gRPC dependency to v1.83.2 and synchronize the
+  root module with its required dependencies.
+  [PR #1227](https://github.com/lightninglabs/loop/pull/1227)
+
 * Update the `swapserverrpc` gRPC dependency to v1.83.2 and synchronize
   the root module with its required dependencies.
   [PR #1226](https://github.com/lightninglabs/loop/pull/1226)
