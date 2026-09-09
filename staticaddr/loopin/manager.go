@@ -3,10 +3,12 @@ package loopin
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,6 +36,11 @@ const (
 	// SwapNotFinishedMsg is the message that is sent to the server if a
 	// swap is not considered finished yet.
 	SwapNotFinishedMsg = "swap not finished yet"
+
+	// maxConcurrentSweepRequests is a generous protocol-sized worker limit
+	// that accommodates the server's fee variants without allowing an
+	// unbounded number of signing flows to consume client resources.
+	maxConcurrentSweepRequests = 128
 )
 
 var (
@@ -144,6 +151,9 @@ type Manager struct {
 
 	// currentHeight stores the currently best known block height.
 	currentHeight atomic.Uint32
+
+	// sweepRequestConcurrency is the number of sweepless request workers.
+	sweepRequestConcurrency int
 }
 
 // NewManager creates a new deposit withdrawal manager.
@@ -154,9 +164,10 @@ func NewManager(cfg *Config, currentHeight uint32) (*Manager, error) {
 	}
 
 	m := &Manager{
-		cfg:           cfg,
-		newLoopInChan: make(chan *newSwapRequest),
-		exitChan:      make(chan struct{}),
+		cfg:                     cfg,
+		newLoopInChan:           make(chan *newSwapRequest),
+		exitChan:                make(chan struct{}),
+		sweepRequestConcurrency: maxConcurrentSweepRequests,
 	}
 	m.currentHeight.Store(currentHeight)
 
@@ -186,6 +197,26 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	// Register for notifications of loop-in sweep requests.
 	sweepReqs := m.cfg.NotificationManager.
 		SubscribeStaticLoopInSweepRequests(ctx)
+
+	// A fixed worker pool gives the notification stream bounded
+	// backpressure while still processing the server's fee variants
+	// concurrently.
+	sweepCtx, cancelSweepHandlers := context.WithCancel(ctx)
+	var sweepHandlers sync.WaitGroup
+	sweepRequestsClosed := make(chan struct{})
+	var sweepRequestsCloseOnce sync.Once
+	for range m.sweepRequestConcurrency {
+		sweepHandlers.Go(func() {
+			m.runSweepRequestWorker(
+				sweepCtx, sweepReqs, sweepRequestsClosed,
+				&sweepRequestsCloseOnce,
+			)
+		})
+	}
+	defer func() {
+		cancelSweepHandlers()
+		sweepHandlers.Wait()
+	}()
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
@@ -226,26 +257,47 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 				return ctx.Err()
 			}
 
+		case <-sweepRequestsClosed:
+			// The channel has been closed, we'll stop the loop-in
+			// manager.
+			log.Debugf("Stopping loop-in manager " +
+				"(ntfnChan closed)")
+
+			close(m.exitChan)
+
+			return fmt.Errorf("ntfnChan closed")
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// runSweepRequestWorker processes notifications until the subscription or
+// manager context closes.
+func (m *Manager) runSweepRequestWorker(ctx context.Context,
+	sweepReqs <-chan *swapserverrpc.ServerStaticLoopInSweepNotification,
+	sweepRequestsClosed chan struct{}, closeOnce *sync.Once) {
+
+	for {
+		select {
 		case sweepReq, ok := <-sweepReqs:
 			if !ok {
-				// The channel has been closed, we'll stop the
-				// loop-in manager.
-				log.Debugf("Stopping loop-in manager " +
-					"(ntfnChan closed)")
+				closeOnce.Do(func() {
+					close(sweepRequestsClosed)
+				})
 
-				close(m.exitChan)
-
-				return fmt.Errorf("ntfnChan closed")
+				return
 			}
 
-			err = m.handleLoopInSweepReq(ctx, sweepReq)
+			err := m.handleLoopInSweepReq(ctx, sweepReq)
 			if err != nil {
 				log.Errorf("Error handling loop-in sweep "+
 					"request: %v", err)
 			}
 
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		}
 	}
 }
@@ -271,12 +323,25 @@ func (m *Manager) notifyNotFinished(ctx context.Context, swapHash lntypes.Hash,
 func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	req *swapserverrpc.ServerStaticLoopInSweepNotification) error {
 
-	// First we'll check if the loop-ins are known to us and in
-	// the expected state.
+	if req == nil {
+		return errors.New("sweep request is nil")
+	}
+
 	swapHash, err := lntypes.MakeHash(req.SwapHash)
 	if err != nil {
 		return err
 	}
+
+	reader := bytes.NewReader(req.SweepTxPsbt)
+	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
+	if err != nil {
+		return err
+	}
+	if sweepPacket.UnsignedTx == nil {
+		return errors.New("sweep PSBT has no unsigned transaction")
+	}
+
+	sweepTx := sweepPacket.UnsignedTx
 
 	// Fetch the loop-in from the store.
 	loopIn, err := m.cfg.Store.GetLoopInByHash(ctx, swapHash)
@@ -284,14 +349,13 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	loopIn.AddressParams, err =
-		m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
+	addressParams, err := m.cfg.AddressManager.
+		GetStaticAddressParameters(ctx)
 	if err != nil {
 		return err
 	}
 
-	loopIn.Address, err = m.cfg.AddressManager.GetStaticAddress(ctx)
+	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
 	if err != nil {
 		return err
 	}
@@ -303,15 +367,6 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	loopIn.Deposits = deposits
-
-	reader := bytes.NewReader(req.SweepTxPsbt)
-	sweepPacket, err := psbt.NewFromRawBytes(reader, false)
-	if err != nil {
-		return err
-	}
-
-	sweepTx := sweepPacket.UnsignedTx
 
 	// If the loop-in is not in the Succeeded state we return an
 	// error.
@@ -323,17 +378,10 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 			swapHash)
 	}
 
-	// Perform a sanity check on the number of unsigned tx inputs and
-	// prevout info.
-	if len(sweepTx.TxIn) != len(req.PrevoutInfo) {
-		return fmt.Errorf("expected %v inputs, got %v",
-			len(req.PrevoutInfo), len(sweepTx.TxIn))
-	}
-
 	// If the user selected an amount that is less than the total deposit
 	// amount we'll check that the server sends us the correct change amount
 	// back to our static address.
-	err = m.checkChange(ctx, sweepTx, loopIn.AddressParams)
+	err = m.checkChange(ctx, sweepTx, addressParams)
 	if err != nil {
 		return err
 	}
@@ -345,22 +393,19 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	prevoutMap := make(map[wire.OutPoint]*wire.TxOut, len(req.PrevoutInfo))
+	prevoutMap, err := validateSweepPrevouts(sweepTx, req.PrevoutInfo)
+	if err != nil {
+		return err
+	}
 
-	// Set all the prevouts in the prevout map.
-	for _, prevout := range req.PrevoutInfo {
-		txid, err := chainhash.NewHash(prevout.TxidBytes)
-		if err != nil {
-			return err
-		}
-
-		prevoutMap[wire.OutPoint{
-			Hash:  *txid,
-			Index: prevout.OutputIndex,
-		}] = &wire.TxOut{
-			Value:    int64(prevout.Value),
-			PkScript: prevout.PkScript,
-		}
+	// The server supplies prevouts for the full batch, but deposit values
+	// and scripts signed by this client must match local wallet state.
+	err = validateSigningPrevouts(
+		req.DepositToNonces, deposits, addressParams.PkScript,
+		prevoutMap,
+	)
+	if err != nil {
+		return err
 	}
 
 	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(
@@ -396,7 +441,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		}
 
 		musig2Session, err := staticutil.CreateMusig2Session(
-			ctx, m.cfg.Signer, loopIn.AddressParams, loopIn.Address,
+			ctx, m.cfg.Signer, addressParams, staticAddress,
 		)
 		if err != nil {
 			return err
@@ -454,6 +499,111 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		},
 	)
 	return err
+}
+
+// validateSweepPrevouts verifies that the prevout list is an exact, unique
+// mapping for every unsigned transaction input.
+func validateSweepPrevouts(sweepTx *wire.MsgTx,
+	prevoutInfo []*swapserverrpc.PrevoutInfo) (
+	map[wire.OutPoint]*wire.TxOut, error) {
+
+	if len(sweepTx.TxIn) != len(prevoutInfo) {
+		return nil, fmt.Errorf("expected %v prevouts, got %v",
+			len(sweepTx.TxIn), len(prevoutInfo))
+	}
+
+	prevoutMap := make(map[wire.OutPoint]*wire.TxOut, len(prevoutInfo))
+	for i, prevout := range prevoutInfo {
+		if prevout == nil {
+			return nil, fmt.Errorf("prevout %v is nil", i)
+		}
+		if prevout.Value > math.MaxInt64 {
+			return nil, fmt.Errorf(
+				"prevout %v value overflows int64", i,
+			)
+		}
+
+		txID, err := chainhash.NewHash(prevout.TxidBytes)
+		if err != nil {
+			return nil, fmt.Errorf("invalid prevout %v txid: %w", i,
+				err)
+		}
+
+		outpoint := wire.OutPoint{
+			Hash:  *txID,
+			Index: prevout.OutputIndex,
+		}
+		if _, ok := prevoutMap[outpoint]; ok {
+			return nil, fmt.Errorf("duplicate prevout %v", outpoint)
+		}
+
+		prevoutMap[outpoint] = &wire.TxOut{
+			Value:    int64(prevout.Value),
+			PkScript: bytes.Clone(prevout.PkScript),
+		}
+	}
+
+	transactionInputs := make(map[wire.OutPoint]struct{}, len(sweepTx.TxIn))
+	for _, txIn := range sweepTx.TxIn {
+		outpoint := txIn.PreviousOutPoint
+		if _, ok := transactionInputs[outpoint]; ok {
+			return nil, fmt.Errorf("duplicate transaction input %v",
+				outpoint)
+		}
+		transactionInputs[outpoint] = struct{}{}
+
+		if _, ok := prevoutMap[outpoint]; !ok {
+			return nil, fmt.Errorf(
+				"missing prevout for transaction input %v",
+				outpoint,
+			)
+		}
+	}
+
+	return prevoutMap, nil
+}
+
+// validateSigningPrevouts verifies locally known values and scripts for each
+// deposit the server asks this client to sign.
+func validateSigningPrevouts(depositToNonces map[string][]byte,
+	deposits []*deposit.Deposit, depositPkScript []byte,
+	prevoutMap map[wire.OutPoint]*wire.TxOut) error {
+
+	depositsByOutpoint := make(map[string]*deposit.Deposit, len(deposits))
+	for _, currentDeposit := range deposits {
+		if currentDeposit == nil {
+			return errors.New("deposit lookup returned nil deposit")
+		}
+
+		depositsByOutpoint[currentDeposit.OutPoint.String()] =
+			currentDeposit
+	}
+
+	for depositOutpoint := range depositToNonces {
+		currentDeposit, ok := depositsByOutpoint[depositOutpoint]
+		if !ok {
+			return fmt.Errorf(
+				"no local deposit for signing outpoint %v",
+				depositOutpoint,
+			)
+		}
+
+		prevout, ok := prevoutMap[currentDeposit.OutPoint]
+		if !ok {
+			return fmt.Errorf("missing signing prevout %v",
+				currentDeposit.OutPoint)
+		}
+		if prevout.Value != int64(currentDeposit.Value) {
+			return fmt.Errorf("signing prevout %v value mismatch",
+				currentDeposit.OutPoint)
+		}
+		if !bytes.Equal(prevout.PkScript, depositPkScript) {
+			return fmt.Errorf("signing prevout %v script mismatch",
+				currentDeposit.OutPoint)
+		}
+	}
+
+	return nil
 }
 
 // checkChange ensures that the server sends us the correct change amount
