@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -75,7 +76,7 @@ func (q *Queries) CreateAssetReservation(ctx context.Context, arg CreateAssetRes
 }
 
 const getAssetReservation = `-- name: GetAssetReservation :one
-SELECT id, reservation_id, asset_id, amount, fee, csv_delay, required_confirmations, execution_delta, client_pubkey, client_key_family, client_key_index, created_at, group_key FROM asset_reservations WHERE reservation_id = $1
+SELECT id, reservation_id, asset_id, amount, fee, csv_delay, required_confirmations, execution_delta, client_pubkey, client_key_family, client_key_index, created_at, group_key, quote, max_route_fee_msat, skip_probe, main_probe, probes_checked_at, prepay_route_fee_msat, main_route_fee_msat, payment_hash, paying_node_key, payment_request, payment_result, funding_outpoint, confirmation_height, prepay_credit, deposit_proof, probe_node_key, probe_request, probe_result, probe_deadline, probe_fee_known FROM asset_reservations WHERE reservation_id = $1
 `
 
 func (q *Queries) GetAssetReservation(ctx context.Context, reservationID []byte) (AssetReservation, error) {
@@ -95,6 +96,26 @@ func (q *Queries) GetAssetReservation(ctx context.Context, reservationID []byte)
 		&i.ClientKeyIndex,
 		&i.CreatedAt,
 		&i.GroupKey,
+		&i.Quote,
+		&i.MaxRouteFeeMsat,
+		&i.SkipProbe,
+		&i.MainProbe,
+		&i.ProbesCheckedAt,
+		&i.PrepayRouteFeeMsat,
+		&i.MainRouteFeeMsat,
+		&i.PaymentHash,
+		&i.PayingNodeKey,
+		&i.PaymentRequest,
+		&i.PaymentResult,
+		&i.FundingOutpoint,
+		&i.ConfirmationHeight,
+		&i.PrepayCredit,
+		&i.DepositProof,
+		&i.ProbeNodeKey,
+		&i.ProbeRequest,
+		&i.ProbeResult,
+		&i.ProbeDeadline,
+		&i.ProbeFeeKnown,
 	)
 	return i, err
 }
@@ -134,7 +155,7 @@ func (q *Queries) GetAssetReservationUpdates(ctx context.Context, reservationID 
 }
 
 const getAssetReservations = `-- name: GetAssetReservations :many
-SELECT id, reservation_id, asset_id, amount, fee, csv_delay, required_confirmations, execution_delta, client_pubkey, client_key_family, client_key_index, created_at, group_key FROM asset_reservations ORDER BY id
+SELECT id, reservation_id, asset_id, amount, fee, csv_delay, required_confirmations, execution_delta, client_pubkey, client_key_family, client_key_index, created_at, group_key, quote, max_route_fee_msat, skip_probe, main_probe, probes_checked_at, prepay_route_fee_msat, main_route_fee_msat, payment_hash, paying_node_key, payment_request, payment_result, funding_outpoint, confirmation_height, prepay_credit, deposit_proof, probe_node_key, probe_request, probe_result, probe_deadline, probe_fee_known FROM asset_reservations ORDER BY id
 `
 
 func (q *Queries) GetAssetReservations(ctx context.Context) ([]AssetReservation, error) {
@@ -160,6 +181,26 @@ func (q *Queries) GetAssetReservations(ctx context.Context) ([]AssetReservation,
 			&i.ClientKeyIndex,
 			&i.CreatedAt,
 			&i.GroupKey,
+			&i.Quote,
+			&i.MaxRouteFeeMsat,
+			&i.SkipProbe,
+			&i.MainProbe,
+			&i.ProbesCheckedAt,
+			&i.PrepayRouteFeeMsat,
+			&i.MainRouteFeeMsat,
+			&i.PaymentHash,
+			&i.PayingNodeKey,
+			&i.PaymentRequest,
+			&i.PaymentResult,
+			&i.FundingOutpoint,
+			&i.ConfirmationHeight,
+			&i.PrepayCredit,
+			&i.DepositProof,
+			&i.ProbeNodeKey,
+			&i.ProbeRequest,
+			&i.ProbeResult,
+			&i.ProbeDeadline,
+			&i.ProbeFeeKnown,
 		); err != nil {
 			return nil, err
 		}
@@ -189,4 +230,95 @@ type InsertAssetReservationUpdateParams struct {
 func (q *Queries) InsertAssetReservationUpdate(ctx context.Context, arg InsertAssetReservationUpdateParams) error {
 	_, err := q.db.ExecContext(ctx, insertAssetReservationUpdate, arg.ReservationID, arg.UpdateState, arg.UpdateTimestamp)
 	return err
+}
+
+const updateAssetReservationPurchase = `-- name: UpdateAssetReservationPurchase :execrows
+UPDATE asset_reservations SET
+    fee = $2,
+    csv_delay = $3,
+    required_confirmations = $4,
+    execution_delta = $5,
+    quote = $6,
+    max_route_fee_msat = $7,
+    main_probe = $8,
+    probes_checked_at = $9,
+    prepay_route_fee_msat = $10,
+    main_route_fee_msat = $11,
+    payment_hash = $12,
+    paying_node_key = $13,
+    payment_request = $14,
+    payment_result = $15,
+    funding_outpoint = $16,
+    confirmation_height = $17,
+    prepay_credit = $18,
+    deposit_proof = $19,
+    skip_probe = $20,
+    probe_node_key = $21,
+    probe_request = $22,
+    probe_result = $23,
+    probe_deadline = $24,
+    probe_fee_known = $25
+WHERE reservation_id = $1
+`
+
+type UpdateAssetReservationPurchaseParams struct {
+	ReservationID         []byte
+	Fee                   int64
+	CsvDelay              int32
+	RequiredConfirmations int32
+	ExecutionDelta        int32
+	Quote                 []byte
+	MaxRouteFeeMsat       int64
+	MainProbe             int32
+	ProbesCheckedAt       sql.NullTime
+	PrepayRouteFeeMsat    int64
+	MainRouteFeeMsat      int64
+	PaymentHash           []byte
+	PayingNodeKey         []byte
+	PaymentRequest        []byte
+	PaymentResult         []byte
+	FundingOutpoint       sql.NullString
+	ConfirmationHeight    int64
+	PrepayCredit          int64
+	DepositProof          []byte
+	SkipProbe             bool
+	ProbeNodeKey          []byte
+	ProbeRequest          []byte
+	ProbeResult           []byte
+	ProbeDeadline         sql.NullTime
+	ProbeFeeKnown         bool
+}
+
+func (q *Queries) UpdateAssetReservationPurchase(ctx context.Context, arg UpdateAssetReservationPurchaseParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateAssetReservationPurchase,
+		arg.ReservationID,
+		arg.Fee,
+		arg.CsvDelay,
+		arg.RequiredConfirmations,
+		arg.ExecutionDelta,
+		arg.Quote,
+		arg.MaxRouteFeeMsat,
+		arg.MainProbe,
+		arg.ProbesCheckedAt,
+		arg.PrepayRouteFeeMsat,
+		arg.MainRouteFeeMsat,
+		arg.PaymentHash,
+		arg.PayingNodeKey,
+		arg.PaymentRequest,
+		arg.PaymentResult,
+		arg.FundingOutpoint,
+		arg.ConfirmationHeight,
+		arg.PrepayCredit,
+		arg.DepositProof,
+		arg.SkipProbe,
+		arg.ProbeNodeKey,
+		arg.ProbeRequest,
+		arg.ProbeResult,
+		arg.ProbeDeadline,
+		arg.ProbeFeeKnown,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
