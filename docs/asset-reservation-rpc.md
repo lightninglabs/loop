@@ -9,7 +9,7 @@ permissions. Registration is part of the client runtime wiring.
 
 The wire contract lives in `swapserverrpc/asset_reservation.proto`. It is
 separate from Bitcoin Instant Out reservations. These definitions do not
-enable a service; handlers, authentication wiring, and node adapters follow.
+enable a service; handlers and authentication wiring remain separate.
 
 ## Purchase and recovery
 
@@ -22,8 +22,10 @@ requires a new request after cancellation of the old unpaid purchase.
 
 The response may still be `QUOTING`. `GetAssetReservation` retrieves progress
 and the immutable quote once available. The quote supplies both invoices,
-asset terms, keys, Bitcoin equivalents, edge, and expiry. The client validates
-both invoices, probes only the estimated main amount, then waits
+asset terms, keys, Bitcoin equivalents, edge, expiry, and `prepay_rfq`. That
+field carries the native receiving RFQ, without secrets, so the client can
+bind the prepay invoice to its exact asset fee and route hint. The client
+validates both invoices, probes only the estimated main amount, then waits
 for approval. Paying the hold prepay is the only signal that permits funding.
 The main Bitcoin equivalent is an estimate, not an exchange-rate guarantee.
 
