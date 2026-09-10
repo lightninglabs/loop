@@ -122,46 +122,45 @@ func (s *SqlStore) UpdateReservation(ctx context.Context, r *Reservation) error 
 	return err
 }
 
-// GetReservation loads the agreed terms and latest state in one transaction.
+// GetReservation reads the purchase facts and latest state in one statement,
+// so PostgreSQL cannot mix snapshots from concurrent worker updates.
 func (s *SqlStore) GetReservation(ctx context.Context, id ID) (*Reservation,
 	error) {
 
-	var result *Reservation
-	err := s.db.ExecTx(ctx, loopdb.NewSqlReadOpts(),
-		func(q *sqlc.Queries) error {
-			var err error
-			result, err = loadReservation(ctx, q, id)
-			return err
-		})
-	return result, err
+	return loadReservation(ctx, s.db.Queries, id)
 }
 
-// GetReservations loads saved records for status and manager recovery.
-func (s *SqlStore) GetReservations(ctx context.Context) ([]*Reservation, error) {
-	var result []*Reservation
-	err := s.db.ExecTx(ctx, loopdb.NewSqlReadOpts(),
-		func(q *sqlc.Queries) error {
-			rows, err := q.GetAssetReservations(ctx)
-			if err != nil {
-				return err
-			}
-			for _, row := range rows {
-				updates, err := q.GetAssetReservationUpdates(
-					ctx, row.ReservationID,
-				)
-				if err != nil {
-					return err
-				}
-				r, err := toReservation(row, updates)
-				if err != nil {
-					return err
-				}
-				result = append(result, r)
-			}
-			return nil
-		})
+// GetReservations filters and reads the reservation and its latest state in
+// one statement, giving both SQLite and PostgreSQL a consistent snapshot.
+func (s *SqlStore) GetReservations(ctx context.Context, filter StateFilter) (
+	[]*Reservation, error) {
+
+	if err := filter.Validate(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.GetAssetReservations(ctx, sqlc.GetAssetReservationsParams{
+		State: sql.NullString{
+			String: string(filter.State), Valid: filter.State != "",
+		},
+		ActiveOnly:    filter.ActiveOnly,
+		CanceledState: string(Canceled),
+		RejectedState: string(QuoteRejected),
+		ExpiredState:  string(Expired),
+	})
 	if err != nil {
 		return nil, err
+	}
+	var result []*Reservation
+	for _, row := range rows {
+		if !row.UpdateState.Valid || !row.UpdateTimestamp.Valid {
+			return nil, errors.New("missing reservation state history")
+		}
+		r, err := toReservation(row.AssetReservation,
+			row.UpdateState.String, row.UpdateTimestamp.Time)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, r)
 	}
 	return result, nil
 }
@@ -179,26 +178,26 @@ func insertUpdate(ctx context.Context, q *sqlc.Queries, r *Reservation) error {
 func loadReservation(ctx context.Context, q *sqlc.Queries, id ID) (*Reservation,
 	error) {
 
-	row, err := q.GetAssetReservation(ctx, id[:])
+	row, err := q.GetAssetReservationSnapshot(ctx, id[:])
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	updates, err := q.GetAssetReservationUpdates(ctx, id[:])
-	if err != nil {
-		return nil, err
+	if !row.UpdateState.Valid || !row.UpdateTimestamp.Valid {
+		return nil, errors.New("missing reservation state history")
 	}
-	return toReservation(row, updates)
+	return toReservation(row.AssetReservation, row.UpdateState.String,
+		row.UpdateTimestamp.Time)
 }
 
-func toReservation(row sqlc.AssetReservation,
-	updates []sqlc.AssetReservationUpdate) (*Reservation, error) {
+func toReservation(row sqlc.AssetReservation, state string,
+	updatedAt time.Time) (*Reservation, error) {
 
 	if len(row.ReservationID) != 32 || len(row.AssetID) != 32 ||
 		len(row.ClientPubkey) != btcec.PubKeyBytesLenCompressed ||
-		len(updates) == 0 || row.ClientKeyIndex < 0 ||
+		state == "" || row.ClientKeyIndex < 0 ||
 		row.ClientKeyIndex > math.MaxUint32 {
 
 		return nil, errors.New("invalid stored asset reservation")
@@ -207,7 +206,6 @@ func toReservation(row sqlc.AssetReservation,
 	if err != nil {
 		return nil, err
 	}
-	latest := updates[len(updates)-1]
 	r := &Reservation{
 		ID: ID(row.ReservationID),
 		Terms: Terms{
@@ -226,9 +224,9 @@ func toReservation(row sqlc.AssetReservation,
 				Index:  uint32(row.ClientKeyIndex),
 			},
 		},
-		State:     fsm.StateType(latest.UpdateState),
+		State:     fsm.StateType(state),
 		CreatedAt: row.CreatedAt.UTC(),
-		UpdatedAt: latest.UpdateTimestamp.UTC(),
+		UpdatedAt: updatedAt.UTC(),
 	}
 	if err := readPurchase(row, r); err != nil {
 		return nil, err

@@ -2,17 +2,141 @@ package reservation
 
 import (
 	"context"
+	"database/sql"
 	"math"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
+
+// reservationQueryCounter checks that loading state and funding facts does
+// not require separate statements, which could observe different snapshots.
+type reservationQueryCounter struct {
+	sqlc.DBTX
+	calls int
+}
+
+func (c *reservationQueryCounter) QueryContext(ctx context.Context,
+	query string, args ...any) (*sql.Rows, error) {
+
+	c.calls++
+	return c.DBTX.QueryContext(ctx, query, args...)
+}
+
+func (c *reservationQueryCounter) QueryRowContext(ctx context.Context,
+	query string, args ...any) *sql.Row {
+
+	c.calls++
+	return c.DBTX.QueryRowContext(ctx, query, args...)
+}
+
+func TestSqlStoreReservationSnapshot(t *testing.T) {
+	db := loopdb.NewTestDB(t)
+	store := NewSqlStore(db.BaseDB)
+	r := testReservation()
+	require.NoError(t, store.CreateReservation(t.Context(), r))
+	r.State = Ready
+	require.NoError(t, store.UpdateReservation(t.Context(), r))
+	queries := &reservationQueryCounter{DBTX: db.DB}
+	readDB := *db.BaseDB
+	readDB.Queries = sqlc.New(queries)
+	got, err := NewSqlStore(&readDB).GetReservation(t.Context(), r.ID)
+	require.NoError(t, err)
+	require.Equal(t, r, got)
+	require.Equal(t, 1, queries.calls)
+
+	_, err = NewSqlStore(&readDB).GetReservation(t.Context(), ID{99})
+	require.ErrorIs(t, err, ErrNotFound)
+	_, err = db.ExecContext(t.Context(),
+		"DELETE FROM asset_reservation_updates WHERE reservation_id = $1", r.ID[:])
+	require.NoError(t, err)
+	_, err = NewSqlStore(&readDB).GetReservation(t.Context(), r.ID)
+	require.ErrorContains(t, err, "missing reservation state history")
+}
+
+func TestSqlStoreStateFilter(t *testing.T) {
+	db := loopdb.NewTestDB(t)
+	store := NewSqlStore(db.BaseDB)
+	ctx := t.Context()
+	saved := make(map[ID]*Reservation)
+	for i, state := range []fsm.StateType{
+		Ready, AwaitApproval, Canceled, Expired, NeedAdminAttention,
+		QuoteRejected,
+	} {
+		r := testReservation()
+		r.ID = ID{byte(i + 1)}
+		require.NoError(t, store.CreateReservation(ctx, r))
+		r.State = state
+		require.NoError(t, store.UpdateReservation(ctx, r))
+		saved[r.ID] = r
+	}
+	// All requested facts, including latest timestamps, must come from a
+	// single statement on either database backend.
+	queries := &reservationQueryCounter{DBTX: db.DB}
+	readDB := *db.BaseDB
+	readDB.Queries = sqlc.New(queries)
+	store = NewSqlStore(&readDB)
+	for _, tc := range []struct {
+		name   string
+		filter StateFilter
+		ids    []ID
+	}{
+		{"all", StateFilter{}, []ID{{1}, {2}, {3}, {4}, {5}, {6}}},
+		{"active", StateFilter{ActiveOnly: true}, []ID{{1}, {2}, {5}}},
+		{"latest state", StateFilter{State: AwaitApproval}, []ID{{2}}},
+		{"ready", StateFilter{State: Ready}, []ID{{1}}},
+		{"rejected", StateFilter{State: QuoteRejected}, []ID{{6}}},
+		{"admin", StateFilter{State: NeedAdminAttention}, []ID{{5}}},
+		{"no matches", StateFilter{State: ProbeRoutes}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			queries.calls = 0
+			rows, err := store.GetReservations(ctx, tc.filter)
+			require.NoError(t, err)
+			require.Equal(t, 1, queries.calls)
+			var ids []ID
+			for _, r := range rows {
+				require.Equal(t, saved[r.ID], r)
+				ids = append(ids, r.ID)
+			}
+			require.Equal(t, tc.ids, ids)
+		})
+	}
+	_, err := store.GetReservations(ctx, StateFilter{
+		State: "ready",
+	})
+	require.ErrorContains(t, err, "unknown reservation state")
+	_, err = store.GetReservations(ctx, StateFilter{
+		State: Ready, ActiveOnly: true,
+	})
+	require.ErrorContains(t, err, "mutually exclusive")
+
+	// Excluded rows must not be decoded or validated. An invalid saved
+	// quote on a completed purchase must not block recovery of active ones.
+	completedID := ID{3}
+	_, err = db.ExecContext(ctx, `UPDATE asset_reservations SET quote = $1
+		WHERE reservation_id = $2`, []byte{0xff}, completedID[:])
+	require.NoError(t, err)
+	rows, err := store.GetReservations(ctx, StateFilter{ActiveOnly: true})
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+	_, err = store.GetReservations(ctx, StateFilter{})
+	require.Error(t, err)
+	activeID := ID{2}
+	_, err = db.ExecContext(ctx, `DELETE FROM asset_reservation_updates
+		WHERE reservation_id = $1`, activeID[:])
+	require.NoError(t, err)
+	_, err = store.GetReservations(ctx, StateFilter{ActiveOnly: true})
+	require.Error(t, err)
+}
 
 func testReservation() *Reservation {
 	_, pubkey := btcec.PrivKeyFromBytes([]byte{1})
@@ -93,7 +217,7 @@ func TestSqlStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, r, loaded)
 
-	all, err := store.GetReservations(ctx)
+	all, err := store.GetReservations(ctx, StateFilter{})
 	require.NoError(t, err)
 	require.Equal(t, []*Reservation{r}, all)
 	_, err = store.GetReservation(ctx, ID{99})
@@ -105,10 +229,10 @@ func TestSqlStore(t *testing.T) {
 	// Damaged records fail closed instead of becoming recoverable purchases.
 	row, err := db.GetAssetReservation(ctx, r.ID[:])
 	require.NoError(t, err)
-	_, err = toReservation(row, nil)
+	_, err = toReservation(row, "", time.Time{})
 	require.Error(t, err)
 	row.ClientPubkey = make([]byte, 33)
-	_, err = toReservation(row, updates)
+	_, err = toReservation(row, updates[1].UpdateState, updates[1].UpdateTimestamp)
 	require.Error(t, err)
 }
 

@@ -122,6 +122,66 @@ func (q *Queries) GetAssetReservation(ctx context.Context, reservationID []byte)
 	return i, err
 }
 
+const getAssetReservationSnapshot = `-- name: GetAssetReservationSnapshot :one
+SELECT r.id, r.reservation_id, r.asset_id, r.amount, r.fee, r.csv_delay, r.required_confirmations, r.execution_delta, r.min_usable_blocks, r.client_pubkey, r.client_key_family, r.client_key_index, r.created_at, r.quote, r.max_route_fee_msat, r.skip_probe, r.main_probe, r.probes_checked_at, r.prepay_route_fee_msat, r.main_route_fee_msat, r.payment_hash, r.paying_node_key, r.payment_request, r.payment_result, r.funding_outpoint, r.confirmation_height, r.prepay_credit, r.deposit_proof, r.probe_node_key, r.probe_request, r.probe_result, r.probe_deadline, r.probe_fee_known, u.update_state, u.update_timestamp
+FROM asset_reservations r
+LEFT JOIN asset_reservation_updates u ON u.id = (
+    SELECT id FROM asset_reservation_updates
+    WHERE reservation_id = r.reservation_id
+    ORDER BY id DESC LIMIT 1
+)
+WHERE r.reservation_id = $1
+`
+
+type GetAssetReservationSnapshotRow struct {
+	AssetReservation AssetReservation
+	UpdateState      sql.NullString
+	UpdateTimestamp  sql.NullTime
+}
+
+func (q *Queries) GetAssetReservationSnapshot(ctx context.Context, reservationID []byte) (GetAssetReservationSnapshotRow, error) {
+	row := q.db.QueryRowContext(ctx, getAssetReservationSnapshot, reservationID)
+	var i GetAssetReservationSnapshotRow
+	err := row.Scan(
+		&i.AssetReservation.ID,
+		&i.AssetReservation.ReservationID,
+		&i.AssetReservation.AssetID,
+		&i.AssetReservation.Amount,
+		&i.AssetReservation.Fee,
+		&i.AssetReservation.CsvDelay,
+		&i.AssetReservation.RequiredConfirmations,
+		&i.AssetReservation.ExecutionDelta,
+		&i.AssetReservation.MinUsableBlocks,
+		&i.AssetReservation.ClientPubkey,
+		&i.AssetReservation.ClientKeyFamily,
+		&i.AssetReservation.ClientKeyIndex,
+		&i.AssetReservation.CreatedAt,
+		&i.AssetReservation.Quote,
+		&i.AssetReservation.MaxRouteFeeMsat,
+		&i.AssetReservation.SkipProbe,
+		&i.AssetReservation.MainProbe,
+		&i.AssetReservation.ProbesCheckedAt,
+		&i.AssetReservation.PrepayRouteFeeMsat,
+		&i.AssetReservation.MainRouteFeeMsat,
+		&i.AssetReservation.PaymentHash,
+		&i.AssetReservation.PayingNodeKey,
+		&i.AssetReservation.PaymentRequest,
+		&i.AssetReservation.PaymentResult,
+		&i.AssetReservation.FundingOutpoint,
+		&i.AssetReservation.ConfirmationHeight,
+		&i.AssetReservation.PrepayCredit,
+		&i.AssetReservation.DepositProof,
+		&i.AssetReservation.ProbeNodeKey,
+		&i.AssetReservation.ProbeRequest,
+		&i.AssetReservation.ProbeResult,
+		&i.AssetReservation.ProbeDeadline,
+		&i.AssetReservation.ProbeFeeKnown,
+		&i.UpdateState,
+		&i.UpdateTimestamp,
+	)
+	return i, err
+}
+
 const getAssetReservationUpdates = `-- name: GetAssetReservationUpdates :many
 SELECT id, reservation_id, update_state, update_timestamp FROM asset_reservation_updates
 WHERE reservation_id = $1
@@ -157,52 +217,89 @@ func (q *Queries) GetAssetReservationUpdates(ctx context.Context, reservationID 
 }
 
 const getAssetReservations = `-- name: GetAssetReservations :many
-SELECT id, reservation_id, asset_id, amount, fee, csv_delay, required_confirmations, execution_delta, min_usable_blocks, client_pubkey, client_key_family, client_key_index, created_at, quote, max_route_fee_msat, skip_probe, main_probe, probes_checked_at, prepay_route_fee_msat, main_route_fee_msat, payment_hash, paying_node_key, payment_request, payment_result, funding_outpoint, confirmation_height, prepay_credit, deposit_proof, probe_node_key, probe_request, probe_result, probe_deadline, probe_fee_known FROM asset_reservations ORDER BY id
+SELECT r.id, r.reservation_id, r.asset_id, r.amount, r.fee, r.csv_delay, r.required_confirmations, r.execution_delta, r.min_usable_blocks, r.client_pubkey, r.client_key_family, r.client_key_index, r.created_at, r.quote, r.max_route_fee_msat, r.skip_probe, r.main_probe, r.probes_checked_at, r.prepay_route_fee_msat, r.main_route_fee_msat, r.payment_hash, r.paying_node_key, r.payment_request, r.payment_result, r.funding_outpoint, r.confirmation_height, r.prepay_credit, r.deposit_proof, r.probe_node_key, r.probe_request, r.probe_result, r.probe_deadline, r.probe_fee_known, u.update_state, u.update_timestamp
+FROM asset_reservations r
+LEFT JOIN asset_reservation_updates u ON u.id = (
+    SELECT id FROM asset_reservation_updates
+    WHERE reservation_id = r.reservation_id
+    ORDER BY id DESC LIMIT 1
+)
+WHERE (CAST($1 AS TEXT) IS NULL
+       OR u.update_state = $1)
+  AND (NOT CAST($2 AS BOOLEAN)
+       OR u.update_state IS NULL
+       OR u.update_state NOT IN (
+           $3, $4,
+           $5
+       ))
+ORDER BY r.id
 `
 
-func (q *Queries) GetAssetReservations(ctx context.Context) ([]AssetReservation, error) {
-	rows, err := q.db.QueryContext(ctx, getAssetReservations)
+type GetAssetReservationsParams struct {
+	State         sql.NullString
+	ActiveOnly    bool
+	CanceledState string
+	ExpiredState  string
+	RejectedState string
+}
+
+type GetAssetReservationsRow struct {
+	AssetReservation AssetReservation
+	UpdateState      sql.NullString
+	UpdateTimestamp  sql.NullTime
+}
+
+func (q *Queries) GetAssetReservations(ctx context.Context, arg GetAssetReservationsParams) ([]GetAssetReservationsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAssetReservations,
+		arg.State,
+		arg.ActiveOnly,
+		arg.CanceledState,
+		arg.ExpiredState,
+		arg.RejectedState,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AssetReservation
+	var items []GetAssetReservationsRow
 	for rows.Next() {
-		var i AssetReservation
+		var i GetAssetReservationsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.ReservationID,
-			&i.AssetID,
-			&i.Amount,
-			&i.Fee,
-			&i.CsvDelay,
-			&i.RequiredConfirmations,
-			&i.ExecutionDelta,
-			&i.MinUsableBlocks,
-			&i.ClientPubkey,
-			&i.ClientKeyFamily,
-			&i.ClientKeyIndex,
-			&i.CreatedAt,
-			&i.Quote,
-			&i.MaxRouteFeeMsat,
-			&i.SkipProbe,
-			&i.MainProbe,
-			&i.ProbesCheckedAt,
-			&i.PrepayRouteFeeMsat,
-			&i.MainRouteFeeMsat,
-			&i.PaymentHash,
-			&i.PayingNodeKey,
-			&i.PaymentRequest,
-			&i.PaymentResult,
-			&i.FundingOutpoint,
-			&i.ConfirmationHeight,
-			&i.PrepayCredit,
-			&i.DepositProof,
-			&i.ProbeNodeKey,
-			&i.ProbeRequest,
-			&i.ProbeResult,
-			&i.ProbeDeadline,
-			&i.ProbeFeeKnown,
+			&i.AssetReservation.ID,
+			&i.AssetReservation.ReservationID,
+			&i.AssetReservation.AssetID,
+			&i.AssetReservation.Amount,
+			&i.AssetReservation.Fee,
+			&i.AssetReservation.CsvDelay,
+			&i.AssetReservation.RequiredConfirmations,
+			&i.AssetReservation.ExecutionDelta,
+			&i.AssetReservation.MinUsableBlocks,
+			&i.AssetReservation.ClientPubkey,
+			&i.AssetReservation.ClientKeyFamily,
+			&i.AssetReservation.ClientKeyIndex,
+			&i.AssetReservation.CreatedAt,
+			&i.AssetReservation.Quote,
+			&i.AssetReservation.MaxRouteFeeMsat,
+			&i.AssetReservation.SkipProbe,
+			&i.AssetReservation.MainProbe,
+			&i.AssetReservation.ProbesCheckedAt,
+			&i.AssetReservation.PrepayRouteFeeMsat,
+			&i.AssetReservation.MainRouteFeeMsat,
+			&i.AssetReservation.PaymentHash,
+			&i.AssetReservation.PayingNodeKey,
+			&i.AssetReservation.PaymentRequest,
+			&i.AssetReservation.PaymentResult,
+			&i.AssetReservation.FundingOutpoint,
+			&i.AssetReservation.ConfirmationHeight,
+			&i.AssetReservation.PrepayCredit,
+			&i.AssetReservation.DepositProof,
+			&i.AssetReservation.ProbeNodeKey,
+			&i.AssetReservation.ProbeRequest,
+			&i.AssetReservation.ProbeResult,
+			&i.AssetReservation.ProbeDeadline,
+			&i.AssetReservation.ProbeFeeKnown,
+			&i.UpdateState,
+			&i.UpdateTimestamp,
 		); err != nil {
 			return nil, err
 		}
