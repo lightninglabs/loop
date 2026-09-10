@@ -42,3 +42,32 @@ INSERT INTO asset_reservation_updates (
 SELECT * FROM asset_reservation_updates
 WHERE reservation_id = $1
 ORDER BY id;
+
+-- name: UpdateAssetReservationPurchase :execrows
+UPDATE asset_reservations SET
+    fee = $2,
+    csv_delay = $3,
+    required_confirmations = $4,
+    execution_delta = $5,
+    min_usable_blocks = $6,
+    quote = $7,
+    max_route_fee_msat = $8,
+    main_probe = $9,
+    probes_checked_at = $10,
+    prepay_route_fee_msat = $11,
+    main_route_fee_msat = $12,
+    payment_hash = $13,
+    paying_node_key = $14,
+    payment_request = $15,
+    payment_result = $16,
+    funding_outpoint = $17,
+    confirmation_height = $18,
+    prepay_credit = $19,
+    deposit_proof = $20,
+    skip_probe = $21,
+    probe_node_key = $22,
+    probe_request = $23,
+    probe_result = $24,
+    probe_deadline = $25,
+    probe_fee_known = $26
+WHERE reservation_id = $1;

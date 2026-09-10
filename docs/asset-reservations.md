@@ -15,6 +15,10 @@ its terms or keys fails. Updates preserve the agreed fee and append state
 history. Payment and funding fields follow with their actions. Runtime wiring
 is still separate work.
 
+Client purchase columns retain the quote, probes, payment choices, payment,
+and proof. Before a quote, the fee and lifetime remain unset. The typed progress store and
+actions populate each fact at its payment or verification boundary.
+
 The shared lifetime calculation derives timeout and execution heights from
 the original funding confirmation. The server checks the quoted depth and
 initial usable window before declaring the reservation Ready. These delivery
