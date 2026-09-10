@@ -2,6 +2,10 @@
 
 #### New Features
 
+* Add experimental asset-reservation payment adapters with invoice-based
+  probes, approved BTC prepays, and node-bound recovery. Runtime access remains
+  disabled pending service wiring and integration tests.
+
 * Instant Out now validates server invoices against a caller-approved maximum
   swap fee.
 

@@ -341,6 +341,7 @@ func (h *clientHarness) approve() {
 
 func (h *clientHarness) settle() {
 	h.result.Status = lnrpc.Payment_SUCCEEDED
+	h.result.ValueMsat = int64(h.record().Quote.PrepayAmountMsat)
 	h.result.PaymentPreimage = h.preimage.String()
 }
 
