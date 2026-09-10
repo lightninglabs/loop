@@ -30,8 +30,33 @@ INSERT INTO asset_reservations (
 -- name: GetAssetReservation :one
 SELECT * FROM asset_reservations WHERE reservation_id = $1;
 
+-- name: GetAssetReservationSnapshot :one
+SELECT sqlc.embed(r), u.update_state, u.update_timestamp
+FROM asset_reservations r
+LEFT JOIN asset_reservation_updates u ON u.id = (
+    SELECT id FROM asset_reservation_updates
+    WHERE reservation_id = r.reservation_id
+    ORDER BY id DESC LIMIT 1
+)
+WHERE r.reservation_id = $1;
+
 -- name: GetAssetReservations :many
-SELECT * FROM asset_reservations ORDER BY id;
+SELECT sqlc.embed(r), u.update_state, u.update_timestamp
+FROM asset_reservations r
+LEFT JOIN asset_reservation_updates u ON u.id = (
+    SELECT id FROM asset_reservation_updates
+    WHERE reservation_id = r.reservation_id
+    ORDER BY id DESC LIMIT 1
+)
+WHERE (CAST(sqlc.narg('state') AS TEXT) IS NULL
+       OR u.update_state = sqlc.narg('state'))
+  AND (NOT CAST(sqlc.arg('active_only') AS BOOLEAN)
+       OR u.update_state IS NULL
+       OR u.update_state NOT IN (
+           sqlc.arg('canceled_state'), sqlc.arg('expired_state'),
+           sqlc.arg('rejected_state')
+       ))
+ORDER BY r.id;
 
 -- name: InsertAssetReservationUpdate :exec
 INSERT INTO asset_reservation_updates (
