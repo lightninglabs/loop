@@ -16,6 +16,10 @@
 * Cancel reservation creation and its response snapshot read when the manager
   shuts down. Both operations share the request timeout.
 
+* Verify unfamiliar reservation assets by recording verified issuance metadata
+  in local tapd before checking the full proof history. No wallet assets are
+  imported, and failed proof checks still prevent delivery.
+
 * Shared Taproot Asset sweep packets now preserve the destination address
   version and use the required non-interactive split-root layout.
 
@@ -63,6 +67,11 @@
 
 * Accept quoted asset and BTC prepay amounts through the exact quote hash;
   remove duplicate amount limits from reservation approval requests.
+
+* Add experimental asset reservation proof verification and LND confirmation,
+  spend, and expiry tracking. Client readiness follows Instant Out's
+  notification-based assumptions; no Bitcoin RPC connection is required.
+  Reservation purchases remain disabled at runtime.
 
 * Name client purchase states `WaitForDelivery` and `VerifyReservation`.
 

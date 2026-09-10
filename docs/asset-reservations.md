@@ -28,7 +28,9 @@ The client [FSM](../assets/reservation/fsm.md) now saves and probes the quote,
 waits for explicit approval, tracks the exact prepay, and verifies delivery
 through narrow payment and wallet interfaces. Its SQLite-backed tests cover
 restarts, failed writes, cancellation racing settlement, proof rejection, and
-CSV expiry. Concrete node adapters and runtime wiring remain separate work.
+CSV expiry. The asset adapter now verifies full proofs through tapd and the
+shared deposit kit, and tracks confirmations and spends through LND. Payment
+adapters and runtime wiring remain separate work.
 
 The manager restores every live purchase and serializes its actions in one
 worker. New-purchase limits never suppress recovery. Exact request retries
@@ -52,8 +54,15 @@ owns the lifetime defaults: a 1,440-block CSV, three confirmations, a 90-block
 execution margin, and 1,000 initially usable blocks. The client checks that
 the quoted values are positive and fit the CSV lifetime; it does not enforce
 its own lifetime minimums. Before marking a reservation Ready, it checks the
-quoted confirmation depth, full asset proof, exact output and scripts, local
-keys, and unspent status using LND and tapd.
+quoted confirmation depth, full asset proof, exact output and scripts, and
+local keys. Like Instant Out, a ready client reservation is not known spent
+or expired; it is not a synchronous UTXO assertion.
+
+For assets new to the client, the adapter first submits the history's issuance
+proof to local tapd. Tapd verifies it and records the metadata needed by v0.8.3
+to return a decoded transfer proof. This does not import wallet assets. Full
+history verification is still required, and either RPC failure stops delivery.
+The local tapd credentials and universe policy must allow issuance insertion.
 
 `RequiredConfirmations` (`required_confirmations` in SQL) saves the agreed
 funding depth, not a live count. The server defaults to three. Recovery preserves
@@ -89,6 +98,12 @@ actions, managers, SQL stores, state history, and `OnRecover`. Persist payment
 intent and exact publication data before their external calls. Recover by
 checking stored facts against LND, tapd, and the chain. No versioned recovery
 envelopes, generic effects framework, or legacy fee-refund states.
+
+Reuse Instant Out's LND confirmation, spend, and block notifications, restoring
+subscriptions with saved height hints. Do not require wallet imports, a direct
+Bitcoin RPC connection, or a pre-publication watch handshake. No custom block
+scanner or scan cursor is needed. A quiet spend stream is not a synchronous
+unspent guarantee. The later swap keeps its own payment safety checks.
 
 Build in small commits: terms; SQL; stores; FSM actions; manager; asset adapter;
 payment adapter; RPC; daemon wiring; CLI; integration tests. Keep tests with

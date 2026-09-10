@@ -61,7 +61,8 @@ type Payments interface {
 }
 
 // FundingStatus comes from a synchronized local LND-backed chain view, not
-// server status. ConfirmationHeight is the original funding height.
+// server status. ConfirmationHeight is the original funding height. Spent
+// means LND has reported a spend, not that a synchronous UTXO check completed.
 type FundingStatus struct {
 	Height             uint32
 	ConfirmationHeight uint32
@@ -70,7 +71,8 @@ type FundingStatus struct {
 
 // ReservationVerifier uses tapd and the shared deposit kit. Verify checks full
 // proof history, asset, amount, both keys, the local key locator, scripts,
-// and exact output. Both reads report authoritative chain and spend status.
+// and exact output. Like Instant Out, spend tracking uses LND notifications;
+// readiness does not require a synchronous unspent assertion.
 type ReservationVerifier interface {
 	// DeriveKey allocates the next local key for jointly controlling the
 	// reservation with the server. The caller must save its descriptor
