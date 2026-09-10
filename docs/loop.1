@@ -49,6 +49,63 @@ loop [GLOBAL OPTIONS] [command [COMMAND OPTIONS]] [ARGUMENTS...]
 
 
 .SH COMMANDS
+.SH asset
+manage on-chain asset reservations
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS reservation
+buy and inspect asset reservations
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS buy
+quote, approve, and buy a reservation
+
+.PP
+\fB--amt\fP="": asset amount in indivisible units (default: 0)
+
+.PP
+\fB--asset_id\fP="":
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--max_routing_fee\fP="": maximum prepay routing fee in satoshis (default: 0)
+
+.PP
+\fB--reservation_id\fP="": resume this purchase ID
+
+.PP
+\fB--skip_probe\fP: skip probing and buy without a successful main-payment probe
+
+.PP
+\fB--yes\fP: approve the displayed terms without a prompt
+
+.SS list
+list saved purchases
+
+.PP
+\fB--active_only\fP: exclude Canceled and Expired; include Ready and NeedAdminAttention
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--state\fP="": filter by one client state (for example Ready)
+
+.SS get
+show a reservation by outpoint
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--reservation_id\fP="": identify a purchase before funding
+
 .SH out
 perform an off-chain to on-chain swap (looping out)
 

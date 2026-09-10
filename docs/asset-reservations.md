@@ -5,7 +5,41 @@ based on the shared asset kit at `81e876cd`. Reservation purchase comes first;
 asset Loop Out will build on it. Purchases require `--experimental` and
 `--tapd.activate` in standalone loopd. They are not production-ready yet.
 
-The [reservation RPC contract](asset-reservation-rpc.md) defines quote,
+## Commands
+
+`loop asset reservation buy --asset_id <hex> --amt <units>` requests a quote,
+probes only the estimated main payment, displays its routability result and
+the terms, and asks before paying. Normal approval requires a successful main
+probe, though success does not reserve liquidity for the later swap.
+The prepay routing fee estimate scales the main fee by the BTC payment amounts,
+rounds up to a millisatoshi, and ignores fixed hop fees. Failed probes have no
+fee estimate. The actual prepay routing limit remains the conventional Loop Out
+limit: 10 sats plus 2%. `--max_routing_fee` sets an explicit limit in sats;
+`--yes` skips the approval prompt, but still requires a successful probe.
+
+`--skip_probe` skips probing for a new purchase and permits approval without a
+successful main probe. It still displays the terms and asks before paying,
+unless `--yes` is also set. Fee estimates are unavailable when no probe ran.
+A failed, timed-out, or unsupported probe leaves the purchase unpaid and retries
+in the background, including after restart. The command waits for a successful
+route check before asking for approval. To buy without waiting for success,
+repeat `buy` with the same `--reservation_id`, asset, and amount, and add
+`--skip_probe`. Approval preserves the same quote.
+
+`list` shows saved purchases. `get <txid:vout>` inspects a funded reservation.
+Before funding, use `get --reservation_id <hex>` with the ID printed before
+the initial request. Repeating `buy` with that ID and the same asset and amount
+resumes the purchase without another invoice. Probing and cancellation are
+internal; the public commands are `buy`, `list`, and `get`.
+
+Closing the CLI does not cancel daemon work. A declined prompt leaves the
+purchase unpaid and saved until its quote expires. After approval, closing
+the CLI does not stop payment or delivery. The later swap and its
+execution-time requoting are not part of these purchase commands.
+
+## Implementation
+
+The [server reservation RPC contract](asset-reservation-rpc.md) defines quote,
 status, list, proof retrieval, and unpaid cancellation. Its protobuf service
 is separate from Bitcoin reservations. The local purchase API is registered
 behind loopd's existing macaroon permissions.
@@ -80,9 +114,15 @@ The local tapd credentials and universe policy must allow issuance insertion.
 funding depth, not a live count. The server defaults to three. Recovery preserves
 the agreed depth; the CSV lifetime still starts at the first confirmation.
 
-The initial server policy quotes a prepay of 0.1% of the asset amount,
-rounded up to an indivisible unit. The server receives assets through an
-independent edge; the client can pay BTC.
+The server starts with a base fee of 0.1% of the asset amount (rounded up to an
+indivisible unit), configurable on the server. It adds conventional fast Loop
+Out's funding estimate at the reservation's configured funding fee rate,
+converted to asset units at the prepay RFQ rate and rounded up. The default
+5 sat/vbyte prices the 153-vbyte estimate at 765 sats. The total must also meet
+the receiving RFQ's transport minimum, with conversion rounding checked against
+the outgoing HTLC's BTC anchor. The entire fee is prepaid. The CLI displays it
+in asset units and its effective percentage before approval. The server receives
+assets through an independent edge; the client can pay BTC.
 It is a hold invoice: accepted payment permits funding preparation, then the
 server checks funds and expiry, settles, and publishes the saved transaction.
 Probing does not pay that invoice or lock funding inputs.
@@ -96,6 +136,12 @@ to the actual transaction fee. The server pays miners from its BTC wallet;
 receiving asset fees does not automatically convert them into BTC. This estimate
 does not add timeout sweep costs.
 The later BTC conversion quote can change and requires client approval.
+The principal must independently clear the transport minimum, both in the
+purchase-time estimate and at execution's fresh rate. Raising the service fee
+does not make a below-minimum principal transportable. Near that minimum the
+fee can approach or exceed the principal; it is still fully charged and is
+not a refundable advance against principal. No maximum fee percentage is
+imposed by this policy.
 
 As in conventional Loop Out, the server offers a price and the client checks
 it against its own limits. Save and display the quoted terms before asking
