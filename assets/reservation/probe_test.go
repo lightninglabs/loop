@@ -3,6 +3,7 @@ package reservation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -322,6 +323,12 @@ func TestProbeRetriesTemporaryFailures(t *testing.T) {
 		name string
 		arm  func(*flakyProbePayments, *flakyProbeServer)
 	}{
+		{"paying node not synchronized", func(p *flakyProbePayments,
+			_ *flakyProbeServer) {
+
+			p.prepareErr = fmt.Errorf("not synchronized: %w",
+				ErrChainNotReady)
+		}},
 		{"dispatch never reached the node", func(p *flakyProbePayments,
 			_ *flakyProbeServer) {
 

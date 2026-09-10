@@ -95,6 +95,12 @@ func (f *FSM) RequestQuoteAction(ctx context.Context,
 		return f.rejectQuote(err)
 	}
 	if err := f.cfg.Payments.ValidateQuote(ctx, response.Quote); err != nil {
+		// The server repeats its saved quote, so an invoice dated just
+		// ahead of our clock validates on a later attempt. The quote
+		// deadline above still bounds the wait.
+		if errors.Is(err, errInvoiceNotYetValid) {
+			return f.stayInState(err)
+		}
 		return f.rejectQuote(err)
 	}
 	if response.Quote.Group != nil {
@@ -160,7 +166,8 @@ func (f *FSM) ProbeRoutesAction(ctx context.Context,
 				return f.stayInState(err)
 			}
 			if errors.Is(err, context.DeadlineExceeded) ||
-				errors.Is(err, context.Canceled) {
+				errors.Is(err, context.Canceled) ||
+				errors.Is(err, ErrChainNotReady) {
 
 				return f.stayInState(err)
 			}

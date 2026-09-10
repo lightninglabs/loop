@@ -31,7 +31,9 @@ recovery, and cannot resume when inventory returns. The CLI reports
 `cannot initiate swap: rpc error: code = OutOfRange desc = amount above current maximum`.
 A new attempt requires a fresh purchase ID. Transient quote RPC errors and missing quotes retry for at most one minute
 from persisted purchase creation. Invalid quotes end immediately in
-`QuoteFailed`, before any probe or payment. That state is terminal and excluded
+`QuoteFailed`, before any probe or payment. An invoice dated ahead of the
+local clock is not invalid: the server repeats its saved quote, so the same
+deadline retries it until the clock has passed the invoice timestamp. That state is terminal and excluded
 from recovery; server invoices expire independently. A restart cannot reset
 the quote deadline.
 The same terminal state and CLI error represent a later funding refusal: the

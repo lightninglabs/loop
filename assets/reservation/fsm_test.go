@@ -724,12 +724,18 @@ func TestReadyVerifiesOncePerRestart(t *testing.T) {
 }
 
 func TestQuoteFailuresStopBeforePayment(t *testing.T) {
-	for _, failure := range []string{invalidCase, "pending", "unavailable"} {
+	for _, failure := range []string{
+		invalidCase, "pending", "unavailable", "clock behind",
+	} {
 		t.Run(failure, func(t *testing.T) {
 			h := newClientHarness(t)
 			switch failure {
 			case invalidCase:
 				h.quoteValidationErr = errors.New("invalid invoice")
+			case "clock behind":
+				// An invoice dated ahead of the local clock
+				// retries within the quote deadline.
+				h.quoteValidationErr = errInvoiceNotYetValid
 			case "pending":
 				h.quotePending = true
 			case "unavailable":
@@ -757,4 +763,22 @@ func TestQuoteFailuresStopBeforePayment(t *testing.T) {
 			require.Empty(t, active)
 		})
 	}
+}
+
+// TestQuoteDatedAheadOfClockIsRetried checks that a local clock slightly
+// behind the server's does not end the purchase. The server repeats its saved
+// quote, which validates once the clock has passed the invoice timestamp.
+func TestQuoteDatedAheadOfClockIsRetried(t *testing.T) {
+	h := newClientHarness(t)
+	h.quoteValidationErr = errInvoiceNotYetValid
+	h.event(OnRecover, nil)
+	h.state(RequestQuote)
+	require.ErrorIs(t, h.machine.LastActionError, errInvoiceNotYetValid)
+	require.Nil(t, h.record().Quote)
+
+	h.quoteValidationErr = nil
+	h.event(OnRecover, nil)
+	h.state(AwaitApproval)
+	require.NotNil(t, h.record().Quote)
+	require.Zero(t, h.cancels)
 }
