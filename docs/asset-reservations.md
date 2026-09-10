@@ -5,6 +5,14 @@ based on the shared asset kit at `81e876cd`. Reservation purchase comes first;
 asset Loop Out will build on it. Purchases require `--experimental` and
 `--tapd.activate` in standalone loopd. They are not production-ready yet.
 
+The real-node reservation case passed on 2026-09-10 with tapd v0.8.3 and
+LND v0.21.3-beta: a BTC-only payer, both probes, purchase through Ready,
+client/server restarts, rejected proofs, insufficient-funds cancellation,
+and the full 1,440-block CSV sweep. This run uses a SQLite client. Node-process
+fault injection, client PostgreSQL/Neutrino variants, and the broader failure
+matrix remain; swap execution is not part of this case. That run predates the
+single-probe flow described below.
+
 ## Commands
 
 `loop asset reservation buy --asset_id <hex> --amt <units>` requests a quote,

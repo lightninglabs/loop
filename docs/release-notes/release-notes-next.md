@@ -60,11 +60,21 @@
 * Rename the reservation manager limit to `MaxActiveReservations`.
   Clarify how new-purchase requests create or reuse a reservation.
 
+* Separate switch and select cases in reservation code and tests with blank
+  lines for readability.
+
 * Document reservation store guarantees for atomic writes, repeated requests,
   and recovery reads.
 
 * Use reservation names consistently in manager recovery and its tests.
   Document request handling, worker recovery, and shutdown in the manager.
+
+* Document how reservation state machines start new purchases and restore
+  saved progress. Flatten quote requests while retaining saved-quote recovery
+  and expiry checks. Clarify when actions remain in their current state and
+  how probe RPC concurrency is limited. Explain the funding-height checks
+  used during delivery verification and monitoring. Format reservation struct
+  literals with one field per line.
 
 * Use `SkipProbe` consistently in reservation requests and storage, with one
   saved preference. Payment still requires explicit quote approval.
