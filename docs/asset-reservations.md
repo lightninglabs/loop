@@ -4,6 +4,10 @@ Status: a fresh, local implementation on `hai/asset-reservations-stepwise`,
 based on the shared asset kit at `81e876cd`. Reservation purchase comes first;
 asset Loop Out will build on it. No runtime feature is enabled yet.
 
+The [reservation RPC contract](asset-reservation-rpc.md) defines quote,
+status, list, proof retrieval, and unpaid cancellation. Its protobuf service
+is separate from Bitcoin reservations and is not registered at runtime yet.
+
 One reservation holds one asset and amount in one Bitcoin output. It expires
 1,440 blocks after funding confirmation. The client checks three confirmations,
 the full asset proof, exact output and scripts, local keys, and unspent status

@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+// AssetReservationService buys asset reservations for later asset Loop Out swaps.
+// Every call requires authentication. Paying the prepay starts funding; no
+// client message can establish payment, publication, or proof validity.
+service AssetReservationService {
+    // QuoteAssetReservation creates one purchase and its two invoices. Retry
+    // with the same ID, asset, amount, and key after an uncertain response.
+    // A response may still be preparing its quote; poll GetAssetReservation.
+    rpc QuoteAssetReservation (QuoteAssetReservationRequest)
+        returns (AssetReservation);
+
+    // GetAssetReservation returns the authenticated owner's purchase by ID
+    // or funding outpoint, including its quote and current server progress.
+    // Poll this method after an uncertain reply or while awaiting delivery.
+    rpc GetAssetReservation (AssetReservationSelector)
+        returns (AssetReservation);
+
+    // ListAssetReservations returns a page of the authenticated owner's
+    // purchases in reservation ID order. Use next_after_id to request the
+    // next page; purchases may change between pages.
+    rpc ListAssetReservations (ListAssetReservationsRequest)
+        returns (ListAssetReservationsResponse);
+
+    // GetAssetReservationProof returns the full exported proof, not merely
+    // an inclusion proof. The client must verify it independently.
+    rpc GetAssetReservationProof (AssetReservationSelector)
+        returns (AssetReservationProof);
+
+    // CancelAssetReservation requests cancellation of an unpaid purchase.
+    // A lost reply is not proof of cancellation. Settlement wins the race:
+    // an already-paid purchase continues delivery instead of being refunded.
+    rpc CancelAssetReservation (AssetReservationSelector)
+        returns (AssetReservation);
+}
+
+message QuoteAssetReservationRequest {
+    // The initial protocol version is 0. Reject unsupported versions.
+    uint32 protocol_version = 1;
+    // A client-generated, nonzero 32-byte ID, stable across retries.
+    bytes reservation_id = 2;
+    bytes asset_id = 3;
+    uint64 amount = 4;
+    // A 33-byte compressed public key whose secret the client controls.
+    bytes client_key = 5;
+}
+
+message AssetReservationSelector {
+    oneof selector {
+        // Used for recovery before funding, not as the primary CLI selector.
+        bytes reservation_id = 1;
+        // Exact canonical txid:vout text; reject alternate encodings.
+        string outpoint = 2;
+    }
+}
+
+message AssetReservationTerms {
+    bytes asset_id = 1;
+    uint64 amount = 2;
+    // Exact asset prepay and later swap fee, credited once on execution.
+    uint64 fee = 3;
+    uint32 csv_delay = 4;
+    uint32 required_confirmations = 5;
+    uint32 execution_delta = 6;
+    uint32 min_usable_blocks = 7;
+}
+
+message AssetReservationQuote {
+    bytes reservation_id = 1;
+    AssetReservationTerms terms = 2;
+    bytes client_key = 3;
+    bytes server_key = 4;
+    // The server's receiving LND node, as a 33-byte compressed identity key.
+    // This node issues both invoices and receives the asset prepay. The
+    // client checks that both invoice destinations match this key.
+    bytes receiving_node_key = 5;
+    // The receiving node's conversion peer, as a 33-byte compressed identity
+    // key. This peer converts the incoming BTC payment into assets on the
+    // channel to the receiving node. The client checks that both invoice
+    // route hints name this peer and that the prepay RFQ names the same peer.
+    bytes edge_key = 6;
+    string prepay_invoice = 7;
+    // Only for LND's invoice-based estimator. Never send a real payment to it.
+    string probe_invoice = 8;
+    // Bitcoin equivalents exclude routing fees. The main price is an
+    // estimate, not a conversion rate reserved through confirmation.
+    uint64 prepay_amount_msat = 9;
+    uint64 estimated_main_amount_msat = 10;
+    // Unix seconds: no new prepay may start at or after this time.
+    // Must not exceed the invoice or receiving RFQ's validity.
+    int64 expires_at = 11;
+}
+
+// AssetReservationStatus summarizes server progress for RPC callers. Several
+// internal server states may map to one status. The client tracks its own
+// progress separately and must verify delivery before entering its Ready state.
+enum AssetReservationStatus {
+    ASSET_RESERVATION_UNKNOWN = 0;
+    ASSET_RESERVATION_QUOTING = 1;
+    ASSET_RESERVATION_AWAITING_PAYMENT = 2;
+    ASSET_RESERVATION_PREPARING_FUNDING = 3;
+    ASSET_RESERVATION_FUNDING = 4;
+    ASSET_RESERVATION_READY = 5;
+    ASSET_RESERVATION_CANCELING = 6;
+    ASSET_RESERVATION_CANCELED = 7;
+    ASSET_RESERVATION_EXPIRED = 8;
+    ASSET_RESERVATION_NEED_ADMIN = 9;
+}
+
+message AssetReservation {
+    bytes reservation_id = 1;
+    AssetReservationQuote quote = 2;
+    AssetReservationStatus state = 3;
+    // Empty until funding is known; immutable once assigned.
+    string outpoint = 4;
+    uint32 confirmation_height = 5;
+    uint32 timeout_height = 6;
+    uint32 execution_cutoff = 7;
+    // Zero until the server verified the exact settled asset receipt.
+    uint64 prepay_credit = 8;
+    bool proof_available = 9;
+}
+
+message ListAssetReservationsRequest {
+    // Defaults to 100; must not exceed 1000. Lists only this owner's records.
+    uint32 limit = 1;
+    // Exclusive 32-byte ID cursor. Results use bytewise ID order.
+    bytes after_id = 2;
+}
+
+message ListAssetReservationsResponse {
+    repeated AssetReservation reservations = 1;
+    // Empty on the last page. Listing is not a snapshot across pages.
+    bytes next_after_id = 2;
+}
+
+message AssetReservationProof {
+    bytes reservation_id = 1;
+    string outpoint = 2;
+    bytes proof = 3;
+}
