@@ -75,7 +75,7 @@
 * Add experimental asset reservation proof verification and LND confirmation,
   spend, and expiry tracking. Client readiness follows Instant Out's
   notification-based assumptions; no Bitcoin RPC connection is required.
-  Reservation purchases remain disabled at runtime.
+  Reservation purchases remain experimental.
 
 * Name client purchase states `WaitForDelivery` and `VerifyReservation`.
 
@@ -89,10 +89,9 @@
   Validate quoted amounts without imposing a client-side pricing policy.
   Name the saved funding depth `required_confirmations`; the server defaults
   to three.
-  This does not enable reservation purchases or asset Loop Out.
+  Asset Loop Out execution is not enabled.
 
-* Define the experimental asset reservation RPC contract. Service registration
-  and real-node adapters remain disabled.
+* Define and wire the experimental asset reservation RPC contract.
   Describe public reservation status and owned get/list queries.
   Clarify the receiving node and conversion peer in reservation quotes.
 

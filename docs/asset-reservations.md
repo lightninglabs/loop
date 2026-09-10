@@ -2,18 +2,20 @@
 
 Status: a fresh, local implementation on `hai/asset-reservations-stepwise`,
 based on the shared asset kit at `81e876cd`. Reservation purchase comes first;
-asset Loop Out will build on it. No runtime feature is enabled yet.
+asset Loop Out will build on it. Purchases require `--experimental` and
+`--tapd.activate` in standalone loopd. They are not production-ready yet.
 
 The [reservation RPC contract](asset-reservation-rpc.md) defines quote,
 status, list, proof retrieval, and unpaid cancellation. Its protobuf service
-is separate from Bitcoin reservations and is not registered at runtime yet.
+is separate from Bitcoin reservations. The local purchase API is registered
+behind loopd's existing macaroon permissions.
 
 Implemented so far: shared terms, checked amount validation, SQL tables, and a
 typed SQLite/PostgreSQL store. Creation saves terms and the first state in one
 transaction. Repeating the same purchase ID returns saved progress; changing
 its terms or keys fails. Updates preserve the agreed fee and append state
-history. The store now retains payment and delivery facts as well. Runtime
-wiring is still separate work.
+history. The store retains payment and delivery facts as well. Startup restores
+unfinished purchases before local RPC admission.
 
 Client purchase columns retain the quote, probes, payment choices, payment,
 and proof. Before a quote, the fee and lifetime remain unset. The typed store
@@ -32,7 +34,8 @@ CSV expiry. The asset adapter now verifies full proofs through tapd and the
 shared deposit kit, and tracks confirmations and spends through LND. The
 payment adapter validates the receiving RFQ and invoices, probes through
 LND's estimator, and sends the approved BTC prepay. It saves the paying node
-and exact request before dispatch. Runtime wiring remains separate work.
+and exact request before dispatch. Runtime wiring uses the existing LND
+connection and its service macaroons; it opens no Bitcoin backend connection.
 
 Prepays use one payment part to avoid conversion-rounding losses. The client
 checks available BTC in one channel, including its reserve and the approved

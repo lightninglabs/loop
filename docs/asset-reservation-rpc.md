@@ -5,7 +5,9 @@ quote) from `Approve` (permit payment under saved limits). `Get`, `List`,
 `RetryProbes`, and `Cancel` support inspection and recovery without buying
 again. Funded records accept canonical outpoints; pre-funding retries use a
 stable ID. Local calls require the existing swap read or execute macaroon
-permissions. Registration is part of the client runtime wiring.
+permissions. Standalone loopd registers the service; it becomes usable with
+experimental features and tapd enabled. Embedders must also register this
+separate service to expose it.
 
 The wire contract lives in `swapserverrpc/asset_reservation.proto`. It is
 separate from Bitcoin Instant Out reservations. These definitions do not
