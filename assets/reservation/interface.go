@@ -22,14 +22,16 @@ type Store interface {
 	// On success, the supplied reservation includes its stored timestamps.
 	CreateReservation(context.Context, *Reservation) error
 
-	// UpdateReservation saves progress and a state history entry atomically.
-	// It preserves agreed terms and client keys, returning ErrRequestConflict
-	// if they change, or ErrNotFound if the ID is absent. On success, the
-	// supplied reservation includes its stored timestamps.
+	// UpdateReservation saves changed purchase facts and a state history entry
+	// atomically. It accepts the first quote, then preserves agreed terms and
+	// established payment and delivery facts. It returns ErrNotFound for an
+	// unknown ID or ErrRequestConflict for changes to protected values.
+	// Unchanged progress adds no history entry. On success, the supplied
+	// reservation reflects the saved values, including its timestamps.
 	UpdateReservation(context.Context, *Reservation) error
 
-	// GetReservation loads a validated snapshot of the reservation's terms
-	// and latest state in one transaction. It returns
+	// GetReservation loads a validated snapshot of the reservation's terms,
+	// purchase facts, and latest state in one transaction. It returns
 	// ErrNotFound if the ID is absent. Changing the returned value does not
 	// change storage until UpdateReservation succeeds.
 	GetReservation(context.Context, ID) (*Reservation, error)
