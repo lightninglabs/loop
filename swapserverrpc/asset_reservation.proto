@@ -93,6 +93,9 @@ message AssetReservationQuote {
     // Unix seconds: no new prepay may start at or after this time.
     // Must not exceed the invoice or receiving RFQ's validity.
     int64 expires_at = 11;
+    // Native rfqrpc.PeerAcceptedBuyQuote encoding. Binds the prepay's BTC
+    // amount and route hint to the exact asset fee. Contains no secrets.
+    bytes prepay_rfq = 12;
 }
 
 // AssetReservationStatus summarizes server progress for RPC callers. Several

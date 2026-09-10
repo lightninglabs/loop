@@ -374,7 +374,10 @@ type AssetReservationQuote struct {
 	EstimatedMainAmountMsat uint64 `protobuf:"varint,10,opt,name=estimated_main_amount_msat,json=estimatedMainAmountMsat,proto3" json:"estimated_main_amount_msat,omitempty"`
 	// Unix seconds: no new prepay may start at or after this time.
 	// Must not exceed the invoice or receiving RFQ's validity.
-	ExpiresAt     int64 `protobuf:"varint,11,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ExpiresAt int64 `protobuf:"varint,11,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// Native rfqrpc.PeerAcceptedBuyQuote encoding. Binds the prepay's BTC
+	// amount and route hint to the exact asset fee. Contains no secrets.
+	PrepayRfq     []byte `protobuf:"bytes,12,opt,name=prepay_rfq,json=prepayRfq,proto3" json:"prepay_rfq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -484,6 +487,13 @@ func (x *AssetReservationQuote) GetExpiresAt() int64 {
 		return x.ExpiresAt
 	}
 	return 0
+}
+
+func (x *AssetReservationQuote) GetPrepayRfq() []byte {
+	if x != nil {
+		return x.PrepayRfq
+	}
+	return nil
 }
 
 type AssetReservation struct {
@@ -787,7 +797,7 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\tcsv_delay\x18\x04 \x01(\rR\bcsvDelay\x125\n" +
 	"\x16required_confirmations\x18\x05 \x01(\rR\x15requiredConfirmations\x12'\n" +
 	"\x0fexecution_delta\x18\x06 \x01(\rR\x0eexecutionDelta\x12*\n" +
-	"\x11min_usable_blocks\x18\a \x01(\rR\x0fminUsableBlocks\"\xd1\x03\n" +
+	"\x11min_usable_blocks\x18\a \x01(\rR\x0fminUsableBlocks\"\xf0\x03\n" +
 	"\x15AssetReservationQuote\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x124\n" +
 	"\x05terms\x18\x02 \x01(\v2\x1e.looprpc.AssetReservationTermsR\x05terms\x12\x1d\n" +
@@ -803,7 +813,9 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\x1aestimated_main_amount_msat\x18\n" +
 	" \x01(\x04R\x17estimatedMainAmountMsat\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\v \x01(\x03R\texpiresAt\"\x93\x03\n" +
+	"expires_at\x18\v \x01(\x03R\texpiresAt\x12\x1d\n" +
+	"\n" +
+	"prepay_rfq\x18\f \x01(\fR\tprepayRfq\"\x93\x03\n" +
 	"\x10AssetReservation\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x124\n" +
 	"\x05quote\x18\x02 \x01(\v2\x1e.looprpc.AssetReservationQuoteR\x05quote\x125\n" +
