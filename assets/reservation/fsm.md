@@ -63,7 +63,11 @@ Quote validation and payment limits remain mandatory. Each invoice must match
 its own RFQ; the prepay and probe may use different rates. Approval displays
 the exact BTC prepay and implied prepay/probe prices.
 
-Server status is only a delivery hint. Verify the full exported proof with
+Server status is only a delivery hint. Before asking tapd, compare the
+proof's anchor block with the local node's block at that height. tapd reports
+an unverifiable proof and an invalid one alike, so a node that has not reached
+the anchor block yet retries instead of parking a paid purchase; a different
+block at that height is definitive. Verify the full exported proof with
 tapd and the shared deposit kit, then check exact output, local keys, amount,
 three required confirmations, known spends, and the original CSV clock.
 Spend and expiry tracking follow Instant Out's LND notifications. Recovery
