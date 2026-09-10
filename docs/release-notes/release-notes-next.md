@@ -62,6 +62,9 @@
 
 #### Maintenance
 
+* Document how reservation state entry saves payment choices and handles
+  failed validation or writes before an action runs.
+
 * Document reservation store guarantees for atomic writes, repeated requests,
   and recovery reads.
 
@@ -73,6 +76,8 @@
 
 * Accept quoted asset and BTC prepay amounts through the exact quote hash;
   remove duplicate amount limits from reservation approval requests.
+
+* Name client purchase states `WaitForDelivery` and `VerifyReservation`.
 
 * Keep reservation lifetime defaults in the server; the client validates
   quoted terms without imposing lifetime minimums.
