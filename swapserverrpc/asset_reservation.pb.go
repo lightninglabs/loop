@@ -257,6 +257,60 @@ func (*AssetReservationSelector_ReservationId) isAssetReservationSelector_Select
 
 func (*AssetReservationSelector_Outpoint) isAssetReservationSelector_Selector() {}
 
+type CancelAssetReservationRequest struct {
+	state       protoimpl.MessageState    `protogen:"open.v1"`
+	Reservation *AssetReservationSelector `protobuf:"bytes,1,opt,name=reservation,proto3" json:"reservation,omitempty"`
+	// Cancel only the probe, preserving the purchase and its prepay.
+	// Probe cancellation is permanent; probing again requires a new quote.
+	ProbeOnly     bool `protobuf:"varint,2,opt,name=probe_only,json=probeOnly,proto3" json:"probe_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelAssetReservationRequest) Reset() {
+	*x = CancelAssetReservationRequest{}
+	mi := &file_asset_reservation_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelAssetReservationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelAssetReservationRequest) ProtoMessage() {}
+
+func (x *CancelAssetReservationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_asset_reservation_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelAssetReservationRequest.ProtoReflect.Descriptor instead.
+func (*CancelAssetReservationRequest) Descriptor() ([]byte, []int) {
+	return file_asset_reservation_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CancelAssetReservationRequest) GetReservation() *AssetReservationSelector {
+	if x != nil {
+		return x.Reservation
+	}
+	return nil
+}
+
+func (x *CancelAssetReservationRequest) GetProbeOnly() bool {
+	if x != nil {
+		return x.ProbeOnly
+	}
+	return false
+}
+
 type AssetReservationTerms struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	AssetId []byte                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
@@ -273,7 +327,7 @@ type AssetReservationTerms struct {
 
 func (x *AssetReservationTerms) Reset() {
 	*x = AssetReservationTerms{}
-	mi := &file_asset_reservation_proto_msgTypes[2]
+	mi := &file_asset_reservation_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -285,7 +339,7 @@ func (x *AssetReservationTerms) String() string {
 func (*AssetReservationTerms) ProtoMessage() {}
 
 func (x *AssetReservationTerms) ProtoReflect() protoreflect.Message {
-	mi := &file_asset_reservation_proto_msgTypes[2]
+	mi := &file_asset_reservation_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -298,7 +352,7 @@ func (x *AssetReservationTerms) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetReservationTerms.ProtoReflect.Descriptor instead.
 func (*AssetReservationTerms) Descriptor() ([]byte, []int) {
-	return file_asset_reservation_proto_rawDescGZIP(), []int{2}
+	return file_asset_reservation_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AssetReservationTerms) GetAssetId() []byte {
@@ -366,7 +420,8 @@ type AssetReservationQuote struct {
 	// route hints name this peer and that the prepay RFQ names the same peer.
 	EdgeKey       []byte `protobuf:"bytes,6,opt,name=edge_key,json=edgeKey,proto3" json:"edge_key,omitempty"`
 	PrepayInvoice string `protobuf:"bytes,7,opt,name=prepay_invoice,json=prepayInvoice,proto3" json:"prepay_invoice,omitempty"`
-	// Only for LND's invoice-based estimator. Never send a real payment to it.
+	// Registered hold invoice for one full-amount asset probe. Its hash must
+	// equal ProbeHash(reservation_id). The receiver cancels; never settles.
 	ProbeInvoice string `protobuf:"bytes,8,opt,name=probe_invoice,json=probeInvoice,proto3" json:"probe_invoice,omitempty"`
 	// Bitcoin equivalents exclude routing fees. The main price is an
 	// estimate, not a conversion rate reserved through confirmation.
@@ -374,14 +429,19 @@ type AssetReservationQuote struct {
 	EstimatedMainAmountMsat uint64 `protobuf:"varint,10,opt,name=estimated_main_amount_msat,json=estimatedMainAmountMsat,proto3" json:"estimated_main_amount_msat,omitempty"`
 	// Unix seconds: no new prepay may start at or after this time.
 	// Must not exceed the invoice or receiving RFQ's validity.
-	ExpiresAt     int64 `protobuf:"varint,11,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ExpiresAt int64 `protobuf:"varint,11,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// Native rfqrpc.PeerAcceptedBuyQuote encoding. Binds the prepay's BTC
+	// amount and route hint to the exact asset fee. Contains no secrets.
+	PrepayRfq []byte `protobuf:"bytes,12,opt,name=prepay_rfq,json=prepayRfq,proto3" json:"prepay_rfq,omitempty"`
+	// Native receiving RFQ binding the probe to terms.amount asset units.
+	ProbeRfq      []byte `protobuf:"bytes,13,opt,name=probe_rfq,json=probeRfq,proto3" json:"probe_rfq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AssetReservationQuote) Reset() {
 	*x = AssetReservationQuote{}
-	mi := &file_asset_reservation_proto_msgTypes[3]
+	mi := &file_asset_reservation_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -393,7 +453,7 @@ func (x *AssetReservationQuote) String() string {
 func (*AssetReservationQuote) ProtoMessage() {}
 
 func (x *AssetReservationQuote) ProtoReflect() protoreflect.Message {
-	mi := &file_asset_reservation_proto_msgTypes[3]
+	mi := &file_asset_reservation_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -406,7 +466,7 @@ func (x *AssetReservationQuote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetReservationQuote.ProtoReflect.Descriptor instead.
 func (*AssetReservationQuote) Descriptor() ([]byte, []int) {
-	return file_asset_reservation_proto_rawDescGZIP(), []int{3}
+	return file_asset_reservation_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *AssetReservationQuote) GetReservationId() []byte {
@@ -486,6 +546,20 @@ func (x *AssetReservationQuote) GetExpiresAt() int64 {
 	return 0
 }
 
+func (x *AssetReservationQuote) GetPrepayRfq() []byte {
+	if x != nil {
+		return x.PrepayRfq
+	}
+	return nil
+}
+
+func (x *AssetReservationQuote) GetProbeRfq() []byte {
+	if x != nil {
+		return x.ProbeRfq
+	}
+	return nil
+}
+
 type AssetReservation struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ReservationId []byte                 `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
@@ -499,13 +573,20 @@ type AssetReservation struct {
 	// Zero until the server verified the exact settled asset receipt.
 	PrepayCredit   uint64 `protobuf:"varint,8,opt,name=prepay_credit,json=prepayCredit,proto3" json:"prepay_credit,omitempty"`
 	ProofAvailable bool   `protobuf:"varint,9,opt,name=proof_available,json=proofAvailable,proto3" json:"proof_available,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Verified receipt of the full asset probe, not a settled payment.
+	ProbeSucceeded bool `protobuf:"varint,10,opt,name=probe_succeeded,json=probeSucceeded,proto3" json:"probe_succeeded,omitempty"`
+	// The sole probe invoice is permanently canceled.
+	ProbeCanceled bool `protobuf:"varint,11,opt,name=probe_canceled,json=probeCanceled,proto3" json:"probe_canceled,omitempty"`
+	// Public funding refusal. Set only after cancellation is authoritative;
+	// clients must also resolve their local payment before reporting failure.
+	FundingUnavailable bool `protobuf:"varint,12,opt,name=funding_unavailable,json=fundingUnavailable,proto3" json:"funding_unavailable,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AssetReservation) Reset() {
 	*x = AssetReservation{}
-	mi := &file_asset_reservation_proto_msgTypes[4]
+	mi := &file_asset_reservation_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -517,7 +598,7 @@ func (x *AssetReservation) String() string {
 func (*AssetReservation) ProtoMessage() {}
 
 func (x *AssetReservation) ProtoReflect() protoreflect.Message {
-	mi := &file_asset_reservation_proto_msgTypes[4]
+	mi := &file_asset_reservation_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -530,7 +611,7 @@ func (x *AssetReservation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetReservation.ProtoReflect.Descriptor instead.
 func (*AssetReservation) Descriptor() ([]byte, []int) {
-	return file_asset_reservation_proto_rawDescGZIP(), []int{4}
+	return file_asset_reservation_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *AssetReservation) GetReservationId() []byte {
@@ -596,6 +677,27 @@ func (x *AssetReservation) GetProofAvailable() bool {
 	return false
 }
 
+func (x *AssetReservation) GetProbeSucceeded() bool {
+	if x != nil {
+		return x.ProbeSucceeded
+	}
+	return false
+}
+
+func (x *AssetReservation) GetProbeCanceled() bool {
+	if x != nil {
+		return x.ProbeCanceled
+	}
+	return false
+}
+
+func (x *AssetReservation) GetFundingUnavailable() bool {
+	if x != nil {
+		return x.FundingUnavailable
+	}
+	return false
+}
+
 type ListAssetReservationsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Defaults to 100; must not exceed 1000. Lists only this owner's records.
@@ -608,7 +710,7 @@ type ListAssetReservationsRequest struct {
 
 func (x *ListAssetReservationsRequest) Reset() {
 	*x = ListAssetReservationsRequest{}
-	mi := &file_asset_reservation_proto_msgTypes[5]
+	mi := &file_asset_reservation_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -620,7 +722,7 @@ func (x *ListAssetReservationsRequest) String() string {
 func (*ListAssetReservationsRequest) ProtoMessage() {}
 
 func (x *ListAssetReservationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_asset_reservation_proto_msgTypes[5]
+	mi := &file_asset_reservation_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -633,7 +735,7 @@ func (x *ListAssetReservationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAssetReservationsRequest.ProtoReflect.Descriptor instead.
 func (*ListAssetReservationsRequest) Descriptor() ([]byte, []int) {
-	return file_asset_reservation_proto_rawDescGZIP(), []int{5}
+	return file_asset_reservation_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListAssetReservationsRequest) GetLimit() uint32 {
@@ -661,7 +763,7 @@ type ListAssetReservationsResponse struct {
 
 func (x *ListAssetReservationsResponse) Reset() {
 	*x = ListAssetReservationsResponse{}
-	mi := &file_asset_reservation_proto_msgTypes[6]
+	mi := &file_asset_reservation_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -673,7 +775,7 @@ func (x *ListAssetReservationsResponse) String() string {
 func (*ListAssetReservationsResponse) ProtoMessage() {}
 
 func (x *ListAssetReservationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_asset_reservation_proto_msgTypes[6]
+	mi := &file_asset_reservation_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -686,7 +788,7 @@ func (x *ListAssetReservationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAssetReservationsResponse.ProtoReflect.Descriptor instead.
 func (*ListAssetReservationsResponse) Descriptor() ([]byte, []int) {
-	return file_asset_reservation_proto_rawDescGZIP(), []int{6}
+	return file_asset_reservation_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListAssetReservationsResponse) GetReservations() []*AssetReservation {
@@ -714,7 +816,7 @@ type AssetReservationProof struct {
 
 func (x *AssetReservationProof) Reset() {
 	*x = AssetReservationProof{}
-	mi := &file_asset_reservation_proto_msgTypes[7]
+	mi := &file_asset_reservation_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -726,7 +828,7 @@ func (x *AssetReservationProof) String() string {
 func (*AssetReservationProof) ProtoMessage() {}
 
 func (x *AssetReservationProof) ProtoReflect() protoreflect.Message {
-	mi := &file_asset_reservation_proto_msgTypes[7]
+	mi := &file_asset_reservation_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -739,7 +841,7 @@ func (x *AssetReservationProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetReservationProof.ProtoReflect.Descriptor instead.
 func (*AssetReservationProof) Descriptor() ([]byte, []int) {
-	return file_asset_reservation_proto_rawDescGZIP(), []int{7}
+	return file_asset_reservation_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AssetReservationProof) GetReservationId() []byte {
@@ -779,7 +881,11 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\x0ereservation_id\x18\x01 \x01(\fH\x00R\rreservationId\x12\x1c\n" +
 	"\boutpoint\x18\x02 \x01(\tH\x00R\boutpointB\n" +
 	"\n" +
-	"\bselector\"\x85\x02\n" +
+	"\bselector\"\x83\x01\n" +
+	"\x1dCancelAssetReservationRequest\x12C\n" +
+	"\vreservation\x18\x01 \x01(\v2!.looprpc.AssetReservationSelectorR\vreservation\x12\x1d\n" +
+	"\n" +
+	"probe_only\x18\x02 \x01(\bR\tprobeOnly\"\x85\x02\n" +
 	"\x15AssetReservationTerms\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\fR\aassetId\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\x12\x10\n" +
@@ -787,7 +893,7 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\tcsv_delay\x18\x04 \x01(\rR\bcsvDelay\x125\n" +
 	"\x16required_confirmations\x18\x05 \x01(\rR\x15requiredConfirmations\x12'\n" +
 	"\x0fexecution_delta\x18\x06 \x01(\rR\x0eexecutionDelta\x12*\n" +
-	"\x11min_usable_blocks\x18\a \x01(\rR\x0fminUsableBlocks\"\xd1\x03\n" +
+	"\x11min_usable_blocks\x18\a \x01(\rR\x0fminUsableBlocks\"\x8d\x04\n" +
 	"\x15AssetReservationQuote\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x124\n" +
 	"\x05terms\x18\x02 \x01(\v2\x1e.looprpc.AssetReservationTermsR\x05terms\x12\x1d\n" +
@@ -803,7 +909,10 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\x1aestimated_main_amount_msat\x18\n" +
 	" \x01(\x04R\x17estimatedMainAmountMsat\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\v \x01(\x03R\texpiresAt\"\x93\x03\n" +
+	"expires_at\x18\v \x01(\x03R\texpiresAt\x12\x1d\n" +
+	"\n" +
+	"prepay_rfq\x18\f \x01(\fR\tprepayRfq\x12\x1b\n" +
+	"\tprobe_rfq\x18\r \x01(\fR\bprobeRfq\"\x94\x04\n" +
 	"\x10AssetReservation\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x124\n" +
 	"\x05quote\x18\x02 \x01(\v2\x1e.looprpc.AssetReservationQuoteR\x05quote\x125\n" +
@@ -813,7 +922,11 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\x0etimeout_height\x18\x06 \x01(\rR\rtimeoutHeight\x12)\n" +
 	"\x10execution_cutoff\x18\a \x01(\rR\x0fexecutionCutoff\x12#\n" +
 	"\rprepay_credit\x18\b \x01(\x04R\fprepayCredit\x12'\n" +
-	"\x0fproof_available\x18\t \x01(\bR\x0eproofAvailable\"O\n" +
+	"\x0fproof_available\x18\t \x01(\bR\x0eproofAvailable\x12'\n" +
+	"\x0fprobe_succeeded\x18\n" +
+	" \x01(\bR\x0eprobeSucceeded\x12%\n" +
+	"\x0eprobe_canceled\x18\v \x01(\bR\rprobeCanceled\x12/\n" +
+	"\x13funding_unavailable\x18\f \x01(\bR\x12fundingUnavailable\"O\n" +
 	"\x1cListAssetReservationsRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\rR\x05limit\x12\x19\n" +
 	"\bafter_id\x18\x02 \x01(\fR\aafterId\"\x82\x01\n" +
@@ -834,13 +947,13 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\x1bASSET_RESERVATION_CANCELING\x10\x06\x12\x1e\n" +
 	"\x1aASSET_RESERVATION_CANCELED\x10\a\x12\x1d\n" +
 	"\x19ASSET_RESERVATION_EXPIRED\x10\b\x12 \n" +
-	"\x1cASSET_RESERVATION_NEED_ADMIN\x10\t2\xe8\x03\n" +
+	"\x1cASSET_RESERVATION_NEED_ADMIN\x10\t2\xed\x03\n" +
 	"\x17AssetReservationService\x12Y\n" +
 	"\x15QuoteAssetReservation\x12%.looprpc.QuoteAssetReservationRequest\x1a\x19.looprpc.AssetReservation\x12S\n" +
 	"\x13GetAssetReservation\x12!.looprpc.AssetReservationSelector\x1a\x19.looprpc.AssetReservation\x12f\n" +
 	"\x15ListAssetReservations\x12%.looprpc.ListAssetReservationsRequest\x1a&.looprpc.ListAssetReservationsResponse\x12]\n" +
-	"\x18GetAssetReservationProof\x12!.looprpc.AssetReservationSelector\x1a\x1e.looprpc.AssetReservationProof\x12V\n" +
-	"\x16CancelAssetReservation\x12!.looprpc.AssetReservationSelector\x1a\x19.looprpc.AssetReservationB-Z+github.com/lightninglabs/loop/swapserverrpcb\x06proto3"
+	"\x18GetAssetReservationProof\x12!.looprpc.AssetReservationSelector\x1a\x1e.looprpc.AssetReservationProof\x12[\n" +
+	"\x16CancelAssetReservation\x12&.looprpc.CancelAssetReservationRequest\x1a\x19.looprpc.AssetReservationB-Z+github.com/lightninglabs/loop/swapserverrpcb\x06proto3"
 
 var (
 	file_asset_reservation_proto_rawDescOnce sync.Once
@@ -855,38 +968,40 @@ func file_asset_reservation_proto_rawDescGZIP() []byte {
 }
 
 var file_asset_reservation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_asset_reservation_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_asset_reservation_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_asset_reservation_proto_goTypes = []any{
 	(AssetReservationStatus)(0),           // 0: looprpc.AssetReservationStatus
 	(*QuoteAssetReservationRequest)(nil),  // 1: looprpc.QuoteAssetReservationRequest
 	(*AssetReservationSelector)(nil),      // 2: looprpc.AssetReservationSelector
-	(*AssetReservationTerms)(nil),         // 3: looprpc.AssetReservationTerms
-	(*AssetReservationQuote)(nil),         // 4: looprpc.AssetReservationQuote
-	(*AssetReservation)(nil),              // 5: looprpc.AssetReservation
-	(*ListAssetReservationsRequest)(nil),  // 6: looprpc.ListAssetReservationsRequest
-	(*ListAssetReservationsResponse)(nil), // 7: looprpc.ListAssetReservationsResponse
-	(*AssetReservationProof)(nil),         // 8: looprpc.AssetReservationProof
+	(*CancelAssetReservationRequest)(nil), // 3: looprpc.CancelAssetReservationRequest
+	(*AssetReservationTerms)(nil),         // 4: looprpc.AssetReservationTerms
+	(*AssetReservationQuote)(nil),         // 5: looprpc.AssetReservationQuote
+	(*AssetReservation)(nil),              // 6: looprpc.AssetReservation
+	(*ListAssetReservationsRequest)(nil),  // 7: looprpc.ListAssetReservationsRequest
+	(*ListAssetReservationsResponse)(nil), // 8: looprpc.ListAssetReservationsResponse
+	(*AssetReservationProof)(nil),         // 9: looprpc.AssetReservationProof
 }
 var file_asset_reservation_proto_depIdxs = []int32{
-	3, // 0: looprpc.AssetReservationQuote.terms:type_name -> looprpc.AssetReservationTerms
-	4, // 1: looprpc.AssetReservation.quote:type_name -> looprpc.AssetReservationQuote
-	0, // 2: looprpc.AssetReservation.state:type_name -> looprpc.AssetReservationStatus
-	5, // 3: looprpc.ListAssetReservationsResponse.reservations:type_name -> looprpc.AssetReservation
-	1, // 4: looprpc.AssetReservationService.QuoteAssetReservation:input_type -> looprpc.QuoteAssetReservationRequest
-	2, // 5: looprpc.AssetReservationService.GetAssetReservation:input_type -> looprpc.AssetReservationSelector
-	6, // 6: looprpc.AssetReservationService.ListAssetReservations:input_type -> looprpc.ListAssetReservationsRequest
-	2, // 7: looprpc.AssetReservationService.GetAssetReservationProof:input_type -> looprpc.AssetReservationSelector
-	2, // 8: looprpc.AssetReservationService.CancelAssetReservation:input_type -> looprpc.AssetReservationSelector
-	5, // 9: looprpc.AssetReservationService.QuoteAssetReservation:output_type -> looprpc.AssetReservation
-	5, // 10: looprpc.AssetReservationService.GetAssetReservation:output_type -> looprpc.AssetReservation
-	7, // 11: looprpc.AssetReservationService.ListAssetReservations:output_type -> looprpc.ListAssetReservationsResponse
-	8, // 12: looprpc.AssetReservationService.GetAssetReservationProof:output_type -> looprpc.AssetReservationProof
-	5, // 13: looprpc.AssetReservationService.CancelAssetReservation:output_type -> looprpc.AssetReservation
-	9, // [9:14] is the sub-list for method output_type
-	4, // [4:9] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	2,  // 0: looprpc.CancelAssetReservationRequest.reservation:type_name -> looprpc.AssetReservationSelector
+	4,  // 1: looprpc.AssetReservationQuote.terms:type_name -> looprpc.AssetReservationTerms
+	5,  // 2: looprpc.AssetReservation.quote:type_name -> looprpc.AssetReservationQuote
+	0,  // 3: looprpc.AssetReservation.state:type_name -> looprpc.AssetReservationStatus
+	6,  // 4: looprpc.ListAssetReservationsResponse.reservations:type_name -> looprpc.AssetReservation
+	1,  // 5: looprpc.AssetReservationService.QuoteAssetReservation:input_type -> looprpc.QuoteAssetReservationRequest
+	2,  // 6: looprpc.AssetReservationService.GetAssetReservation:input_type -> looprpc.AssetReservationSelector
+	7,  // 7: looprpc.AssetReservationService.ListAssetReservations:input_type -> looprpc.ListAssetReservationsRequest
+	2,  // 8: looprpc.AssetReservationService.GetAssetReservationProof:input_type -> looprpc.AssetReservationSelector
+	3,  // 9: looprpc.AssetReservationService.CancelAssetReservation:input_type -> looprpc.CancelAssetReservationRequest
+	6,  // 10: looprpc.AssetReservationService.QuoteAssetReservation:output_type -> looprpc.AssetReservation
+	6,  // 11: looprpc.AssetReservationService.GetAssetReservation:output_type -> looprpc.AssetReservation
+	8,  // 12: looprpc.AssetReservationService.ListAssetReservations:output_type -> looprpc.ListAssetReservationsResponse
+	9,  // 13: looprpc.AssetReservationService.GetAssetReservationProof:output_type -> looprpc.AssetReservationProof
+	6,  // 14: looprpc.AssetReservationService.CancelAssetReservation:output_type -> looprpc.AssetReservation
+	10, // [10:15] is the sub-list for method output_type
+	5,  // [5:10] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_asset_reservation_proto_init() }
@@ -904,7 +1019,7 @@ func file_asset_reservation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_asset_reservation_proto_rawDesc), len(file_asset_reservation_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
