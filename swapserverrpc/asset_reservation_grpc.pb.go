@@ -36,7 +36,7 @@ type AssetReservationServiceClient interface {
 	// CancelAssetReservation requests cancellation of an unpaid purchase.
 	// A lost reply is not proof of cancellation. Settlement wins the race:
 	// an already-paid purchase continues delivery instead of being refunded.
-	CancelAssetReservation(ctx context.Context, in *AssetReservationSelector, opts ...grpc.CallOption) (*AssetReservation, error)
+	CancelAssetReservation(ctx context.Context, in *CancelAssetReservationRequest, opts ...grpc.CallOption) (*AssetReservation, error)
 }
 
 type assetReservationServiceClient struct {
@@ -83,7 +83,7 @@ func (c *assetReservationServiceClient) GetAssetReservationProof(ctx context.Con
 	return out, nil
 }
 
-func (c *assetReservationServiceClient) CancelAssetReservation(ctx context.Context, in *AssetReservationSelector, opts ...grpc.CallOption) (*AssetReservation, error) {
+func (c *assetReservationServiceClient) CancelAssetReservation(ctx context.Context, in *CancelAssetReservationRequest, opts ...grpc.CallOption) (*AssetReservation, error) {
 	out := new(AssetReservation)
 	err := c.cc.Invoke(ctx, "/looprpc.AssetReservationService/CancelAssetReservation", in, out, opts...)
 	if err != nil {
@@ -114,7 +114,7 @@ type AssetReservationServiceServer interface {
 	// CancelAssetReservation requests cancellation of an unpaid purchase.
 	// A lost reply is not proof of cancellation. Settlement wins the race:
 	// an already-paid purchase continues delivery instead of being refunded.
-	CancelAssetReservation(context.Context, *AssetReservationSelector) (*AssetReservation, error)
+	CancelAssetReservation(context.Context, *CancelAssetReservationRequest) (*AssetReservation, error)
 	mustEmbedUnimplementedAssetReservationServiceServer()
 }
 
@@ -134,7 +134,7 @@ func (UnimplementedAssetReservationServiceServer) ListAssetReservations(context.
 func (UnimplementedAssetReservationServiceServer) GetAssetReservationProof(context.Context, *AssetReservationSelector) (*AssetReservationProof, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAssetReservationProof not implemented")
 }
-func (UnimplementedAssetReservationServiceServer) CancelAssetReservation(context.Context, *AssetReservationSelector) (*AssetReservation, error) {
+func (UnimplementedAssetReservationServiceServer) CancelAssetReservation(context.Context, *CancelAssetReservationRequest) (*AssetReservation, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelAssetReservation not implemented")
 }
 func (UnimplementedAssetReservationServiceServer) mustEmbedUnimplementedAssetReservationServiceServer() {
@@ -224,7 +224,7 @@ func _AssetReservationService_GetAssetReservationProof_Handler(srv interface{}, 
 }
 
 func _AssetReservationService_CancelAssetReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AssetReservationSelector)
+	in := new(CancelAssetReservationRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func _AssetReservationService_CancelAssetReservation_Handler(srv interface{}, ct
 		FullMethod: "/looprpc.AssetReservationService/CancelAssetReservation",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AssetReservationServiceServer).CancelAssetReservation(ctx, req.(*AssetReservationSelector))
+		return srv.(AssetReservationServiceServer).CancelAssetReservation(ctx, req.(*CancelAssetReservationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

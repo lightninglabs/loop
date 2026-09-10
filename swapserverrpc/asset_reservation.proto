@@ -4,9 +4,9 @@ package looprpc;
 
 option go_package = "github.com/lightninglabs/loop/swapserverrpc";
 
-// AssetReservationService buys asset reservations for later asset Loop Out swaps.
-// Every call requires authentication. Paying the prepay starts funding; no
-// client message can establish payment, publication, or proof validity.
+// AssetReservationService buys asset reservations for later asset Loop Out
+// swaps. Every call requires authentication. Paying the prepay starts funding;
+// no client message can establish payment, publication, or proof validity.
 service AssetReservationService {
     // QuoteAssetReservation creates one purchase and its two invoices. Retry
     // with the same ID, asset, amount, and key after an uncertain response.
@@ -34,7 +34,7 @@ service AssetReservationService {
     // CancelAssetReservation requests cancellation of an unpaid purchase.
     // A lost reply is not proof of cancellation. Settlement wins the race:
     // an already-paid purchase continues delivery instead of being refunded.
-    rpc CancelAssetReservation (AssetReservationSelector)
+    rpc CancelAssetReservation (CancelAssetReservationRequest)
         returns (AssetReservation);
 }
 
@@ -56,6 +56,13 @@ message AssetReservationSelector {
         // Exact canonical txid:vout text; reject alternate encodings.
         string outpoint = 2;
     }
+}
+
+message CancelAssetReservationRequest {
+    AssetReservationSelector reservation = 1;
+    // Cancel only the probe, preserving the purchase and its prepay.
+    // Probe cancellation is permanent; probing again requires a new quote.
+    bool probe_only = 2;
 }
 
 message AssetReservationTerms {
@@ -84,7 +91,8 @@ message AssetReservationQuote {
     // route hints name this peer and that the prepay RFQ names the same peer.
     bytes edge_key = 6;
     string prepay_invoice = 7;
-    // Only for LND's invoice-based estimator. Never send a real payment to it.
+    // Registered hold invoice for one full-amount asset probe. Its hash must
+    // equal ProbeHash(reservation_id). The receiver cancels; never settles.
     string probe_invoice = 8;
     // Bitcoin equivalents exclude routing fees. The main price is an
     // estimate, not a conversion rate reserved through confirmation.
@@ -93,6 +101,11 @@ message AssetReservationQuote {
     // Unix seconds: no new prepay may start at or after this time.
     // Must not exceed the invoice or receiving RFQ's validity.
     int64 expires_at = 11;
+    // Native rfqrpc.PeerAcceptedBuyQuote encoding. Binds the prepay's BTC
+    // amount and route hint to the exact asset fee. Contains no secrets.
+    bytes prepay_rfq = 12;
+    // Native receiving RFQ binding the probe to terms.amount asset units.
+    bytes probe_rfq = 13;
 }
 
 // AssetReservationStatus summarizes server progress for RPC callers. Several
@@ -123,6 +136,13 @@ message AssetReservation {
     // Zero until the server verified the exact settled asset receipt.
     uint64 prepay_credit = 8;
     bool proof_available = 9;
+    // Verified receipt of the full asset probe, not a settled payment.
+    bool probe_succeeded = 10;
+    // The sole probe invoice is permanently canceled.
+    bool probe_canceled = 11;
+    // Public funding refusal. Set only after cancellation is authoritative;
+    // clients must also resolve their local payment before reporting failure.
+    bool funding_unavailable = 12;
 }
 
 message ListAssetReservationsRequest {
