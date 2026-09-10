@@ -7,6 +7,10 @@
   `github.com/lightninglabs/tap-sdk` v0.1.1 and Taproot Assets v0.8.8. New on-chain
   asset swaps require tapd v0.8.8 or later.
 
+* Add experimental asset-reservation payment adapters with invoice-based
+  probes, approved BTC prepays, and node-bound recovery. Runtime access remains
+  disabled pending service wiring and integration tests.
+
 #### Breaking Changes
 
 #### Bug Fixes

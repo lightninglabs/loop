@@ -235,6 +235,14 @@ func (r *Reservation) validatePurchase() error {
 			return errors.New("payment result does not match prepay")
 		}
 		if r.PaymentResult.Status == lnrpc.Payment_SUCCEEDED {
+			if r.PaymentResult.ValueMsat <= 0 ||
+				uint64(r.PaymentResult.ValueMsat) !=
+					r.Quote.PrepayAmountMsat ||
+				r.PaymentResult.FeeMsat < 0 ||
+				r.PaymentResult.FeeMsat > r.PaymentRequest.FeeLimitMsat {
+
+				return errors.New("prepay receipt exceeds approved amounts")
+			}
 			preimage, err := lntypes.MakePreimageFromStr(
 				r.PaymentResult.PaymentPreimage,
 			)
