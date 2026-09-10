@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	assetreservation "github.com/lightninglabs/loop/assets/reservation"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -74,6 +75,8 @@ func SetupLoggers(root *build.SubLoggerManager, intercept signal.Interceptor) {
 
 	lnd.SetSubLogger(root, Subsystem, logger)
 	lnd.AddSubLogger(root, "LOOP", intercept, loop.UseLogger)
+	lnd.AddSubLogger(root, assetreservation.Subsystem, intercept,
+		assetreservation.UseLogger)
 	lnd.AddSubLogger(root, "SWEEP", intercept, sweepbatcher.UseLogger)
 	lnd.AddSubLogger(root, "LNDC", intercept, lndclient.UseLogger)
 	lnd.AddSubLogger(root, "STORE", intercept, loopdb.UseLogger)
