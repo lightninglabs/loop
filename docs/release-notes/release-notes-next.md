@@ -2,8 +2,17 @@
 
 #### New Features
 
+* Asset reservation quotes include an estimated server funding charge in the
+  prepaid asset fee. Saved quotes retain their agreed total.
+
+* Probe experimental asset reservations with one full-amount asset hold payment
+  per purchase. Verify server receipt and cancellation before approval. Failed
+  probes cancel the unpaid purchase; retry with a fresh purchase ID.
+  `--skip_probe` remains available when starting a new purchase.
+
 * Filter asset reservations with `asset reservation list --state Ready`.
-  Use `--active_only` instead to exclude canceled and expired purchases.
+  Use `--active_only` instead to exclude rejected, canceled and expired
+  purchases.
   Startup also excludes completed reservations. List queries read each
   reservation and its latest state together, without loading full histories.
 
@@ -29,9 +38,20 @@
 
 #### Bug Fixes
 
+* End unfundable asset reservation purchases immediately with
+  `OutOfRange: amount above current maximum`; retain the rejection across
+  restarts instead of retrying until funding becomes available.
+
 * Sweep batch selection now filters out batches with an incompatible signing
   mode before attempting admission, avoiding spurious warnings when regular
   and presigned sweeps are pending together.
+
+* Recognize successful reservation hold probes when LND prunes failed HTLC
+  attempts. Save routing fee estimates from live payment updates and report
+  unavailable estimates separately from observed zero fees after recovery.
+
+* Preserve completed reservation probes across recovery after their deadline,
+  and prevent slow status lookups from dispatching a probe after its deadline.
 
 * Allow reservation proof downloads up to the verifier's 16 MiB limit, so
   larger proof histories do not leave paid purchases stuck in verification.
@@ -104,11 +124,21 @@
 * Rename the reservation manager limit to `MaxActiveReservations`.
   Clarify how new-purchase requests create or reuse a reservation.
 
+* Separate switch and select cases in reservation code and tests with blank
+  lines for readability.
+
 * Document reservation store guarantees for atomic writes, repeated requests,
   and recovery reads.
 
 * Use reservation names consistently in manager recovery and its tests.
   Document request handling, worker recovery, and shutdown in the manager.
+
+* Document how reservation state machines start new purchases and restore
+  saved progress. Flatten quote requests while retaining saved-quote recovery
+  and expiry checks. Clarify when actions remain in their current state and
+  how probe RPC concurrency is limited. Explain the funding-height checks
+  used during delivery verification and monitoring. Format reservation struct
+  literals with one field per line.
 
 * Use `SkipProbe` consistently in reservation requests and storage, with one
   saved preference. Payment still requires explicit quote approval.
