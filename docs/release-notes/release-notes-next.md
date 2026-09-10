@@ -8,7 +8,8 @@
   a fungible asset group and verify both quoted issuances before payment.
   A reorg that invalidates a delivered proof withdraws its readiness and
   advertised deadlines. Delivery uses the execution cutoff without an
-  additional minimum usable-window term.
+  additional minimum usable-window term. Probe and prepay prices are approved
+  with the quote; each invoice is checked against its own receiving RFQ.
 
 * Share asset deposit, reservation and CSV/CLTV HTLC contracts through
   `swapkit`, with transfer, signing, proof and recovery helpers backed by
@@ -35,5 +36,8 @@
   and report a reorg during outcome verification as retryable.
 
 #### Maintenance
+
+* Keep reservation quote and invoice checks in the client library; move
+  incoming Lightning receipt validation to its server consumers.
 
 #### Contributors (Alphabetical Order)
