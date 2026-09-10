@@ -23,6 +23,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
+	assetreservation "github.com/lightninglabs/loop/assets/reservation"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -88,27 +89,29 @@ type swapClientServer struct {
 	// Required by the grpc-gateway/v2 library for forward compatibility.
 	looprpc.UnimplementedSwapClientServer
 	looprpc.UnimplementedDebugServer
+	looprpc.UnimplementedAssetReservationsServer
 
-	config               *Config
-	network              lndclient.Network
-	impl                 *loop.Client
-	loopInQuoter         loopInQuoter
-	liquidityMgr         *liquidity.Manager
-	lnd                  *lndclient.LndServices
-	reservationManager   *reservation.Manager
-	instantOutManager    *instantout.Manager
-	staticAddressManager *address.Manager
-	depositManager       staticAddressDepositManager
-	withdrawalManager    *withdraw.Manager
-	staticLoopInManager  *loopin.Manager
-	openChannelManager   *openchannel.Manager
-	assetClient          *assets.TapdClient
-	swaps                map[lntypes.Hash]loop.SwapInfo
-	subscribers          map[int]chan<- any
-	statusChan           chan loop.SwapInfo
-	nextSubscriberID     int
-	swapsLock            sync.Mutex
-	mainCtx              context.Context
+	config                  *Config
+	network                 lndclient.Network
+	impl                    *loop.Client
+	loopInQuoter            loopInQuoter
+	liquidityMgr            *liquidity.Manager
+	lnd                     *lndclient.LndServices
+	reservationManager      *reservation.Manager
+	assetReservationManager assetReservationManager
+	instantOutManager       *instantout.Manager
+	staticAddressManager    *address.Manager
+	depositManager          staticAddressDepositManager
+	withdrawalManager       *withdraw.Manager
+	staticLoopInManager     *loopin.Manager
+	openChannelManager      *openchannel.Manager
+	assetClient             *assets.TapdClient
+	swaps                   map[lntypes.Hash]loop.SwapInfo
+	subscribers             map[int]chan<- any
+	statusChan              chan loop.SwapInfo
+	nextSubscriberID        int
+	swapsLock               sync.Mutex
+	mainCtx                 context.Context
 
 	// stopDaemon is invoked to trigger a graceful shutdown of the daemon.
 	stopDaemon func()
@@ -144,6 +147,32 @@ type staticAddressDepositManager interface {
 	// GetAllDeposits returns all known deposit records, including historical
 	// records that are no longer user-visible.
 	GetAllDeposits(context.Context) ([]*deposit.Deposit, error)
+}
+
+// assetReservationManager is the reservation behavior used by the RPC server.
+type assetReservationManager interface {
+	// NewPurchase saves an unpaid purchase or resumes the same ID when its
+	// asset and amount match. The skip flag applies only to new purchases;
+	// payment requires a separate approval.
+	NewPurchase(context.Context, assetreservation.ID, [32]byte, uint64,
+		bool) (*assetreservation.Reservation, error)
+
+	// Get returns a saved snapshot, including completed purchases, without
+	// triggering payment or changing the worker's progress.
+	Get(context.Context, assetreservation.ID) (
+		*assetreservation.Reservation, error)
+
+	// List returns saved snapshots matching the state filter. The RPC
+	// handler sorts and paginates them before returning a response.
+	List(context.Context, assetreservation.StateFilter) (
+		[]*assetreservation.Reservation, error)
+
+	// Approve authorizes the exact quoted terms and payment limits. The
+	// worker saves consent before paying and continues recovery after the
+	// call returns; the response does not imply delivery is complete.
+	Approve(context.Context, assetreservation.ID,
+		*looprpc.ApproveAssetReservationRequest) (
+		*assetreservation.Reservation, error)
 }
 
 // LoopOut initiates a loop out swap with the given parameters. The call returns
@@ -3281,4 +3310,200 @@ func marshalFixedPoint(bigIntFixedPoint *rfqmath.BigIntFixedPoint,
 		Coefficient: bigIntFixedPoint.Coefficient.String(),
 		Scale:       uint32(bigIntFixedPoint.Scale),
 	}
+}
+
+func assetReservationResult(r *assetreservation.Reservation, err error) (
+	*looprpc.ClientAssetReservation, error) {
+
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "reservation unavailable")
+	}
+	if r == nil {
+		return nil, status.Error(codes.Unavailable, "reservation unavailable")
+	}
+	result := &looprpc.ClientAssetReservation{
+		ReservationId:               bytes.Clone(r.ID[:]),
+		State:                       string(r.State),
+		AssetId:                     bytes.Clone(r.AssetID[:]),
+		Amount:                      r.Amount,
+		AssetFee:                    r.Fee,
+		CsvDelay:                    r.CSVDelay,
+		RequiredConfirmations:       r.RequiredConfirmations,
+		ExecutionDelta:              r.ExecutionDelta,
+		MinUsableBlocks:             r.MinUsableBlocks,
+		ConfirmationHeight:          r.ConfirmationHeight,
+		PrepayCredit:                r.PrepayCredit,
+		ProofVerified:               len(r.ReservationProof) != 0,
+		SkipProbe:                   r.SkipProbe,
+		MainProbe:                   looprpc.ReservationProbeResult(r.Probes.Main),
+		EstimatedPrepayRouteFeeMsat: r.Probes.PrepayFeeMsat,
+		MainProbeFeeMsat:            r.Probes.MainFeeMsat,
+		ProbeFeeKnown: r.Probes.FeeKnown &&
+			r.Probes.Main == assetreservation.ProbeSucceeded,
+	}
+	if !r.Probes.CheckedAt.IsZero() {
+		result.ProbesCheckedAt = r.Probes.CheckedAt.Unix()
+	}
+	if r.FundingOutpoint != nil {
+		result.Outpoint = r.FundingOutpoint.String()
+	}
+	if r.ConfirmationHeight != 0 {
+		lifetime, err := r.Terms.Lifetime(r.ConfirmationHeight)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "invalid reservation lifetime")
+		}
+		result.TimeoutHeight = lifetime.TimeoutHeight
+		result.ExecutionCutoff = lifetime.ExecutionCutoff
+	}
+	if r.Quote != nil {
+		hash, err := assetreservation.QuoteHash(r.Quote)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "invalid saved quote")
+		}
+		result.QuoteHash = hash[:]
+		result.EdgeKey = bytes.Clone(r.Quote.EdgeKey)
+		result.PrepayAmountMsat = r.Quote.PrepayAmountMsat
+		result.EstimatedMainAmountMsat = r.Quote.EstimatedMainAmountMsat
+		result.QuoteExpiresAt = r.Quote.ExpiresAt
+	}
+	return result, nil
+}
+
+// Buy starts an unpaid purchase under a caller-supplied idempotency key.
+func (s *swapClientServer) Buy(ctx context.Context,
+	req *looprpc.BuyAssetReservationRequest) (*looprpc.ClientAssetReservation,
+	error) {
+
+	if s.assetReservationManager == nil {
+		return assetReservationResult(nil, errors.New("purchases are disabled"))
+	}
+	if req == nil || len(req.ReservationId) != 32 || len(req.AssetId) != 32 {
+		return nil, status.Error(codes.InvalidArgument, "invalid purchase request")
+	}
+	return assetReservationResult(s.assetReservationManager.NewPurchase(
+		ctx, assetreservation.ID(req.ReservationId), [32]byte(req.AssetId),
+		req.Amount, req.SkipProbe,
+	))
+}
+
+func (s *swapClientServer) resolveAssetReservation(ctx context.Context,
+	req *looprpc.ClientAssetReservationSelector) (
+	*assetreservation.Reservation, error) {
+
+	if s.assetReservationManager == nil || req == nil {
+		return nil, errors.New("missing reservation service or selector")
+	}
+	switch v := req.Selector.(type) {
+	case *looprpc.ClientAssetReservationSelector_ReservationId:
+		if len(v.ReservationId) != 32 ||
+			assetreservation.ID(v.ReservationId) == (assetreservation.ID{}) {
+
+			return nil, errors.New("invalid reservation ID")
+		}
+		return s.assetReservationManager.Get(
+			ctx, assetreservation.ID(v.ReservationId),
+		)
+
+	case *looprpc.ClientAssetReservationSelector_Outpoint:
+		point, err := assetreservation.ParseOutpoint(v.Outpoint)
+		if err != nil {
+			return nil, err
+		}
+		records, err := s.assetReservationManager.List(
+			ctx, assetreservation.StateFilter{},
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range records {
+			if r.FundingOutpoint != nil && *r.FundingOutpoint == *point {
+				return r, nil
+			}
+		}
+	}
+	return nil, assetreservation.ErrNotFound
+}
+
+// Get returns saved progress; it cannot trigger a new payment.
+func (s *swapClientServer) Get(ctx context.Context,
+	req *looprpc.ClientAssetReservationSelector) (*looprpc.ClientAssetReservation,
+	error) {
+
+	return assetReservationResult(s.resolveAssetReservation(ctx, req))
+}
+
+// Approve binds payment to the displayed quote and explicit limits.
+func (s *swapClientServer) Approve(ctx context.Context,
+	req *looprpc.ApproveAssetReservationRequest) (*looprpc.ClientAssetReservation,
+	error) {
+
+	if req == nil || len(req.QuoteHash) != 32 {
+		return nil, status.Error(codes.InvalidArgument, "invalid approval")
+	}
+	r, err := s.resolveAssetReservation(ctx, req.Reservation)
+	if err != nil {
+		return assetReservationResult(nil, err)
+	}
+	r, err = s.assetReservationManager.Approve(ctx, r.ID, req)
+	// Once consent is durable, a retryable payment or delivery error does
+	// not undo approval. Report the saved progress; the worker logs the
+	// action error and continues recovery.
+	if r != nil {
+		switch r.State {
+		case assetreservation.PayPrepay, assetreservation.WaitForDelivery,
+			assetreservation.VerifyReservation, assetreservation.Ready:
+
+			return assetReservationResult(r, nil)
+		}
+	}
+	return assetReservationResult(r, err)
+}
+
+// List returns one bounded page of matching states in stable ID order.
+func (s *swapClientServer) List(ctx context.Context,
+	req *looprpc.ListClientAssetReservationsRequest) (
+	*looprpc.ListClientAssetReservationsResponse, error) {
+
+	if s.assetReservationManager == nil {
+		return nil, status.Error(codes.Unavailable, "reservation unavailable")
+	}
+	if req == nil || req.Limit > 1000 ||
+		(len(req.AfterId) != 0 && len(req.AfterId) != 32) {
+
+		return nil, status.Error(codes.InvalidArgument, "invalid reservation page")
+	}
+	filter := assetreservation.StateFilter{
+		State: fsm.StateType(req.State), ActiveOnly: req.ActiveOnly,
+	}
+	if err := filter.Validate(); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	records, err := s.assetReservationManager.List(ctx, filter)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "reservation unavailable")
+	}
+	slices.SortFunc(records, func(a, b *assetreservation.Reservation) int {
+		return bytes.Compare(a.ID[:], b.ID[:])
+	})
+	limit := req.Limit
+	if limit == 0 {
+		limit = 100
+	}
+	result := &looprpc.ListClientAssetReservationsResponse{}
+	for _, r := range records {
+		if bytes.Compare(r.ID[:], req.AfterId) <= 0 {
+			continue
+		}
+		if len(result.Reservations) == int(limit) {
+			last := result.Reservations[len(result.Reservations)-1]
+			result.NextAfterId = bytes.Clone(last.ReservationId)
+			break
+		}
+		value, err := assetReservationResult(r, nil)
+		if err != nil {
+			return nil, err
+		}
+		result.Reservations = append(result.Reservations, value)
+	}
+	return result, nil
 }

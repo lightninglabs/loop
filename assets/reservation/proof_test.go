@@ -176,9 +176,7 @@ func TestReservationProofBinding(t *testing.T) {
 		node := &issuanceProofClient{
 			valid: true,
 		}
-		v := tapProofVerifier{
-			tap: node,
-		}
+		v := NewTapProofVerifier(node)
 		_, err := VerifyReservationProof(
 			t.Context(), v, kit, raw.Bytes(),
 			p.OutPoint(), 100)

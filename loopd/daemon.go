@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
+	assetreservation "github.com/lightninglabs/loop/assets/reservation"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
@@ -27,10 +28,13 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/openchannel"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
+	"github.com/lightninglabs/loop/swap"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
+	tapaddress "github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/htlcswitch"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
 	bbolterrors "go.etcd.io/bbolt/errors"
@@ -268,6 +272,7 @@ func (d *Daemon) startWebServers() error {
 		grpc.StreamInterceptor(streamInterceptor),
 	)
 	loop_looprpc.RegisterSwapClientServer(d.grpcServer, d)
+	loop_looprpc.RegisterAssetReservationsServer(d.grpcServer, d)
 
 	// Register our debug server if it is compiled in.
 	d.registerDebugServer()
@@ -747,9 +752,67 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}
 
 	var (
-		reservationManager *reservation.Manager
-		instantOutManager  *instantout.Manager
+		reservationManager      *reservation.Manager
+		assetReservationManager *assetreservation.Manager
+		instantOutManager       *instantout.Manager
 	)
+	if d.cfg.EnableExperimental && d.assetClient != nil {
+		params := tapaddress.ParamsForChain(d.lnd.ChainParams.Name)
+		wallet := &assetreservation.WalletVerifier{
+			Keys: d.lnd.WalletKit,
+			Tap: assetreservation.NewTapProofVerifier(
+				d.assetClient,
+			),
+			Params:    &params,
+			KeyFamily: swap.KeyFamily,
+			Chain: &assetreservation.ChainReader{
+				Node:          d.lnd.Client,
+				Chain:         d.lnd.ChainKit,
+				ChainNotifier: d.lnd.ChainNotifier,
+			},
+		}
+		if err := wallet.Validate(); err != nil {
+			return fmt.Errorf("asset reservation wallet: %w", err)
+		}
+		payments, err := assetreservation.NewLndPayments(
+			assetreservation.PaymentConfig{
+				Node:           d.lnd.Client,
+				Router:         d.lnd.Router,
+				Params:         d.lnd.ChainParams,
+				Now:            time.Now,
+				PaymentTimeout: 30 * time.Second,
+				ProbeTimeout:   10 * time.Second,
+				CLTVLimit:      htlcswitch.DefaultMaxOutgoingCltvExpiry,
+				MinFinalCLTV:   40,
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("asset reservation payments: %w", err)
+		}
+		assetReservationManager, err = assetreservation.NewManager(
+			assetreservation.ManagerConfig{
+				FSM: &assetreservation.Config{
+					Store: assetreservation.NewSqlStore(baseDb),
+					Server: loop_swaprpc.NewAssetReservationServiceClient(
+						swapClient.Conn,
+					),
+					Payments: payments,
+					Wallet:   wallet,
+					Clock:    clock.NewDefaultClock(),
+					NotifyAdmin: func(id assetreservation.ID, err error) {
+						errorf("Asset reservation %x needs attention: %v",
+							id[:], err)
+					},
+				},
+				PollInterval:          time.Second,
+				CallTimeout:           time.Minute,
+				MaxActiveReservations: 100,
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("asset reservation initialization: %w", err)
+		}
+	}
 
 	// Create the reservation and instantout managers.
 	if d.cfg.EnableExperimental {
@@ -818,6 +881,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		stopDaemon:           d.Stop,
 	}
 
+	// Leave the interface nil when asset reservations are disabled.
+	if assetReservationManager != nil {
+		d.swapClientServer.assetReservationManager = assetReservationManager
+	}
+
 	// Retrieve all currently existing swaps from the database.
 	swapsList, err := d.impl.FetchSwaps(d.mainCtx)
 	if err != nil {
@@ -874,6 +942,14 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	})
 
 	initManagerTimeout := 10 * time.Second
+	if assetReservationManager != nil {
+		d.wg.Go(func() {
+			err := assetReservationManager.Run(d.mainCtx)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				errorf("Asset reservations unavailable: %v", err)
+			}
+		})
+	}
 
 	// Start the reservation manager.
 	if d.reservationManager != nil {
