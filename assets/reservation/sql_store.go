@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/keychain"
+	"google.golang.org/protobuf/proto"
 )
 
 // SqlStore stores client reservations in SQLite or PostgreSQL.
@@ -74,6 +75,9 @@ func (s *SqlStore) CreateReservation(ctx context.Context, r *Reservation) error 
 				return nil
 			}
 
+			if err := updatePurchase(ctx, q, &next); err != nil {
+				return err
+			}
 			return insertUpdate(ctx, q, &next)
 		})
 	if err == nil {
@@ -99,7 +103,17 @@ func (s *SqlStore) UpdateReservation(ctx context.Context, r *Reservation) error 
 			if !sameRequest(r, stored) {
 				return ErrRequestConflict
 			}
+			if err := preservePurchase(r, stored); err != nil {
+				return err
+			}
+			if sameProgress(r, stored) {
+				next = *stored
+				return nil
+			}
 			next.CreatedAt = stored.CreatedAt
+			if err := updatePurchase(ctx, q, &next); err != nil {
+				return err
+			}
 			return insertUpdate(ctx, q, &next)
 		})
 	if err == nil {
@@ -216,6 +230,9 @@ func toReservation(row sqlc.AssetReservation,
 		CreatedAt: row.CreatedAt.UTC(),
 		UpdatedAt: latest.UpdateTimestamp.UTC(),
 	}
+	if err := readPurchase(row, r); err != nil {
+		return nil, err
+	}
 	if err := r.Validate(); err != nil {
 		return nil, err
 	}
@@ -223,7 +240,16 @@ func toReservation(row sqlc.AssetReservation,
 }
 
 func sameRequest(a, b *Reservation) bool {
-	return a.ID == b.ID && a.Terms == b.Terms &&
+	return a.ID == b.ID && a.AssetID == b.AssetID && a.Amount == b.Amount &&
+		(a.Fee == 0 || b.Fee == 0 || a.Terms == b.Terms) &&
 		a.ClientKey.KeyLocator == b.ClientKey.KeyLocator &&
 		a.ClientKey.PubKey.IsEqual(b.ClientKey.PubKey)
+}
+
+func sameProgress(a, b *Reservation) bool {
+	return a.State == b.State && a.Terms == b.Terms && a.Probes == b.Probes &&
+		a.SkipProbe == b.SkipProbe &&
+		a.MaxRouteFeeMsat == b.MaxRouteFeeMsat &&
+		proto.Equal(a.PaymentResult, b.PaymentResult) &&
+		preservePurchase(a, b) == nil && preservePurchase(b, a) == nil
 }

@@ -12,12 +12,17 @@ Implemented so far: shared terms, checked amount validation, SQL tables, and a
 typed SQLite/PostgreSQL store. Creation saves terms and the first state in one
 transaction. Repeating the same purchase ID returns saved progress; changing
 its terms or keys fails. Updates preserve the agreed fee and append state
-history. Payment and funding fields follow with their actions. Runtime wiring
-is still separate work.
+history. The store now retains payment and delivery facts as well. Runtime
+wiring is still separate work.
 
 Client purchase columns retain the quote, probes, payment choices, payment,
-and proof. Before a quote, the fee and lifetime remain unset. The typed progress store and
-actions populate each fact at its payment or verification boundary.
+and proof. Before a quote, the fee and lifetime remain unset. The typed store
+accepts one immutable quote. Approving its hash accepts the asset fee and BTC
+prepay amount. The client saves the prepay routing cap and `SkipProbe` with
+the transition to `PayPrepay`. That state records consent; the quote amounts
+need no second snapshot. The store preserves these choices, the paying node
+and request, terminal payment result, outpoint, credit, and proof. Repeated unchanged writes
+do not append state history.
 
 The shared lifetime calculation derives timeout and execution heights from
 the original funding confirmation. The server checks the quoted depth and
