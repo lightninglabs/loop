@@ -24,11 +24,21 @@ need no second snapshot. The store preserves these choices, the paying node
 and request, terminal payment result, outpoint, credit, and proof. Repeated unchanged writes
 do not append state history.
 
+The client [FSM](../assets/reservation/fsm.md) now saves and probes the quote,
+waits for explicit approval, tracks the exact prepay, and verifies delivery
+through narrow payment and wallet interfaces. Its SQLite-backed tests cover
+restarts, failed writes, cancellation racing settlement, proof rejection, and
+CSV expiry. Concrete node adapters and runtime wiring remain separate work.
+
 The shared lifetime calculation derives timeout and execution heights from
 the original funding confirmation. The server checks the quoted depth and
 initial usable window before declaring the reservation Ready. These delivery
 checks live in the server's reservation package; proof verification and spend
 tracking remain separate responsibilities.
+
+A client returning late uses the original confirmation and CSV clock, not a
+new delivery window. Its Ready state means verified and unexpired; the later
+swap must also check the execution cutoff and its own claim margin.
 
 One reservation holds one asset and amount in one Bitcoin output. The server
 owns the lifetime defaults: a 1,440-block CSV, three confirmations, a 90-block
