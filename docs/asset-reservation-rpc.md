@@ -9,6 +9,23 @@ permissions. Standalone loopd registers the service; it becomes usable with
 experimental features and tapd enabled. Embedders must also register this
 separate service to expose it.
 
+Local `List.state` filters by one latest saved client state. The query reads
+matching reservations and their latest state together, without loading full
+histories. Alternatively, `List.active_only` excludes `QuoteRejected`,
+`Canceled` and `Expired`, while retaining `Ready` and `NeedAdminAttention`.
+The filters are mutually exclusive; omitting both returns all reservations. Names are case-sensitive,
+and unknown names are rejected. Keep the same filter when following
+`next_after_id`. For example:
+
+```shell
+loop asset reservation list --state Ready
+loop asset reservation list --active_only
+```
+
+Startup excludes `QuoteRejected`, `Canceled` and `Expired` in the query.
+It retains `Ready` for expiry monitoring and `NeedAdminAttention` for
+administrative care.
+
 The wire contract lives in `swapserverrpc/asset_reservation.proto`. It is
 separate from Bitcoin Instant Out reservations. These definitions do not
 enable a service; handlers and authentication wiring remain separate.
@@ -21,6 +38,13 @@ owner and request. An exact retry returns the same purchase and invoice,
 including after expiry. It must never create a fresh bill or reprice it.
 Changing the asset, amount, or key under the same ID is rejected. A fresh quote
 requires a new request after cancellation of the old unpaid purchase.
+
+Before saving a new purchase, the server checks funding capacity. A shortage
+returns `OutOfRange` with `amount above current maximum`. The client saves
+`QuoteRejected`, a terminal state visible through local `Get` and `List`;
+`buy` reports the error and stops. No payment or server cancellation is needed.
+Transient RPC errors remain retryable. An accepted, paid purchase still recovers
+funding even when inventory later disappears.
 
 The response may still be `QUOTING`. `GetAssetReservation` retrieves progress
 and the immutable quote once available. The quote supplies both invoices,
