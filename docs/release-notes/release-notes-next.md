@@ -7,8 +7,12 @@
   pending purchase after restarting. Buyers can request an exact issuance or
   a fungible asset group and verify both quoted issuances before payment.
   A reorg that invalidates a delivered proof withdraws its readiness and
-  advertised deadlines. Delivery uses the execution cutoff without an
-  additional minimum usable-window term.
+  advertised deadlines. Delivery must precede the execution cutoff, and a
+  reservation expires once the cutoff is reached. On mainnet the client
+  rejects quotes whose CSV delay, confirmation depth, execution margin or
+  usable window falls below a fixed minimum. Probe and prepay prices are
+  approved with the quote; each invoice is checked against its own receiving
+  RFQ.
 
 * Share asset deposit, reservation and CSV/CLTV HTLC contracts through
   `swapkit`, with transfer, signing, proof and recovery helpers backed by
@@ -40,5 +44,8 @@
 
 * Update the OpenTelemetry Go SDK from v1.45.0 to v1.47.0 in Loop and
   `looprpc`.
+
+* Keep reservation quote and invoice checks in the client library; move
+  incoming Lightning receipt validation to its server consumers.
 
 #### Contributors (Alphabetical Order)
