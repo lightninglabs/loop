@@ -5,10 +5,25 @@ based on the shared asset kit at `81e876cd`. Reservation purchase comes first;
 asset Loop Out will build on it. Purchases require `--experimental` and
 `--tapd.activate` in standalone loopd. They are not production-ready yet.
 
+The real-node reservation case passed on 2026-09-10 with tapd v0.8.3 and
+LND v0.21.3-beta: a BTC-only payer, both probes, purchase through Ready,
+client/server restarts, rejected proofs, insufficient-funds cancellation,
+and the full 1,440-block CSV sweep. This run uses a SQLite client. Node-process
+fault injection, client PostgreSQL/Neutrino variants, and the broader failure
+matrix remain; swap execution is not part of this case. That run predates the
+single-probe flow described below.
+
+The full-amount hold-probe case passed on 2026-09-23 with a BTC-only payer:
+10,000 asset units reached the receiving asset channel, the server canceled
+the hold invoice, and purchase completed after restarts. The case also covered
+unpaid cancellation, recovery after funding inventory was restored, proof
+verification, and the shortened 144-block CSV sweep. Client/server unit tests
+cover interrupted probing, receipt persistence, and cancellation recovery.
+
 ## Commands
 
 `loop asset reservation buy --asset_id <hex> --amt <units>` requests a quote,
-probes only the estimated main payment, displays its routability result and
+probes the full reserved asset amount, displays its delivery result and
 the terms, and asks before paying. Normal approval requires a successful main
 probe, though success does not reserve liquidity for the later swap.
 The prepay routing fee estimate scales the main fee by the BTC payment amounts,
@@ -17,14 +32,21 @@ fee estimate. The actual prepay routing limit remains the conventional Loop Out
 limit: 10 sats plus 2%. `--max_routing_fee` sets an explicit limit in sats;
 `--yes` skips the approval prompt, but still requires a successful probe.
 
+If the server lacks available asset inventory or Bitcoin funding fees, the
+purchase ends immediately in `QuoteRejected`. The CLI displays
+`cannot initiate swap: rpc error: code = OutOfRange desc = amount above current maximum`.
+No invoice is paid and neither polling nor restart retries that purchase.
+Use a fresh purchase ID to try again after funds become available. Already paid
+purchases continue delivery recovery if inventory later disappears.
+
 `--skip_probe` skips probing for a new purchase and permits approval without a
 successful main probe. It still displays the terms and asks before paying,
 unless `--yes` is also set. Fee estimates are unavailable when no probe ran.
-A failed, timed-out, or unsupported probe leaves the purchase unpaid and retries
-in the background, including after restart. The command waits for a successful
-route check before asking for approval. To buy without waiting for success,
-repeat `buy` with the same `--reservation_id`, asset, and amount, and add
-`--skip_probe`. Approval preserves the same quote.
+A failed or timed-out probe cancels the unpaid purchase, including after
+restart. LND may try alternative routes within the single payment. Request a
+new purchase with a fresh reservation ID to try again, optionally with
+`--skip_probe`. The canceled purchase cannot be approved or revived. Its quote
+and payment facts remain saved; recovery finishes any outstanding cancellation.
 
 `list` shows saved purchases. `get <txid:vout>` inspects a funded reservation.
 Before funding, use `get --reservation_id <hex>` with the ID printed before
@@ -66,8 +88,8 @@ through narrow payment and wallet interfaces. Its SQLite-backed tests cover
 restarts, failed writes, cancellation racing settlement, proof rejection, and
 CSV expiry. The asset adapter now verifies full proofs through tapd and the
 shared deposit kit, and tracks confirmations and spends through LND. The
-payment adapter validates the receiving RFQ and invoices, probes through
-LND's estimator, and sends the approved BTC prepay. It saves the paying node
+payment adapter validates both receiving RFQs and invoices, probes through
+LND's `SendPaymentV2`, and sends the approved BTC prepay. It saves the paying node
 and exact request before dispatch. Runtime wiring uses the existing LND
 connection and its service macaroons; it opens no Bitcoin backend connection.
 
@@ -123,9 +145,10 @@ the receiving RFQ's transport minimum, with conversion rounding checked against
 the outgoing HTLC's BTC anchor. The entire fee is prepaid. The CLI displays it
 in asset units and its effective percentage before approval. The server receives
 assets through an independent edge; the client can pay BTC.
-It is a hold invoice: accepted payment permits funding preparation, then the
-server checks funds and expiry, settles, and publishes the saved transaction.
-Probing does not pay that invoice or lock funding inputs.
+The prepay is an ordinary invoice. Its exact settled asset receipt permits
+funding preparation. The separate full-amount probe uses a hold invoice that
+is canceled without settlement; it never grants prepay credit or locks funding
+inputs.
 
 The later swap fee equals the quoted prepay. The exact settled prepay credits
 it once, so the main asset invoice equals the reserved amount. There is no
@@ -149,11 +172,31 @@ for approval. Shared validation and SQL check positive
 amounts, overflow, and lifetime, not a fixed fee percentage. Recovery uses the
 accepted fee; it never recalculates it from a later pricing policy.
 
-Use LND's invoice-based fee estimator only with the probe-only invoice for the
-estimated main payment. Derive the approximate prepay routing fee as
-`ceil(main routing fee * prepay BTC amount / estimated main BTC amount)`.
-Show the main probe result and any available fee estimates before approval. The actual
-prepay still requires invoice validation and obeys the approved routing cap.
+Each quote registers one full-amount asset hold probe. Its payment hash is
+`SHA256(reservation_id)` with the low bit of the first byte flipped, as in
+conventional Loop In probing. Neither party knows a settling preimage. The
+client saves its paying node, request, and deadline before sending. The server
+validates the accepted asset ID, amount, RFQ, and channel, saves the receipt,
+then cancels. Success requires that receipt, invoice cancellation, and a local
+failed payment with `FAILURE_REASON_INCORRECT_PAYMENT_DETAILS`. Quote status reports receipt and cancellation
+separately. `CancelAssetReservation` with `probe_only` releases just the probe,
+leaving a successful or explicitly skipped purchase available for approval.
+
+Timeout cancels the unpaid purchase and requests receiver cancellation; it
+does not release an in-flight HTLC by itself. Recovery tracks and cleans up the same
+payment. Failed probes never automatically start over. The initial implementation
+uses one edge and one payment part, preserving exact asset-unit conversion.
+
+The client keeps the `SendPaymentV2` stream open and saves fees from in-flight
+routes before LND prunes failed attempts. Recovery uses `TrackPaymentV2` with
+in-flight updates enabled. Success depends on the payment-level failure reason,
+not retained attempt records; `keep-failed-payment-attempts` is not required.
+If recovery misses the live route, the probe can still succeed, with fee
+estimates marked unavailable. A saved availability flag distinguishes that
+case from an observed zero-fee route. The most recently observed route supplies
+an estimate; LND may retry using another route. The approximate prepay estimate remains
+`ceil(main routing fee * prepay BTC amount / main probe BTC amount)`, ignoring
+fixed hop fees. Neither estimate reserves liquidity or the later swap's rate.
 
 Keep the purchase and future swap FSMs separate, with static-address-style
 actions, managers, SQL stores, state history, and `OnRecover`. Persist payment
