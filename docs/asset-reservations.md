@@ -8,25 +8,43 @@ The [reservation RPC contract](asset-reservation-rpc.md) defines quote,
 status, list, proof retrieval, and unpaid cancellation. Its protobuf service
 is separate from Bitcoin reservations and is not registered at runtime yet.
 
-One reservation holds one asset and amount in one Bitcoin output. It expires
-1,440 blocks after funding confirmation. The client checks three confirmations,
-the full asset proof, exact output and scripts, local keys, and unspent status
-using LND and tapd before marking it Ready.
+Implemented so far: shared terms and checked amount validation in
+`assets/reservation`. Payment, storage, and runtime work follow separately.
+
+One reservation holds one asset and amount in one Bitcoin output. The server
+owns the lifetime defaults: a 1,440-block CSV, three confirmations, a 90-block
+execution margin, and 1,000 initially usable blocks. The client checks that
+the quoted values are positive and fit the CSV lifetime; it does not enforce
+its own lifetime minimums. Before marking a reservation Ready, it checks the
+quoted confirmation depth, full asset proof, exact output and scripts, local
+keys, and unspent status using LND and tapd.
 
 `RequiredConfirmations` (`required_confirmations` in SQL) saves the agreed
-funding depth, not a live count. Its default is three. Recovery preserves the
-agreed depth; the CSV lifetime still starts at the first confirmation.
+funding depth, not a live count. The server defaults to three. Recovery preserves
+the agreed depth; the CSV lifetime still starts at the first confirmation.
 
-The prepay is 0.1% of the asset amount, rounded up to an indivisible unit. The
-server receives assets through an independent edge; the client can pay BTC.
+The initial server policy quotes a prepay of 0.1% of the asset amount,
+rounded up to an indivisible unit. The server receives assets through an
+independent edge; the client can pay BTC.
 It is a hold invoice: accepted payment permits funding preparation, then the
 server checks funds and expiry, settles, and publishes the saved transaction.
 Probing does not pay that invoice or lock funding inputs.
 
-The later swap fee is the same 0.1%. The exact settled prepay credits it once,
-so the main asset invoice equals the reserved amount. There is no separate
-prepay refund. An unused reservation loses only its prepay, not its principal.
+The later swap fee equals the quoted prepay. The exact settled prepay credits
+it once, so the main asset invoice equals the reserved amount. There is no
+separate prepay refund: the credit prevents charging the total fee twice, and
+the server retains the funding charge. An unused reservation loses only its
+prepay, not its principal. The funding charge is an estimate, not an adjustment
+to the actual transaction fee. The server pays miners from its BTC wallet;
+receiving asset fees does not automatically convert them into BTC. This estimate
+does not add timeout sweep costs.
 The later BTC conversion quote can change and requires client approval.
+
+As in conventional Loop Out, the server offers a price and the client checks
+it against its own limits. Save and display the quoted terms before asking
+for approval. Shared validation and SQL check positive
+amounts, overflow, and lifetime, not a fixed fee percentage. Recovery uses the
+accepted fee; it never recalculates it from a later pricing policy.
 
 Use LND's invoice-based fee estimator only with the probe-only invoice for the
 estimated main payment. Derive the approximate prepay routing fee as
