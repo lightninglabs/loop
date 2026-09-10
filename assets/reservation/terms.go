@@ -51,8 +51,9 @@ type Terms struct {
 
 	// RequiredConfirmations is the funding depth quoted by the server.
 	// Each party checks the observed depth against this value before Ready.
-	// The client uses the quoted depth; Validate imposes no minimum beyond
-	// requiring a positive value that fits the reservation lifetime.
+	// The client uses the quoted depth. Validate imposes no minimum beyond
+	// requiring a positive value that fits the reservation lifetime; the
+	// client's LifetimeFloor bounds new quotes on networks that set one.
 	RequiredConfirmations uint32
 
 	// ExecutionDelta is the server's quoted margin between the execution
