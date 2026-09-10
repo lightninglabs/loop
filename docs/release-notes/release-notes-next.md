@@ -21,6 +21,9 @@
   mode before attempting admission, avoiding spurious warnings when regular
   and presigned sweeps are pending together.
 
+* Cancel reservation creation and its response snapshot read when the manager
+  shuts down. Both operations share the request timeout.
+
 * Shared asset sweeps validate asset conservation and Bitcoin output commitments,
   including change and passive assets, before signing. New deposit addresses use
   explicit asset V1 and address V1 versions, refund signing preserves existing
@@ -65,8 +68,14 @@
 * Document how reservation state entry saves payment choices and handles
   failed validation or writes before an action runs.
 
+* Rename the reservation manager limit to `MaxActiveReservations`.
+  Clarify how new-purchase requests create or reuse a reservation.
+
 * Document reservation store guarantees for atomic writes, repeated requests,
   and recovery reads.
+
+* Use reservation names consistently in manager recovery and its tests.
+  Document request handling, worker recovery, and shutdown in the manager.
 
 * Use `SkipProbe` consistently in reservation requests and storage, with one
   saved preference. Payment still requires explicit quote approval.

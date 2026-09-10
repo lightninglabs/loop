@@ -3,7 +3,35 @@ package reservation
 import (
 	"context"
 	"errors"
+	"fmt"
+
+	"github.com/lightninglabs/loop/fsm"
 )
+
+// StateFilter selects reservations by their latest saved state. State and
+// ActiveOnly are mutually exclusive; neither means all states. ActiveOnly
+// excludes QuoteRejected, Canceled and Expired, retaining Ready and
+// NeedAdminAttention.
+type StateFilter struct {
+	State      fsm.StateType
+	ActiveOnly bool
+}
+
+// Validate rejects conflicting filters and unknown state names.
+func (f StateFilter) Validate() error {
+	if f.ActiveOnly && f.State != "" {
+		return errors.New("state and active_only are mutually exclusive")
+	}
+	switch f.State {
+	case "", RequestQuote, ProbeRoutes, AwaitApproval, PayPrepay,
+		WaitForDelivery, VerifyReservation, Ready, CancelPrepay,
+		QuoteRejected, Canceled, Expired, NeedAdminAttention:
+
+	default:
+		return fmt.Errorf("unknown reservation state %q", f.State)
+	}
+	return nil
+}
 
 var (
 	// ErrNotFound means the requested reservation is unavailable.
@@ -36,9 +64,8 @@ type Store interface {
 	// change storage until UpdateReservation succeeds.
 	GetReservation(context.Context, ID) (*Reservation, error)
 
-	// GetReservations loads validated snapshots of all saved reservations in
-	// one transaction, including canceled and expired purchases. The manager
-	// selects which ones need recovery. Invalid stored data fails the whole
-	// read so recovery cannot silently omit a reservation.
-	GetReservations(context.Context) ([]*Reservation, error)
+	// GetReservations reads matching records and their latest state together
+	// in one statement. Invalid matching data fails the read rather than
+	// silently omitting a purchase.
+	GetReservations(context.Context, StateFilter) ([]*Reservation, error)
 }
