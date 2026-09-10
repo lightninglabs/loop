@@ -7,6 +7,10 @@
   restart and cooperative sweeping. Blinded payments use LND's routing without
   destination-based routing plugins.
 
+* Add experimental asset-reservation payment adapters with invoice-based
+  probes, approved BTC prepays, and node-bound recovery. Runtime access remains
+  disabled pending service wiring and integration tests.
+
 #### Breaking Changes
 
 * Shared asset witness builders now require complete, caller-approved virtual
