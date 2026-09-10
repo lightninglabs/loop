@@ -8,8 +8,9 @@ The [reservation RPC contract](asset-reservation-rpc.md) defines quote,
 status, list, proof retrieval, and unpaid cancellation. Its protobuf service
 is separate from Bitcoin reservations and is not registered at runtime yet.
 
-Implemented so far: shared terms and checked amount validation in
-`assets/reservation`. Payment, storage, and runtime work follow separately.
+Implemented so far: shared terms, checked amount validation, and SQL tables
+for terms and state history. Payment and funding fields follow with their
+actions. Typed stores and runtime wiring are separate changes.
 
 One reservation holds one asset and amount in one Bitcoin output. The server
 owns the lifetime defaults: a 1,440-block CSV, three confirmations, a 90-block

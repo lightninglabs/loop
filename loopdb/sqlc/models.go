@@ -9,6 +9,29 @@ import (
 	"time"
 )
 
+type AssetReservation struct {
+	ID                    int32
+	ReservationID         []byte
+	AssetID               []byte
+	Amount                int64
+	Fee                   int64
+	CsvDelay              int32
+	RequiredConfirmations int32
+	ExecutionDelta        int32
+	MinUsableBlocks       int32
+	ClientPubkey          []byte
+	ClientKeyFamily       int32
+	ClientKeyIndex        int64
+	CreatedAt             time.Time
+}
+
+type AssetReservationUpdate struct {
+	ID              int32
+	ReservationID   []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
+}
+
 type Deposit struct {
 	ID                    int32
 	DepositID             []byte
