@@ -58,7 +58,10 @@ Quote validation and payment limits remain mandatory.
 
 Server status is only a delivery hint. Verify the full exported proof with
 tapd and the shared deposit kit, then check exact output, local keys, amount,
-three required confirmations, unspent status, and the original CSV clock.
+three required confirmations, known spends, and the original CSV clock.
+Spend and expiry tracking follow Instant Out's LND notifications. Recovery
+restores the watches; it does not require wallet history or a synchronous
+unspent assertion.
 A late client does not impose a new initial-delivery window: the server checks
 that promise when first delivering. Client `Ready` means verified and unexpired;
 a later swap must still enforce the saved execution cutoff and claim margin.
