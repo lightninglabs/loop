@@ -23,6 +23,21 @@ type AssetReservation struct {
 	ClientKeyFamily       int32
 	ClientKeyIndex        int64
 	CreatedAt             time.Time
+	Quote                 []byte
+	MaxRouteFeeMsat       int64
+	SkipProbe             bool
+	MainProbe             int32
+	ProbesCheckedAt       sql.NullTime
+	PrepayRouteFeeMsat    int64
+	MainRouteFeeMsat      int64
+	PaymentHash           []byte
+	PayingNodeKey         []byte
+	PaymentRequest        []byte
+	PaymentResult         []byte
+	FundingOutpoint       sql.NullString
+	ConfirmationHeight    int64
+	PrepayCredit          int64
+	DepositProof          []byte
 }
 
 type AssetReservationUpdate struct {

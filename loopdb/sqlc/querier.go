@@ -74,6 +74,7 @@ type Querier interface {
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	RecordStaticAddressRiskDecision(ctx context.Context, arg RecordStaticAddressRiskDecisionParams) error
 	SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error)
+	UpdateAssetReservationPurchase(ctx context.Context, arg UpdateAssetReservationPurchaseParams) (int64, error)
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
