@@ -2,9 +2,12 @@
 
 #### New Features
 
-* Add experimental asset-reservation payment adapters with invoice-based
-  probes, approved BTC prepays, and node-bound recovery. Runtime access remains
-  disabled pending service wiring and integration tests.
+* Display the full prepaid asset-reservation service fee and effective
+  percentage, including the transport minimum that enables smaller swaps.
+
+* Add experimental asset-reservation payment adapters, daemon wiring, and CLI
+  commands with invoice-based probes, approved BTC prepays, and recovery.
+  Purchases require the experimental flag and paired tapd; swaps remain unwired.
 
 * Instant Out now validates server invoices against a caller-approved maximum
   swap fee.
@@ -72,6 +75,10 @@
 * Accept quoted asset and BTC prepay amounts through the exact quote hash;
   remove duplicate amount limits from reservation approval requests.
 
+* Probe only the estimated reservation swap payment and estimate prepay routing
+  fees proportionally. Require a successful probe unless `--skip_probe` is set;
+  the flag skips probing for new purchases.
+
 * Add experimental asset reservation proof verification and LND confirmation,
   spend, and expiry tracking. Client readiness follows Instant Out's
   notification-based assumptions; no Bitcoin RPC connection is required.
@@ -86,6 +93,7 @@
   Document who supplies each term and how both parties check it.
   Document consent to the quoted asset fee and its BTC prepay equivalent.
 * Define a local reservation API with explicit quote approval and probe status.
+* Add experimental `loop asset reservation` purchase and inspection commands.
   Validate quoted amounts without imposing a client-side pricing policy.
   Name the saved funding depth `required_confirmations`; the server defaults
   to three.

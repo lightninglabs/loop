@@ -93,6 +93,7 @@ var (
 	}
 
 	commands = []*cli.Command{
+		assetCommand,
 		loopOutCommand, loopInCommand, termsCommand,
 		monitorCommand, quoteCommand, listAuthCommand, fetchL402Command,
 		listSwapsCommand, swapInfoCommand, getLiquidityParamsCommand,
