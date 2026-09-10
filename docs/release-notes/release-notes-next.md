@@ -18,6 +18,9 @@
 
 #### Maintenance
 
+* Document reservation store guarantees for atomic writes, repeated requests,
+  and recovery reads.
+
 * Keep reservation lifetime defaults in the server; the client validates
   quoted terms without imposing lifetime minimums.
 
