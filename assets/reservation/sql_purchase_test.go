@@ -80,7 +80,7 @@ func TestPurchaseStore(t *testing.T) {
 	r.State = "AwaitApproval"
 	require.NoError(t, store.UpdateReservation(ctx, r))
 	r.MaxRouteFeeMsat = 100
-	r.State = "PayPrepay"
+	r.State = PayPrepay
 	require.NoError(t, store.UpdateReservation(ctx, r))
 
 	preimage := lntypes.Preimage{9}
@@ -129,7 +129,7 @@ func TestPurchaseStore(t *testing.T) {
 		func(v *Reservation) { v.Quote.PrepayInvoice += "changed" },
 		func(v *Reservation) { v.MaxRouteFeeMsat++ },
 		func(v *Reservation) { v.SkipProbe = true },
-		func(v *Reservation) { v.State = "AwaitApproval" },
+		func(v *Reservation) { v.State = AwaitApproval },
 		func(v *Reservation) { v.PaymentRequest.TimeoutSeconds++ },
 		func(v *Reservation) { v.FundingOutpoint.Index++ },
 		func(v *Reservation) { v.PrepayCredit = 0 },

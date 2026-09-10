@@ -139,7 +139,7 @@ func (r *Reservation) CheckApproval(
 
 // checkPrepay permits preparation only after the approval transition was saved.
 func (r *Reservation) checkPrepay() error {
-	if r.State != "PayPrepay" {
+	if r.State != PayPrepay {
 		return errors.New("reservation is not approved for prepay")
 	}
 	return r.checkPaymentLimits()
@@ -186,7 +186,7 @@ func (r *Reservation) validatePurchase() error {
 	if r.MaxRouteFeeMsat > math.MaxInt64 {
 		return errors.New("reservation routing fee limit is out of range")
 	}
-	if r.State == "PayPrepay" || r.PaymentRequest != nil {
+	if r.State == PayPrepay || r.PaymentRequest != nil {
 		if err := r.checkPaymentLimits(); err != nil {
 			return err
 		}
@@ -231,8 +231,8 @@ func (r *Reservation) validatePurchase() error {
 // Once a purchase leaves these states, its choices stay fixed through payment,
 // cancellation, delivery, and recovery.
 func (r *Reservation) awaitingApproval() bool {
-	return r.State == "RequestQuote" || r.State == "ProbeRoutes" ||
-		r.State == "AwaitApproval"
+	return r.State == RequestQuote || r.State == ProbeRoutes ||
+		r.State == AwaitApproval
 }
 
 func preservePurchase(next, saved *Reservation) error {
