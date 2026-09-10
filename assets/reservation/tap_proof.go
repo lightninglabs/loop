@@ -21,6 +21,12 @@ type ProofClient interface {
 
 type tapProofVerifier struct{ tap ProofClient }
 
+// NewTapProofVerifier wraps the local tapd client to register issuance metadata
+// before verifying a reservation's full proof history.
+func NewTapProofVerifier(tap ProofClient) deposit.ProofVerifier {
+	return tapProofVerifier{tap: tap}
+}
+
 // VerifyProof supplies issuance metadata before full verification. Tapd
 // v0.8.3 needs that metadata to return a decoded transfer proof, including on
 // a BTC-only client that has never received this asset. InsertProof verifies

@@ -43,6 +43,20 @@
 #### Maintenance
 - Update the LoopRPC requirement to the revision used by this release.
 
+* Hold reservation prepays until funding is broadcast. Report funding refusals
+  with the existing `OutOfRange: amount above current maximum` error after
+  reconciling payment cancellation.
+
+* Group asset reservation JSON fields by identity, quote, payment, probe,
+  funding, and lifetime details for easier inspection.
+
+* Use lndclient authentication for reservation payment RPCs while preserving
+  the exact payment requests and responses used for recovery.
+
+* Serve asset-reservation RPCs through loopd's existing swap client server
+  and assemble the reservation services during daemon initialization. Keep
+  their handlers in the existing server file and reuse the daemon's LND clients.
+
 * Document how reservation state entry saves payment choices and handles
   failed validation or writes before an action runs.
 
@@ -67,7 +81,7 @@
 * Add experimental asset reservation proof verification and LND confirmation,
   spend, and expiry tracking. Client readiness follows Instant Out's
   notification-based assumptions; no Bitcoin RPC connection is required.
-  Reservation purchases remain disabled at runtime.
+  Reservation purchases remain experimental.
 
 * Name client purchase states `WaitForDelivery` and `VerifyReservation`.
 
@@ -81,10 +95,9 @@
   Validate quoted amounts without imposing a client-side pricing policy.
   Name the saved funding depth `required_confirmations`; the server defaults
   to three.
-  This does not enable reservation purchases or asset Loop Out.
+  Asset Loop Out execution is not enabled.
 
-* Define the experimental asset reservation RPC contract. Service registration
-  and real-node adapters remain disabled.
+* Define and wire the experimental asset reservation RPC contract.
   Describe public reservation status and owned get/list queries.
   Clarify the receiving node and conversion peer in reservation quotes.
 
