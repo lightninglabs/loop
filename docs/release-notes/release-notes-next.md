@@ -62,6 +62,16 @@
 
 #### Maintenance
 
+* Keep reservation lifetime defaults in the server; the client validates
+  quoted terms without imposing lifetime minimums.
+
+* Add shared asset reservation terms for the experimental purchase flow.
+  Document who supplies each term and how both parties check it.
+  Validate quoted amounts without imposing a client-side pricing policy.
+  Name the saved funding depth `required_confirmations`; the server defaults
+  to three.
+  This does not enable reservation purchases or asset Loop Out.
+
 * Define the experimental asset reservation RPC contract. Service registration
   and real-node adapters remain disabled.
   Describe public reservation status and owned get/list queries.
