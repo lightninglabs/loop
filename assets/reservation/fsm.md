@@ -13,8 +13,8 @@ stateDiagram-v2
     PayPrepay --> WaitForDelivery: local payment settled
     WaitForDelivery --> VerifyReservation: outpoint and proof available
     VerifyReservation --> Ready: local proof and chain checks pass
-    Ready --> Expired: original CSV matures
-    VerifyReservation --> Expired: recovered after original CSV maturity
+    Ready --> Expired: execution cutoff reached
+    VerifyReservation --> Expired: delivered or recovered after the cutoff
     RequestQuote --> CancelPrepay: canceled or expired quote
     ProbeRoutes --> CancelPrepay: probe failure, timeout, or expired quote
     AwaitApproval --> CancelPrepay: canceled or expired quote
@@ -31,7 +31,9 @@ recovery, and cannot resume when inventory returns. The CLI reports
 `cannot initiate swap: rpc error: code = OutOfRange desc = amount above current maximum`.
 A new attempt requires a fresh purchase ID. Transient quote RPC errors and missing quotes retry for at most one minute
 from persisted purchase creation. Invalid quotes end immediately in
-`QuoteFailed`, before any probe or payment. That state is terminal and excluded
+`QuoteFailed`, before any probe or payment. An invoice dated ahead of the
+local clock is not invalid: the server repeats its saved quote, so the same
+deadline retries it until the clock has passed the invoice timestamp. That state is terminal and excluded
 from recovery; server invoices expire independently. A restart cannot reset
 the quote deadline.
 The same terminal state and CLI error represent a later funding refusal: the
@@ -63,7 +65,11 @@ Quote validation and payment limits remain mandatory. Each invoice must match
 its own RFQ; the prepay and probe may use different rates. Approval displays
 the exact BTC prepay and implied prepay/probe prices.
 
-Server status is only a delivery hint. Before asking tapd, compare the
+Server status is only a delivery hint. A paid purchase keeps waiting for
+delivery, but it notifies the operator once per live FSM when no delivery
+arrives within `DeliveryAlertDelay` of prepay settlement, or as soon as the
+server reports it `EXPIRED` or `NEED_ADMIN`. Waiting continues afterward, so a
+late delivery still completes the purchase. Before asking tapd, compare the
 proof's anchor block with the local node's block at that height. tapd reports
 an unverifiable proof and an invalid one alike, so a node that has not reached
 the anchor block yet retries instead of parking a paid purchase; a different
@@ -75,10 +81,13 @@ restores the watches and fully verifies the saved proof once. Routine Ready
 checks refresh chain state without repeating tapd proof verification. A watch
 interval ending without a block is normal, not an error. No wallet history or
 synchronous unspent assertion is required.
-Client `Ready` means verified and unexpired, including after late recovery.
-Server delivery must precede the execution cutoff, without an additional
-minimum window. A later swap must still enforce the saved execution cutoff
-and its own claim margin.
+Client `Ready` means verified and before the execution cutoff, including
+after late recovery. Server delivery must precede the execution cutoff,
+without an additional minimum window. A delivery first verified at or after
+the cutoff goes directly to `Expired`, and a `Ready` reservation expires when
+the cutoff is reached. A spend observed before CSV maturity still needs
+attention. A later swap must still enforce the saved execution cutoff and its
+own claim margin.
 
 Genuine inconsistencies enter `NeedAdminAttention` and notify the operator.
 A temporary paying-node RPC failure before probe dispatch retries the same

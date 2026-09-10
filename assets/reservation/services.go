@@ -106,6 +106,11 @@ type Config struct {
 	Wallet      ReservationVerifier
 	Clock       clock.Clock
 	NotifyAdmin func(ID, error)
+
+	// LifetimeFloor rejects new quotes whose lifetime is too short to use.
+	// The zero value accepts any consistent terms. Saved quotes keep the
+	// terms checked when they were received.
+	LifetimeFloor LifetimeFloor
 }
 
 // Validate rejects a client that cannot recover its purchases.

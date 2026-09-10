@@ -37,6 +37,7 @@ type FSM struct {
 	event           fsm.EventType
 	readyVerified   bool
 	adminNotified   bool
+	deliveryAlerted bool
 	LastActionError error
 }
 

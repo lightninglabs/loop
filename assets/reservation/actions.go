@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -94,7 +95,22 @@ func (f *FSM) RequestQuoteAction(ctx context.Context,
 	if err := r.ValidateQuote(response.Quote); err != nil {
 		return f.rejectQuote(err)
 	}
+	// Approval, especially with --yes, must not accept a reservation that
+	// is too short-lived to use. ValidateQuote has already parsed the terms.
+	terms, err := TermsFromRPC(response.Quote.Terms)
+	if err != nil {
+		return f.rejectQuote(err)
+	}
+	if err := f.cfg.LifetimeFloor.Check(terms); err != nil {
+		return f.rejectQuote(err)
+	}
 	if err := f.cfg.Payments.ValidateQuote(ctx, response.Quote); err != nil {
+		// The server repeats its saved quote, so an invoice dated just
+		// ahead of our clock validates on a later attempt. The quote
+		// deadline above still bounds the wait.
+		if errors.Is(err, errInvoiceNotYetValid) {
+			return f.stayInState(err)
+		}
 		return f.rejectQuote(err)
 	}
 	if response.Quote.Group != nil {
@@ -160,7 +176,8 @@ func (f *FSM) ProbeRoutesAction(ctx context.Context,
 				return f.stayInState(err)
 			}
 			if errors.Is(err, context.DeadlineExceeded) ||
-				errors.Is(err, context.Canceled) {
+				errors.Is(err, context.Canceled) ||
+				errors.Is(err, ErrChainNotReady) {
 
 				return f.stayInState(err)
 			}
@@ -535,9 +552,26 @@ func (f *FSM) WaitForDeliveryAction(ctx context.Context,
 		// is an inconsistency that needs attention, not a normal exit.
 		return f.fail(errors.New("server canceled a paid reservation"))
 	}
+	switch status.State {
+	case swapserverrpc.AssetReservationStatus_ASSET_RESERVATION_EXPIRED,
+		swapserverrpc.AssetReservationStatus_ASSET_RESERVATION_NEED_ADMIN:
+
+		// The server no longer expects to deliver. Keep polling in case
+		// it recovers, but tell the operator now.
+		f.alertDelivery(fmt.Errorf("server reports paid reservation as %v",
+			status.State))
+	}
 	// Wait until the server can identify the output and supply its proof.
 	// Its state alone cannot establish that delivery is valid.
 	if status.Outpoint == "" || !status.ProofAvailable {
+		settled := prepaySettledAt(r)
+		if settled.IsZero() {
+			settled = r.UpdatedAt
+		}
+		if !f.cfg.Clock.Now().Before(settled.Add(DeliveryAlertDelay)) {
+			f.alertDelivery(fmt.Errorf("no delivery %v after the "+
+				"prepay settled", DeliveryAlertDelay))
+		}
 		return fsm.NoOp
 	}
 	// The entire service fee was prepaid and must be credited to this
@@ -549,11 +583,66 @@ func (f *FSM) WaitForDeliveryAction(ctx context.Context,
 	if err != nil {
 		return f.fail(err)
 	}
+	savedOutpoint, savedCredit := r.FundingOutpoint, r.PrepayCredit
 	r.FundingOutpoint, r.PrepayCredit = outpoint, status.PrepayCredit
 	if !f.save(ctx) {
-		return fsm.NoOp
+		if !errors.Is(f.persistErr, ErrFundingOutpointConflict) {
+			return fsm.NoOp
+		}
+		// Retrying the save can never succeed. Restore the durable
+		// values so that saving the attention state does not repeat
+		// the conflict, then report the server's duplicate delivery.
+		err := f.persistErr
+		r.FundingOutpoint, r.PrepayCredit = savedOutpoint, savedCredit
+		f.persistErr = nil
+		return f.fail(err)
 	}
 	return OnDelivery
+}
+
+// DeliveryAlertDelay is how long after the prepay settles a client waits for
+// delivery before alerting the operator. The server settles the prepay when it
+// publishes the funding transaction, so delivery normally follows within the
+// quoted confirmation depth.
+const DeliveryAlertDelay = 24 * time.Hour
+
+// alertDelivery reports a stalled delivery once per live FSM without leaving
+// WaitForDelivery, so that a late delivery can still complete the purchase.
+// After a restart the alert is repeated once if the stall persists. The error
+// is recorded only with the alert, because the manager logs LastActionError on
+// every poll and a stall can last indefinitely.
+func (f *FSM) alertDelivery(err error) {
+	if f.deliveryAlerted {
+		return
+	}
+	f.LastActionError = err
+	f.cfg.NotifyAdmin(f.reservation.ID, err)
+	f.deliveryAlerted = true
+}
+
+// prepaySettledAt returns when the prepay settled, using the resolve time of
+// its latest successful HTLC and falling back to the payment's creation time.
+// It returns the zero time if the payment carries neither timestamp.
+func prepaySettledAt(r *Reservation) time.Time {
+	p := r.PaymentResult
+	if p == nil {
+		return time.Time{}
+	}
+	var resolved int64
+	for _, htlc := range p.Htlcs {
+		if htlc.GetStatus() == lnrpc.HTLCAttempt_SUCCEEDED &&
+			htlc.ResolveTimeNs > resolved {
+
+			resolved = htlc.ResolveTimeNs
+		}
+	}
+	if resolved <= 0 {
+		resolved = p.CreationTimeNs
+	}
+	if resolved <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, resolved)
 }
 
 // VerifyReservationAction independently checks the full exported proof. An
@@ -603,15 +692,29 @@ func (f *FSM) VerifyReservationAction(ctx context.Context,
 		return fsm.NoOp
 	}
 	lifetime, _ := r.Terms.Lifetime(r.ConfirmationHeight)
-	// An offline client may first verify delivery after its CSV lifetime
-	// has ended. Such a reservation goes directly to Expired.
+	return f.checkLifetime(status, lifetime, OnProof)
+}
+
+// checkLifetime classifies verified funding against its derived deadlines.
+// At CSV maturity the reservation has expired, and a spend is the server's
+// expected timeout sweep. Before maturity an observed spend is unexpected in
+// this purchase flow and needs attention. From the execution cutoff on, no
+// swap may start, so an unspent output can no longer be used and the
+// reservation expires as well. This covers an offline client that first
+// verifies delivery late and a server that delivers after the cutoff.
+func (f *FSM) checkLifetime(status FundingStatus, lifetime Lifetime,
+	usable fsm.EventType) fsm.EventType {
+
 	if status.Height >= lifetime.TimeoutHeight {
 		return OnTimeout
 	}
 	if status.Spent {
 		return f.fail(errors.New("reservation spent before timeout"))
 	}
-	return OnProof
+	if status.Height >= lifetime.ExecutionCutoff {
+		return OnTimeout
+	}
+	return usable
 }
 
 // checkChain validates local funding heights when verifying delivery and
@@ -641,8 +744,9 @@ func (f *FSM) checkChain(status FundingStatus) error {
 	return err
 }
 
-// ReadyAction watches the verified output through the original CSV expiry.
-// A later swap must separately enforce its execution cutoff and claim margin.
+// ReadyAction watches the verified output until its execution cutoff, after
+// which no swap may start and the reservation expires. A later swap must still
+// enforce the same cutoff when it starts and its own claim margin.
 func (f *FSM) ReadyAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
@@ -669,15 +773,8 @@ func (f *FSM) ReadyAction(ctx context.Context,
 	lifetime, _ := f.reservation.Terms.Lifetime(
 		f.reservation.ConfirmationHeight,
 	)
-	// At CSV expiry, finish watching. Before then, an observed spend is
-	// unexpected in this purchase flow and needs attention.
-	if status.Height >= lifetime.TimeoutHeight {
-		return OnTimeout
-	}
-	if status.Spent {
-		return f.fail(errors.New("reservation spent before timeout"))
-	}
-	return fsm.NoOp
+	// Finish watching once no swap can start.
+	return f.checkLifetime(status, lifetime, fsm.NoOp)
 }
 
 // readyError keeps transient node failures retryable while withdrawing a

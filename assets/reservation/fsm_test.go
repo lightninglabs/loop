@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
@@ -71,6 +72,7 @@ type clientHarness struct {
 	blockQuote         bool
 	quoteStarted       chan struct{}
 	fundingUnavailable bool
+	serverState        swapserverrpc.AssetReservationStatus
 	deliver            bool
 	badProof           bool
 	status             FundingStatus
@@ -190,6 +192,9 @@ func (h *clientHarness) GetAssetReservation(context.Context,
 		response.Outpoint = h.outpoint.String()
 		response.ProofAvailable = true
 		response.PrepayCredit = h.quote.Terms.Fee
+	}
+	if h.serverState != 0 {
+		response.State = h.serverState
 	}
 	return response, nil
 }
@@ -385,7 +390,9 @@ func TestClientPurchaseFSM(t *testing.T) {
 	require.EqualValues(t, 11, h.record().PrepayCredit)
 	require.EqualValues(t, 100, h.record().ConfirmationHeight)
 	h.restart()
-	h.status.Height = 1539
+	// The execution cutoff is exclusive: the block before it is still
+	// usable, and the reservation expires at the cutoff itself.
+	h.status.Height = 1449
 	h.event(OnRecover, nil)
 	h.state(Ready)
 	h.status.Height++
@@ -393,6 +400,183 @@ func TestClientPurchaseFSM(t *testing.T) {
 	h.state(Expired)
 	require.Equal(t, 1, h.sends)
 	require.Zero(t, h.notifications)
+}
+
+// paidHarness returns a harness whose purchase has a settled prepay and is
+// waiting for delivery. The optional htlcs are reported with the settlement.
+func paidHarness(t *testing.T, htlcs ...*lnrpc.HTLCAttempt) *clientHarness {
+	t.Helper()
+	h := newClientHarness(t)
+	h.event(OnRecover, nil)
+	h.approve()
+	h.settle()
+	h.result.Htlcs = htlcs
+	h.event(OnRecover, nil)
+	h.state(WaitForDelivery)
+	require.Zero(t, h.notifications)
+	return h
+}
+
+// TestClientDeliveryStallAlerts checks that a paid purchase without delivery
+// alerts the operator once per live FSM after DeliveryAlertDelay, keeps
+// waiting, and still completes when delivery arrives late.
+func TestClientDeliveryStallAlerts(t *testing.T) {
+	for _, withTimestamp := range []bool{false, true} {
+		name := "fallback to update time"
+		if withTimestamp {
+			name = "htlc resolve time"
+		}
+		t.Run(name, func(t *testing.T) {
+			// The test clock is fixed, so local updates happen at
+			// its start time.
+			start := time.Unix(1800000000, 0)
+			settled := start
+			var htlcs []*lnrpc.HTLCAttempt
+			if withTimestamp {
+				// The settlement time comes from the payment's
+				// successful HTLC, not from the later local
+				// update or a failed attempt.
+				settled = start.Add(-time.Hour)
+				htlcs = []*lnrpc.HTLCAttempt{{
+					Status:        lnrpc.HTLCAttempt_SUCCEEDED,
+					ResolveTimeNs: settled.UnixNano(),
+				}, {
+					Status:        lnrpc.HTLCAttempt_FAILED,
+					ResolveTimeNs: start.UnixNano(),
+				}}
+			}
+			h := paidHarness(t, htlcs...)
+			require.Equal(t, start.Unix(), h.record().UpdatedAt.Unix())
+			testClock := h.cfg.Clock.(*clock.TestClock)
+
+			testClock.SetTime(settled.Add(DeliveryAlertDelay - time.Second))
+			h.event(OnRecover, nil)
+			h.state(WaitForDelivery)
+			require.Zero(t, h.notifications)
+
+			testClock.SetTime(settled.Add(DeliveryAlertDelay))
+			h.event(OnRecover, nil)
+			h.state(WaitForDelivery)
+			require.Equal(t, 1, h.notifications)
+			require.Error(t, h.machine.LastActionError)
+
+			// The alert is not repeated while this FSM is live, and
+			// later polls report no error for the manager to log
+			// every tick. A restart reports a persisting stall once
+			// more.
+			h.event(OnRecover, nil)
+			require.Equal(t, 1, h.notifications)
+			require.NoError(t, h.machine.LastActionError)
+			h.restart()
+			h.event(OnRecover, nil)
+			require.Equal(t, 2, h.notifications)
+
+			// A late delivery still completes the purchase.
+			h.deliver = true
+			h.event(OnRecover, nil)
+			h.state(VerifyReservation)
+			h.status.Height = 102
+			h.event(OnRecover, nil)
+			h.state(Ready)
+			require.Equal(t, 2, h.notifications)
+		})
+	}
+}
+
+// TestClientDuplicateOutpointNeedsAttention checks that delivery of an
+// outpoint already recorded for another reservation ends in admin attention
+// instead of retrying the conflicting save forever, and that the attention
+// state is saved without the conflicting outpoint.
+func TestClientDuplicateOutpointNeedsAttention(t *testing.T) {
+	h := paidHarness(t)
+	other := testReservation()
+	other.ID = ID{7}
+	require.NoError(t, h.store.CreateReservation(t.Context(), other))
+	_, err := h.store.Store.(*SqlStore).db.ExecContext(t.Context(),
+		`UPDATE asset_reservations SET funding_outpoint = $1
+		WHERE reservation_id = $2`, h.outpoint.String(), other.ID[:])
+	require.NoError(t, err)
+
+	h.deliver = true
+	h.event(OnRecover, nil)
+	h.state(NeedAdminAttention)
+	require.Nil(t, h.record().FundingOutpoint)
+	require.Zero(t, h.record().PrepayCredit)
+	require.Equal(t, 1, h.notifications)
+
+	// Recovery keeps the purchase parked for investigation.
+	h.restart()
+	h.event(OnRecover, nil)
+	h.state(NeedAdminAttention)
+	require.Zero(t, h.verifyCalls)
+}
+
+// TestClientServerGaveUpAlerts checks that a server reporting a paid purchase
+// as expired or needing attention alerts at once without leaving
+// WaitForDelivery.
+func TestClientServerGaveUpAlerts(t *testing.T) {
+	for _, state := range []swapserverrpc.AssetReservationStatus{
+		swapserverrpc.AssetReservationStatus_ASSET_RESERVATION_EXPIRED,
+		swapserverrpc.AssetReservationStatus_ASSET_RESERVATION_NEED_ADMIN,
+	} {
+		t.Run(state.String(), func(t *testing.T) {
+			h := paidHarness(t)
+			h.serverState = state
+			h.event(OnRecover, nil)
+			h.state(WaitForDelivery)
+			require.Equal(t, 1, h.notifications)
+			h.event(OnRecover, nil)
+			require.Equal(t, 1, h.notifications)
+
+			h.serverState = 0
+			h.deliver = true
+			h.event(OnRecover, nil)
+			h.state(VerifyReservation)
+		})
+	}
+}
+
+// TestClientLateDeliveryExpires checks that a delivery first verified at or
+// after the execution cutoff never becomes Ready, while one verified in the
+// block before the cutoff does.
+func TestClientLateDeliveryExpires(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		height uint32
+		spent  bool
+		want   fsm.StateType
+	}{
+		{name: "before cutoff", height: 1449, want: Ready},
+		{name: "at cutoff", height: 1450, want: Expired},
+		{name: "before timeout", height: 1539, want: Expired},
+		{
+			name: "spent before timeout", height: 1450, spent: true,
+			want: NeedAdminAttention,
+		},
+		{
+			name: "spent at timeout", height: 1540, spent: true,
+			want: Expired,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newClientHarness(t)
+			h.event(OnRecover, nil)
+			h.approve()
+			h.settle()
+			h.event(OnRecover, nil)
+			h.state(WaitForDelivery)
+			h.deliver = true
+			h.event(OnRecover, nil)
+			h.state(VerifyReservation)
+			h.status.Height = tc.height
+			h.status.Spent = tc.spent
+			h.event(OnRecover, nil)
+			h.state(tc.want)
+			require.EqualValues(
+				t, 100, h.record().ConfirmationHeight,
+			)
+		})
+	}
 }
 
 func TestClientProbeApproval(t *testing.T) {
@@ -724,12 +908,18 @@ func TestReadyVerifiesOncePerRestart(t *testing.T) {
 }
 
 func TestQuoteFailuresStopBeforePayment(t *testing.T) {
-	for _, failure := range []string{invalidCase, "pending", "unavailable"} {
+	for _, failure := range []string{
+		invalidCase, "pending", "unavailable", "clock behind",
+	} {
 		t.Run(failure, func(t *testing.T) {
 			h := newClientHarness(t)
 			switch failure {
 			case invalidCase:
 				h.quoteValidationErr = errors.New("invalid invoice")
+			case "clock behind":
+				// An invoice dated ahead of the local clock
+				// retries within the quote deadline.
+				h.quoteValidationErr = errInvoiceNotYetValid
 			case "pending":
 				h.quotePending = true
 			case "unavailable":
@@ -757,4 +947,67 @@ func TestQuoteFailuresStopBeforePayment(t *testing.T) {
 			require.Empty(t, active)
 		})
 	}
+}
+
+// TestQuoteBelowLifetimeFloorFails checks that a quote whose lifetime falls
+// below the client's floor ends before the quote is saved, probed or paid,
+// and that the same quote is accepted without a floor.
+func TestQuoteBelowLifetimeFloorFails(t *testing.T) {
+	// The test quote uses CSV 1440, three confirmations and delta 90.
+	for _, tc := range []struct {
+		name  string
+		floor LifetimeFloor
+		want  fsm.StateType
+	}{
+		{name: "no floor", want: AwaitApproval},
+		{
+			name:  "mainnet floor",
+			floor: LifetimeFloorForChain(&chaincfg.MainNetParams),
+			want:  AwaitApproval,
+		},
+		{
+			name:  "csv below floor",
+			floor: LifetimeFloor{MinCSVDelay: 1441},
+			want:  QuoteFailed,
+		},
+		{
+			name:  "usable window below floor",
+			floor: LifetimeFloor{MinUsableBlocks: 1440 - 3 - 90 + 1},
+			want:  QuoteFailed,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newClientHarness(t)
+			h.cfg.LifetimeFloor = tc.floor
+			h.restart()
+			h.event(OnRecover, nil)
+			h.state(tc.want)
+			if tc.want != QuoteFailed {
+				return
+			}
+			require.Error(t, h.machine.LastActionError)
+			require.Nil(t, h.record().Quote)
+			require.Nil(t, h.record().ProbeRequest)
+			require.Empty(t, h.probeInvoices)
+			require.Zero(t, h.sends)
+		})
+	}
+}
+
+// TestQuoteDatedAheadOfClockIsRetried checks that a local clock slightly
+// behind the server's does not end the purchase. The server repeats its saved
+// quote, which validates once the clock has passed the invoice timestamp.
+func TestQuoteDatedAheadOfClockIsRetried(t *testing.T) {
+	h := newClientHarness(t)
+	h.quoteValidationErr = errInvoiceNotYetValid
+	h.event(OnRecover, nil)
+	h.state(RequestQuote)
+	require.ErrorIs(t, h.machine.LastActionError, errInvoiceNotYetValid)
+	require.Nil(t, h.record().Quote)
+
+	h.quoteValidationErr = nil
+	h.event(OnRecover, nil)
+	h.state(AwaitApproval)
+	require.NotNil(t, h.record().Quote)
+	require.Zero(t, h.cancels)
 }
