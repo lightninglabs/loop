@@ -94,9 +94,14 @@ func TestPurchaseStore(t *testing.T) {
 	require.NoError(t, store.UpdateReservation(ctx, r))
 	r.PaymentResult = &lnrpc.Payment{
 		PaymentHash:     r.PaymentHash.String(),
-		PaymentPreimage: preimage.String(), Status: lnrpc.Payment_SUCCEEDED,
+		PaymentPreimage: preimage.String(),
+		Status:          lnrpc.Payment_SUCCEEDED,
+		ValueMsat:       int64(r.Quote.PrepayAmountMsat),
 	}
-	r.FundingOutpoint = &wire.OutPoint{Hash: chainhash.Hash{3}, Index: 2}
+	r.FundingOutpoint = &wire.OutPoint{
+		Hash:  chainhash.Hash{3},
+		Index: 2,
+	}
 	r.ConfirmationHeight = 100
 	r.PrepayCredit = 11
 	r.ReservationProof = []byte{1, 2, 3}

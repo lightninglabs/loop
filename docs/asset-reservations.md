@@ -29,8 +29,16 @@ waits for explicit approval, tracks the exact prepay, and verifies delivery
 through narrow payment and wallet interfaces. Its SQLite-backed tests cover
 restarts, failed writes, cancellation racing settlement, proof rejection, and
 CSV expiry. The asset adapter now verifies full proofs through tapd and the
-shared deposit kit, and tracks confirmations and spends through LND. Payment
-adapters and runtime wiring remain separate work.
+shared deposit kit, and tracks confirmations and spends through LND. The
+payment adapter validates the receiving RFQ and invoices, probes through
+LND's estimator, and sends the approved BTC prepay. It saves the paying node
+and exact request before dispatch. Runtime wiring remains separate work.
+
+Prepays use one payment part to avoid conversion-rounding losses. The client
+checks available BTC in one channel, including its reserve and the approved
+routing cap. Skipping the probe cannot bypass these checks. An
+uncertain send is resolved by tracking the saved hash on the saved node, not
+by paying again.
 
 The manager restores every live purchase and serializes its actions in one
 worker. New-purchase limits never suppress recovery. Exact request retries
