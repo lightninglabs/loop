@@ -1,5 +1,12 @@
 # Asset reservation protocol
 
+The local `looprpc.AssetReservations` service separates `Buy` (request a
+quote) from `Approve` (permit payment under saved limits). `Get`, `List`,
+and `Cancel` support inspection and recovery without buying
+again. Funded records accept canonical outpoints; pre-funding retries use a
+stable ID. Local calls require the existing swap read or execute macaroon
+permissions. Registration is part of the client runtime wiring.
+
 The wire contract lives in `swapserverrpc/asset_reservation.proto`. It is
 separate from Bitcoin Instant Out reservations. These definitions do not
 enable a service; handlers, authentication wiring, and node adapters follow.
@@ -19,6 +26,31 @@ asset terms, keys, Bitcoin equivalents, edge, and expiry. The client validates
 both invoices, probes only the estimated main amount, then waits
 for approval. Paying the hold prepay is the only signal that permits funding.
 The main Bitcoin equivalent is an estimate, not an exchange-rate guarantee.
+
+The local response reports `main_probe` and `main_probe_fee_msat`.
+`estimated_prepay_route_fee_msat` scales that fee by the prepay/main BTC amount
+ratio, rounded up to a millisatoshi, without accounting for fixed hop fees.
+Both fee estimates are unavailable unless the main probe succeeds. The prepay
+invoice is validated and paid under the approved limits, but is not probed.
+
+Normal approval requires a successful main probe. `Buy.skip_probe` skips the
+automatic probe for a new purchase; it is saved before the worker starts and
+survives a restart. Repeating `Buy` preserves the existing purchase's progress.
+`Approve.skip_probe` separately records consent to buy without a successful
+probe, including after a failed attempt. Skipping the probe never authorizes
+payment. Missing or unsuccessful probes retry in the background while awaiting
+approval, including after restart. A successful probe is reused for the saved
+quote. There is no public probe command or RPC.
+
+The approval request accepts the displayed quote by hash, including its
+asset fee and BTC prepay amount. The client checks the hash against the
+immutable quote. It saves the prepay routing cap and `skip_probe` on the
+reservation, in the same transaction as the transition to `PayPrepay`. That
+state records consent. A retryable payment error after that write returns the
+saved progress. If the approval reply is lost, the CLI queries the same ID;
+if it cannot establish progress, it prints commands to inspect or resume that
+purchase without creating another one. Recovery from `AwaitApproval` still waits
+for the caller; recovery from `PayPrepay` resumes with the saved choices.
 
 The quote identifies two Lightning nodes on the receiving side:
 
