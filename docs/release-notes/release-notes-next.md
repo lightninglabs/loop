@@ -13,6 +13,9 @@
 
 #### Bug Fixes
 
+* Cancel reservation creation and its response snapshot read when the manager
+  shuts down. Both operations share the request timeout.
+
 * Shared Taproot Asset sweep packets now preserve the destination address
   version and use the required non-interactive split-root layout.
 
@@ -43,8 +46,14 @@
 * Document how reservation state entry saves payment choices and handles
   failed validation or writes before an action runs.
 
+* Rename the reservation manager limit to `MaxActiveReservations`.
+  Clarify how new-purchase requests create or reuse a reservation.
+
 * Document reservation store guarantees for atomic writes, repeated requests,
   and recovery reads.
+
+* Use reservation names consistently in manager recovery and its tests.
+  Document request handling, worker recovery, and shutdown in the manager.
 
 * Use `SkipProbe` consistently in reservation requests and storage, with one
   saved preference. Payment still requires explicit quote approval.

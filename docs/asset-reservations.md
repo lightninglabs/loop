@@ -30,6 +30,13 @@ through narrow payment and wallet interfaces. Its SQLite-backed tests cover
 restarts, failed writes, cancellation racing settlement, proof rejection, and
 CSV expiry. Concrete node adapters and runtime wiring remain separate work.
 
+The manager restores every live purchase and serializes its actions in one
+worker. New-purchase limits never suppress recovery. Exact request retries
+reuse saved keys and terms; cancellation retries return the saved outcome.
+RPC calls and periodic checks are sufficient for this version. The existing
+notification stream is not required or connected. Shutdown cancels pending
+node calls and waits for workers to finish; status readers use the store.
+
 The shared lifetime calculation derives timeout and execution heights from
 the original funding confirmation. The server checks the quoted depth and
 initial usable window before declaring the reservation Ready. These delivery

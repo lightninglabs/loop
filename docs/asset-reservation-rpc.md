@@ -99,7 +99,8 @@ All methods require L402 ownership checks. Unknown IDs, another owner's IDs,
 and internal lookup failures return the same opaque status and message.
 Detailed causes stay in server logs. Validate canonical outpoints before
 lookup or dispatch. Page size is bounded; list results contain only owned
-records. Notifications, when added, are hints to read this API again.
+records. This version uses RPC calls and periodic status checks, without
+notification-stream integration. Later notifications can prompt fresh reads.
 
 The local client API will expose quote, approve, cancel, get, and list.
 The approval request includes the displayed quote hash and prepay routing
