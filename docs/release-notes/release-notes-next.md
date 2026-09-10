@@ -65,6 +65,12 @@
 * Document reservation store guarantees for atomic writes, repeated requests,
   and recovery reads.
 
+* Use `SkipProbe` consistently in reservation requests and storage, with one
+  saved preference. Payment still requires explicit quote approval.
+
+* Save reservation payment choices with the approved state; remove the
+  duplicate quote approval snapshot.
+
 * Accept quoted asset and BTC prepay amounts through the exact quote hash;
   remove duplicate amount limits from reservation approval requests.
 
@@ -73,6 +79,7 @@
 
 * Add shared asset reservation terms for the experimental purchase flow.
   Document who supplies each term and how both parties check it.
+  Document consent to the quoted asset fee and its BTC prepay equivalent.
 * Define a local reservation API with explicit quote approval and probe status.
   Validate quoted amounts without imposing a client-side pricing policy.
   Name the saved funding depth `required_confirmations`; the server defaults
