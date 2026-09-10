@@ -15,6 +15,12 @@ its terms or keys fails. Updates preserve the agreed fee and append state
 history. Payment and funding fields follow with their actions. Runtime wiring
 is still separate work.
 
+The shared lifetime calculation derives timeout and execution heights from
+the original funding confirmation. The server checks the quoted depth and
+initial usable window before declaring the reservation Ready. These delivery
+checks live in the server's reservation package; proof verification and spend
+tracking remain separate responsibilities.
+
 One reservation holds one asset and amount in one Bitcoin output. The server
 owns the lifetime defaults: a 1,440-block CSV, three confirmations, a 90-block
 execution margin, and 1,000 initially usable blocks. The client checks that
