@@ -171,3 +171,43 @@ func TestAssetReservationSchema(t *testing.T) {
 		})
 	}
 }
+
+func TestAssetReservationPendingQuote(t *testing.T) {
+	db := loopdb.NewTestDB(t)
+	ctx := t.Context()
+	id := bytes.Repeat([]byte{7}, 32)
+	_, err := db.CreateAssetReservation(ctx,
+		sqlc.CreateAssetReservationParams{
+			ReservationID: id,
+			AssetID:       bytes.Repeat([]byte{2}, 32),
+			Amount:        10000,
+			ClientPubkey:  bytes.Repeat([]byte{3}, 33),
+			CreatedAt:     time.Now().UTC(),
+		},
+	)
+	require.NoError(t, err)
+	row, err := db.GetAssetReservation(ctx, id)
+	require.NoError(t, err)
+	require.Zero(t, row.Fee)
+	require.Empty(t, row.Quote)
+
+	// Quote terms arrive as one complete set, never as partial defaults.
+	count, err := db.UpdateAssetReservationPurchase(ctx,
+		sqlc.UpdateAssetReservationPurchaseParams{
+			ReservationID:         id,
+			Fee:                   11,
+			CsvDelay:              1440,
+			RequiredConfirmations: 3,
+			ExecutionDelta:        90,
+			MinUsableBlocks:       1000,
+			Quote:                 []byte{1, 2, 3},
+		},
+	)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, count)
+	row, err = db.GetAssetReservation(ctx, id)
+	require.NoError(t, err)
+	require.EqualValues(t, 11, row.Fee)
+	require.EqualValues(t, 3, row.RequiredConfirmations)
+	require.Equal(t, []byte{1, 2, 3}, row.Quote)
+}
