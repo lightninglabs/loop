@@ -62,6 +62,11 @@
 
 #### Maintenance
 
+* Define the experimental asset reservation RPC contract. Service registration
+  and real-node adapters remain disabled.
+  Describe public reservation status and owned get/list queries.
+  Clarify the receiving node and conversion peer in reservation quotes.
+
 * Update Taproot Assets to v0.8.3, taprpc to v1.3.3, and the LND dependency to
   v0.21.3-beta. The minimum Go build version is now 1.25.13.
 
