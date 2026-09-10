@@ -65,11 +65,15 @@
 * Document reservation store guarantees for atomic writes, repeated requests,
   and recovery reads.
 
+* Accept quoted asset and BTC prepay amounts through the exact quote hash;
+  remove duplicate amount limits from reservation approval requests.
+
 * Keep reservation lifetime defaults in the server; the client validates
   quoted terms without imposing lifetime minimums.
 
 * Add shared asset reservation terms for the experimental purchase flow.
   Document who supplies each term and how both parties check it.
+* Define a local reservation API with explicit quote approval and probe status.
   Validate quoted amounts without imposing a client-side pricing policy.
   Name the saved funding depth `required_confirmations`; the server defaults
   to three.
