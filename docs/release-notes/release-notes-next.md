@@ -18,4 +18,9 @@
 
 #### Maintenance
 
+* Define the experimental asset reservation RPC contract. Service registration
+  and real-node adapters remain disabled.
+  Describe public reservation status and owned get/list queries.
+  Clarify the receiving node and conversion peer in reservation quotes.
+
 #### Contributors (Alphabetical Order)
