@@ -19,7 +19,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
-	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -109,6 +108,29 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
+	var changeOutput *swapserverrpc.StaticAddressChangeOutput
+	if hasChange {
+		changeAmount := f.loopIn.ExpectedChangeAmount()
+		f.loopIn.ChangeAddressParams, err =
+			f.cfg.AddressManager.NewChangeAddress(ctx)
+		if err != nil {
+			err = fmt.Errorf("unable to create static address "+
+				"change output: %w", err)
+
+			return returnError(err)
+		}
+
+		changeOutput, err = staticutil.ChangeOutput(
+			f.loopIn.ChangeAddressParams, changeAmount,
+		)
+		if err != nil {
+			err = fmt.Errorf("unable to prepare static address "+
+				"change output: %w", err)
+
+			return returnError(err)
+		}
+	}
+
 	// Generate random preimage.
 	var swapPreimage lntypes.Preimage
 	if _, err = rand.Read(swapPreimage[:]); err != nil {
@@ -154,20 +176,30 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	// leave behind a live invoice with no persisted swap to recover it.
 	invoiceNeedsCleanup = true
 
-	f.loopIn.ProtocolVersion = version.AddressProtocolVersion(
-		version.CurrentRPCProtocolVersion(),
+	depositDescriptors, err := staticutil.DepositAddressDescriptors(
+		f.loopIn.Deposits,
 	)
+	if err != nil {
+		err = fmt.Errorf("unable to prepare static address input "+
+			"proofs: %w", err)
+
+		return returnError(err)
+	}
 
 	loopInReq := &swapserverrpc.ServerStaticAddressLoopInRequest{
-		SwapHash:              f.loopIn.SwapHash[:],
-		DepositOutpoints:      f.loopIn.DepositOutpoints,
-		Amount:                uint64(f.loopIn.SelectedAmount),
-		HtlcClientPubKey:      f.loopIn.ClientPubkey.SerializeCompressed(),
-		SwapInvoice:           f.loopIn.SwapInvoice,
-		ProtocolVersion:       version.CurrentRPCProtocolVersion(),
-		UserAgent:             loop.UserAgent(f.loopIn.Initiator),
-		PaymentTimeoutSeconds: f.loopIn.PaymentTimeoutSeconds,
-		Fast:                  f.loopIn.Fast,
+		SwapHash:         f.loopIn.SwapHash[:],
+		DepositOutpoints: f.loopIn.DepositOutpoints,
+		Amount:           uint64(f.loopIn.SelectedAmount),
+		HtlcClientPubKey: f.loopIn.ClientPubkey.SerializeCompressed(),
+		SwapInvoice:      f.loopIn.SwapInvoice,
+		ProtocolVersion: swapserverrpc.StaticAddressProtocolVersion(
+			f.loopIn.ProtocolVersion,
+		),
+		UserAgent:              loop.UserAgent(f.loopIn.Initiator),
+		PaymentTimeoutSeconds:  f.loopIn.PaymentTimeoutSeconds,
+		Fast:                   f.loopIn.Fast,
+		DepositToClientPubkeys: depositDescriptors,
+		ChangeOutput:           changeOutput,
 	}
 	if f.loopIn.LastHop != nil {
 		loopInReq.LastHop = f.loopIn.LastHop
@@ -575,23 +607,6 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	f.loopIn.AddressParams, err =
-		f.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-	if err != nil {
-		err = fmt.Errorf("unable to get static address parameters: "+
-			"%w", err)
-
-		return f.HandleError(err)
-	}
-
-	f.loopIn.Address, err = f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		err = fmt.Errorf("unable to get static address: %w", err)
-
-		return f.HandleError(err)
-	}
-
 	err = f.checkDepositsAvailable(ctx)
 	if err != nil {
 		return f.HandleError(err)
@@ -601,8 +616,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	// rates.
 	createSession := staticutil.CreateMusig2Sessions
 	htlcSessions, clientHtlcNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to create musig2 sessions: %w", err)
@@ -612,8 +626,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	defer f.cleanUpSessions(ctx, htlcSessions)
 
 	htlcSessionsHighFee, highFeeNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		return f.HandleError(err)
@@ -621,8 +634,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	defer f.cleanUpSessions(ctx, htlcSessionsHighFee)
 
 	htlcSessionsExtremelyHighFee, extremelyHighNonces, err := createSession(
-		ctx, f.cfg.Signer, f.loopIn.Deposits, f.loopIn.AddressParams,
-		f.loopIn.Address,
+		ctx, f.cfg.Signer, f.loopIn.Deposits,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to convert nonces: %w", err)

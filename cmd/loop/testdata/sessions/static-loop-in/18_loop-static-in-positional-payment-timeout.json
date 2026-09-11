@@ -209,6 +209,7 @@
           "            \"id\": \"8fbd6da2f945de2905aa7fa93860744d9387d3464484360e96e467a51de3bc9d\",\n",
           "            \"outpoint\": \"9fa0d5dd5348794aa0541dd2729497f0907890606d044e1c4757bdc848f38df8:0\",\n",
           "            \"state\": \"LOOPING_IN\",\n",
+          "            \"static_address\": \"\",\n",
           "            \"swap_hash\": \"\",\n",
           "            \"value\": \"500000\"\n",
           "        }\n",

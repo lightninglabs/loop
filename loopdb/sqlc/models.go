@@ -20,6 +20,7 @@ type Deposit struct {
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
 	SwapHash              []byte
+	StaticAddressID       sql.NullInt32
 }
 
 type DepositUpdate struct {
@@ -151,6 +152,7 @@ type StaticAddressSwap struct {
 	Fast                         bool
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
+	ChangeStaticAddressID        sql.NullInt32
 }
 
 type StaticAddressSwapUpdate struct {
