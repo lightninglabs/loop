@@ -38,10 +38,13 @@ var (
 	defaultExpiry = uint32(100)
 )
 
+// mockStaticAddressClient supplies configured responses for address RPCs.
 type mockStaticAddressClient struct {
 	mock.Mock
 }
 
+// blockingImportWallet pauses or fails wallet imports to exercise issuance
+// concurrency and recovery without replacing other wallet operations.
 type blockingImportWallet struct {
 	lndclient.WalletKitClient
 
@@ -50,6 +53,8 @@ type blockingImportWallet struct {
 	result  error
 }
 
+// listAddressesClient records wallet enumeration calls and returns a fixed
+// snapshot of imported addresses.
 type listAddressesClient struct {
 	walletrpc.WalletKitClient
 
@@ -58,6 +63,7 @@ type listAddressesClient struct {
 	calls    int
 }
 
+// ListAddresses returns the configured snapshot and counts each wallet read.
 func (c *listAddressesClient) ListAddresses(_ context.Context,
 	_ *walletrpc.ListAddressesRequest, _ ...grpc.CallOption) (
 	*walletrpc.ListAddressesResponse, error) {
@@ -66,6 +72,7 @@ func (c *listAddressesClient) ListAddresses(_ context.Context,
 	return c.response, c.err
 }
 
+// addressListWallet counts imports while exposing a fixed wallet address list.
 type addressListWallet struct {
 	lndclient.WalletKitClient
 
@@ -73,12 +80,14 @@ type addressListWallet struct {
 	imports   int
 }
 
+// RawClientWithMacAuth exposes the mock wallet enumeration client.
 func (w *addressListWallet) RawClientWithMacAuth(ctx context.Context) (
 	context.Context, time.Duration, walletrpc.WalletKitClient) {
 
 	return ctx, time.Second, w.rawClient
 }
 
+// ImportTaprootScript records a successful wallet import.
 func (w *addressListWallet) ImportTaprootScript(_ context.Context,
 	_ *waddrmgr.Tapscript) (btcutil.Address, error) {
 
@@ -86,18 +95,22 @@ func (w *addressListWallet) ImportTaprootScript(_ context.Context,
 	return nil, nil
 }
 
+// addressListStore supplies persisted addresses for startup reconciliation.
 type addressListStore struct {
 	Store
 
-	addresses []*Parameters
+	addresses []*AddressParameters
 }
 
+// GetAllStaticAddresses returns the configured persisted address records.
 func (s *addressListStore) GetAllStaticAddresses(context.Context) (
-	[]*Parameters, error) {
+	[]*AddressParameters, error) {
 
 	return s.addresses, nil
 }
 
+// ImportTaprootScript signals entry, waits for release or cancellation, and
+// returns the configured import result.
 func (w *blockingImportWallet) ImportTaprootScript(ctx context.Context,
 	_ *waddrmgr.Tapscript) (btcutil.Address, error) {
 
@@ -115,6 +128,7 @@ func (w *blockingImportWallet) ImportTaprootScript(ctx context.Context,
 	return nil, w.result
 }
 
+// ServerStaticAddressLoopIn returns the configured loop-in response.
 func (m *mockStaticAddressClient) ServerStaticAddressLoopIn(ctx context.Context,
 	in *swapserverrpc.ServerStaticAddressLoopInRequest,
 	opts ...grpc.CallOption) (
@@ -126,6 +140,7 @@ func (m *mockStaticAddressClient) ServerStaticAddressLoopIn(ctx context.Context,
 		args.Error(1)
 }
 
+// PushStaticAddressSweeplessSigs returns the configured signing response.
 func (m *mockStaticAddressClient) PushStaticAddressSweeplessSigs(ctx context.Context,
 	in *swapserverrpc.PushStaticAddressSweeplessSigsRequest,
 	opts ...grpc.CallOption) (
@@ -163,6 +178,7 @@ func (m *mockStaticAddressClient) ServerWithdrawDeposits(ctx context.Context,
 		args.Error(1)
 }
 
+// ServerPsbtWithdrawDeposits returns the configured PSBT withdrawal response.
 func (m *mockStaticAddressClient) ServerPsbtWithdrawDeposits(ctx context.Context,
 	in *swapserverrpc.ServerPsbtWithdrawRequest,
 	opts ...grpc.CallOption) (*swapserverrpc.ServerPsbtWithdrawResponse,
@@ -174,6 +190,8 @@ func (m *mockStaticAddressClient) ServerPsbtWithdrawDeposits(ctx context.Context
 		args.Error(1)
 }
 
+// ServerNewAddress returns the configured root-address response, including nil
+// responses used to exercise validation.
 func (m *mockStaticAddressClient) ServerNewAddress(ctx context.Context,
 	in *swapserverrpc.ServerNewAddressRequest, opts ...grpc.CallOption) (
 	*swapserverrpc.ServerNewAddressResponse, error) {
@@ -185,7 +203,7 @@ func (m *mockStaticAddressClient) ServerNewAddress(ctx context.Context,
 	return resp, args.Error(1)
 }
 
-// TestManager tests the static address manager generates the corerct static
+// TestManager tests the static address manager generates the correct static
 // taproot address from the given test parameters.
 func TestManager(t *testing.T) {
 	ctxb := t.Context()
@@ -218,7 +236,7 @@ func TestManager(t *testing.T) {
 	storedParams, err := testContext.manager.GetStaticAddressParameters(ctxb)
 	require.NoError(t, err)
 	require.EqualValues(
-		t, swap.StaticAddressKeyFamily, storedParams.KeyLocator.Family,
+		t, swap.StaticSingleAddressKeyFamily, storedParams.KeyLocator.Family,
 	)
 
 	addresses, err := testContext.manager.GetAllAddresses(ctxb)
@@ -230,11 +248,14 @@ func TestManager(t *testing.T) {
 	)
 }
 
+// TestAddressIssuanceDoesNotBlockAddressReads verifies that a slow wallet import
+// does not prevent lookups of an already active address.
 func TestAddressIssuanceDoesNotBlockAddressReads(t *testing.T) {
 	testContext := NewAddressManagerTestContext(t)
-	seed, err := testContext.manager.EnsureStaticAddressSeed(t.Context())
+	root, err := testContext.manager.EnsureStaticAddressRoot(t.Context())
 	require.NoError(t, err)
 
+	// Stall issuance inside the wallet RPC, after the root is active.
 	started := make(chan struct{})
 	release := make(chan struct{})
 	testContext.manager.cfg.WalletKit = &blockingImportWallet{
@@ -255,14 +276,15 @@ func TestAddressIssuanceDoesNotBlockAddressReads(t *testing.T) {
 		t.Fatal("address import did not start")
 	}
 
-	lookupDone := make(chan *Parameters, 1)
+	// A lookup must finish while the new address import is still blocked.
+	lookupDone := make(chan *AddressParameters, 1)
 	go func() {
-		lookupDone <- testContext.manager.GetParameters(seed.PkScript)
+		lookupDone <- testContext.manager.GetParameters(root.PkScript)
 	}()
 
 	select {
 	case params := <-lookupDone:
-		require.Same(t, seed, params)
+		require.Same(t, root, params)
 	case <-time.After(time.Second):
 		t.Fatal("address lookup blocked on address issuance")
 	}
@@ -271,7 +293,9 @@ func TestAddressIssuanceDoesNotBlockAddressReads(t *testing.T) {
 	require.NoError(t, <-issuanceDone)
 }
 
-func TestSeedImportFailureRetainsDerivedKey(t *testing.T) {
+// TestRootImportFailureRetainsDerivedKey verifies that retrying a failed root
+// import reuses the persisted key and does not request another server address.
+func TestRootImportFailureRetainsDerivedKey(t *testing.T) {
 	testContext := NewAddressManagerTestContext(t)
 	importErr := errors.New("wallet import failed")
 	originalWallet := testContext.manager.cfg.WalletKit
@@ -280,31 +304,37 @@ func TestSeedImportFailureRetainsDerivedKey(t *testing.T) {
 		result:          importErr,
 	}
 
-	_, err := testContext.manager.EnsureStaticAddressSeed(t.Context())
+	_, err := testContext.manager.EnsureStaticAddressRoot(t.Context())
 	require.ErrorIs(t, err, importErr)
 
+	// Persistence must survive the import failure so a retry keeps the key
+	// that was already registered with the server.
 	addresses, err := testContext.manager.GetAllAddresses(t.Context())
 	require.NoError(t, err)
 	require.Len(t, addresses, 1)
 	persisted := addresses[0]
 	require.EqualValues(
-		t, swap.StaticAddressKeyFamily, persisted.KeyLocator.Family,
+		t, swap.StaticSingleAddressKeyFamily, persisted.KeyLocator.Family,
 	)
 
+	// Restore the wallet and repair the import using the persisted root.
 	testContext.manager.cfg.WalletKit = originalWallet
-	seed, err := testContext.manager.EnsureStaticAddressSeed(t.Context())
+	root, err := testContext.manager.EnsureStaticAddressRoot(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, persisted.KeyLocator, seed.KeyLocator)
-	require.True(t, persisted.ClientPubkey.IsEqual(seed.ClientPubkey))
+	require.Equal(t, persisted.KeyLocator, root.KeyLocator)
+	require.True(t, persisted.ClientPubkey.IsEqual(root.ClientPubkey))
 	testContext.mockStaticAddressClient.AssertNumberOfCalls(
 		t, "ServerNewAddress", 1,
 	)
 }
 
+// TestLoadActiveAddressesUsesSingleWalletRead verifies that startup reconciles
+// already watched addresses with one wallet read and no duplicate imports.
 func TestLoadActiveAddressesUsesSingleWalletRead(t *testing.T) {
 	const addressCount = 1000
 
-	params := make([]*Parameters, 0, addressCount)
+	// Match every stored script with an existing imported wallet address.
+	params := make([]*AddressParameters, 0, addressCount)
 	properties := make([]*walletrpc.AddressProperty, 0, addressCount)
 	for i := range addressCount {
 		keyBytes := make([]byte, btcec.PrivKeyBytesLen)
@@ -321,7 +351,7 @@ func TestLoadActiveAddressesUsesSingleWalletRead(t *testing.T) {
 		pkScript, err := txscript.PayToAddrScript(addr)
 		require.NoError(t, err)
 
-		params = append(params, &Parameters{PkScript: pkScript})
+		params = append(params, &AddressParameters{PkScript: pkScript})
 		properties = append(properties, &walletrpc.AddressProperty{
 			Address: addr.EncodeAddress(),
 		})
@@ -349,10 +379,12 @@ func TestLoadActiveAddressesUsesSingleWalletRead(t *testing.T) {
 	require.Len(t, manager.activeStaticAddresses, addressCount)
 }
 
+// BenchmarkLoadActiveAddresses measures rebuilding the active index for
+// different numbers of addresses already watched by the wallet.
 func BenchmarkLoadActiveAddresses(b *testing.B) {
 	for _, addressCount := range []int{0, 100, 1000} {
 		b.Run(fmt.Sprintf("addresses_%d", addressCount), func(b *testing.B) {
-			params := make([]*Parameters, 0, addressCount)
+			params := make([]*AddressParameters, 0, addressCount)
 			properties := make(
 				[]*walletrpc.AddressProperty, 0, addressCount,
 			)
@@ -371,7 +403,7 @@ func BenchmarkLoadActiveAddresses(b *testing.B) {
 				pkScript, err := txscript.PayToAddrScript(addr)
 				require.NoError(b, err)
 				params = append(
-					params, &Parameters{PkScript: pkScript},
+					params, &AddressParameters{PkScript: pkScript},
 				)
 				properties = append(
 					properties, &walletrpc.AddressProperty{
@@ -398,18 +430,19 @@ func BenchmarkLoadActiveAddresses(b *testing.B) {
 			}, 1)
 			require.NoError(b, err)
 
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			// Exclude fixture construction from the reconciliation measurement.
+			for b.Loop() {
 				if err := manager.loadActiveAddresses(b.Context()); err != nil {
 					b.Fatal(err)
 				}
 			}
-			b.StopTimer()
 			require.Zero(b, wallet.imports)
 		})
 	}
 }
 
+// TestLoadActiveAddressesImportsOnlyMissing verifies that startup restores a
+// missing wallet watch before activating the persisted address.
 func TestLoadActiveAddressesImportsOnlyMissing(t *testing.T) {
 	_, clientPubKey := test.CreateKey(5000)
 	staticAddress, err := script.NewStaticAddress(
@@ -420,11 +453,12 @@ func TestLoadActiveAddressesImportsOnlyMissing(t *testing.T) {
 	pkScript, err := staticAddress.StaticAddressScript()
 	require.NoError(t, err)
 
+	// The address is persisted, but the wallet has no watch for it yet.
 	rawClient := &listAddressesClient{
 		response: &walletrpc.ListAddressesResponse{},
 	}
 	wallet := &addressListWallet{rawClient: rawClient}
-	params := &Parameters{
+	params := &AddressParameters{
 		ClientPubkey: clientPubKey,
 		ServerPubkey: defaultServerPubkey,
 		PkScript:     pkScript,
@@ -432,7 +466,7 @@ func TestLoadActiveAddressesImportsOnlyMissing(t *testing.T) {
 	}
 	manager, err := NewManager(&ManagerConfig{
 		Store: &addressListStore{
-			addresses: []*Parameters{params},
+			addresses: []*AddressParameters{params},
 		},
 		WalletKit:   wallet,
 		ChainParams: &chaincfg.RegressionNetParams,
@@ -445,6 +479,8 @@ func TestLoadActiveAddressesImportsOnlyMissing(t *testing.T) {
 	require.Same(t, params, manager.GetParameters(pkScript))
 }
 
+// TestMultiAddressRestartRecovery verifies that startup restores root, receive
+// and change address ownership without adding duplicate wallet watches.
 func TestMultiAddressRestartRecovery(t *testing.T) {
 	testContext := NewAddressManagerTestContext(t)
 
@@ -457,7 +493,7 @@ func TestMultiAddressRestartRecovery(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, addresses, 3)
 	require.EqualValues(
-		t, swap.StaticAddressKeyFamily,
+		t, swap.StaticSingleAddressKeyFamily,
 		addresses[0].KeyLocator.Family,
 	)
 	require.EqualValues(
@@ -482,6 +518,7 @@ func TestMultiAddressRestartRecovery(t *testing.T) {
 		3,
 	)
 
+	// Rebuild runtime state against the same database and wallet.
 	restarted, err := NewManager(
 		testContext.manager.cfg, testContext.manager.currentHeight.Load(),
 	)
@@ -499,6 +536,7 @@ func TestMultiAddressRestartRecovery(t *testing.T) {
 		3,
 	)
 
+	// Each script must recover its original database identity and key locator.
 	for _, params := range addresses {
 		recovered := restarted.GetParameters(params.PkScript)
 		require.NotNil(t, recovered)
@@ -507,6 +545,8 @@ func TestMultiAddressRestartRecovery(t *testing.T) {
 	}
 }
 
+// TestImportAddressTapscriptDuplicateMatching verifies that only a duplicate
+// import naming the expected Taproot output key is treated as success.
 func TestImportAddressTapscriptDuplicateMatching(t *testing.T) {
 	t.Parallel()
 
@@ -517,6 +557,8 @@ func TestImportAddressTapscriptDuplicateMatching(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	// Similar wallet errors and duplicates for another output key must still
+	// propagate to the caller.
 	duplicateErr := fmt.Sprintf(
 		"rpc error: address for script hash/key %x already exists",
 		schnorr.SerializePubKey(staticAddress.TaprootKey),

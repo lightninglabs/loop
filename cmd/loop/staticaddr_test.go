@@ -432,7 +432,7 @@ func TestWarningDepositSelectionMatchesLoopInSelection(t *testing.T) {
 			OutPoint:           outpoint,
 			Value:              btcutil.Amount(fixture.value),
 			ConfirmationHeight: fixture.confirmationHeight,
-			AddressParams: &address.Parameters{
+			AddressParams: &address.AddressParameters{
 				Expiry: csvExpiry,
 			},
 		})

@@ -5999,7 +5999,7 @@ func (*StaticAddressSummaryRequest) Descriptor() ([]byte, []int) {
 type StaticAddressSummaryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	//
-	//Deprecated: The legacy/root static address used as the derivation seed.
+	//Deprecated: The legacy/root static address anchoring derived addresses.
 	//New deposits should use fresh addresses returned by NewStaticAddress; this
 	//address must not be treated as the current receive address.
 	//
@@ -6007,7 +6007,7 @@ type StaticAddressSummaryResponse struct {
 	StaticAddress string `protobuf:"bytes,1,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
 	//
 	//The shared CSV delay in blocks inherited by all static addresses derived
-	//from the legacy/root seed.
+	//from the legacy/root address.
 	RelativeExpiryBlocks uint64 `protobuf:"varint,2,opt,name=relative_expiry_blocks,json=relativeExpiryBlocks,proto3" json:"relative_expiry_blocks,omitempty"`
 	//
 	//The total number of deposits.
