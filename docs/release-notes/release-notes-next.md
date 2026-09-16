@@ -2,6 +2,13 @@
 
 #### New Features
 
+* Display the full prepaid asset-reservation service fee and effective
+  percentage, including the transport minimum that enables smaller swaps.
+
+* Add experimental asset-reservation payment adapters, daemon wiring, and CLI
+  commands with invoice-based probes, approved BTC prepays, and recovery.
+  Purchases require the experimental flag and paired tapd; swaps remain unwired.
+
 * Instant Out now validates server invoices against a caller-approved maximum
   swap fee.
 
@@ -12,6 +19,16 @@
   `Manager.NewInstantOut` must pass the fee cap as a required argument.
 
 #### Bug Fixes
+
+* Cancel reservation creation and its response snapshot read when the manager
+  shuts down. Both operations share the request timeout.
+
+* Verify unfamiliar reservation assets by recording verified issuance metadata
+  in local tapd before checking the full proof history. No wallet assets are
+  imported, and failed proof checks still prevent delivery.
+
+* Shared Taproot Asset sweep packets now preserve the destination address
+  version and use the required non-interactive split-root layout.
 
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
@@ -39,6 +56,68 @@
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
 #### Maintenance
+
+* Document how reservation state entry saves payment choices and handles
+  failed validation or writes before an action runs.
+
+* Rename the reservation manager limit to `MaxActiveReservations`.
+  Clarify how new-purchase requests create or reuse a reservation.
+
+* Separate switch and select cases in reservation code and tests with blank
+  lines for readability.
+
+* Document reservation store guarantees for atomic writes, repeated requests,
+  and recovery reads.
+
+* Use reservation names consistently in manager recovery and its tests.
+  Document request handling, worker recovery, and shutdown in the manager.
+
+* Document how reservation state machines start new purchases and restore
+  saved progress. Flatten quote requests while retaining saved-quote recovery
+  and expiry checks. Clarify when actions remain in their current state and
+  how probe RPC concurrency is limited. Explain the funding-height checks
+  used during delivery verification and monitoring. Format reservation struct
+  literals with one field per line.
+
+* Use `SkipProbe` consistently in reservation requests and storage, with one
+  saved preference. Payment still requires explicit quote approval.
+
+* Save reservation payment choices with the approved state; remove the
+  duplicate quote approval snapshot.
+
+* Accept quoted asset and BTC prepay amounts through the exact quote hash;
+  remove duplicate amount limits from reservation approval requests.
+
+* Probe only the estimated reservation swap payment and estimate prepay routing
+  fees proportionally. Require a successful probe unless `--skip_probe` is set;
+  the flag skips probing for new purchases.
+
+* Add experimental asset reservation proof verification and LND confirmation,
+  spend, and expiry tracking. Client readiness follows Instant Out's
+  notification-based assumptions; no Bitcoin RPC connection is required.
+  Reservation purchases remain experimental.
+
+* Name client purchase states `WaitForDelivery` and `VerifyReservation`.
+
+* Keep reservation lifetime defaults in the server; the client validates
+  quoted terms without imposing lifetime minimums.
+
+* Add shared asset reservation terms for the experimental purchase flow.
+  Document who supplies each term and how both parties check it.
+  Document consent to the quoted asset fee and its BTC prepay equivalent.
+* Define a local reservation API with explicit quote approval and probe status.
+* Add experimental `loop asset reservation` purchase and inspection commands.
+  Validate quoted amounts without imposing a client-side pricing policy.
+  Name the saved funding depth `required_confirmations`; the server defaults
+  to three.
+  Asset Loop Out execution is not enabled.
+
+* Define and wire the experimental asset reservation RPC contract.
+  Describe public reservation status and owned get/list queries.
+  Clarify the receiving node and conversion peer in reservation quotes.
+
+* Update Taproot Assets to v0.8.3, taprpc to v1.3.3, and the LND dependency to
+  v0.21.3-beta. The minimum Go build version is now 1.25.13.
 
 * The Docker image build now verifies that every platform of the image index
   holds binaries for the architecture it advertises, and gives a release its

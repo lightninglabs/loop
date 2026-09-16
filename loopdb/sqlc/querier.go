@@ -13,6 +13,7 @@ type Querier interface {
 	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	CancelBatch(ctx context.Context, id int32) error
+	CreateAssetReservation(ctx context.Context, arg CreateAssetReservationParams) (int64, error)
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
@@ -23,6 +24,9 @@ type Querier interface {
 	DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]DepositsForSwapHashRow, error)
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
+	GetAssetReservation(ctx context.Context, reservationID []byte) (AssetReservation, error)
+	GetAssetReservationUpdates(ctx context.Context, reservationID []byte) ([]AssetReservationUpdate, error)
+	GetAssetReservations(ctx context.Context) ([]AssetReservation, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
@@ -49,6 +53,7 @@ type Querier interface {
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
 	GetWithdrawalDeposits(ctx context.Context, withdrawalID []byte) ([][]byte, error)
 	GetWithdrawalIDByDepositID(ctx context.Context, depositID []byte) ([]byte, error)
+	InsertAssetReservationUpdate(ctx context.Context, arg InsertAssetReservationUpdateParams) error
 	InsertBatch(ctx context.Context, arg InsertBatchParams) (int32, error)
 	InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error
 	InsertHtlcKeys(ctx context.Context, arg InsertHtlcKeysParams) error
@@ -69,6 +74,7 @@ type Querier interface {
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	RecordStaticAddressRiskDecision(ctx context.Context, arg RecordStaticAddressRiskDecisionParams) error
 	SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error)
+	UpdateAssetReservationPurchase(ctx context.Context, arg UpdateAssetReservationPurchaseParams) (int64, error)
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error

@@ -9,6 +9,44 @@ import (
 	"time"
 )
 
+type AssetReservation struct {
+	ID                    int32
+	ReservationID         []byte
+	AssetID               []byte
+	Amount                int64
+	Fee                   int64
+	CsvDelay              int32
+	RequiredConfirmations int32
+	ExecutionDelta        int32
+	MinUsableBlocks       int32
+	ClientPubkey          []byte
+	ClientKeyFamily       int32
+	ClientKeyIndex        int64
+	CreatedAt             time.Time
+	Quote                 []byte
+	MaxRouteFeeMsat       int64
+	SkipProbe             bool
+	MainProbe             int32
+	ProbesCheckedAt       sql.NullTime
+	PrepayRouteFeeMsat    int64
+	MainRouteFeeMsat      int64
+	PaymentHash           []byte
+	PayingNodeKey         []byte
+	PaymentRequest        []byte
+	PaymentResult         []byte
+	FundingOutpoint       sql.NullString
+	ConfirmationHeight    int64
+	PrepayCredit          int64
+	DepositProof          []byte
+}
+
+type AssetReservationUpdate struct {
+	ID              int32
+	ReservationID   []byte
+	UpdateState     string
+	UpdateTimestamp time.Time
+}
+
 type Deposit struct {
 	ID                    int32
 	DepositID             []byte

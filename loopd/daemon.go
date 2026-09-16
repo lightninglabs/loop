@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
+	assetreservation "github.com/lightninglabs/loop/assets/reservation"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
@@ -90,9 +91,10 @@ type Daemon struct {
 	listenerCfg     *ListenerCfg
 	internalErrChan chan error
 
-	lnd           *lndclient.GrpcLndServices
-	assetClient   *assets.TapdClient
-	clientCleanup func()
+	lnd                     *lndclient.GrpcLndServices
+	assetClient             *assets.TapdClient
+	assetReservationManager *assetreservation.Manager
+	clientCleanup           func()
 
 	wg       sync.WaitGroup
 	quit     chan struct{}
@@ -268,6 +270,11 @@ func (d *Daemon) startWebServers() error {
 		grpc.StreamInterceptor(streamInterceptor),
 	)
 	loop_looprpc.RegisterSwapClientServer(d.grpcServer, d)
+	assetRPC := &assetreservation.RPCServer{}
+	if d.assetReservationManager != nil {
+		assetRPC.Manager = d.assetReservationManager
+	}
+	loop_looprpc.RegisterAssetReservationsServer(d.grpcServer, assetRPC)
 
 	// Register our debug server if it is compiled in.
 	d.registerDebugServer()
@@ -750,6 +757,18 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		reservationManager *reservation.Manager
 		instantOutManager  *instantout.Manager
 	)
+	if d.cfg.EnableExperimental && d.assetClient != nil {
+		d.assetReservationManager, err = assetreservation.NewRuntime(
+			baseDb, &d.lnd.LndServices, d.assetClient,
+			loop_swaprpc.NewAssetReservationServiceClient(swapClient.Conn),
+			func(id assetreservation.ID, err error) {
+				errorf("Asset reservation %x needs attention: %v", id[:], err)
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("asset reservation initialization: %w", err)
+		}
+	}
 
 	// Create the reservation and instantout managers.
 	if d.cfg.EnableExperimental {
@@ -874,6 +893,20 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	})
 
 	initManagerTimeout := 10 * time.Second
+	if d.assetReservationManager != nil {
+		d.wg.Go(func() {
+			err := d.assetReservationManager.Run(d.mainCtx)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				d.internalErrChan <- err
+			}
+		})
+		initCtx, cancel := context.WithTimeout(d.mainCtx, initManagerTimeout)
+		err := d.assetReservationManager.WaitInitComplete(initCtx)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("asset reservation recovery: %w", err)
+		}
+	}
 
 	// Start the reservation manager.
 	if d.reservationManager != nil {

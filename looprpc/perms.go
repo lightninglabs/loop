@@ -5,6 +5,30 @@ import "gopkg.in/macaroon-bakery.v2/bakery"
 // RequiredPermissions is a map of all loop RPC methods and their
 // required macaroon permissions to access loopd.
 var RequiredPermissions = map[string][]bakery.Op{
+	"/looprpc.AssetReservations/Buy": {{
+		Entity: "swap",
+		Action: "execute",
+	}},
+	"/looprpc.AssetReservations/Approve": {{
+		Entity: "swap",
+		Action: "execute",
+	}},
+	"/looprpc.AssetReservations/Cancel": {{
+		Entity: "swap",
+		Action: "execute",
+	}},
+	"/looprpc.AssetReservations/RetryProbes": {{
+		Entity: "swap",
+		Action: "execute",
+	}},
+	"/looprpc.AssetReservations/Get": {{
+		Entity: "swap",
+		Action: "read",
+	}},
+	"/looprpc.AssetReservations/List": {{
+		Entity: "swap",
+		Action: "read",
+	}},
 	"/looprpc.SwapClient/LoopOut": {{
 		Entity: "swap",
 		Action: "execute",
