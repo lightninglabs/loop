@@ -460,10 +460,11 @@ func (d *Kit) AnchorRootFromProofCommitment(depositProof *proof.Proof,
 	return d.anchorRootFromProofCommitment(depositProof)
 }
 
-// VerifyProofFile asks tapd to fully verify a proof file, binds its terminal
-// proof to the expected deposit outpoint and amount, and returns the complete
-// anchor Taproot Merkle root. The caller must still enforce confirmation depth
-// and verify that the anchor outpoint remains unspent.
+// VerifyProofFile requires genesis-rooted histories without ownership
+// challenges, including all additional inputs, then asks tapd to fully verify
+// the proof file. It binds the terminal proof to the expected deposit outpoint
+// and amount and returns the complete anchor Taproot Merkle root. The caller
+// must still enforce confirmation depth and check that the outpoint is unspent.
 func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 	proofFile *taprpc.ProofFile, expectedOutpoint *wire.OutPoint,
 	expectedAmount uint64) ([]byte, error) {
@@ -492,6 +493,13 @@ func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 		RawProofFile: bytes.Clone(rawProof),
 		GenesisPoint: proofFile.GenesisPoint,
 	}
+	decodedFile, err := proof.DecodeFile(proofFileCopy.RawProofFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode deposit proof file: %w", err)
+	}
+	if err := validateProofProvenance(ctx, decodedFile); err != nil {
+		return nil, err
+	}
 	verifyResponse, err := verifier.VerifyProof(ctx, proofFileCopy)
 	if err != nil {
 		return nil, fmt.Errorf("unable to verify deposit proof file: %w", err)
@@ -500,10 +508,6 @@ func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 		return nil, fmt.Errorf("invalid deposit proof file")
 	}
 
-	decodedFile, err := proof.DecodeFile(proofFileCopy.RawProofFile)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode deposit proof file: %w", err)
-	}
 	depositProof, err := decodedFile.LastProof()
 	if err != nil {
 		return nil, fmt.Errorf("unable to read terminal deposit proof: %w", err)
@@ -516,6 +520,45 @@ func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 	}
 
 	return d.AnchorRootFromProofCommitment(depositProof, expectedAmount)
+}
+
+// validateProofProvenance excludes ownership-only histories before tapd
+// verifies issuance and transitions. Walk nested files iteratively so peer
+// input cannot determine the call-stack depth. These structural checks alone
+// do not establish that an asset is valid.
+func validateProofProvenance(ctx context.Context, file *proof.File) error {
+	pending := []*proof.File{file}
+	for len(pending) > 0 {
+		last := len(pending) - 1
+		current := pending[last]
+		pending[last] = nil
+		pending = pending[:last]
+		if current.NumProofs() == 0 {
+			return fmt.Errorf("deposit proof history is empty")
+		}
+		for idx := range current.NumProofs() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			p, err := current.ProofAt(uint32(idx))
+			if err != nil {
+				return fmt.Errorf("unable to decode deposit proof: %w", err)
+			}
+			if p.ChallengeWitness != nil {
+				return fmt.Errorf("deposit proof history contains an " +
+					"ownership challenge")
+			}
+			if idx == 0 && !p.Asset.IsGenesisAsset() {
+				return fmt.Errorf("deposit proof history must start " +
+					"at genesis")
+			}
+			for inputIdx := range p.AdditionalInputs {
+				pending = append(pending, &p.AdditionalInputs[inputIdx])
+			}
+		}
+	}
+
+	return nil
 }
 
 // VerifyProof verifies only the proof commitment and binds it to this
