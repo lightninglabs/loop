@@ -69,9 +69,6 @@ func NewKit(funderKey, coSignerKey *btcec.PublicKey,
 	if coSignerKey == nil {
 		return nil, fmt.Errorf("co-signer public key is required")
 	}
-	if funderKey.IsEqual(coSignerKey) {
-		return nil, fmt.Errorf("funder and co-signer keys must differ")
-	}
 	if assetID == (asset.ID{}) {
 		return nil, fmt.Errorf("asset ID is required")
 	}
@@ -98,6 +95,11 @@ func NewKit(funderKey, coSignerKey *btcec.PublicKey,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid co-signer public key: %w", err)
+	}
+	if bytes.Equal(schnorr.SerializePubKey(funderKeyCopy),
+		schnorr.SerializePubKey(coSignerKeyCopy)) {
+
+		return nil, fmt.Errorf("funder and co-signer keys must differ")
 	}
 
 	sortKeys := true
@@ -210,7 +212,7 @@ func (d *Kit) NewAddr(ctx context.Context, client AddressProofClient,
 	}
 
 	return client.NewAddr(ctx, &taprpc.NewAddrRequest{
-		AssetId:   d.assetID[:],
+		AssetId:   bytes.Clone(d.assetID[:]),
 		Amt:       amount,
 		ScriptKey: rpcutils.MarshalScriptKey(tapScriptKey),
 		InternalKey: &taprpc.KeyDescriptor{
@@ -255,7 +257,7 @@ func (d *Kit) NewHtlcAddr(ctx context.Context, client AddressProofClient,
 	}
 
 	htlcAddr, err := client.NewAddr(ctx, &taprpc.NewAddrRequest{
-		AssetId:   d.assetID[:],
+		AssetId:   bytes.Clone(d.assetID[:]),
 		Amt:       amount,
 		ScriptKey: rpcutils.MarshalScriptKey(tapScriptKey),
 		InternalKey: &taprpc.KeyDescriptor{
@@ -314,7 +316,7 @@ func (d *Kit) ExportProof(ctx context.Context, client AddressProofClient,
 	}
 
 	return client.ExportProof(ctx, &taprpc.ExportProofRequest{
-		AssetId:   d.assetID[:],
+		AssetId:   bytes.Clone(d.assetID[:]),
 		ScriptKey: scriptKey.PubKey.SerializeCompressed(),
 		Outpoint: &taprpc.OutPoint{
 			Txid:        outpoint.Hash[:],
@@ -482,8 +484,12 @@ func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 		return nil, fmt.Errorf("expected deposit amount must be positive")
 	}
 
+	rawProof := proofFile.RawProofFile
+	if err := proof.CheckMaxFileSize(rawProof); err != nil {
+		return nil, fmt.Errorf("invalid deposit proof file: %w", err)
+	}
 	proofFileCopy := &taprpc.ProofFile{
-		RawProofFile: append([]byte(nil), proofFile.RawProofFile...),
+		RawProofFile: bytes.Clone(rawProof),
 		GenesisPoint: proofFile.GenesisPoint,
 	}
 	verifyResponse, err := verifier.VerifyProof(ctx, proofFileCopy)
@@ -494,7 +500,7 @@ func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 		return nil, fmt.Errorf("invalid deposit proof file")
 	}
 
-	decodedFile, err := proof.DecodeFile(proofFile.RawProofFile)
+	decodedFile, err := proof.DecodeFile(proofFileCopy.RawProofFile)
 	if err != nil {
 		return nil, fmt.Errorf("unable to decode deposit proof file: %w", err)
 	}
