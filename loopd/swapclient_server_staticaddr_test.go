@@ -2,24 +2,19 @@ package loopd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop"
-	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/staticaddr/address"
-	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/loopin"
-	"github.com/lightninglabs/loop/staticaddr/script"
-	"github.com/lightninglabs/loop/staticaddr/withdraw"
-	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -28,7 +23,17 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/lightninglabs/loop"
+	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/staticaddr/address"
+	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/withdraw"
+	mock_lnd "github.com/lightninglabs/loop/test"
 )
 
 type staticAddrTestLightningClient struct {
@@ -64,6 +69,7 @@ type sendCoinsRPCClient struct {
 
 	request  *lnrpc.SendCoinsRequest
 	response *lnrpc.SendCoinsResponse
+	err      error
 }
 
 func (c *sendCoinsRPCClient) SendCoins(_ context.Context,
@@ -72,7 +78,7 @@ func (c *sendCoinsRPCClient) SendCoins(_ context.Context,
 
 	c.request = proto.Clone(req).(*lnrpc.SendCoinsRequest)
 
-	return c.response, nil
+	return c.response, c.err
 }
 
 type sendCoinsLightningClient struct {
@@ -273,6 +279,7 @@ func TestValidateStaticAddressSendCoinsRequest(t *testing.T) {
 	}{
 		{
 			name: "nil",
+			err:  "send_coins_request is required",
 		},
 		{
 			name: "amount",
@@ -386,7 +393,9 @@ func TestValidateStaticAddressSendCoinsRequest(t *testing.T) {
 	}
 }
 
-func TestNewStaticAddressFundsGeneratedAddress(t *testing.T) {
+// TestFundStaticAddressFundsGeneratedAddress verifies the RPC funds the derived
+// address and forwards coin selection options without mutating the request.
+func TestFundStaticAddressFundsGeneratedAddress(t *testing.T) {
 	t.Parallel()
 
 	addrMgr, lnd := newTestStaticAddressContext(t, 10)
@@ -410,8 +419,8 @@ func TestNewStaticAddressFundsGeneratedAddress(t *testing.T) {
 			OutputIndex: 2,
 		}},
 	}
-	resp, err := server.NewStaticAddress(
-		t.Context(), &looprpc.NewStaticAddressRequest{
+	resp, err := server.FundStaticAddress(
+		t.Context(), &looprpc.FundStaticAddressRequest{
 			SendCoinsRequest: sendCoinsReq,
 		},
 	)
@@ -423,6 +432,258 @@ func TestNewStaticAddressFundsGeneratedAddress(t *testing.T) {
 	expectedReq.Addr = resp.Address
 	require.True(t, proto.Equal(expectedReq, rawClient.request))
 	require.Empty(t, sendCoinsReq.Addr)
+}
+
+// TestNewStaticAddressDoesNotFund verifies address creation never invokes the
+// wallet's SendCoins method, even with the removed funding field on the wire.
+func TestNewStaticAddressDoesNotFund(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	rawClient := &sendCoinsRPCClient{}
+	lnd.Client = &sendCoinsLightningClient{rawClient: rawClient}
+	server := &swapClientServer{
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	// An old experimental client could still serialize funding as field 2.
+	// Protobuf preserves it as unknown data, but the address RPC cannot spend.
+	funding, err := proto.Marshal(&lnrpc.SendCoinsRequest{SendAll: true})
+	require.NoError(t, err)
+	encoded := protowire.AppendTag(nil, 2, protowire.BytesType)
+	encoded = protowire.AppendBytes(encoded, funding)
+	req := &looprpc.NewStaticAddressRequest{}
+	require.NoError(t, proto.Unmarshal(encoded, req))
+
+	first, err := server.NewStaticAddress(t.Context(), req)
+	require.NoError(t, err)
+	second, err := server.NewStaticAddress(
+		t.Context(), &looprpc.NewStaticAddressRequest{},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, first.Address)
+	require.NotEqual(t, first.Address, second.Address)
+	require.EqualValues(t, 10, first.Expiry)
+	require.Nil(t, rawClient.request)
+}
+
+// TestFundStaticAddressRejectsInvalidRequests verifies funding validation runs
+// before any address manager or wallet access.
+func TestFundStaticAddressRejectsInvalidRequests(t *testing.T) {
+	t.Parallel()
+
+	for _, req := range []*looprpc.FundStaticAddressRequest{
+		nil,
+		{},
+		{SendCoinsRequest: &lnrpc.SendCoinsRequest{}},
+		{SendCoinsRequest: &lnrpc.SendCoinsRequest{Amount: -1}},
+		{SendCoinsRequest: &lnrpc.SendCoinsRequest{
+			Amount: 1, SendAll: true,
+		}},
+	} {
+		// Nil dependencies would panic if validation allowed a side effect.
+		server := &swapClientServer{}
+		resp, err := server.FundStaticAddress(t.Context(), req)
+		require.Nil(t, resp)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	}
+}
+
+// TestFundStaticAddressExistingAddress verifies funding an existing address
+// preserves send-all options and does not derive another address.
+func TestFundStaticAddressExistingAddress(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	rawClient := &sendCoinsRPCClient{
+		response: &lnrpc.SendCoinsResponse{Txid: "existing-funding-txid"},
+	}
+	lnd.Client = &sendCoinsLightningClient{rawClient: rawClient}
+	server := &swapClientServer{
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	addr, err := addrMgr.GetStaticAddress(t.Context())
+	require.NoError(t, err)
+	encodedAddr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(addr.TaprootKey), lnd.ChainParams,
+	)
+	require.NoError(t, err)
+	req := &lnrpc.SendCoinsRequest{
+		Addr: encodedAddr.String(), SendAll: true, SatPerVbyte: 2,
+	}
+	resp, err := server.FundStaticAddress(
+		t.Context(), &looprpc.FundStaticAddressRequest{
+			SendCoinsRequest: req,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, req.Addr, resp.Address)
+	require.EqualValues(t, 10, resp.Expiry)
+	require.Equal(t, rawClient.response, resp.SendCoinsResponse)
+	require.True(t, proto.Equal(req, rawClient.request))
+	addresses, err := addrMgr.GetAllAddresses(t.Context())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+
+	// A valid Bitcoin address outside the active static-address index must
+	// never be forwarded to SendCoins.
+	_, otherKey := mock_lnd.CreateKey(99)
+	unknownAddr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(otherKey), lnd.ChainParams,
+	)
+	require.NoError(t, err)
+	rawClient.request = nil
+	req.Addr = unknownAddr.String()
+	resp, err = server.FundStaticAddress(
+		t.Context(), &looprpc.FundStaticAddressRequest{
+			SendCoinsRequest: req,
+		},
+	)
+	require.Nil(t, resp)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Nil(t, rawClient.request)
+}
+
+// TestFundStaticAddressWalletFailure distinguishes ambiguous funding outcomes
+// from definitive failures and retains the address and wrapped cause in both
+// the fresh-address and existing-address funding paths.
+func TestFundStaticAddressWalletFailure(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		err     error
+		unknown bool
+	}{
+		{
+			name: "native deadline", err: context.DeadlineExceeded,
+			unknown: true,
+		},
+		{
+			name: "native cancellation", err: context.Canceled,
+			unknown: true,
+		},
+		{
+			name:    "grpc deadline",
+			err:     status.Error(codes.DeadlineExceeded, "request timed out"),
+			unknown: true,
+		},
+		{
+			name:    "grpc cancellation",
+			err:     status.Error(codes.Canceled, "request canceled"),
+			unknown: true,
+		},
+		{
+			name:    "wrapped native deadline",
+			err:     fmt.Errorf("send coins: %w", context.DeadlineExceeded),
+			unknown: true,
+		},
+		{
+			name: "wrapped grpc cancellation",
+			err: fmt.Errorf("send coins: %w", status.Error(
+				codes.Canceled, "request canceled",
+			)),
+			unknown: true,
+		},
+		{
+			name:    "unavailable after broadcast",
+			err:     status.Error(codes.Unavailable, "response lost"),
+			unknown: true,
+		},
+		{
+			name: "wrapped unavailable",
+			err: fmt.Errorf("send coins: %w", status.Error(
+				codes.Unavailable, "transport closed",
+			)),
+			unknown: true,
+		},
+		{
+			name:    "internal failure",
+			err:     status.Error(codes.Internal, "response encoding failed"),
+			unknown: true,
+		},
+		{
+			name:    "response size limit",
+			err:     status.Error(codes.ResourceExhausted, "response too large"),
+			unknown: true,
+		},
+		{
+			name:    "unstructured failure",
+			err:     errors.New("wallet RPC failed"),
+			unknown: true,
+		},
+		{
+			name: "definitive failure",
+			err:  status.Error(codes.FailedPrecondition, "insufficient funds"),
+		},
+		{
+			name: "invalid request",
+			err:  status.Error(codes.InvalidArgument, "invalid fee rate"),
+		},
+	}
+
+	for _, existing := range []bool{false, true} {
+		for _, testCase := range testCases {
+			name := fmt.Sprintf("existing=%v/%s", existing, testCase.name)
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				addrMgr, lnd := newTestStaticAddressContext(t, 10)
+				rawClient := &sendCoinsRPCClient{err: testCase.err}
+				lnd.Client = &sendCoinsLightningClient{rawClient: rawClient}
+				server := &swapClientServer{
+					staticAddressManager: addrMgr,
+					lnd:                  &lnd.LndServices,
+				}
+				req := &lnrpc.SendCoinsRequest{Amount: 100_000}
+				wantAddressCount := 2
+				if existing {
+					addr, err := addrMgr.GetStaticAddress(t.Context())
+					require.NoError(t, err)
+					encodedAddr, err := btcutil.NewAddressTaproot(
+						schnorr.SerializePubKey(addr.TaprootKey),
+						lnd.ChainParams,
+					)
+					require.NoError(t, err)
+					req.Addr = encodedAddr.String()
+					wantAddressCount = 1
+				}
+				resp, err := server.FundStaticAddress(
+					t.Context(), &looprpc.FundStaticAddressRequest{
+						SendCoinsRequest: req,
+					},
+				)
+				require.Nil(t, resp)
+				require.ErrorIs(t, err, testCase.err)
+				require.NotNil(t, rawClient.request)
+				require.NotEmpty(t, rawClient.request.Addr)
+				require.ErrorContains(t, err, rawClient.request.Addr)
+				if testCase.unknown {
+					require.ErrorContains(t, err, "funding outcome unknown")
+					require.ErrorContains(t, err,
+						"inspect lnd wallet transactions before retrying")
+					require.NotContains(t, err.Error(), "transaction failed")
+				} else {
+					require.ErrorContains(t, err, "funding transaction failed")
+					require.NotContains(t, err.Error(), "outcome unknown")
+				}
+				if code := status.Code(testCase.err); code != codes.Unknown {
+					require.Equal(t, code, status.Code(err))
+				}
+
+				addresses, err := addrMgr.GetAllAddresses(t.Context())
+				require.NoError(t, err)
+				require.Len(t, addresses, wantAddressCount)
+				_, _, err = server.staticAddressForDeposit(
+					t.Context(), rawClient.request.Addr,
+				)
+				require.NoError(t, err)
+			})
+		}
+	}
 }
 
 func TestStaticAddressForDeposit(t *testing.T) {

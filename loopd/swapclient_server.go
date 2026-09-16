@@ -22,6 +22,18 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/taproot-assets/rfqmath"
+	lndlabels "github.com/lightningnetwork/lnd/labels"
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/queue"
+	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/zpay32"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/fsm"
@@ -39,17 +51,6 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
-	"github.com/lightninglabs/taproot-assets/rfqmath"
-	lndlabels "github.com/lightningnetwork/lnd/labels"
-	"github.com/lightningnetwork/lnd/lnrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
-	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/queue"
-	"github.com/lightningnetwork/lnd/routing/route"
-	"github.com/lightningnetwork/lnd/zpay32"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -1865,11 +1866,27 @@ func rpcInstantOut(instantOut *instantout.InstantOut) *looprpc.InstantOut {
 	}
 }
 
-// NewStaticAddress is the rpc endpoint for loop clients to request a new static
-// address.
+// NewStaticAddress creates a fresh static receive address without funding it.
 func (s *swapClientServer) NewStaticAddress(ctx context.Context,
-	req *looprpc.NewStaticAddressRequest) (
-	*looprpc.NewStaticAddressResponse, error) {
+	_ *looprpc.NewStaticAddressRequest) (*looprpc.NewStaticAddressResponse,
+	error) {
+
+	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.NewStaticAddressResponse{
+		Address: staticAddress.String(),
+		Expiry:  uint32(expiry),
+	}, nil
+}
+
+// FundStaticAddress funds a new or existing static address from the lnd wallet.
+// The RPC interceptor requires explicit funding authority before this runs.
+func (s *swapClientServer) FundStaticAddress(ctx context.Context,
+	req *looprpc.FundStaticAddressRequest) (
+	*looprpc.FundStaticAddressResponse, error) {
 
 	sendCoinsReq := req.GetSendCoinsRequest()
 	if err := validateStaticAddressSendCoinsRequest(sendCoinsReq); err != nil {
@@ -1889,19 +1906,21 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 		ctx, staticAddress.String(), sendCoinsReq,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("static address %s created, but "+
-			"funding transaction failed: %w", staticAddress, err)
+		return nil, staticAddressFundingError(
+			staticAddress.String(), true, err,
+		)
 	}
 
-	return &looprpc.NewStaticAddressResponse{
+	return &looprpc.FundStaticAddressResponse{
 		Address:           staticAddress.String(),
 		Expiry:            uint32(expiry),
 		SendCoinsResponse: sendCoinsResp,
 	}, nil
 }
 
+// fundExistingStaticAddress funds a known address without deriving a new one.
 func (s *swapClientServer) fundExistingStaticAddress(ctx context.Context,
-	req *lnrpc.SendCoinsRequest) (*looprpc.NewStaticAddressResponse, error) {
+	req *lnrpc.SendCoinsRequest) (*looprpc.FundStaticAddressResponse, error) {
 
 	staticAddress, expiry, err := s.staticAddressForDeposit(ctx, req.Addr)
 	if err != nil {
@@ -1912,15 +1931,34 @@ func (s *swapClientServer) fundExistingStaticAddress(ctx context.Context,
 		ctx, staticAddress, req,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("static address %s funding transaction "+
-			"failed: %w", staticAddress, err)
+		return nil, staticAddressFundingError(staticAddress, false, err)
 	}
 
-	return &looprpc.NewStaticAddressResponse{
+	return &looprpc.FundStaticAddressResponse{
 		Address:           staticAddress,
 		Expiry:            expiry,
 		SendCoinsResponse: sendCoinsResp,
 	}, nil
+}
+
+// staticAddressFundingError treats failures after dispatch as unknown funding
+// outcomes unless the RPC reports an explicit request rejection. A lost response
+// or transport failure cannot undo an lnd broadcast.
+func staticAddressFundingError(addr string, created bool, err error) error {
+	prefix := fmt.Sprintf("static address %s", addr)
+	if created {
+		prefix += " created, but"
+	}
+
+	switch status.Code(err) {
+	case codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange,
+		codes.PermissionDenied, codes.Unauthenticated, codes.Unimplemented:
+
+		return fmt.Errorf("%s funding transaction failed: %w", prefix, err)
+	}
+
+	return fmt.Errorf("%s funding outcome unknown; inspect lnd "+
+		"wallet transactions before retrying: %w", prefix, err)
 }
 
 func (s *swapClientServer) staticAddressForDeposit(_ context.Context,
@@ -1943,7 +1981,8 @@ func (s *swapClientServer) staticAddressForDeposit(_ context.Context,
 
 func validateStaticAddressSendCoinsRequest(req *lnrpc.SendCoinsRequest) error {
 	if req == nil {
-		return nil
+		return status.Error(codes.InvalidArgument,
+			"send_coins_request is required")
 	}
 
 	switch {
