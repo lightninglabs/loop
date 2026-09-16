@@ -227,7 +227,7 @@ func TestSelectDepositsUsesPerDepositExpiry(t *testing.T) {
 			},
 			Value:              value,
 			ConfirmationHeight: confirmationHeight,
-			AddressParams: &address.Parameters{
+			AddressParams: &address.AddressParameters{
 				Expiry: expiry,
 			},
 		}
@@ -684,7 +684,7 @@ func TestGetAllSwapsPreservesStoreDeposits(t *testing.T) {
 
 func setTestDepositParams(deposits []*deposit.Deposit, expiry uint32) {
 	for _, d := range deposits {
-		d.AddressParams = &address.Parameters{
+		d.AddressParams = &address.AddressParameters{
 			Expiry: expiry,
 		}
 	}

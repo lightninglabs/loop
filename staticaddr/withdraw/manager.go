@@ -576,7 +576,7 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 			"values: %w", err)
 	}
 
-	var changeParams *address.Parameters
+	var changeParams *address.AddressParameters
 	if changeAmount > 0 {
 		changeParams, err = m.cfg.AddressManager.NewChangeAddress(ctx)
 		if err != nil {
@@ -954,7 +954,7 @@ func (m *Manager) createWithdrawalTx(
 	selectedWithdrawalAmount btcutil.Amount, withdrawAddr btcutil.Address,
 	feeRate chainfee.SatPerKWeight,
 	commitmentType lnrpc.CommitmentType,
-	changeParams *address.Parameters) (*wire.MsgTx, []byte, error) {
+	changeParams *address.AddressParameters) (*wire.MsgTx, []byte, error) {
 
 	// First Create the tx.
 	msgTx := wire.NewMsgTx(2)

@@ -767,7 +767,7 @@ func generateStaticAddress(ctx context.Context, mockLnd *test.LndMockServices,
 	t *testing.T) (*script.StaticAddress, *script.Parameters) {
 
 	keyDescriptor, err := mockLnd.WalletKit.DeriveNextKey(
-		ctx, swap.StaticAddressKeyFamily,
+		ctx, swap.StaticSingleAddressKeyFamily,
 	)
 	require.NoError(t, err)
 

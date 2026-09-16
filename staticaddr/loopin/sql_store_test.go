@@ -57,7 +57,7 @@ func TestLoopInChangeAddressRoundTrip(t *testing.T) {
 
 	_, changeClientPubkey := test.CreateKey(1)
 	_, changeServerPubkey := test.CreateKey(2)
-	changeParams := &address.Parameters{
+	changeParams := &address.AddressParameters{
 		ClientPubkey: changeClientPubkey,
 		ServerPubkey: changeServerPubkey,
 		Expiry:       288,
@@ -98,7 +98,7 @@ func TestLoopInChangeAddressRoundTrip(t *testing.T) {
 	require.NoError(t, loopInStore.CreateLoopIn(ctx, swap))
 
 	assertChangeAddress := func(t *testing.T,
-		got *address.Parameters) {
+		got *address.AddressParameters) {
 
 		t.Helper()
 		require.NotNil(t, got)

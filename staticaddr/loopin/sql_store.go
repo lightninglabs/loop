@@ -741,7 +741,7 @@ func orderDepositsBySnapshot(deposits []*deposit.Deposit,
 // toChangeAddressParameters converts the optional joined static address row
 // into the change address parameters used to verify batched sweepless sweeps.
 func toChangeAddressParameters(row sqlc.GetStaticAddressLoopInSwapRow) (
-	*address.Parameters, error) {
+	*address.AddressParameters, error) {
 
 	if !row.ChangeStaticAddressID.Valid {
 		return nil, nil
@@ -757,7 +757,7 @@ func toChangeAddressParameters(row sqlc.GetStaticAddressLoopInSwapRow) (
 		return nil, err
 	}
 
-	return &address.Parameters{
+	return &address.AddressParameters{
 		ID:           row.ChangeStaticAddressID.Int32,
 		ClientPubkey: clientKey,
 		ServerPubkey: serverKey,
