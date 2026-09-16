@@ -115,8 +115,11 @@ type SwapClientClient interface {
 	//ListInstantOuts returns a list of all currently known instant out swaps and
 	//their current status.
 	ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error)
-	// loop: `static newstaticaddress`
-	//NewStaticAddress requests a new static address for loop-ins from the server.
+	// loop: `static new`
+	//NewStaticAddress derives a fresh static receive address on every request.
+	//This RPC never funds the address.
+	//The CLI's static new and static deposit commands use this RPC. Only static
+	//deposit prints lncli instructions for funding the returned address.
 	NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
 	//ListUnspentDeposits returns a list of utxos deposited at a static address.
@@ -577,8 +580,11 @@ type SwapClientServer interface {
 	//ListInstantOuts returns a list of all currently known instant out swaps and
 	//their current status.
 	ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error)
-	// loop: `static newstaticaddress`
-	//NewStaticAddress requests a new static address for loop-ins from the server.
+	// loop: `static new`
+	//NewStaticAddress derives a fresh static receive address on every request.
+	//This RPC never funds the address.
+	//The CLI's static new and static deposit commands use this RPC. Only static
+	//deposit prints lncli instructions for funding the returned address.
 	NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
 	//ListUnspentDeposits returns a list of utxos deposited at a static address.
