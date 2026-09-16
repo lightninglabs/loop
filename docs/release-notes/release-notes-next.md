@@ -13,14 +13,23 @@
 
 #### Breaking Changes
 
+* Static-address wallet funding uses the new `FundStaticAddress` RPC, requiring
+  `wallet:fund` in addition to `swap:execute` and `loop:in`, or an explicit URI
+  grant for the new RPC. `NewStaticAddress` only creates addresses. Existing
+  execute/in and address-creation URI macaroons do not gain wallet-spending
+  authority. `loop static deposit` uses the new endpoint. The default local
+  Loop macaroon is regenerated on startup when permissions change; operators
+  must explicitly update distributed or custom macaroons intended for funding.
+  [PR #1218](https://github.com/lightninglabs/loop/pull/1218)
+
 * Instant Out requests must now set `max_swap_fee_sat`. Requests that omit the
   fee cap are rejected; an explicit zero cap remains valid. Direct users of
   `Manager.NewInstantOut` must pass the fee cap as a required argument.
 
-* Calling `NewStaticAddress` without `send_coins_request.addr` now derives and
-  returns a fresh receive address instead of reusing the address associated
-  with the client's L402. Integrations must not assume that repeated calls are
-  idempotent or return the same address. The RPC now requires the
+* Calling `NewStaticAddress` now derives and returns a fresh receive address
+  instead of reusing the address associated with the client's L402.
+  Integrations must not assume repeated calls are idempotent or return the
+  same address. The RPC now requires the
   `swap:execute` permission instead of `swap:read`, including for address-only
   calls. Operators using custom scoped macaroons must rebake them accordingly.
   The deprecated `StaticAddressSummaryResponse.static_address` field remains
@@ -59,7 +68,7 @@
   watches, address lookups remain responsive while new addresses are issued,
   and root creation can recover from a failed wallet import.
 
-* The `NewStaticAddress` RPC can fund a requested existing static address by
+* The `FundStaticAddress` RPC can fund a requested existing static address by
   resolving it directly through the active script index. Wallet-import errors
   are ignored only when they identify the exact script that lnd already
   watches.
