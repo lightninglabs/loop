@@ -813,6 +813,23 @@ func TestGetPkScriptFromProof(t *testing.T) {
 	}
 }
 
+// TestMalformedProofReturnsError verifies the Taproot Assets structural proof
+// verifier rejects missing keys instead of panicking at this exported boundary.
+func TestMalformedProofReturnsError(t *testing.T) {
+	fixture := newWitnessFixture(t, SuccessSequence)
+
+	missingInternalKey := *fixture.proof
+	missingInternalKey.InclusionProof.InternalKey = nil
+	_, err := GenTaprootAssetRootFromProof(&missingInternalKey)
+	require.ErrorContains(t, err, "internal key")
+
+	missingScriptKey := *fixture.proof
+	missingScriptKey.Asset = *fixture.proof.Asset.Copy()
+	missingScriptKey.Asset.ScriptKey.PubKey = nil
+	_, err = GenTaprootAssetRootFromProof(&missingScriptKey)
+	require.Error(t, err)
+}
+
 // executeWitness runs the virtual asset VM and Bitcoin script engine against a
 // generated witness.
 func (f *witnessFixture) executeWitness(t *testing.T,
