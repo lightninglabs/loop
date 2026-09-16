@@ -69,6 +69,10 @@ func GetOpTrueScript() ([]byte, error) {
 
 // CreateOpTrueLeaf creates the legacy Taproot Asset script key whose only
 // script path is OP_TRUE beneath the public Taproot Assets NUMS key.
+// This key is intentionally shared by all legacy contracts, so multiple
+// outputs for the same asset cannot be batched in one transaction. Proof
+// delivery must also distinguish contracts by more than this script key.
+// Contract-specific keys would require a new policy.
 func CreateOpTrueLeaf() (asset.ScriptKey, txscript.TapLeaf,
 	*txscript.IndexedTapScriptTree, *txscript.ControlBlock, error) {
 

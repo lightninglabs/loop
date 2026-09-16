@@ -205,15 +205,19 @@ type proofVerifierMock struct {
 	response *taprpc.VerifyProofResponse
 	err      error
 	calls    int
+	onVerify func(*taprpc.ProofFile)
 }
 
 // VerifyProof records a proof verification request and returns the configured
 // tapd response.
 func (m *proofVerifierMock) VerifyProof(_ context.Context,
-	_ *taprpc.ProofFile, _ ...grpc.CallOption) (*taprpc.VerifyProofResponse,
+	file *taprpc.ProofFile, _ ...grpc.CallOption) (*taprpc.VerifyProofResponse,
 	error) {
 
 	m.calls++
+	if m.onVerify != nil {
+		m.onVerify(file)
+	}
 
 	return m.response, m.err
 }

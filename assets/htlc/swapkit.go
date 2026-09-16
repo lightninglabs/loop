@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -105,7 +106,9 @@ func NewSwapKit(policy Policy, params Params) (*SwapKit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid receiver public key: %w", err)
 	}
-	if senderKey.IsEqual(receiverKey) {
+	if bytes.Equal(schnorr.SerializePubKey(senderKey),
+		schnorr.SerializePubKey(receiverKey)) {
+
 		return nil, fmt.Errorf("sender and receiver keys must differ")
 	}
 
@@ -222,6 +225,9 @@ func (s *SwapKit) Validate() error {
 	}
 	if s.amount == 0 {
 		return fmt.Errorf("asset amount must be positive")
+	}
+	if s.amount > math.MaxInt64 {
+		return fmt.Errorf("asset amount exceeds maximum virtual output value")
 	}
 	if s.assetID == (asset.ID{}) {
 		return fmt.Errorf("asset ID is required")
@@ -347,9 +353,11 @@ func (s *SwapKit) GetSiblingPreimage() (
 	return commitment.NewPreimageFromBranch(branch), nil
 }
 
-// CreateHtlcVpkt creates the version-one virtual packet for the HTLC. The
-// split-root and HTLC output indices and their interactive flags are consensus
-// with the existing server implementation.
+// CreateHtlcVpkt creates a version-one HTLC funding template. It must pass
+// through FundVirtualPsbt before being prepared or committed as a final
+// virtual packet: funding replaces or removes the zero-valued interactive
+// change placeholder. The output indices and interactive flags preserve the
+// existing server contract.
 func (s *SwapKit) CreateHtlcVpkt() (*tappsbt.VPacket, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
