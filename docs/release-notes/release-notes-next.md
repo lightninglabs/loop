@@ -39,6 +39,9 @@
 
 #### Bug Fixes
 
+* The multi-address migration now rejects databases with existing deposits unless
+  exactly one legacy static address is available to establish their ownership.
+
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
   waiting for the server timeout.
