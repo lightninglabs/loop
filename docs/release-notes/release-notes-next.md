@@ -17,6 +17,9 @@
   mode before attempting admission, avoiding spurious warnings when regular
   and presigned sweeps are pending together.
 
+* Shared asset kits now isolate proof and RPC buffers, reject oversized proofs
+  and unencodable amounts, and enforce distinct x-only signing keys.
+
 * Shared Taproot Asset sweep packets now preserve the destination address
   version and use the required non-interactive split-root layout.
 
