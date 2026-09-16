@@ -14,4 +14,7 @@
 #### Maintenance
 - Update the LoopRPC requirement to the revision used by this release.
 
+* Update Taproot Assets to v0.8.3, taprpc to v1.3.3, and the LND dependency to
+  v0.21.3-beta.
+
 #### Contributors (Alphabetical Order)
