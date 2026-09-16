@@ -870,7 +870,7 @@
     },
     "/v1/staticaddr": {
       "post": {
-        "summary": "loop: `static newstaticaddress`\nNewStaticAddress derives a fresh static receive address on every request\nwithout send_coins_request.addr, or funds an existing address when addr is\nset.",
+        "summary": "loop: `static newstaticaddress`\nNewStaticAddress derives a fresh static receive address on every request.\nThis RPC never funds the address. Use FundStaticAddress to deposit funds.",
         "operationId": "SwapClient_NewStaticAddress",
         "responses": {
           "200": {
@@ -994,6 +994,39 @@
             "required": false,
             "type": "integer",
             "format": "int32"
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/fund": {
+      "post": {
+        "summary": "loop: `static deposit`\nFundStaticAddress funds a new or existing static address from the lnd\nwallet. Requires wallet:fund in addition to swap:execute and loop:in, or an\nexplicit URI permission for this RPC.",
+        "operationId": "SwapClient_FundStaticAddress",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcFundStaticAddressResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcFundStaticAddressRequest"
+            }
           }
         ],
         "tags": [
@@ -1527,6 +1560,33 @@
         }
       },
       "description": "FixedPoint is a scaled integer representation of a fractional number.\n\nThis type consists of two integer fields: a coefficient and a scale.\nUsing this format enables precise and consistent representation of fractional\nnumbers while avoiding floating-point data types, which are prone to\nprecision errors.\n\nThe relationship between the fractional representation and its fixed-point\nrepresentation is expressed as:\n```\nV = F_c / (10^F_s)\n```\nwhere:\n\n* `V` is the fractional value.\n\n* `F_c` is the coefficient component of the fixed-point representation. It is\n   the scaled-up fractional value represented as an integer.\n\n* `F_s` is the scale component. It is an integer specifying how\n  many decimal places `F_c` should be divided by to obtain the fractional\n  representation."
+    },
+    "looprpcFundStaticAddressRequest": {
+      "type": "object",
+      "properties": {
+        "send_coins_request": {
+          "$ref": "#/definitions/lnrpcSendCoinsRequest",
+          "description": "Required. The funding request passed to lnd's SendCoins API. If addr is\nempty, loopd creates and funds a fresh static address. If addr is set, it\nmust be an existing static address known to loopd. Set either a positive\namount or send_all, but not both."
+        }
+      }
+    },
+    "looprpcFundStaticAddressResponse": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "The new or existing taproot static address receiving the funds."
+        },
+        "expiry": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The CSV expiry of the static address in blocks."
+        },
+        "send_coins_response": {
+          "$ref": "#/definitions/lnrpcSendCoinsResponse",
+          "description": "The response from lnd's SendCoins API for the funding transaction."
+        }
+      }
     },
     "looprpcGetInfoResponse": {
       "type": "object",
@@ -2337,10 +2397,6 @@
           "type": "string",
           "format": "byte",
           "description": "The client's public key for the 2-of-2 MuSig2 taproot static address."
-        },
-        "send_coins_request": {
-          "$ref": "#/definitions/lnrpcSendCoinsRequest",
-          "description": "If set, loopd initiates a deposit by calling lnd's SendCoins API. If the\nrequest's addr field is empty, loopd creates and funds a new static\naddress. If addr is set, it must be an existing static address known to\nloopd."
         }
       }
     },
@@ -2349,16 +2405,12 @@
       "properties": {
         "address": {
           "type": "string",
-          "description": "The taproot static address."
+          "description": "The newly derived taproot static address."
         },
         "expiry": {
           "type": "integer",
           "format": "int64",
-          "description": "The CSV expiry of the static address."
-        },
-        "send_coins_response": {
-          "$ref": "#/definitions/lnrpcSendCoinsResponse",
-          "description": "The response from lnd's SendCoins API, if a deposit was initiated."
+          "description": "The CSV expiry of the static address in blocks."
         }
       }
     },
