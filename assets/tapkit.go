@@ -11,9 +11,11 @@ import (
 	"github.com/lightninglabs/loop/assets/htlc"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightninglabs/taproot-assets/tapsend"
+	"github.com/lightninglabs/taproot-assets/vm"
 )
 
 // CreateOpTrueSweepVpkt creates a virtual packet that spends proof-bound
@@ -38,13 +40,25 @@ func CreateOpTrueSweepVpkt(ctx context.Context, proofs []*proof.Proof,
 	if addr.AssetID == asset.ZeroID {
 		return nil, fmt.Errorf("group sweep addresses are unsupported")
 	}
+	if address.IsUnknownVersion(addr.Version) {
+		return nil, fmt.Errorf("unsupported sweep address version")
+	}
+	if addr.Version >= address.V2 {
+		return nil, fmt.Errorf("version 2 sweep addresses are unsupported")
+	}
+	if addr.AssetVersion != asset.V0 && addr.AssetVersion != asset.V1 {
+		return nil, fmt.Errorf("unsupported sweep asset version")
+	}
 	opTrueScriptKey, _, _, controlBlock, err := htlc.CreateOpTrueLeaf()
 	if err != nil {
 		return nil, err
 	}
 	opTrueScriptKey = asset.NewScriptKey(opTrueScriptKey.PubKey)
 
-	total := uint64(0)
+	var (
+		total         uint64
+		seenOutpoints = make(map[wire.OutPoint]struct{}, len(proofs))
+	)
 	for idx, assetProof := range proofs {
 		if assetProof == nil {
 			return nil, fmt.Errorf("asset proof %d is nil", idx)
@@ -69,6 +83,13 @@ func CreateOpTrueSweepVpkt(ctx context.Context, proofs []*proof.Proof,
 		if math.MaxUint64-total < assetProof.Asset.Amount {
 			return nil, fmt.Errorf("asset proof amount overflow")
 		}
+		outpoint := assetProof.OutPoint()
+		if _, ok := seenOutpoints[outpoint]; ok {
+			return nil, fmt.Errorf(
+				"asset proof %d duplicates an input outpoint", idx,
+			)
+		}
+		seenOutpoints[outpoint] = struct{}{}
 		total += assetProof.Asset.Amount
 	}
 	if total != addr.Amount {
@@ -162,6 +183,36 @@ func CreateOpTrueSweepVpkt(ctx context.Context, proofs []*proof.Proof,
 				}
 			}
 		}
+	}
+
+	prevAssets := make(commitment.InputSet, len(sweepVpkt.Inputs))
+	for _, input := range sweepVpkt.Inputs {
+		prevAssets[input.PrevID] = input.Asset()
+	}
+	splitRootOutput, err := sweepVpkt.SplitRootOutput()
+	if err != nil {
+		return nil, err
+	}
+	splitAssets := make([]*commitment.SplitAsset, len(sweepVpkt.Outputs))
+	for idx, output := range sweepVpkt.Outputs {
+		splitAsset := output.Asset
+		if output.Type.IsSplitRoot() {
+			splitAsset = output.SplitAsset
+		}
+		if splitAsset == nil {
+			return nil, fmt.Errorf(
+				"prepared split asset output %d is incomplete", idx,
+			)
+		}
+		splitAssets[idx] = &commitment.SplitAsset{
+			Asset:       *splitAsset,
+			OutputIndex: output.AnchorOutputIndex,
+		}
+	}
+	if err := vm.ValidateWitnesses(
+		splitRootOutput.Asset, splitAssets, prevAssets,
+	); err != nil {
+		return nil, fmt.Errorf("invalid OP_TRUE asset witnesses: %w", err)
 	}
 
 	return sweepVpkt, nil
