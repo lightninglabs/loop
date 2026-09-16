@@ -13,6 +13,9 @@
 
 #### Bug Fixes
 
+* Deposit proof verification now requires genesis-rooted histories and rejects
+  ownership-only proofs, including those hidden in additional inputs.
+
 * Shared asset kits now isolate proof and RPC buffers, reject oversized proofs
   and unencodable amounts, and enforce distinct x-only signing keys.
 

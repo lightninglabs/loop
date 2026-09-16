@@ -284,7 +284,7 @@ func newWitnessFixture(t *testing.T) *witnessFixture {
 		FirstPrevOut: wire.OutPoint{
 			Hash: chainhash.Hash{0x31}, Index: 3,
 		},
-		Tag: "asset deposit witness test", OutputIndex: 0,
+		Tag: "asset deposit witness test", OutputIndex: 1,
 		Type: asset.Normal,
 	}
 	kit, err := NewKit(
@@ -329,8 +329,10 @@ func newWitnessFixture(t *testing.T) *witnessFixture {
 		Value: anchorValue, PkScript: anchorPkScript,
 	})
 	assetProof := &proof.Proof{
-		AnchorTx: *anchorTx,
-		Asset:    *depositAsset,
+		PrevOut:       genesis.FirstPrevOut,
+		GenesisReveal: &genesis,
+		AnchorTx:      *anchorTx,
+		Asset:         *depositAsset,
 		InclusionProof: proof.TaprootProof{
 			OutputIndex: 1,
 			InternalKey: kit.muSig2Key.PreTweakedKey,
