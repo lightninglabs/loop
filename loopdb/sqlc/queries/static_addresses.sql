@@ -32,6 +32,9 @@ INSERT INTO static_addresses (
          );
 
 -- name: GetLegacyAddress :one
+-- GetLegacyAddress returns the lowest-ID address, which is always the legacy
+-- root in key family 42060. Receive and change address creation first ensures
+-- that this root exists, so derived addresses always have higher IDs.
 SELECT * FROM static_addresses
 ORDER BY id ASC
 LIMIT 1;

@@ -837,7 +837,7 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	require.Len(t, loopIn.FundingTxs, 2)
 	require.NotNil(t, server.request)
 	require.EqualValues(
-		t, swap.StaticAddressKeyFamily, loopIn.HtlcKeyLocator.Family,
+		t, swap.StaticSingleAddressKeyFamily, loopIn.HtlcKeyLocator.Family,
 	)
 	_, routeHints, _, _, err := swap.DecodeInvoice(
 		mockLnd.ChainParams, server.request.SwapInvoice,
@@ -864,10 +864,8 @@ func TestInitHtlcActionSendsDepositAddressDescriptors(t *testing.T) {
 	}
 
 	depositA := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1},
-			Index: 0,
-		},
+		Hash:  chainhash.Hash{1},
+		Index: 0,
 		Value: 300_000,
 		AddressParams: &script.Parameters{
 			ClientPubkey: clientKeyA,
@@ -876,10 +874,8 @@ func TestInitHtlcActionSendsDepositAddressDescriptors(t *testing.T) {
 		},
 	}
 	depositB := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2},
-			Index: 1,
-		},
+		Hash:  chainhash.Hash{2},
+		Index: 1,
 		Value: 400_000,
 		AddressParams: &script.Parameters{
 			ClientPubkey: clientKeyB,
@@ -1093,30 +1089,26 @@ func TestInitHtlcActionSendsMultiAddressChangeOutput(t *testing.T) {
 	}
 
 	dep := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{3},
-			Index: 0,
-		},
+		Hash:  chainhash.Hash{3},
+		Index: 0,
 		Value: 500_000,
-		AddressParams: &address.Parameters{
+		AddressParams: &address.AddressParameters{
 			ClientPubkey: depositClientPubkey,
 			PkScript:     []byte{0x51, 0x20, 0x02},
 			Expiry:       2_000,
 		},
 	}
 	secondDep := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{4},
-			Index: 1,
-		},
+		Hash:  chainhash.Hash{4},
+		Index: 1,
 		Value: 200_000,
-		AddressParams: &address.Parameters{
+		AddressParams: &address.AddressParameters{
 			ClientPubkey: secondDepositClientPubkey,
 			PkScript:     []byte{0x51, 0x20, 0x03},
 			Expiry:       2_000,
 		},
 	}
-	changeParams := &address.Parameters{
+	changeParams := &address.AddressParameters{
 		ID:           1,
 		ClientPubkey: changeClientPubkey,
 		PkScript:     []byte{0x51, 0x20, 0x01},
@@ -4078,7 +4070,7 @@ func TestInitHtlcActionRejectsActualHtlcExpiry(t *testing.T) {
 	response.HtlcExpiry = mockLnd.Height + 1_100
 	server := &initHtlcTestServer{loopInResp: response}
 	dep := &deposit.Deposit{
-		OutPoint:           wire.OutPoint{Hash: chainhash.Hash{42}},
+		Hash:               chainhash.Hash{42},
 		Value:              500_000,
 		ConfirmationHeight: int64(mockLnd.Height) - 200,
 		AddressParams: &script.Parameters{
@@ -4218,7 +4210,7 @@ func (m *mockAddressManager) GetStaticAddressParameters(_ context.Context) (
 
 // NewChangeAddress returns configured parameters for tests that need change.
 func (m *mockAddressManager) NewChangeAddress(_ context.Context) (
-	*address.Parameters, error) {
+	*address.AddressParameters, error) {
 
 	return m.params, nil
 }

@@ -138,13 +138,13 @@ func (a *heldWithdrawalAddress) GetStaticAddress(context.Context) (
 }
 
 func (a *heldWithdrawalAddress) NewChangeAddress(context.Context) (
-	*address.Parameters, error) {
+	*address.AddressParameters, error) {
 
 	return nil, errors.New("unexpected change address request")
 }
 
 func (a *heldWithdrawalAddress) GetParameters(
-	pkScript []byte) *address.Parameters {
+	pkScript []byte) *address.AddressParameters {
 
 	if bytes.Equal(pkScript, a.params.PkScript) {
 		return a.params
@@ -269,7 +269,7 @@ func TestWithdrawalHoldPreservesOrdering(t *testing.T) {
 			require.NoError(t, err)
 			destScript, err := txscript.PayToAddrScript(dest)
 			require.NoError(t, err)
-			params := &address.Parameters{
+			params := &address.AddressParameters{
 				ClientPubkey: clientKey,
 				ServerPubkey: serverKey,
 				PkScript:     pkScript,

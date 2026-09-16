@@ -100,6 +100,9 @@ ORDER BY id ASC
 LIMIT 1
 `
 
+// GetLegacyAddress returns the lowest-ID address, which is always the legacy
+// root in key family 42060. Receive and change address creation first ensures
+// that this root exists, so derived addresses always have higher IDs.
 func (q *Queries) GetLegacyAddress(ctx context.Context) (StaticAddress, error) {
 	row := q.db.QueryRowContext(ctx, getLegacyAddress)
 	var i StaticAddress

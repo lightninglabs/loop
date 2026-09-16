@@ -59,7 +59,10 @@ func ToPrevOuts(deposits []*deposit.Deposit) (
 //
 // The server receives this proof material with swap and withdrawal requests and
 // verifies it against the L402's server key and expiry before co-signing any
-// input.
+// input. Root and derived addresses use the same descriptor format. The server
+// can recognize the root by matching the client public key to its stored root
+// address; other client keys identify derived addresses. The descriptor carries
+// no derivation key family or index.
 func DepositAddressDescriptors(deposits []*deposit.Deposit) (
 	map[string]*swapserverrpc.StaticAddressDescriptor, error) {
 
@@ -103,7 +106,7 @@ func DepositAddressDescriptors(deposits []*deposit.Deposit) (
 // ChangeOutput converts a locally generated static address into the RPC change
 // descriptor sent to the server. The descriptor binds the expected script,
 // amount and client key so the server can derive and verify the same address.
-func ChangeOutput(params *address.Parameters,
+func ChangeOutput(params *address.AddressParameters,
 	amount btcutil.Amount) (*swapserverrpc.StaticAddressChangeOutput, error) {
 
 	if amount <= 0 {

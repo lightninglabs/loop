@@ -31,6 +31,9 @@ type Querier interface {
 	GetInstantOutSwaps(ctx context.Context) ([]GetInstantOutSwapsRow, error)
 	GetLastUpdateID(ctx context.Context, swapHash []byte) (int32, error)
 	GetLatestDepositUpdate(ctx context.Context, depositID []byte) (DepositUpdate, error)
+	// GetLegacyAddress returns the lowest-ID address, which is always the legacy
+	// root in key family 42060. Receive and change address creation first ensures
+	// that this root exists, so derived addresses always have higher IDs.
 	GetLegacyAddress(ctx context.Context) (StaticAddress, error)
 	GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopInSwapRow, error)
 	// The last update is the swap's current state.

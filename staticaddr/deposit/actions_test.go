@@ -107,7 +107,7 @@ func TestWaitForExpirySweepActionTracksOutpointSpender(t *testing.T) {
 			ConfirmationHeight:   42,
 			ExpirySweepTxid:      chainhash.Hash{9},
 			TimeOutSweepPkScript: timeoutPkScript,
-			AddressParams: &address.Parameters{
+			AddressParams: &address.AddressParameters{
 				PkScript: depositPkScript,
 			},
 		},
@@ -150,7 +150,7 @@ func TestWaitForExpirySweepActionRejectsInvalidSpend(t *testing.T) {
 			OutPoint:             depositOutpoint,
 			ConfirmationHeight:   42,
 			TimeOutSweepPkScript: timeoutPkScript,
-			AddressParams: &address.Parameters{
+			AddressParams: &address.AddressParameters{
 				PkScript: depositPkScript,
 			},
 		},
@@ -218,7 +218,7 @@ func TestWaitForExpirySweepActionRejectsMissingConfirmation(t *testing.T) {
 			OutPoint:             depositOutpoint,
 			ConfirmationHeight:   42,
 			TimeOutSweepPkScript: timeoutPkScript,
-			AddressParams: &address.Parameters{
+			AddressParams: &address.AddressParameters{
 				PkScript: depositPkScript,
 			},
 		},

@@ -168,7 +168,7 @@ func TestMultiAddressPersistenceRecovery(t *testing.T) {
 
 func createIntegrationAddress(t *testing.T, ctx context.Context,
 	store *address.SqlStore, clientIndex, serverIndex byte,
-	keyIndex uint32) *address.Parameters {
+	keyIndex uint32) *address.AddressParameters {
 
 	t.Helper()
 
@@ -181,7 +181,7 @@ func createIntegrationAddress(t *testing.T, ctx context.Context,
 	pkScript, err := staticAddress.StaticAddressScript()
 	require.NoError(t, err)
 
-	params := &address.Parameters{
+	params := &address.AddressParameters{
 		ClientPubkey: clientKey,
 		ServerPubkey: serverKey,
 		PkScript:     pkScript,
@@ -202,18 +202,16 @@ func createIntegrationAddress(t *testing.T, ctx context.Context,
 
 func createIntegrationDeposit(t *testing.T, ctx context.Context,
 	store *deposit.SqlStore, hashByte byte, value btcutil.Amount,
-	params *address.Parameters) *deposit.Deposit {
+	params *address.AddressParameters) *deposit.Deposit {
 
 	t.Helper()
 
 	id, err := deposit.GetRandomDepositID()
 	require.NoError(t, err)
 	d := &deposit.Deposit{
-		ID: id,
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{hashByte},
-			Index: uint32(hashByte),
-		},
+		ID:                   id,
+		Hash:                 chainhash.Hash{hashByte},
+		Index:                uint32(hashByte),
 		Value:                value,
 		ConfirmationHeight:   90,
 		TimeOutSweepPkScript: []byte{0x00, 0x14, hashByte},
