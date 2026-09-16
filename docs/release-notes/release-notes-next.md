@@ -11,6 +11,9 @@
 
 #### Bug Fixes
 
+* Shared Taproot Asset sweep packets now preserve the destination address
+  version and use the required non-interactive split-root layout.
+
 #### Maintenance
 - Update the LoopRPC requirement to the revision used by this release.
 

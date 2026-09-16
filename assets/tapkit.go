@@ -42,6 +42,7 @@ func CreateOpTrueSweepVpkt(ctx context.Context, proofs []*proof.Proof,
 	if err != nil {
 		return nil, err
 	}
+	opTrueScriptKey = asset.NewScriptKey(opTrueScriptKey.PubKey)
 
 	total := uint64(0)
 	for idx, assetProof := range proofs {
@@ -74,8 +75,19 @@ func CreateOpTrueSweepVpkt(ctx context.Context, proofs []*proof.Proof,
 		return nil, fmt.Errorf("total proof amount does not match address")
 	}
 
+	// An address always describes a non-interactive transfer. Let the
+	// Taproot Assets address constructor choose both the virtual packet
+	// version and the split-root/recipient output layout so these semantics
+	// stay aligned with the address version.
+	addressVpkt, err := tappsbt.FromAddresses(
+		[]*address.Tap{addr}, 1,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	sweepVpkt, err := tappsbt.FromProofs(
-		proofs, addr.ChainParams, tappsbt.V1,
+		proofs, addr.ChainParams, addressVpkt.Version,
 	)
 	if err != nil {
 		return nil, err
@@ -101,16 +113,16 @@ func CreateOpTrueSweepVpkt(ctx context.Context, proofs []*proof.Proof,
 			}
 	}
 
-	sweepVpkt.Outputs = append(sweepVpkt.Outputs, &tappsbt.VOutput{
-		AssetVersion:                 addr.AssetVersion,
-		Amount:                       addr.Amount,
-		Interactive:                  true,
-		AnchorOutputIndex:            0,
-		ScriptKey:                    asset.NewScriptKey(&addr.ScriptKey),
-		AnchorOutputInternalKey:      &addr.InternalKey,
-		AnchorOutputTapscriptSibling: addr.TapscriptSibling,
-		ProofDeliveryAddress:         &addr.ProofCourierAddr,
-	})
+	destinationScriptKey, err := addr.ScriptKeyForAssetID(addr.AssetID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid sweep script key: %w", err)
+	}
+	recipientOutput, err := addressVpkt.FirstNonSplitRootOutput()
+	if err != nil {
+		return nil, err
+	}
+	recipientOutput.ScriptKey = asset.NewScriptKey(destinationScriptKey)
+	sweepVpkt.Outputs = addressVpkt.Outputs
 	if err := tapsend.PrepareOutputAssets(ctx, sweepVpkt); err != nil {
 		return nil, err
 	}
@@ -124,22 +136,32 @@ func CreateOpTrueSweepVpkt(ctx context.Context, proofs []*proof.Proof,
 		return nil, err
 	}
 
-	if len(sweepVpkt.Outputs) == 0 || sweepVpkt.Outputs[0] == nil ||
-		sweepVpkt.Outputs[0].Asset == nil ||
-		len(sweepVpkt.Outputs[0].Asset.PrevWitnesses) == 0 {
-
-		return nil, fmt.Errorf("prepared asset output is incomplete")
-	}
-	firstPrevWitness := &sweepVpkt.Outputs[0].Asset.PrevWitnesses[0]
-	if sweepVpkt.Outputs[0].Asset.HasSplitCommitmentWitness() {
-		rootAsset := firstPrevWitness.SplitCommitment.RootAsset
-		if len(rootAsset.PrevWitnesses) == 0 {
-			return nil, fmt.Errorf("split root asset witness is incomplete")
+	for outputIdx, output := range sweepVpkt.Outputs {
+		if output == nil || output.Asset == nil {
+			return nil, fmt.Errorf(
+				"prepared asset output %d is incomplete", outputIdx,
+			)
 		}
-		firstPrevWitness = &rootAsset.PrevWitnesses[0]
-	}
-	firstPrevWitness.TxWitness = wire.TxWitness{
-		opTrueScript, controlBlockBytes,
+
+		outputAssets := []*asset.Asset{output.Asset}
+		if output.SplitAsset != nil {
+			outputAssets = append(outputAssets, output.SplitAsset)
+		}
+		for _, outputAsset := range outputAssets {
+			prevWitnesses := outputAsset.Witnesses()
+			if len(prevWitnesses) != len(sweepVpkt.Inputs) {
+				return nil, fmt.Errorf(
+					"prepared asset output %d witnesses are "+
+						"incomplete", outputIdx,
+				)
+			}
+			for idx := range prevWitnesses {
+				prevWitnesses[idx].TxWitness = wire.TxWitness{
+					append([]byte(nil), opTrueScript...),
+					append([]byte(nil), controlBlockBytes...),
+				}
+			}
+		}
 	}
 
 	return sweepVpkt, nil
