@@ -2,9 +2,7 @@ package loopd
 
 import (
 	"context"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -12,6 +10,16 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/address"
@@ -20,15 +28,6 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	mock_lnd "github.com/lightninglabs/loop/test"
-	"github.com/lightningnetwork/lnd/input"
-	"github.com/lightningnetwork/lnd/lnrpc"
-	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/lnwallet"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 type staticAddrTestLightningClient struct {
@@ -57,35 +56,6 @@ func (q *staticAddrTestLoopInQuoter) LoopInQuote(_ context.Context,
 	q.request = request
 
 	return &loop.LoopInQuote{}, nil
-}
-
-type sendCoinsRPCClient struct {
-	lnrpc.LightningClient
-
-	request  *lnrpc.SendCoinsRequest
-	response *lnrpc.SendCoinsResponse
-}
-
-func (c *sendCoinsRPCClient) SendCoins(_ context.Context,
-	req *lnrpc.SendCoinsRequest, _ ...grpc.CallOption) (
-	*lnrpc.SendCoinsResponse, error) {
-
-	c.request = proto.Clone(req).(*lnrpc.SendCoinsRequest)
-
-	return c.response, nil
-}
-
-type sendCoinsLightningClient struct {
-	lndclient.LightningClient
-
-	rawClient lnrpc.LightningClient
-}
-
-func (c *sendCoinsLightningClient) RawClientWithMacAuth(
-	ctx context.Context) (context.Context, time.Duration,
-	lnrpc.LightningClient) {
-
-	return ctx, time.Second, c.rawClient
 }
 
 type staticAddrDepositStore struct {
@@ -263,199 +233,33 @@ func newTestStaticAddressContext(t *testing.T, expiry uint32) (*address.Manager,
 	return addrMgr, mock
 }
 
-func TestValidateStaticAddressSendCoinsRequest(t *testing.T) {
+// TestNewStaticAddressDoesNotFund verifies address creation never invokes the
+// wallet's SendCoins method, even with the removed funding field on the wire.
+func TestNewStaticAddressDoesNotFund(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name string
-		req  *lnrpc.SendCoinsRequest
-		err  string
-	}{
-		{
-			name: "nil",
-		},
-		{
-			name: "amount",
-			req: &lnrpc.SendCoinsRequest{
-				Amount: 10_000,
-			},
-		},
-		{
-			name: "send all",
-			req: &lnrpc.SendCoinsRequest{
-				SendAll: true,
-			},
-		},
-		{
-			name: "existing addr",
-			req: &lnrpc.SendCoinsRequest{
-				Addr:   "bcrt1ptestaddress",
-				Amount: 10_000,
-			},
-		},
-		{
-			name: "missing amount",
-			req:  &lnrpc.SendCoinsRequest{},
-			err:  "must set amount or send_all",
-		},
-		{
-			name: "negative amount",
-			req: &lnrpc.SendCoinsRequest{
-				Amount: -1,
-			},
-			err: "amount must be non-negative",
-		},
-		{
-			name: "amount and send all",
-			req: &lnrpc.SendCoinsRequest{
-				Amount:  10_000,
-				SendAll: true,
-			},
-			err: "amount cannot be set when send_all is true",
-		},
-		{
-			name: "target and fee rate",
-			req: &lnrpc.SendCoinsRequest{
-				Amount:           10_000,
-				TargetConf:       6,
-				SatPerVbyte:      1,
-				SatPerByte:       0,
-				SendAll:          false,
-				MinConfs:         1,
-				Outpoints:        nil,
-				SpendUnconfirmed: false,
-			},
-			err: "can set either target_conf or a fee rate",
-		},
-		{
-			name: "both fee rates",
-			req: &lnrpc.SendCoinsRequest{
-				Amount:      10_000,
-				SatPerVbyte: 1,
-				SatPerByte:  1,
-			},
-			err: "can set either sat_per_vbyte or sat_per_byte",
-		},
-		{
-			name: "negative min confs",
-			req: &lnrpc.SendCoinsRequest{
-				Amount:   10_000,
-				MinConfs: -1,
-			},
-			err: "min_confs must be non-negative",
-		},
-		{
-			name: "min confs with spend unconfirmed",
-			req: &lnrpc.SendCoinsRequest{
-				Amount:           10_000,
-				MinConfs:         1,
-				SpendUnconfirmed: true,
-			},
-			err: "spend_unconfirmed invalid",
-		},
-		{
-			name: "invalid label",
-			req: &lnrpc.SendCoinsRequest{
-				Amount: 10_000,
-				Label:  strings.Repeat("x", 501),
-			},
-			err: "label invalid",
-		},
-		{
-			name: "invalid coin selection strategy",
-			req: &lnrpc.SendCoinsRequest{
-				Amount:                10_000,
-				CoinSelectionStrategy: lnrpc.CoinSelectionStrategy(99),
-			},
-			err: "coin_selection_strategy invalid",
-		},
-	}
+	addrMgr, _ := newTestStaticAddressContext(t, 10)
+	// Leave the wallet dependency nil so any funding access fails the test.
+	server := &swapClientServer{staticAddressManager: addrMgr}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+	// An old experimental client could still serialize funding as field 2.
+	// Protobuf preserves it as unknown data, but the address RPC cannot spend.
+	funding, err := proto.Marshal(&lnrpc.SendCoinsRequest{SendAll: true})
+	require.NoError(t, err)
+	encoded := protowire.AppendTag(nil, 2, protowire.BytesType)
+	encoded = protowire.AppendBytes(encoded, funding)
+	req := &looprpc.NewStaticAddressRequest{}
+	require.NoError(t, proto.Unmarshal(encoded, req))
 
-			err := validateStaticAddressSendCoinsRequest(test.req)
-			if test.err == "" {
-				require.NoError(t, err)
-				return
-			}
-
-			require.ErrorContains(t, err, test.err)
-		})
-	}
-}
-
-func TestNewStaticAddressFundsGeneratedAddress(t *testing.T) {
-	t.Parallel()
-
-	addrMgr, lnd := newTestStaticAddressContext(t, 10)
-	rawClient := &sendCoinsRPCClient{
-		response: &lnrpc.SendCoinsResponse{Txid: "funding-txid"},
-	}
-	lnd.Client = &sendCoinsLightningClient{rawClient: rawClient}
-	server := &swapClientServer{
-		staticAddressManager: addrMgr,
-		lnd:                  &lnd.LndServices,
-	}
-
-	sendCoinsReq := &lnrpc.SendCoinsRequest{
-		Amount:                100_000,
-		TargetConf:            6,
-		Label:                 "static-address-deposit",
-		MinConfs:              1,
-		CoinSelectionStrategy: lnrpc.CoinSelectionStrategy_STRATEGY_RANDOM,
-		Outpoints: []*lnrpc.OutPoint{{
-			TxidStr:     strings.Repeat("01", 32),
-			OutputIndex: 2,
-		}},
-	}
-	resp, err := server.NewStaticAddress(
-		t.Context(), &looprpc.NewStaticAddressRequest{
-			SendCoinsRequest: sendCoinsReq,
-		},
+	first, err := server.NewStaticAddress(t.Context(), req)
+	require.NoError(t, err)
+	second, err := server.NewStaticAddress(
+		t.Context(), &looprpc.NewStaticAddressRequest{},
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, resp.Address)
-	require.Equal(t, "funding-txid", resp.GetSendCoinsResponse().GetTxid())
-
-	expectedReq := proto.Clone(sendCoinsReq).(*lnrpc.SendCoinsRequest)
-	expectedReq.Addr = resp.Address
-	require.True(t, proto.Equal(expectedReq, rawClient.request))
-	require.Empty(t, sendCoinsReq.Addr)
-}
-
-func TestStaticAddressForDeposit(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	addrMgr, lnd := newTestStaticAddressContext(t, 10)
-	server := &swapClientServer{
-		staticAddressManager: addrMgr,
-		lnd:                  &lnd.LndServices,
-	}
-
-	addresses, err := addrMgr.GetAllAddresses(ctx)
-	require.NoError(t, err)
-	require.Len(t, addresses, 1)
-
-	expectedAddr, err := addrMgr.GetTaprootAddress(
-		addresses[0].ClientPubkey, addresses[0].ServerPubkey,
-		int64(addresses[0].Expiry),
-	)
-	require.NoError(t, err)
-
-	addr, expiry, err := server.staticAddressForDeposit(
-		ctx, expectedAddr.String(),
-	)
-	require.NoError(t, err)
-	require.Equal(t, expectedAddr.String(), addr)
-	require.Equal(t, addresses[0].Expiry, expiry)
-
-	_, _, err = server.staticAddressForDeposit(
-		ctx, "bcrt1punknownstaticaddress",
-	)
-	require.ErrorContains(t, err, "not a known static address")
+	require.NotEmpty(t, first.Address)
+	require.NotEqual(t, first.Address, second.Address)
+	require.EqualValues(t, 10, first.Expiry)
 }
 
 // TestListStaticAddressDepositsReturnsVisibleDeposits verifies normal deposit
