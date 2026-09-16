@@ -1900,11 +1900,27 @@ func rpcInstantOut(instantOut *instantout.InstantOut) *looprpc.InstantOut {
 	}
 }
 
-// NewStaticAddress is the rpc endpoint for loop clients to request a new static
-// address.
+// NewStaticAddress creates a fresh static receive address without funding it.
 func (s *swapClientServer) NewStaticAddress(ctx context.Context,
-	req *looprpc.NewStaticAddressRequest) (
-	*looprpc.NewStaticAddressResponse, error) {
+	_ *looprpc.NewStaticAddressRequest) (*looprpc.NewStaticAddressResponse,
+	error) {
+
+	staticAddress, expiry, err := s.staticAddressManager.NewAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &looprpc.NewStaticAddressResponse{
+		Address: staticAddress.String(),
+		Expiry:  uint32(expiry),
+	}, nil
+}
+
+// FundStaticAddress funds a new or existing static address from the lnd wallet.
+// The RPC interceptor requires explicit funding authority before this runs.
+func (s *swapClientServer) FundStaticAddress(ctx context.Context,
+	req *looprpc.FundStaticAddressRequest) (
+	*looprpc.FundStaticAddressResponse, error) {
 
 	sendCoinsReq := req.GetSendCoinsRequest()
 	if err := validateStaticAddressSendCoinsRequest(sendCoinsReq); err != nil {
@@ -1928,15 +1944,16 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 			"funding transaction failed: %w", staticAddress, err)
 	}
 
-	return &looprpc.NewStaticAddressResponse{
+	return &looprpc.FundStaticAddressResponse{
 		Address:           staticAddress.String(),
 		Expiry:            uint32(expiry),
 		SendCoinsResponse: sendCoinsResp,
 	}, nil
 }
 
+// fundExistingStaticAddress funds a known address without deriving a new one.
 func (s *swapClientServer) fundExistingStaticAddress(ctx context.Context,
-	req *lnrpc.SendCoinsRequest) (*looprpc.NewStaticAddressResponse, error) {
+	req *lnrpc.SendCoinsRequest) (*looprpc.FundStaticAddressResponse, error) {
 
 	staticAddress, expiry, err := s.staticAddressForDeposit(ctx, req.Addr)
 	if err != nil {
@@ -1951,7 +1968,7 @@ func (s *swapClientServer) fundExistingStaticAddress(ctx context.Context,
 			"failed: %w", staticAddress, err)
 	}
 
-	return &looprpc.NewStaticAddressResponse{
+	return &looprpc.FundStaticAddressResponse{
 		Address:           staticAddress,
 		Expiry:            expiry,
 		SendCoinsResponse: sendCoinsResp,
@@ -1978,7 +1995,8 @@ func (s *swapClientServer) staticAddressForDeposit(_ context.Context,
 
 func validateStaticAddressSendCoinsRequest(req *lnrpc.SendCoinsRequest) error {
 	if req == nil {
-		return nil
+		return status.Error(codes.InvalidArgument,
+			"send_coins_request is required")
 	}
 
 	switch {

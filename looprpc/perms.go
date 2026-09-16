@@ -87,6 +87,16 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Entity: "loop",
 		Action: "in",
 	}},
+	"/looprpc.SwapClient/FundStaticAddress": {{
+		Entity: "swap",
+		Action: "execute",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}, {
+		Entity: "wallet",
+		Action: "fund",
+	}},
 	"/looprpc.SwapClient/ListUnspentDeposits": {{
 		Entity: "swap",
 		Action: "read",

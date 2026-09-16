@@ -2,11 +2,13 @@ package loopd
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -28,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -64,6 +67,7 @@ type sendCoinsRPCClient struct {
 
 	request  *lnrpc.SendCoinsRequest
 	response *lnrpc.SendCoinsResponse
+	err      error
 }
 
 func (c *sendCoinsRPCClient) SendCoins(_ context.Context,
@@ -72,7 +76,7 @@ func (c *sendCoinsRPCClient) SendCoins(_ context.Context,
 
 	c.request = proto.Clone(req).(*lnrpc.SendCoinsRequest)
 
-	return c.response, nil
+	return c.response, c.err
 }
 
 type sendCoinsLightningClient struct {
@@ -266,6 +270,7 @@ func TestValidateStaticAddressSendCoinsRequest(t *testing.T) {
 	}{
 		{
 			name: "nil",
+			err:  "send_coins_request is required",
 		},
 		{
 			name: "amount",
@@ -379,7 +384,9 @@ func TestValidateStaticAddressSendCoinsRequest(t *testing.T) {
 	}
 }
 
-func TestNewStaticAddressFundsGeneratedAddress(t *testing.T) {
+// TestFundStaticAddressFundsGeneratedAddress verifies the RPC funds the derived
+// address and forwards coin selection options without mutating the request.
+func TestFundStaticAddressFundsGeneratedAddress(t *testing.T) {
 	t.Parallel()
 
 	addrMgr, lnd := newTestStaticAddressContext(t, 10)
@@ -403,8 +410,8 @@ func TestNewStaticAddressFundsGeneratedAddress(t *testing.T) {
 			OutputIndex: 2,
 		}},
 	}
-	resp, err := server.NewStaticAddress(
-		t.Context(), &looprpc.NewStaticAddressRequest{
+	resp, err := server.FundStaticAddress(
+		t.Context(), &looprpc.FundStaticAddressRequest{
 			SendCoinsRequest: sendCoinsReq,
 		},
 	)
@@ -416,6 +423,152 @@ func TestNewStaticAddressFundsGeneratedAddress(t *testing.T) {
 	expectedReq.Addr = resp.Address
 	require.True(t, proto.Equal(expectedReq, rawClient.request))
 	require.Empty(t, sendCoinsReq.Addr)
+}
+
+// TestNewStaticAddressDoesNotFund verifies address creation never invokes the
+// wallet's SendCoins method, even with the removed funding field on the wire.
+func TestNewStaticAddressDoesNotFund(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	rawClient := &sendCoinsRPCClient{}
+	lnd.Client = &sendCoinsLightningClient{rawClient: rawClient}
+	server := &swapClientServer{
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	// An old experimental client could still serialize funding as field 2.
+	// Protobuf preserves it as unknown data, but the address RPC cannot spend.
+	funding, err := proto.Marshal(&lnrpc.SendCoinsRequest{SendAll: true})
+	require.NoError(t, err)
+	encoded := protowire.AppendTag(nil, 2, protowire.BytesType)
+	encoded = protowire.AppendBytes(encoded, funding)
+	req := &looprpc.NewStaticAddressRequest{}
+	require.NoError(t, proto.Unmarshal(encoded, req))
+
+	first, err := server.NewStaticAddress(t.Context(), req)
+	require.NoError(t, err)
+	second, err := server.NewStaticAddress(
+		t.Context(), &looprpc.NewStaticAddressRequest{},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, first.Address)
+	require.NotEqual(t, first.Address, second.Address)
+	require.EqualValues(t, 10, first.Expiry)
+	require.Nil(t, rawClient.request)
+}
+
+// TestFundStaticAddressRejectsInvalidRequests verifies funding validation runs
+// before any address manager or wallet access.
+func TestFundStaticAddressRejectsInvalidRequests(t *testing.T) {
+	t.Parallel()
+
+	for _, req := range []*looprpc.FundStaticAddressRequest{
+		nil,
+		{},
+		{SendCoinsRequest: &lnrpc.SendCoinsRequest{}},
+		{SendCoinsRequest: &lnrpc.SendCoinsRequest{Amount: -1}},
+		{SendCoinsRequest: &lnrpc.SendCoinsRequest{
+			Amount: 1, SendAll: true,
+		}},
+	} {
+		// Nil dependencies would panic if validation allowed a side effect.
+		server := &swapClientServer{}
+		resp, err := server.FundStaticAddress(t.Context(), req)
+		require.Nil(t, resp)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	}
+}
+
+// TestFundStaticAddressExistingAddress verifies funding an existing address
+// preserves send-all options and does not derive another address.
+func TestFundStaticAddressExistingAddress(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	rawClient := &sendCoinsRPCClient{
+		response: &lnrpc.SendCoinsResponse{Txid: "existing-funding-txid"},
+	}
+	lnd.Client = &sendCoinsLightningClient{rawClient: rawClient}
+	server := &swapClientServer{
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+
+	addr, err := addrMgr.GetStaticAddress(t.Context())
+	require.NoError(t, err)
+	encodedAddr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(addr.TaprootKey), lnd.ChainParams,
+	)
+	require.NoError(t, err)
+	req := &lnrpc.SendCoinsRequest{
+		Addr: encodedAddr.String(), SendAll: true, SatPerVbyte: 2,
+	}
+	resp, err := server.FundStaticAddress(
+		t.Context(), &looprpc.FundStaticAddressRequest{
+			SendCoinsRequest: req,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, req.Addr, resp.Address)
+	require.EqualValues(t, 10, resp.Expiry)
+	require.Equal(t, rawClient.response, resp.SendCoinsResponse)
+	require.True(t, proto.Equal(req, rawClient.request))
+	addresses, err := addrMgr.GetAllAddresses(t.Context())
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+
+	// A valid Bitcoin address outside the active static-address index must
+	// never be forwarded to SendCoins.
+	_, otherKey := mock_lnd.CreateKey(99)
+	unknownAddr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(otherKey), lnd.ChainParams,
+	)
+	require.NoError(t, err)
+	rawClient.request = nil
+	req.Addr = unknownAddr.String()
+	resp, err = server.FundStaticAddress(
+		t.Context(), &looprpc.FundStaticAddressRequest{
+			SendCoinsRequest: req,
+		},
+	)
+	require.Nil(t, resp)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Nil(t, rawClient.request)
+}
+
+// TestFundStaticAddressWalletFailure verifies a failed broadcast preserves the
+// newly created address and identifies it in the error for recovery.
+func TestFundStaticAddressWalletFailure(t *testing.T) {
+	t.Parallel()
+
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	walletErr := errors.New("wallet unavailable")
+	rawClient := &sendCoinsRPCClient{err: walletErr}
+	lnd.Client = &sendCoinsLightningClient{rawClient: rawClient}
+	server := &swapClientServer{
+		staticAddressManager: addrMgr,
+		lnd:                  &lnd.LndServices,
+	}
+	resp, err := server.FundStaticAddress(
+		t.Context(), &looprpc.FundStaticAddressRequest{
+			SendCoinsRequest: &lnrpc.SendCoinsRequest{Amount: 100_000},
+		},
+	)
+	require.Nil(t, resp)
+	require.ErrorIs(t, err, walletErr)
+	require.NotNil(t, rawClient.request)
+	require.NotEmpty(t, rawClient.request.Addr)
+	require.ErrorContains(t, err, rawClient.request.Addr)
+
+	addresses, err := addrMgr.GetAllAddresses(t.Context())
+	require.NoError(t, err)
+	require.Len(t, addresses, 2)
+	_, _, err = server.staticAddressForDeposit(
+		t.Context(), rawClient.request.Addr,
+	)
+	require.NoError(t, err)
 }
 
 func TestStaticAddressForDeposit(t *testing.T) {

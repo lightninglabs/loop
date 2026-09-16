@@ -202,7 +202,7 @@ func depositStaticAddress(ctx context.Context, cmd *cli.Command) error {
 
 func executeStaticAddressDeposit(ctx context.Context, cmd *cli.Command,
 	client looprpc.SwapClientClient, input io.Reader, output io.Writer,
-	interactive bool) (*looprpc.NewStaticAddressResponse, error) {
+	interactive bool) (*looprpc.FundStaticAddressResponse, error) {
 
 	req, err := staticAddressDepositRequest(cmd, "")
 	if err != nil {
@@ -235,7 +235,7 @@ func executeStaticAddressDeposit(ctx context.Context, cmd *cli.Command,
 		}
 	}
 
-	resp, err := client.NewStaticAddress(ctx, req)
+	resp, err := client.FundStaticAddress(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +244,7 @@ func executeStaticAddressDeposit(ctx context.Context, cmd *cli.Command,
 }
 
 func staticAddressDepositRequest(
-	cmd *cli.Command, addr string) (*looprpc.NewStaticAddressRequest, error) {
+	cmd *cli.Command, addr string) (*looprpc.FundStaticAddressRequest, error) {
 
 	if !cmd.IsSet("amt") && !cmd.Bool("sweepall") {
 		return nil, errors.New("amount argument missing")
@@ -311,7 +311,7 @@ func staticAddressDepositRequest(
 		return nil, err
 	}
 
-	return &looprpc.NewStaticAddressRequest{
+	return &looprpc.FundStaticAddressRequest{
 		SendCoinsRequest: &lnrpc.SendCoinsRequest{
 			Addr:        addr,
 			Amount:      amount,
@@ -356,7 +356,7 @@ func parseStaticAddressCoinSelectionStrategy(cmd *cli.Command) (
 	}
 }
 
-func confirmStaticAddressDeposit(req *looprpc.NewStaticAddressRequest,
+func confirmStaticAddressDeposit(req *looprpc.FundStaticAddressRequest,
 	input io.Reader, output io.Writer) (bool, error) {
 
 	sendCoinsReq := req.GetSendCoinsRequest()

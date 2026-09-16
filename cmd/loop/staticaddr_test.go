@@ -25,10 +25,10 @@ import (
 type staticAddressSummaryErrorClient struct {
 	looprpc.SwapClientClient
 
-	err                error
-	newAddressRequest  *looprpc.NewStaticAddressRequest
-	newAddressResponse *looprpc.NewStaticAddressResponse
-	newAddressCalls    int
+	err                 error
+	fundAddressRequest  *looprpc.FundStaticAddressRequest
+	fundAddressResponse *looprpc.FundStaticAddressResponse
+	fundAddressCalls    int
 }
 
 func (c *staticAddressSummaryErrorClient) GetStaticAddressSummary(
@@ -38,14 +38,14 @@ func (c *staticAddressSummaryErrorClient) GetStaticAddressSummary(
 	return nil, c.err
 }
 
-func (c *staticAddressSummaryErrorClient) NewStaticAddress(
-	_ context.Context, req *looprpc.NewStaticAddressRequest,
-	_ ...grpc.CallOption) (*looprpc.NewStaticAddressResponse, error) {
+func (c *staticAddressSummaryErrorClient) FundStaticAddress(
+	_ context.Context, req *looprpc.FundStaticAddressRequest,
+	_ ...grpc.CallOption) (*looprpc.FundStaticAddressResponse, error) {
 
-	c.newAddressCalls++
-	c.newAddressRequest = req
+	c.fundAddressCalls++
+	c.fundAddressRequest = req
 
-	return c.newAddressResponse, nil
+	return c.fundAddressResponse, nil
 }
 
 func TestMaybeDisplayNewAddressWarningReturnsUnexpectedError(t *testing.T) {
@@ -80,19 +80,19 @@ func TestStaticAddressDepositRequiresInteractiveConfirmation(t *testing.T) {
 		"deposit", "--amt", "100000",
 	})
 	require.ErrorContains(t, err, "requires an interactive terminal")
-	require.Zero(t, client.newAddressCalls)
+	require.Zero(t, client.fundAddressCalls)
 }
 
 func TestStaticAddressDepositForceFirstUseNonInteractive(t *testing.T) {
 	client := &staticAddressSummaryErrorClient{
 		err: address.ErrNoStaticAddress,
-		newAddressResponse: &looprpc.NewStaticAddressResponse{
+		fundAddressResponse: &looprpc.FundStaticAddressResponse{
 			Address: "bcrt1ptestaddress",
 		},
 	}
 
 	var (
-		resp   *looprpc.NewStaticAddressResponse
+		resp   *looprpc.FundStaticAddressResponse
 		output bytes.Buffer
 	)
 	cmd := &cli.Command{
@@ -113,12 +113,12 @@ func TestStaticAddressDepositForceFirstUseNonInteractive(t *testing.T) {
 		"deposit", "--amt", "100000", "--force",
 	})
 	require.NoError(t, err)
-	require.Same(t, client.newAddressResponse, resp)
-	require.Equal(t, 1, client.newAddressCalls)
+	require.Same(t, client.fundAddressResponse, resp)
+	require.Equal(t, 1, client.fundAddressCalls)
 	require.EqualValues(
-		t, 100_000, client.newAddressRequest.GetSendCoinsRequest().Amount,
+		t, 100_000, client.fundAddressRequest.GetSendCoinsRequest().Amount,
 	)
-	require.Empty(t, client.newAddressRequest.GetSendCoinsRequest().Addr)
+	require.Empty(t, client.fundAddressRequest.GetSendCoinsRequest().Addr)
 	require.Contains(t, output.String(), "WARNING")
 	require.NotContains(t, output.String(), "CONTINUE WITH NEW ADDRESS")
 }
@@ -176,7 +176,7 @@ func TestIsNoStaticAddressSummaryError(t *testing.T) {
 func TestStaticAddressDepositRequestAllowsNoUtxos(t *testing.T) {
 	t.Parallel()
 
-	var req *looprpc.NewStaticAddressRequest
+	var req *looprpc.FundStaticAddressRequest
 	cmd := &cli.Command{
 		Name:  "deposit",
 		Flags: depositStaticAddressCommand.Flags,
@@ -235,7 +235,7 @@ func TestStaticAddressDepositForceAlias(t *testing.T) {
 func TestConfirmStaticAddressDeposit(t *testing.T) {
 	t.Parallel()
 
-	req := &looprpc.NewStaticAddressRequest{
+	req := &looprpc.FundStaticAddressRequest{
 		SendCoinsRequest: &lnrpc.SendCoinsRequest{Amount: 10_000},
 	}
 
