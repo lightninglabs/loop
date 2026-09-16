@@ -163,9 +163,7 @@ service SwapClient {
         returns (ListInstantOutsResponse);
 
     /* loop: `static newstaticaddress`
-    NewStaticAddress derives a fresh static receive address on every request
-    without send_coins_request.addr, or funds an existing address when addr is
-    set.
+    NewStaticAddress requests a new static address for loop-ins from the server.
     */
     rpc NewStaticAddress (NewStaticAddressRequest)
         returns (NewStaticAddressResponse);
@@ -1953,7 +1951,7 @@ message StaticAddressSummaryRequest {
 
 message StaticAddressSummaryResponse {
     /*
-    Deprecated: The legacy/root static address used as the derivation seed.
+    Deprecated: The legacy/root static address anchoring derived addresses.
     New deposits should use fresh addresses returned by NewStaticAddress; this
     address must not be treated as the current receive address.
     */
@@ -1961,7 +1959,7 @@ message StaticAddressSummaryResponse {
 
     /*
     The shared CSV delay in blocks inherited by all static addresses derived
-    from the legacy/root seed.
+    from the legacy/root address.
     */
     uint64 relative_expiry_blocks = 2;
 

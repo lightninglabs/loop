@@ -103,7 +103,7 @@ func DepositAddressDescriptors(deposits []*deposit.Deposit) (
 // ChangeOutput converts a locally generated static address into the RPC change
 // descriptor sent to the server. The descriptor binds the expected script,
 // amount and client key so the server can derive and verify the same address.
-func ChangeOutput(params *address.Parameters,
+func ChangeOutput(params *address.AddressParameters,
 	amount btcutil.Amount) (*swapserverrpc.StaticAddressChangeOutput, error) {
 
 	if amount <= 0 {

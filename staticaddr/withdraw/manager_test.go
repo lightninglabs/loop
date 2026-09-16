@@ -67,7 +67,7 @@ func TestWithdrawalChangePkScript(t *testing.T) {
 	t.Parallel()
 
 	addrManager := &withdrawalTestAddressManager{
-		params: make(map[string]*address.Parameters),
+		params: make(map[string]*address.AddressParameters),
 	}
 	pkScript, err := withdrawalChangePkScript(nil, nil, addrManager)
 	require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestWithdrawalChangePkScript(t *testing.T) {
 		Value:    500,
 		PkScript: []byte{0x02},
 	})
-	addrManager.params[string([]byte{0x01})] = &address.Parameters{
+	addrManager.params[string([]byte{0x01})] = &address.AddressParameters{
 		KeyLocator: keychain.KeyLocator{
 			Family: keychain.KeyFamily(swap.StaticAddressChangeKeyFamily),
 		},
@@ -101,11 +101,11 @@ func TestWithdrawalChangePkScript(t *testing.T) {
 type withdrawalTestAddressManager struct {
 	AddressManager
 
-	params map[string]*address.Parameters
+	params map[string]*address.AddressParameters
 }
 
 func (m *withdrawalTestAddressManager) GetParameters(
-	pkScript []byte) *address.Parameters {
+	pkScript []byte) *address.AddressParameters {
 
 	return m.params[string(pkScript)]
 }
@@ -122,7 +122,7 @@ func TestCreateFinalizedWithdrawalTxCleansUpSessionsOnError(t *testing.T) {
 		{
 			OutPoint: wire.OutPoint{Index: 1},
 			Value:    100_000,
-			AddressParams: &address.Parameters{
+			AddressParams: &address.AddressParameters{
 				ClientPubkey: clientKey.PubKey(),
 				ServerPubkey: serverKey.PubKey(),
 				Expiry:       144,

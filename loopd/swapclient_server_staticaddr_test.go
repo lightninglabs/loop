@@ -133,7 +133,7 @@ func (s *staticAddrDepositStore) AllDeposits(context.Context) (
 }
 
 type staticAddrTestAddressManager struct {
-	params *address.Parameters
+	params *address.AddressParameters
 }
 
 func newStaticAddrTestAddressManager() *staticAddrTestAddressManager {
@@ -141,7 +141,7 @@ func newStaticAddrTestAddressManager() *staticAddrTestAddressManager {
 	_, server := mock_lnd.CreateKey(2)
 
 	return &staticAddrTestAddressManager{
-		params: &address.Parameters{
+		params: &address.AddressParameters{
 			ID:           1,
 			ClientPubkey: client,
 			ServerPubkey: server,
@@ -164,7 +164,7 @@ func (s *staticAddrTestAddressManager) GetStaticAddressID(
 }
 
 func (s *staticAddrTestAddressManager) GetParameters(
-	pkScript []byte) *address.Parameters {
+	pkScript []byte) *address.AddressParameters {
 
 	params := *s.params
 	params.PkScript = pkScript
@@ -688,7 +688,7 @@ func TestGetStaticAddressSummaryTotalsDeposits(t *testing.T) {
 	require.EqualValues(t, 3_000, resp.ValueDepositedSatoshis)
 }
 
-// TestGetStaticAddressSummaryNoAddress verifies a missing static address seed
+// TestGetStaticAddressSummaryNoAddress verifies a missing static address root
 // is exposed as a durable gRPC status instead of an application error encoded
 // in an Unknown status.
 func TestGetStaticAddressSummaryNoAddress(t *testing.T) {

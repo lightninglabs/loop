@@ -2065,14 +2065,14 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 
 	// List all unspent utxos the wallet sees, regardless of the number of
 	// confirmations.
-	utxos, err := s.staticAddressManager.ListUnspentRaw(
+	utxos, err := s.staticAddressManager.ListUnspent(
 		ctx, req.MinConfs, req.MaxConfs,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// ListUnspentRaw returns the unspent wallet view of the backing lnd
+	// ListUnspent returns the unspent wallet view of the backing lnd
 	// wallet. Static loop-in initiation requires an active deposit record,
 	// so only deposits that are both wallet-visible and tracked as
 	// Deposited are returned here.
@@ -2119,7 +2119,8 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 		params := s.staticAddressManager.GetParameters(u.PkScript)
 		if params == nil {
 			return nil, fmt.Errorf("missing static address "+
-				"parameters for %v", u.OutPoint)
+				"parameters for %v (pkScript=%x)",
+				u.OutPoint, u.PkScript)
 		}
 
 		staticAddress, err := s.staticAddressManager.GetTaprootAddress(

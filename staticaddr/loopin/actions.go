@@ -144,7 +144,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 
 	// Derive a client key for the HTLC.
 	keyDesc, err := f.cfg.WalletKit.DeriveNextKey(
-		ctx, swap.StaticAddressKeyFamily,
+		ctx, swap.StaticSingleAddressKeyFamily,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to derive client htlc key: %w", err)

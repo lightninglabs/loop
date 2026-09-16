@@ -1165,7 +1165,7 @@ func maybeDisplayNewAddressWarning(ctx context.Context,
 }
 
 // isNoStaticAddressSummaryError reports whether loopd has not initialized the
-// static address seed yet. New loopd versions return NotFound. The exact
+// static address root yet. New loopd versions return NotFound. The exact
 // Unknown status is retained for compatibility with older loopd versions that
 // returned ErrNoStaticAddress directly across the gRPC boundary.
 func isNoStaticAddressSummaryError(err error) bool {

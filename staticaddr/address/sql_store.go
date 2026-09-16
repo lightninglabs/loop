@@ -25,7 +25,7 @@ func NewSqlStore(db *loopdb.BaseDB) *SqlStore {
 
 // CreateStaticAddress creates a static address record in the database.
 func (s *SqlStore) CreateStaticAddress(ctx context.Context,
-	addrParams *Parameters) error {
+	addrParams *AddressParameters) error {
 
 	createArgs := sqlc.CreateStaticAddressParams{
 		ClientPubkey:     addrParams.ClientPubkey.SerializeCompressed(),
@@ -50,14 +50,14 @@ func (s *SqlStore) GetStaticAddressID(ctx context.Context,
 
 // GetAllStaticAddresses returns all addresses known to the client.
 func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) (
-	[]*Parameters, error) {
+	[]*AddressParameters, error) {
 
 	staticAddresses, err := s.baseDB.Queries.AllStaticAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var result []*Parameters
+	result := make([]*AddressParameters, 0, len(staticAddresses))
 	for _, address := range staticAddresses {
 		res, err := s.toAddressParameters(address)
 		if err != nil {
@@ -71,7 +71,7 @@ func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) (
 }
 
 // GetLegacyParameters returns the first static address created for this L402.
-func (s *SqlStore) GetLegacyParameters(ctx context.Context) (*Parameters,
+func (s *SqlStore) GetLegacyParameters(ctx context.Context) (*AddressParameters,
 	error) {
 
 	staticAddress, err := s.baseDB.Queries.GetLegacyAddress(ctx)
@@ -85,7 +85,7 @@ func (s *SqlStore) GetLegacyParameters(ctx context.Context) (*Parameters,
 // toAddressParameters transforms a database representation of a static address
 // to an AddressParameters struct.
 func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
-	*Parameters, error) {
+	*AddressParameters, error) {
 
 	clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
 	if err != nil {
@@ -97,7 +97,7 @@ func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (
 		return nil, err
 	}
 
-	return &Parameters{
+	return &AddressParameters{
 		ID:           row.ID,
 		ClientPubkey: clientPubkey,
 		ServerPubkey: serverPubkey,
