@@ -22,7 +22,7 @@ import (
 )
 
 type generatedChangeTestAddressManager struct {
-	params *address.Parameters
+	params *address.AddressParameters
 	err    error
 	calls  int
 }
@@ -40,7 +40,7 @@ func (m *generatedChangeTestAddressManager) GetStaticAddress(
 }
 
 func (m *generatedChangeTestAddressManager) NewChangeAddress(
-	context.Context) (*address.Parameters, error) {
+	context.Context) (*address.AddressParameters, error) {
 
 	m.calls++
 
@@ -50,7 +50,7 @@ func (m *generatedChangeTestAddressManager) NewChangeAddress(
 // GetParameters satisfies the address manager interface used by the
 // withdrawal replacement monitor later in the multi-address stack.
 func (m *generatedChangeTestAddressManager) GetParameters(
-	pkScript []byte) *address.Parameters {
+	pkScript []byte) *address.AddressParameters {
 
 	if m.params == nil || !bytes.Equal(m.params.PkScript, pkScript) {
 		return nil
@@ -90,7 +90,7 @@ func TestCreateFinalizedWithdrawalTxUsesGeneratedChange(t *testing.T) {
 
 	depositPkScript := testTaprootPkScript(1)
 	changePkScript := testTaprootPkScript(2)
-	changeParams := &address.Parameters{
+	changeParams := &address.AddressParameters{
 		ClientPubkey: clientKey.PubKey(),
 		ServerPubkey: serverKey.PubKey(),
 		PkScript:     changePkScript,
@@ -98,7 +98,7 @@ func TestCreateFinalizedWithdrawalTxUsesGeneratedChange(t *testing.T) {
 	deposits := []*deposit.Deposit{{
 		OutPoint: wire.OutPoint{Index: 1},
 		Value:    100_000,
-		AddressParams: &address.Parameters{
+		AddressParams: &address.AddressParameters{
 			ClientPubkey: clientKey.PubKey(),
 			ServerPubkey: serverKey.PubKey(),
 			Expiry:       144,
