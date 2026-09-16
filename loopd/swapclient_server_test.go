@@ -2453,7 +2453,7 @@ func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
 }
 
 func (s *mockAddressStore) GetLegacyParameters(_ context.Context) (
-	*address.Parameters, error) {
+	*address.AddressParameters, error) {
 
 	if len(s.params) == 0 {
 		return nil, sql.ErrNoRows
@@ -2660,7 +2660,7 @@ func TestListUnspentDeposits(t *testing.T) {
 		// ChainNotifier and AddressClient are not needed for this test.
 	}, 1)
 	require.NoError(t, err)
-	_, err = addrMgr.EnsureStaticAddressSeed(ctx)
+	_, err = addrMgr.EnsureStaticAddressRoot(ctx)
 	require.NoError(t, err)
 
 	// Construct several UTXOs with different confirmation counts.

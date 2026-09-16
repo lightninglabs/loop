@@ -672,11 +672,9 @@ func TestRecoverDepositsKeepsSpentWithdrawing(t *testing.T) {
 	require.NoError(t, err)
 
 	storedDeposit := &Deposit{
-		ID: id,
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2},
-			Index: 2,
-		},
+		ID:                 id,
+		Hash:               chainhash.Hash{2},
+		Index:              2,
 		state:              Withdrawing,
 		Value:              btcutil.Amount(100000),
 		ConfirmationHeight: 42,
@@ -859,7 +857,7 @@ func generateStaticAddress(ctx context.Context, mockLnd *test.LndMockServices,
 	t *testing.T) (*script.StaticAddress, *script.Parameters) {
 
 	keyDescriptor, err := mockLnd.WalletKit.DeriveNextKey(
-		ctx, swap.StaticAddressKeyFamily,
+		ctx, swap.StaticSingleAddressKeyFamily,
 	)
 	require.NoError(t, err)
 
