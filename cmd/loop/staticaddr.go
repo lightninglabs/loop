@@ -54,7 +54,7 @@ var newStaticAddressCommand = &cli.Command{
 	Usage:   "Create a new static loop in address.",
 	Description: `
 	Creates a new static loop in address. On a fresh installation, loopd creates
-	the static-address seed lazily when the first address is requested; startup
+	the static-address root lazily when the first address is requested; startup
 	alone does not create an address. Funds sent to the address will be locked by
 	a 2:2 multisig between us and the loop server, or a timeout path that we can
 	sweep once it opens up. The funds can either be cooperatively spent with a
@@ -1166,7 +1166,7 @@ func maybeDisplayNewAddressWarning(ctx context.Context,
 }
 
 // isNoStaticAddressSummaryError reports whether loopd has not initialized the
-// static address seed yet. New loopd versions return NotFound. The exact
+// static address root yet. New loopd versions return NotFound. The exact
 // Unknown status is retained for compatibility with older loopd versions that
 // returned ErrNoStaticAddress directly across the gRPC boundary.
 func isNoStaticAddressSummaryError(err error) bool {

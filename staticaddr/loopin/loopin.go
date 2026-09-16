@@ -161,7 +161,7 @@ type StaticAddressLoopIn struct {
 	// ChangeAddressParams are the static address parameters for the change
 	// output that belongs to this swap. It is set only when SelectedAmount
 	// leaves non-dust change.
-	ChangeAddressParams *address.Parameters
+	ChangeAddressParams *address.AddressParameters
 
 	// HTLC fields.
 

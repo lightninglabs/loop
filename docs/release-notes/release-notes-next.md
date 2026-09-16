@@ -61,7 +61,7 @@
 
 * Static Address startup now avoids reimporting wallet scripts that lnd already
   watches, address lookups remain responsive while new addresses are issued,
-  and seed creation can recover from a failed wallet import.
+  and root creation can recover from a failed wallet import.
 
 * The `NewStaticAddress` RPC can fund a requested existing static address by
   resolving it directly through the active script index. Wallet-import errors
@@ -99,6 +99,11 @@
 
 * Update the OpenTelemetry SDK and its related API modules to v1.45.0.
   [PR #1232](https://github.com/lightninglabs/loop/pull/1232)
+
+* Rename static-address Go APIs to `StaticSingleAddressKeyFamily`,
+  `AddressParameters`, and `EnsureStaticAddressRoot`, and consolidate wallet
+  UTXO listing into `ListUnspent`. Key-family values remain unchanged.
+  [PR #1218](https://github.com/lightninglabs/loop/pull/1218)
 
 * The Docker image build now verifies that every platform of the image index
   holds binaries for the architecture it advertises, and gives a release its

@@ -812,7 +812,7 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	require.Nil(t, f.LastActionError)
 	require.NotNil(t, server.request)
 	require.EqualValues(
-		t, swap.StaticAddressKeyFamily, loopIn.HtlcKeyLocator.Family,
+		t, swap.StaticSingleAddressKeyFamily, loopIn.HtlcKeyLocator.Family,
 	)
 	_, routeHints, _, _, err := swap.DecodeInvoice(
 		mockLnd.ChainParams, server.request.SwapInvoice,
@@ -1068,7 +1068,7 @@ func TestInitHtlcActionSendsMultiAddressChangeOutput(t *testing.T) {
 			Index: 0,
 		},
 		Value: 500_000,
-		AddressParams: &address.Parameters{
+		AddressParams: &address.AddressParameters{
 			ClientPubkey: depositClientPubkey,
 			PkScript:     []byte{0x51, 0x20, 0x02},
 		},
@@ -1079,12 +1079,12 @@ func TestInitHtlcActionSendsMultiAddressChangeOutput(t *testing.T) {
 			Index: 1,
 		},
 		Value: 200_000,
-		AddressParams: &address.Parameters{
+		AddressParams: &address.AddressParameters{
 			ClientPubkey: secondDepositClientPubkey,
 			PkScript:     []byte{0x51, 0x20, 0x03},
 		},
 	}
-	changeParams := &address.Parameters{
+	changeParams := &address.AddressParameters{
 		ID:           1,
 		ClientPubkey: changeClientPubkey,
 		PkScript:     []byte{0x51, 0x20, 0x01},
@@ -3566,7 +3566,7 @@ func (m *mockAddressManager) GetStaticAddressParameters(_ context.Context) (
 
 // NewChangeAddress returns configured parameters for tests that need change.
 func (m *mockAddressManager) NewChangeAddress(_ context.Context) (
-	*address.Parameters, error) {
+	*address.AddressParameters, error) {
 
 	return m.params, nil
 }
