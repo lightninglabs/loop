@@ -159,10 +159,15 @@ func TestCreateOpTrueSweepVpktValidation(t *testing.T) {
 	)
 	require.ErrorContains(t, err, "is not an OP_TRUE asset")
 
+	matchingAddr.Version = address.V2
+	_, err = CreateOpTrueSweepVpkt(
+		t.Context(), []*proof.Proof{nonOpTrueProof}, matchingAddr,
+	)
+	require.ErrorContains(t, err, "version 2")
 }
 
 // TestCreateOpTrueSweepVpktMultipleInputs verifies every asset input receives
-// its OP_TRUE virtual witness with the address-selected output layout.
+// its OP_TRUE virtual witness and duplicate anchor inputs are rejected.
 func TestCreateOpTrueSweepVpktMultipleInputs(t *testing.T) {
 	genesis := asset.Genesis{
 		FirstPrevOut: wire.OutPoint{
@@ -228,4 +233,10 @@ func TestCreateOpTrueSweepVpktMultipleInputs(t *testing.T) {
 		})
 	}
 
+	addr.Version = address.V1
+	addr.Amount = 4
+	_, err := CreateOpTrueSweepVpkt(
+		t.Context(), []*proof.Proof{proofs[0], proofs[0]}, &addr,
+	)
+	require.ErrorContains(t, err, "duplicates an input outpoint")
 }

@@ -151,6 +151,12 @@ func TestNewKitValidation(t *testing.T) {
 			chainParams: params,
 		},
 		{
+			name: "non-block expiry", funder: funderKey,
+			coSigner: coSignerKey, assetID: assetID,
+			expiry:      wire.SequenceLockTimeMask + 1,
+			chainParams: params,
+		},
+		{
 			name: "nil chain parameters", funder: funderKey,
 			coSigner: coSignerKey, assetID: assetID, expiry: 1,
 		},
@@ -382,6 +388,13 @@ func TestVerifyProofReturnsAnchorRoot(t *testing.T) {
 		fixture.proof, fixture.proof.Asset.Amount-1,
 	)
 	require.ErrorContains(t, err, "deposit asset amount mismatch")
+
+	malformedProof := *fixture.proof
+	malformedProof.InclusionProof.InternalKey = nil
+	_, err = fixture.kit.AnchorRootFromProofCommitment(
+		&malformedProof, malformedProof.Asset.Amount,
+	)
+	require.Error(t, err)
 
 	outputKey := txscript.ComputeTaprootOutputKey(
 		fixture.kit.muSig2Key.PreTweakedKey, root,
