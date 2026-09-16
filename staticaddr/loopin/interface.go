@@ -41,7 +41,7 @@ type AddressManager interface {
 
 	// NewChangeAddress derives and persists a fresh static address from the
 	// change key family for this operation's change output.
-	NewChangeAddress(ctx context.Context) (*address.Parameters, error)
+	NewChangeAddress(ctx context.Context) (*address.AddressParameters, error)
 }
 
 // DepositManager handles the interaction of loop-ins with deposits.

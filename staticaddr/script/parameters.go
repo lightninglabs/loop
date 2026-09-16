@@ -1,8 +1,11 @@
 package script
 
 import (
+	"fmt"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -37,4 +40,16 @@ type Parameters struct {
 
 	// InitiationHeight is the height at which the address was initiated.
 	InitiationHeight int32
+}
+
+// StaticAddress reconstructs the spending script for these address parameters.
+func (p *Parameters) StaticAddress() (*StaticAddress, error) {
+	if p == nil {
+		return nil, fmt.Errorf("missing static address parameters")
+	}
+
+	return NewStaticAddress(
+		input.MuSig2Version100RC2, int64(p.Expiry),
+		p.ClientPubkey, p.ServerPubkey,
+	)
 }

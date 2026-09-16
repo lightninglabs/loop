@@ -2036,7 +2036,7 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 
 	// List all unspent utxos the wallet sees, regardless of the number of
 	// confirmations.
-	utxos, err := s.staticAddressManager.ListUnspentRaw(
+	utxos, err := s.staticAddressManager.ListUnspent(
 		ctx, req.MinConfs, req.MaxConfs,
 	)
 	if err != nil {
@@ -2066,7 +2066,8 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 		params := s.staticAddressManager.GetParameters(u.PkScript)
 		if params == nil {
 			return nil, fmt.Errorf("missing static address "+
-				"parameters for %v", u.OutPoint)
+				"parameters for %v (pkScript=%x)",
+				u.OutPoint, u.PkScript)
 		}
 
 		staticAddress, err := s.staticAddressManager.GetTaprootAddress(

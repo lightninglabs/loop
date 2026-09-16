@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -206,14 +205,7 @@ func (d *Deposit) GetConfirmationHeightNoLock() int64 {
 // GetStaticAddressScript reconstructs the static address script for this
 // deposit's matched address parameters.
 func (d *Deposit) GetStaticAddressScript() (*script.StaticAddress, error) {
-	if d.AddressParams == nil {
-		return nil, fmt.Errorf("missing static address parameters")
-	}
-
-	return script.NewStaticAddress(
-		input.MuSig2Version100RC2, int64(d.AddressParams.Expiry),
-		d.AddressParams.ClientPubkey, d.AddressParams.ServerPubkey,
-	)
+	return d.AddressParams.StaticAddress()
 }
 
 // GetRandomDepositID generates a random deposit ID.

@@ -893,37 +893,21 @@ func orderDepositsBySnapshot(deposits []*deposit.Deposit,
 // toChangeAddressParameters converts the optional joined static address row
 // into the change address parameters used to verify batched sweepless sweeps.
 func toChangeAddressParameters(row sqlc.GetStaticAddressLoopInSwapRow) (
-	*address.Parameters, error) {
+	*address.AddressParameters, error) {
 
 	if !row.ChangeStaticAddressID.Valid {
 		return nil, nil
 	}
 
-	clientKey, err := btcec.ParsePubKey(row.ChangeClientPubkey)
-	if err != nil {
-		return nil, err
-	}
-
-	serverKey, err := btcec.ParsePubKey(row.ChangeServerPubkey)
-	if err != nil {
-		return nil, err
-	}
-
-	return &address.Parameters{
-		ID:           row.ChangeStaticAddressID.Int32,
-		ClientPubkey: clientKey,
-		ServerPubkey: serverKey,
-		Expiry:       uint32(row.ChangeExpiry.Int32),
-		PkScript:     row.ChangePkscript,
-		KeyLocator: keychain.KeyLocator{
-			Family: keychain.KeyFamily(
-				row.ChangeClientKeyFamily.Int32,
-			),
-			Index: uint32(row.ChangeClientKeyIndex.Int32),
-		},
-		ProtocolVersion: version.AddressProtocolVersion(
-			row.ChangeProtocolVersion.Int32,
-		),
+	return address.ParametersFromRow(sqlc.StaticAddress{
+		ID:               row.ChangeStaticAddressID.Int32,
+		ClientPubkey:     row.ChangeClientPubkey,
+		ServerPubkey:     row.ChangeServerPubkey,
+		Expiry:           row.ChangeExpiry.Int32,
+		Pkscript:         row.ChangePkscript,
+		ClientKeyFamily:  row.ChangeClientKeyFamily.Int32,
+		ClientKeyIndex:   row.ChangeClientKeyIndex.Int32,
+		ProtocolVersion:  row.ChangeProtocolVersion.Int32,
 		InitiationHeight: row.ChangeInitiationHeight.Int32,
-	}, nil
+	})
 }
