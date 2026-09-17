@@ -14,6 +14,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets/htlc"
+	assettest "github.com/lightninglabs/loop/assets/internal/test"
+	"github.com/lightninglabs/loop/assets/sweep"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -266,6 +268,7 @@ func (s *localSigner) SignOutputRaw(_ context.Context, tx *wire.MsgTx,
 }
 
 type witnessFixture struct {
+	transfer     *sweep.Transfer
 	kit          *Kit
 	proof        *proof.Proof
 	packet       *psbt.Packet
@@ -354,7 +357,7 @@ func newWitnessFixture(t *testing.T) *witnessFixture {
 	})
 	sweepTx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: assetProof.OutPoint(),
-		Sequence:         wire.MaxTxInSequenceNum,
+		Sequence:         kit.csvExpiry,
 	})
 	sweepTx.AddTxOut(&wire.TxOut{
 		Value: anchorValue - 2000, PkScript: []byte{txscript.OP_TRUE},
@@ -369,8 +372,18 @@ func newWitnessFixture(t *testing.T) *witnessFixture {
 		packet.Inputs[idx].WitnessUtxo = prevOutputs[idx]
 	}
 
+	opTrueScript, err := htlc.GetOpTrueScript()
+	require.NoError(t, err)
+	_, _, _, opTrueControl, err := htlc.CreateOpTrueLeaf()
+	require.NoError(t, err)
+	controlBytes, err := opTrueControl.ToBytes()
+	require.NoError(t, err)
+	transfer := assettest.Sweep(t, []*proof.Proof{assetProof}, packet,
+		wire.TxWitness{opTrueScript, controlBytes})
+
 	return &witnessFixture{
-		kit: kit, proof: assetProof, packet: packet,
+		transfer: transfer,
+		kit:      kit, proof: assetProof, packet: packet,
 		prevOutputs: prevOutputs, funderKey: funderKey,
 		assetInIndex: assetInIndex,
 	}
@@ -458,7 +471,7 @@ func TestCreateTimeoutWitness(t *testing.T) {
 		privateKey: fixture.funderKey, expectedInput: fixture.assetInIndex,
 	}
 	spend, err := fixture.kit.CreateTimeoutWitness(
-		t.Context(), signer, fixture.proof, fixture.packet,
+		t.Context(), signer, fixture.proof, fixture.packet, fixture.transfer,
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint32(fixture.assetInIndex), spend.InputIndex)
@@ -548,11 +561,11 @@ func TestCreateTimeoutWitnessRejectsInvalidInputs(t *testing.T) {
 			testCase.mutate(fixture, signer)
 			_, err := fixture.kit.CreateTimeoutWitness(
 				t.Context(), signer, fixture.proof,
-				fixture.packet,
+				fixture.packet, fixture.transfer,
 			)
 			require.Error(t, err)
 			require.Equal(
-				t, wire.MaxTxInSequenceNum,
+				t, fixture.kit.csvExpiry,
 				fixture.packet.UnsignedTx.
 					TxIn[fixture.assetInIndex].Sequence,
 			)
@@ -561,11 +574,11 @@ func TestCreateTimeoutWitnessRejectsInvalidInputs(t *testing.T) {
 
 	fixture := newWitnessFixture(t)
 	_, err := fixture.kit.CreateTimeoutWitness(
-		t.Context(), nil, fixture.proof, fixture.packet,
+		t.Context(), nil, fixture.proof, fixture.packet, fixture.transfer,
 	)
 	require.Error(t, err)
 	_, err = fixture.kit.CreateTimeoutWitness(
-		t.Context(), &localSigner{}, nil, fixture.packet,
+		t.Context(), &localSigner{}, nil, fixture.packet, fixture.transfer,
 	)
 	require.Error(t, err)
 }

@@ -9,7 +9,16 @@
 
 #### Breaking Changes
 
+* Shared asset witness builders now require complete, caller-approved virtual
+  transfers. Deposit refunds also require the CSV sequence to be set before
+  signing any inputs.
+
 #### Bug Fixes
+
+* Shared asset sweeps validate asset conservation and Bitcoin output commitments,
+  including change and passive assets, before signing. New deposit addresses use
+  explicit asset V1 and address V1 versions, refund signing preserves existing
+  signatures, and returned control blocks no longer expose mutable kit keys.
 
 * Deposit proof verification now requires genesis-rooted histories and rejects
   ownership-only proofs, including those hidden in additional inputs.

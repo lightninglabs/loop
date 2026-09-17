@@ -4,17 +4,105 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/assets/htlc"
+	assettest "github.com/lightninglabs/loop/assets/internal/test"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightninglabs/taproot-assets/tapscript"
+	"github.com/lightninglabs/taproot-assets/tapsend"
 	"github.com/stretchr/testify/require"
 )
+
+// TestSweepNonInteractiveInput verifies assets received through an address can
+// be swept with their full split proofs, even though only the trimmed asset
+// leaf was committed to on chain.
+func TestSweepNonInteractiveInput(t *testing.T) {
+	genesis := asset.Genesis{
+		FirstPrevOut: wire.OutPoint{Hash: chainhash.Hash{1}},
+		Tag:          "non-interactive sweep", Type: asset.Normal,
+	}
+	initial := validOpTrueProof(t, genesis, 1000, 3)
+	opTrueKey, _, _, cb, err := htlc.CreateOpTrueLeaf()
+	require.NoError(t, err)
+	_, internalKey := btcec.PrivKeyFromBytes([]byte{4})
+	addr := &address.Tap{
+		Version: address.V1, AssetVersion: asset.V1,
+		AssetID: genesis.ID(), Amount: 1000,
+		ScriptKey: *opTrueKey.PubKey, InternalKey: *internalKey,
+		ChainParams: &address.RegressionNetTap,
+	}
+	funding, err := CreateOpTrueSweepVpkt(
+		t.Context(), []*proof.Proof{initial}, addr,
+	)
+	require.NoError(t, err)
+	funding.Outputs[0].AnchorOutputInternalKey = internalKey
+	packets := []*tappsbt.VPacket{funding}
+	commitments, err := tapsend.CreateOutputCommitments(packets)
+	require.NoError(t, err)
+	anchor, err := tapsend.CreateAnchorTx(packets)
+	require.NoError(t, err)
+	anchor.UnsignedTx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: initial.OutPoint(),
+	})
+	require.NoError(t, tapsend.UpdateTaprootOutputKeys(
+		anchor, funding, commitments,
+	))
+	received := &proof.Proof{
+		AnchorTx:  *anchor.UnsignedTx,
+		Asset:     *funding.Outputs[1].Asset.Copy(),
+		AltLeaves: funding.Outputs[1].AltLeaves,
+	}
+	for idx := range 2 {
+		_, cp, err := commitments[uint32(idx)].Proof(
+			received.Asset.TapCommitmentKey(),
+			received.Asset.AssetCommitmentKey(),
+		)
+		require.NoError(t, err)
+		tapProof := proof.TaprootProof{
+			OutputIndex: uint32(idx), InternalKey: internalKey,
+			CommitmentProof: &proof.CommitmentProof{Proof: *cp},
+		}
+		if idx == 1 {
+			received.InclusionProof = tapProof
+		} else {
+			received.ExclusionProofs = []proof.TaprootProof{tapProof}
+		}
+	}
+	rootAsset := funding.Outputs[0].Asset
+	_, rootProof, err := commitments[0].Proof(
+		rootAsset.TapCommitmentKey(), rootAsset.AssetCommitmentKey(),
+	)
+	require.NoError(t, err)
+	received.SplitRootProof = &proof.TaprootProof{
+		OutputIndex: 0, InternalKey: internalKey,
+		CommitmentProof: &proof.CommitmentProof{Proof: *rootProof},
+	}
+	_, err = received.VerifyProofs()
+	require.NoError(t, err)
+	require.True(t, received.Asset.HasSplitCommitmentWitness())
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: received.OutPoint()})
+	btc, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	btc.Inputs[0].WitnessUtxo = anchor.UnsignedTx.TxOut[1]
+	control, err := cb.ToBytes()
+	require.NoError(t, err)
+	script, err := htlc.GetOpTrueScript()
+	require.NoError(t, err)
+	transfer := assettest.Sweep(
+		t, []*proof.Proof{received}, btc, wire.TxWitness{script, control},
+	)
+	require.NoError(t, transfer.Validate(received, btc))
+	require.True(t, transfer.Packets[0].Inputs[0].Asset().
+		HasSplitCommitmentWitness())
+}
 
 // validNonOpTrueProof creates a structurally valid proof whose asset cannot be
 // spent through the OP_TRUE sweep path.

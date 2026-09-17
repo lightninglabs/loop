@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightninglabs/lndclient"
+	assetsweep "github.com/lightninglabs/loop/assets/sweep"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -782,11 +783,13 @@ func verifyTapscriptSignature(tx *wire.MsgTx, sweep *validatedSweep,
 // CreatePreimageWitness signs the exact proof-bound asset input and returns a
 // success-path witness in the legacy stack order. The caller must set the
 // proof-selected input's sequence to SuccessSequence before calling this
-// method; the PSBT is never mutated here.
+// method; the PSBT is never mutated here. The transfer must contain the
+// caller-approved, complete active and passive asset packets.
 func (s *SwapKit) CreatePreimageWitness(ctx context.Context,
 	signer lndclient.SignerClient, htlcProof *proof.Proof,
 	sweepBtcPacket *psbt.Packet, keyLocator keychain.KeyLocator,
-	preimage lntypes.Preimage) (*SpendWitness, error) {
+	preimage lntypes.Preimage, transfer *assetsweep.Transfer) (
+	*SpendWitness, error) {
 
 	if signer == nil {
 		return nil, fmt.Errorf("signer is required")
@@ -802,6 +805,10 @@ func (s *SwapKit) CreatePreimageWitness(ctx context.Context,
 	if err := validateSequence(
 		sweep, sweepBtcPacket, SuccessSequence,
 	); err != nil {
+		return nil, err
+	}
+
+	if err := transfer.Validate(htlcProof, sweepBtcPacket); err != nil {
 		return nil, err
 	}
 
@@ -856,10 +863,12 @@ func (s *SwapKit) CreatePreimageWitness(ctx context.Context,
 // CreateTimeoutWitness signs the exact proof-bound asset input and returns a
 // timeout-path witness in the legacy stack order. The caller must set the
 // proof-selected input's sequence to CsvExpiry before calling this method; the
-// PSBT is never mutated here.
+// PSBT is never mutated here. The transfer must contain the caller-approved,
+// complete active and passive asset packets.
 func (s *SwapKit) CreateTimeoutWitness(ctx context.Context,
 	signer lndclient.SignerClient, htlcProof *proof.Proof,
-	sweepBtcPacket *psbt.Packet, keyLocator keychain.KeyLocator) (
+	sweepBtcPacket *psbt.Packet, keyLocator keychain.KeyLocator,
+	transfer *assetsweep.Transfer) (
 	*SpendWitness, error) {
 
 	if signer == nil {
@@ -873,6 +882,10 @@ func (s *SwapKit) CreateTimeoutWitness(ctx context.Context,
 	if err := validateSequence(
 		sweep, sweepBtcPacket, s.csvExpiry,
 	); err != nil {
+		return nil, err
+	}
+
+	if err := transfer.Validate(htlcProof, sweepBtcPacket); err != nil {
 		return nil, err
 	}
 

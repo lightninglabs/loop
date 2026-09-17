@@ -15,6 +15,7 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets/htlc"
+	assetsweep "github.com/lightninglabs/loop/assets/sweep"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -188,7 +189,8 @@ func (d *Kit) encodedTimeoutPathSibling() ([]byte, error) {
 }
 
 // NewAddr creates a two-party MuSig2 deposit address with a unilateral funder
-// timeout path.
+// timeout path. New addresses use asset V1 and address V1 (commitment V2), as
+// does the HTLC funding template; legacy proofs remain accepted when spending.
 func (d *Kit) NewAddr(ctx context.Context, client AddressProofClient,
 	amount uint64) (*taprpc.Addr, error) {
 
@@ -219,11 +221,14 @@ func (d *Kit) NewAddr(ctx context.Context, client AddressProofClient,
 			RawKeyBytes: d.muSig2Key.PreTweakedKey.SerializeCompressed(),
 		},
 		TapscriptSibling: siblingBytes,
+		AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
+		AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V1,
 	})
 }
 
 // NewHtlcAddr creates an HTLC address using the deposit parties as sender and
-// receiver under the immutable legacy deposit policy.
+// receiver under the immutable legacy deposit policy. Asset and address versions
+// are pinned to match CreateHtlcVpkt rather than relying on RPC defaults.
 func (d *Kit) NewHtlcAddr(ctx context.Context, client AddressProofClient,
 	amount uint64, swapHash lntypes.Hash, csvExpiry uint32) (
 	*taprpc.Addr, *htlc.SwapKit, error) {
@@ -264,6 +269,8 @@ func (d *Kit) NewHtlcAddr(ctx context.Context, client AddressProofClient,
 			RawKeyBytes: btcInternalKey.SerializeCompressed(),
 		},
 		TapscriptSibling: siblingBytes,
+		AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
+		AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V1,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -582,8 +589,9 @@ func (d *Kit) GenTimeoutBtcControlBlock(taprootAssetRoot []byte) (
 		return nil, fmt.Errorf("asset root must be %d bytes",
 			chainhash.HashSize)
 	}
+	internalKey := *d.muSig2Key.PreTweakedKey
 	controlBlock := &txscript.ControlBlock{
-		InternalKey:    d.muSig2Key.PreTweakedKey,
+		InternalKey:    &internalKey,
 		LeafVersion:    txscript.BaseLeafVersion,
 		InclusionProof: append([]byte(nil), taprootAssetRoot...),
 	}
@@ -745,13 +753,29 @@ func verifyTapscriptSignature(tx *wire.MsgTx, sweep *validatedSweep,
 	return nil
 }
 
+// AssetInputIndex returns the unique proof-bound deposit input after validating
+// the proof and PSBT prevouts. Callers must set this input's sequence to the
+// deposit's CSV expiry before signing any transaction inputs.
+func (d *Kit) AssetInputIndex(depositProof *proof.Proof,
+	sweepPacket *psbt.Packet) (uint32, error) {
+
+	sweep, err := d.validateSweep(depositProof, sweepPacket)
+	if err != nil {
+		return 0, err
+	}
+
+	return uint32(sweep.assetInputIndex), nil
+}
+
 // CreateTimeoutWitness signs the exact proof-bound deposit input and returns
-// its input index and timeout-path witness. The method sets the required CSV
-// sequence on a transaction copy before signing, then writes that sequence to
-// the caller's PSBT only after the signature has been verified.
+// its input index and timeout-path witness. The caller must set the deposit
+// input's sequence to the CSV expiry before calling this method. The PSBT is
+// never mutated here, preserving signatures on other inputs. The transfer
+// must contain the caller-approved, complete active and passive asset packets.
 func (d *Kit) CreateTimeoutWitness(ctx context.Context,
 	signer lndclient.SignerClient, depositProof *proof.Proof,
-	sweepPacket *psbt.Packet) (*htlc.SpendWitness, error) {
+	sweepPacket *psbt.Packet, transfer *assetsweep.Transfer) (
+	*htlc.SpendWitness, error) {
 
 	if signer == nil {
 		return nil, fmt.Errorf("signer is required")
@@ -760,8 +784,15 @@ func (d *Kit) CreateTimeoutWitness(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	sweepTx := sweepPacket.UnsignedTx.Copy()
-	sweepTx.TxIn[sweep.assetInputIndex].Sequence = d.csvExpiry
+	sequence := sweepPacket.UnsignedTx.TxIn[sweep.assetInputIndex].Sequence
+	if sequence != d.csvExpiry {
+		return nil, fmt.Errorf("asset input sequence must be %d, got %d",
+			d.csvExpiry, sequence)
+	}
+	if err := transfer.Validate(depositProof, sweepPacket); err != nil {
+		return nil, err
+	}
+	sweepTx := sweepPacket.UnsignedTx
 	timeoutScript, err := d.GenTimeoutPathScript()
 	if err != nil {
 		return nil, err
@@ -801,8 +832,6 @@ func (d *Kit) CreateTimeoutWitness(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	sweepPacket.UnsignedTx.TxIn[sweep.assetInputIndex].Sequence = d.csvExpiry
-
 	return &htlc.SpendWitness{
 		InputIndex: uint32(sweep.assetInputIndex),
 		Witness: wire.TxWitness{
