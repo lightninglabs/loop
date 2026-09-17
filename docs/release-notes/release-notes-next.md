@@ -43,6 +43,10 @@
   mode before attempting admission, avoiding spurious warnings when regular
   and presigned sweeps are pending together.
 
+* Static-address unspent listings refresh before reading wallet outputs and
+  exclude inactive historical deposits, preventing stale results after
+  replacement, reorg, or spending.
+
 * The multi-address migration now rejects databases with existing deposits unless
   exactly one legacy static address is available to establish their ownership.
 
@@ -111,6 +115,9 @@
 
 * Update the OpenTelemetry SDK and its related API modules to v1.45.0.
   [PR #1232](https://github.com/lightninglabs/loop/pull/1232)
+
+* Static-address quotes use one exact lookup of active deposits, retaining
+  state and expiry checks without scanning or rendering deposit history.
 
 * Static-address listings encode addresses directly from P2TR scripts without
   rebuilding Taproot trees or caching rendered addresses.

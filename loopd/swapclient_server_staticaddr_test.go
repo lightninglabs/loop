@@ -889,7 +889,11 @@ func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {
 	locked.AddressParams = addresses[0]
 
 	server := &swapClientServer{
-		depositManager:       newTestDepositManager(locked),
+		depositManager: &listUnspentDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				locked.OutPoint.String(): locked,
+			},
+		},
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
 	}
@@ -923,7 +927,11 @@ func TestGetLoopInQuoteRejectsExpiringSelectedDeposit(t *testing.T) {
 	require.Len(t, addresses, 1)
 	expiring.AddressParams = addresses[0]
 	server := &swapClientServer{
-		depositManager:       newTestDepositManager(expiring),
+		depositManager: &listUnspentDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				expiring.OutPoint.String(): expiring,
+			},
+		},
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
 	}
@@ -962,8 +970,11 @@ func TestGetLoopInQuoteAllowsFreshSelectedDeposit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, addresses, 1)
 	fresh.AddressParams = addresses[0]
+	depMgr := &listUnspentDepositManager{byOutpoint: map[string]*deposit.Deposit{
+		fresh.OutPoint.String(): fresh,
+	}}
 	server := &swapClientServer{
-		depositManager:       newTestDepositManager(fresh),
+		depositManager:       depMgr,
 		staticAddressManager: addrMgr,
 		loopInQuoter:         quoter,
 		lnd:                  &lnd.LndServices,
@@ -977,4 +988,20 @@ func TestGetLoopInQuoteAllowsFreshSelectedDeposit(t *testing.T) {
 	require.NotNil(t, quoter.request)
 	require.Equal(t, fresh.Value, quoter.request.Amount)
 	require.EqualValues(t, 1, quoter.request.NumDeposits)
+	require.Equal(t, 1, depMgr.activeLookupCalls)
+	require.Zero(t, depMgr.recordLookupCalls)
+	require.Zero(t, depMgr.visibleLookupCalls)
+
+	for _, invalid := range [][]string{
+		{fresh.OutPoint.String(), fresh.OutPoint.String()},
+		{wire.OutPoint{Hash: chainhash.Hash{99}}.String()},
+		{"invalid"},
+	} {
+		quoter.request = nil
+		_, err := server.GetLoopInQuote(t.Context(), &looprpc.QuoteRequest{
+			DepositOutpoints: invalid,
+		})
+		require.Error(t, err)
+		require.Nil(t, quoter.request)
+	}
 }
