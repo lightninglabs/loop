@@ -44,6 +44,10 @@
 
 #### Maintenance
 
+* Update the OpenTelemetry OTLP trace exporter from v1.29.0 to v1.45.0
+  and refresh its required dependencies.
+  [PR #1231](https://github.com/lightninglabs/loop/pull/1231)
+
 * Update the OpenTelemetry SDK and its related API modules to v1.45.0.
   [PR #1232](https://github.com/lightninglabs/loop/pull/1232)
 
