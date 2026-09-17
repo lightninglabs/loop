@@ -28,6 +28,9 @@ import (
 )
 
 const (
+	// addressPageSize bounds temporary database results during activation.
+	addressPageSize int32 = 256
+
 	// maxStaticAddressCSVExpiry is the maximum CSV delay that we accept
 	// from the server for a static address timeout path: 200 days at 144
 	// blocks per day.
@@ -136,66 +139,57 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	}
 }
 
-// loadActiveAddresses rebuilds the runtime address map from the durable DB
-// state and repairs only wallet watches that are actually missing.
+// loadActiveAddresses rebuilds the runtime map in ID-ordered database pages.
+// It publishes the complete index and root only after all pages and wallet
+// imports succeed. Callers serialize loading with issuance or run it at startup.
 func (m *Manager) loadActiveAddresses(ctx context.Context) error {
-	addrParams, err := m.cfg.Store.GetAllStaticAddresses(ctx)
-	if err != nil {
-		return err
-	}
-
-	return m.activateAddresses(ctx, addrParams)
-}
-
-// activateAddresses adds persisted addresses to the runtime map. A single
-// wallet read replaces the previous one-write-RPC-per-address startup path.
-func (m *Manager) activateAddresses(ctx context.Context,
-	addrParams []*AddressParameters) error {
-
-	active := make(map[string]*AddressParameters, len(addrParams))
-	var root *AddressParameters
-	if len(addrParams) == 0 {
-		m.Lock()
-		m.activeStaticAddresses = active
-		m.rootAddress = root
-		m.Unlock()
-
-		return nil
-	}
-
-	walletScripts, err := m.walletAddressScripts(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, param := range addrParams {
-		if param == nil {
-			return fmt.Errorf("missing static address parameters")
+	active := make(map[string]*AddressParameters)
+	var (
+		root          *AddressParameters
+		walletScripts map[string]struct{}
+		afterID       int32
+	)
+	for {
+		page, err := m.cfg.Store.ListStaticAddresses(ctx, afterID, addressPageSize)
+		if err != nil {
+			return err
 		}
-
-		if _, ok := walletScripts[string(param.PkScript)]; !ok {
-			staticAddress, err := staticAddressFromParams(param)
-			if err != nil {
-				return err
-			}
-
-			err = m.importAddressTapscript(ctx, staticAddress)
+		if len(page) == 0 {
+			break
+		}
+		if walletScripts == nil {
+			walletScripts, err = m.walletAddressScripts(ctx)
 			if err != nil {
 				return err
 			}
 		}
-
-		active[string(param.PkScript)] = param
-		if root == nil || param.ID < root.ID {
-			root = param
+		for _, param := range page {
+			if param == nil || param.ID <= afterID {
+				return fmt.Errorf("invalid static address page after ID %d", afterID)
+			}
+			if _, ok := walletScripts[string(param.PkScript)]; !ok {
+				staticAddress, err := staticAddressFromParams(param)
+				if err != nil {
+					return err
+				}
+				if err := m.importAddressTapscript(ctx, staticAddress); err != nil {
+					return err
+				}
+			}
+			active[string(param.PkScript)] = param
+			if root == nil {
+				root = param
+			}
+			afterID = param.ID
+		}
+		if len(page) < int(addressPageSize) {
+			break
 		}
 	}
-
 	m.Lock()
 	m.activeStaticAddresses = active
 	m.rootAddress = root
 	m.Unlock()
-
 	return nil
 }
 
@@ -305,17 +299,15 @@ func (m *Manager) EnsureStaticAddressRoot(ctx context.Context) (*AddressParamete
 		return root, nil
 	}
 
-	addresses, err := m.cfg.Store.GetAllStaticAddresses(ctx)
+	err := m.loadActiveAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(addresses) > 0 {
-		err = m.activateAddresses(ctx, addresses)
-		if err != nil {
-			return nil, err
-		}
-
-		return addresses[0], nil
+	m.Lock()
+	root = m.legacyParameters()
+	m.Unlock()
+	if root != nil {
+		return root, nil
 	}
 
 	// We are fetching a new L402 token from the server. The returned server
