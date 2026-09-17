@@ -1,7 +1,9 @@
 package loopd
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
@@ -428,6 +431,17 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}
 	testDeposit.SetState(deposit.LoopedIn)
 
+	_, clientPubkey := mock_lnd.CreateKey(1)
+	_, serverPubkey := mock_lnd.CreateKey(2)
+	staticAddressParams := &script.Parameters{
+		ID:           1,
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       staticAddressExpiry,
+		PkScript:     []byte("pkscript"),
+	}
+	testDeposit.AddressParams = staticAddressParams
+
 	initiationTime := time.Unix(1_234, 567).UTC()
 	lastUpdateTime := time.Unix(2_345, 678).UTC()
 	staticLoopIn := &loopin.StaticAddressLoopIn{
@@ -458,21 +472,25 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	_, clientPubkey := mock_lnd.CreateKey(1)
-	_, serverPubkey := mock_lnd.CreateKey(2)
 	addrStore := &mockAddressStore{
-		params: []*script.Parameters{{
-			ClientPubkey: clientPubkey,
-			ServerPubkey: serverPubkey,
-			Expiry:       staticAddressExpiry,
-			PkScript:     []byte("pkscript"),
-		}},
+		params: []*script.Parameters{staticAddressParams},
 	}
 	addrMgr, err := address.NewManager(&address.ManagerConfig{
 		Store:       addrStore,
 		WalletKit:   lnd.WalletKit,
 		ChainParams: lnd.ChainParams,
 	}, 1)
+	require.NoError(t, err)
+	expectedStaticAddress, err := addrMgr.GetTaprootAddress(
+		staticAddressParams.ClientPubkey,
+		staticAddressParams.ServerPubkey,
+		int64(staticAddressParams.Expiry),
+	)
+	require.NoError(t, err)
+
+	staticAddressParams.PkScript, err = txscript.PayToAddrScript(
+		expectedStaticAddress,
+	)
 	require.NoError(t, err)
 
 	server := &swapClientServer{
@@ -512,6 +530,7 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	require.Equal(t, depositConfHeight, rpcDeposit.ConfirmationHeight)
 	require.Equal(t, swapHash[:], rpcDeposit.SwapHash)
 	require.Equal(t, looprpc.DepositState_LOOPED_IN, rpcDeposit.State)
+	require.Equal(t, expectedStaticAddress.String(), rpcDeposit.StaticAddress)
 	require.Equal(
 		t, depositConfHeight+int64(staticAddressExpiry)-600,
 		rpcDeposit.BlocksUntilExpiry,
@@ -681,7 +700,6 @@ func TestMonitorSnapshotIncludesFinalStaticAddressLoopIns(t *testing.T) {
 func TestStaticLoopInStatusUpdaterUsesSwapHtlcAddress(t *testing.T) {
 	ctx := t.Context()
 	_, staticLoopIn := newGenericStaticLoopInServer(t)
-	staticLoopIn.AddressParams = nil
 	statusChan := make(chan loop.SwapInfo, 1)
 	updater := &staticLoopInStatusUpdater{
 		statusChan:  statusChan,
@@ -928,7 +946,6 @@ func newGenericStaticLoopInServerWithStore(t *testing.T) (*swapClientServer,
 
 	_, clientPubkey := mock_lnd.CreateKey(10)
 	_, serverPubkey := mock_lnd.CreateKey(11)
-	addressParams, _ := newTestStaticAddressParams(t)
 	depositOutpoint := wire.OutPoint{
 		Hash:  chainhash.Hash{12, 13, 14},
 		Index: 2,
@@ -952,7 +969,6 @@ func newGenericStaticLoopInServerWithStore(t *testing.T) (*swapClientServer,
 		SelectedAmount:   50_000,
 		DepositOutpoints: []string{depositOutpoint.String()},
 		Deposits:         []*deposit.Deposit{staticDeposit},
-		AddressParams:    addressParams,
 	}
 	staticLoopIn.SetState(loopin.PaymentReceived)
 
@@ -1897,8 +1913,23 @@ type mockAddressStore struct {
 func (s *mockAddressStore) CreateStaticAddress(_ context.Context,
 	p *script.Parameters) error {
 
+	if p.ID == 0 {
+		p.ID = int32(len(s.params) + 1)
+	}
 	s.params = append(s.params, p)
 	return nil
+}
+
+func (s *mockAddressStore) GetStaticAddressID(_ context.Context,
+	pkScript []byte) (int32, error) {
+
+	for _, p := range s.params {
+		if bytes.Equal(p.PkScript, pkScript) {
+			return p.ID, nil
+		}
+	}
+
+	return 0, sql.ErrNoRows
 }
 
 func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
@@ -1911,10 +1942,39 @@ func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
 	return s.params[0], nil
 }
 
+// ListStaticAddresses pages through the persisted test addresses.
+func (s *mockAddressStore) ListStaticAddresses(_ context.Context,
+	afterID, limit int32) ([]*address.AddressParameters, error) {
+
+	var page []*address.AddressParameters
+	for i, p := range s.params {
+		if p.ID == 0 {
+			p.ID = int32(i + 1)
+		}
+		if p.ID > afterID {
+			page = append(page, p)
+			if len(page) == int(limit) {
+				break
+			}
+		}
+	}
+	return page, nil
+}
+
 func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
 	[]*script.Parameters, error) {
 
 	return s.params, nil
+}
+
+func (s *mockAddressStore) GetLegacyParameters(_ context.Context) (
+	*address.AddressParameters, error) {
+
+	if len(s.params) == 0 {
+		return nil, sql.ErrNoRows
+	}
+
+	return s.params[0], nil
 }
 
 // mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.
@@ -1963,7 +2023,12 @@ func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
 // listUnspentDepositManager backs ListUnspentDeposits tests without requiring
 // the full deposit manager event loop.
 type listUnspentDepositManager struct {
-	byOutpoint map[string]*deposit.Deposit
+	byOutpoint      map[string]*deposit.Deposit
+	activeOutpoints map[wire.OutPoint]bool
+
+	activeLookupCalls  int
+	recordLookupCalls  int
+	visibleLookupCalls int
 
 	ensureDepositsFreshCalls int
 	onEnsureDepositsFresh    func(*listUnspentDepositManager)
@@ -1985,7 +2050,7 @@ func (m *listUnspentDepositManager) GetActiveDepositsInState(
 
 	deposits := make([]*deposit.Deposit, 0, len(m.byOutpoint))
 	for _, d := range m.byOutpoint {
-		if !d.IsInState(state) {
+		if !d.IsInState(state) || (m.activeOutpoints != nil && !m.activeOutpoints[d.OutPoint]) {
 			continue
 		}
 
@@ -1995,9 +2060,36 @@ func (m *listUnspentDepositManager) GetActiveDepositsInState(
 	return deposits, nil
 }
 
+// AllStringOutpointsActiveDeposits models an exact lookup in the live set.
+func (m *listUnspentDepositManager) AllStringOutpointsActiveDeposits(
+	outpoints []string, state fsm.StateType) ([]*deposit.Deposit, bool) {
+
+	m.activeLookupCalls++
+	seen := make(map[wire.OutPoint]struct{}, len(outpoints))
+	deposits := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, value := range outpoints {
+		op, err := wire.NewOutPointFromString(value)
+		if err != nil {
+			return nil, false
+		}
+		if _, ok := seen[*op]; ok {
+			return nil, false
+		}
+		seen[*op] = struct{}{}
+		d, ok := m.byOutpoint[op.String()]
+		if !ok || !d.IsInState(state) {
+			return nil, false
+		}
+		deposits = append(deposits, d)
+	}
+	return deposits, true
+}
+
 func (m *listUnspentDepositManager) DepositsForOutpoints(
 	_ context.Context, outpoints []string, ignoreUnknown bool) (
 	[]*deposit.Deposit, error) {
+
+	m.recordLookupCalls++
 
 	deposits := make([]*deposit.Deposit, 0, len(outpoints))
 	seen := make(map[string]struct{}, len(outpoints))
@@ -2026,6 +2118,8 @@ func (m *listUnspentDepositManager) DepositsForOutpoints(
 func (m *listUnspentDepositManager) GetVisibleDeposits(
 	context.Context) ([]*deposit.Deposit, error) {
 
+	m.visibleLookupCalls++
+
 	return m.allDeposits(), nil
 }
 
@@ -2052,7 +2146,12 @@ func TestListUnspentDeposits(t *testing.T) {
 	// Prepare a single static address parameter set.
 	_, client := mock_lnd.CreateKey(1)
 	_, server := mock_lnd.CreateKey(2)
-	pkScript := []byte("pkscript")
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, 10, client, server,
+	)
+	require.NoError(t, err)
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
 	addrParams := &script.Parameters{
 		ClientPubkey: client,
 		ServerPubkey: server,
@@ -2069,6 +2168,8 @@ func TestListUnspentDeposits(t *testing.T) {
 		ChainParams: mock.ChainParams,
 		// ChainNotifier and AddressClient are not needed for this test.
 	}, 1)
+	require.NoError(t, err)
+	_, err = addrMgr.EnsureStaticAddressRoot(ctx)
 	require.NoError(t, err)
 
 	// Construct several UTXOs with different confirmation counts.
@@ -2180,6 +2281,54 @@ func TestListUnspentDeposits(t *testing.T) {
 			_, ok := got[utxoDeposited.OutPoint.String()]
 			require.True(t, ok)
 		})
+
+	// An old DB row must not resurrect an output removed by reconciliation.
+	t.Run("output disappears during refresh", func(t *testing.T) {
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoDeposited})
+		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+			utxoDeposited.OutPoint: deposit.Deposited,
+		})
+		depMgr.onEnsureDepositsFresh = func(m *listUnspentDepositManager) {
+			mock.SetListUnspent(nil)
+			m.activeOutpoints = map[wire.OutPoint]bool{}
+		}
+		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
+		require.NoError(t, err)
+		require.Empty(t, resp.Utxos)
+		require.Zero(t, depMgr.recordLookupCalls)
+	})
+
+	// Wallet visibility alone does not make a historical deposit active.
+	t.Run("inactive stored deposit excluded", func(t *testing.T) {
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoDeposited})
+		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+			utxoDeposited.OutPoint: deposit.Deposited,
+		})
+		depMgr.activeOutpoints = map[wire.OutPoint]bool{}
+		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
+		require.NoError(t, err)
+		require.Empty(t, resp.Utxos)
+	})
+
+	// Confirmation counts in the response come from the post-refresh snapshot.
+	t.Run("confirmation change during refresh", func(t *testing.T) {
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoDeposited})
+		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+			utxoDeposited.OutPoint: deposit.Deposited,
+		})
+		depMgr.onEnsureDepositsFresh = func(_ *listUnspentDepositManager) {
+			reorged := *utxoDeposited
+			reorged.Confirmations = 0
+			mock.SetListUnspent([]*lnwallet.Utxo{&reorged})
+		}
+		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
+		require.NoError(t, err)
+		require.Len(t, resp.Utxos, 1)
+		require.Zero(t, resp.Utxos[0].Confirmations)
+	})
 
 	// A wallet-visible UTXO reconciled by EnsureDepositsFresh should be
 	// returned in the same ListUnspentDeposits call.
