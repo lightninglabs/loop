@@ -317,6 +317,11 @@ func TestRootImportFailureRetainsDerivedKey(t *testing.T) {
 		t, swap.StaticSingleAddressKeyFamily, persisted.KeyLocator.Family,
 	)
 
+	// A failed import must not populate the active root cache. Retrying
+	// while the wallet is still unavailable must fail again.
+	_, err = testContext.manager.EnsureStaticAddressRoot(t.Context())
+	require.ErrorIs(t, err, importErr)
+
 	// Restore the wallet and repair the import using the persisted root.
 	testContext.manager.cfg.WalletKit = originalWallet
 	root, err := testContext.manager.EnsureStaticAddressRoot(t.Context())
@@ -535,6 +540,11 @@ func TestMultiAddressRestartRecovery(t *testing.T) {
 		t, walletAfterRestart.GetAccountWithAddresses()[0].GetAddresses(),
 		3,
 	)
+
+	recoveredRoot, err := restarted.EnsureStaticAddressRoot(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, addresses[0].ID, recoveredRoot.ID)
+	require.Equal(t, addresses[0].KeyLocator, recoveredRoot.KeyLocator)
 
 	// Each script must recover its original database identity and key locator.
 	for _, params := range addresses {
