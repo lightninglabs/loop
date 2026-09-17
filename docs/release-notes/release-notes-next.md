@@ -116,6 +116,9 @@
 * Update the OpenTelemetry SDK and its related API modules to v1.45.0.
   [PR #1232](https://github.com/lightninglabs/loop/pull/1232)
 
+* Cache the activated legacy static address to avoid scanning all addresses
+  during receive and change issuance; failed imports remain retryable.
+
 * Static-address quotes use one exact lookup of active deposits, retaining
   state and expiry checks without scanning or rendering deposit history.
 
