@@ -87,6 +87,9 @@
 
 #### Maintenance
 
+* Match wallet UTXOs directly against the active address index under a short
+  lock instead of copying every address on each poll.
+
 * Cache the activated legacy static address to avoid scanning all addresses
   during receive and change issuance; failed imports remain retryable.
 
