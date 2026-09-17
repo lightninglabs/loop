@@ -2109,9 +2109,12 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 				u.OutPoint, u.PkScript)
 		}
 
-		staticAddress, err := s.staticAddressManager.GetTaprootAddress(
-			params.ClientPubkey, params.ServerPubkey,
-			int64(params.Expiry),
+		chainParams, err := s.network.ChainParams()
+		if err != nil {
+			return nil, err
+		}
+		staticAddress, err := address.GetTaprootAddressFromScript(
+			params.PkScript, chainParams,
 		)
 		if err != nil {
 			return nil, err
@@ -2984,13 +2987,13 @@ func (s *swapClientServer) rpcDeposit(d *deposit.Deposit) (
 	deposit := toClientWithdrawalDeposit(d)
 	deposit.SwapHash = swapHash
 
-	if s.staticAddressManager == nil {
-		return nil, fmt.Errorf("static address manager not configured")
+	chainParams, err := s.network.ChainParams()
+	if err != nil {
+		return nil, err
 	}
 
-	staticAddress, err := s.staticAddressManager.GetTaprootAddress(
-		d.AddressParams.ClientPubkey, d.AddressParams.ServerPubkey,
-		int64(d.AddressParams.Expiry),
+	staticAddress, err := address.GetTaprootAddressFromScript(
+		d.AddressParams.PkScript, chainParams,
 	)
 	if err != nil {
 		return nil, err
