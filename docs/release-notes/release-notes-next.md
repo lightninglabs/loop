@@ -44,6 +44,10 @@
 
 #### Maintenance
 
+* Update the OpenTelemetry OTLP gRPC trace exporter from v1.20.0 to
+  v1.45.0 and refresh its required dependencies.
+  [PR #1230](https://github.com/lightninglabs/loop/pull/1230)
+
 * Update the OpenTelemetry OTLP trace exporter from v1.29.0 to v1.45.0
   and refresh its required dependencies.
   [PR #1231](https://github.com/lightninglabs/loop/pull/1231)
