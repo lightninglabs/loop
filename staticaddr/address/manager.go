@@ -81,6 +81,10 @@ type Manager struct {
 	// and updated after successful address issuance. Keys are raw PkScript
 	// bytes converted to strings for map lookup, not encoded Bitcoin addresses.
 	activeStaticAddresses map[string]*AddressParameters
+
+	// rootAddress is the lowest-ID active address, set together with the
+	// script index under the manager mutex only after successful activation.
+	rootAddress *AddressParameters
 }
 
 // NewManager creates a new address manager.
@@ -149,9 +153,11 @@ func (m *Manager) activateAddresses(ctx context.Context,
 	addrParams []*AddressParameters) error {
 
 	active := make(map[string]*AddressParameters, len(addrParams))
+	var root *AddressParameters
 	if len(addrParams) == 0 {
 		m.Lock()
 		m.activeStaticAddresses = active
+		m.rootAddress = root
 		m.Unlock()
 
 		return nil
@@ -180,10 +186,14 @@ func (m *Manager) activateAddresses(ctx context.Context,
 		}
 
 		active[string(param.PkScript)] = param
+		if root == nil || param.ID < root.ID {
+			root = param
+		}
 	}
 
 	m.Lock()
 	m.activeStaticAddresses = active
+	m.rootAddress = root
 	m.Unlock()
 
 	return nil
@@ -454,6 +464,9 @@ func (m *Manager) createAddressFromKey(ctx context.Context,
 
 	m.Lock()
 	m.activeStaticAddresses[string(pkScript)] = addrParams
+	if m.rootAddress == nil || addrParams.ID < m.rootAddress.ID {
+		m.rootAddress = addrParams
+	}
 	m.Unlock()
 
 	return addrParams, nil
@@ -542,21 +555,10 @@ func staticAddressFromParams(addrParams *AddressParameters) (*script.StaticAddre
 	)
 }
 
-// legacyParameters returns the active address with the lowest database ID.
-// The caller must hold the manager mutex while reading the active index.
+// legacyParameters returns the cached active legacy/root address.
+// The caller must hold the manager mutex.
 func (m *Manager) legacyParameters() *AddressParameters {
-	var legacy *AddressParameters
-	for _, addrParams := range m.activeStaticAddresses {
-		if addrParams == nil {
-			continue
-		}
-
-		if legacy == nil || addrParams.ID < legacy.ID {
-			legacy = addrParams
-		}
-	}
-
-	return legacy
+	return m.rootAddress
 }
 
 // GetTaprootAddress returns a taproot address for the given client and server
