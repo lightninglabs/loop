@@ -132,11 +132,6 @@ type staticAddressDepositManager interface {
 	// the requested state.
 	GetActiveDepositsInState(fsm.StateType) ([]*deposit.Deposit, error)
 
-	// DepositsForOutpoints returns known deposit records for the requested
-	// outpoints, optionally skipping unknown outpoints.
-	DepositsForOutpoints(context.Context, []string, bool) (
-		[]*deposit.Deposit, error)
-
 	// AllStringOutpointsActiveDeposits looks up the exact selection in the
 	// live set, rejecting duplicates, missing deposits and incorrect states.
 	AllStringOutpointsActiveDeposits([]string, fsm.StateType) (
@@ -1896,6 +1891,12 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	req *looprpc.ListUnspentDepositsRequest) (
 	*looprpc.ListUnspentDepositsResponse, error) {
 
+	// Refresh before taking the response snapshot so an output that vanished
+	// during reconciliation cannot be returned from an older wallet read.
+	if err := s.depositManager.EnsureDepositsFresh(ctx); err != nil {
+		return nil, err
+	}
+
 	// List all unspent utxos the wallet sees, regardless of the number of
 	// confirmations.
 	staticAddress, utxos, err := s.staticAddressManager.ListUnspentRaw(
@@ -1905,39 +1906,15 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 		return nil, err
 	}
 
-	// ListUnspentRaw returns the unspent wallet view of the backing lnd
-	// wallet. Static loop-in initiation requires an active deposit record,
-	// so only deposits that are both wallet-visible and tracked as
-	// Deposited are returned here.
-	var (
-		outpoints []string
-		isUnspent = make(map[wire.OutPoint]struct{})
-	)
-
-	for _, utxo := range utxos {
-		outpoints = append(outpoints, utxo.OutPoint.String())
-	}
-
-	err = s.depositManager.EnsureDepositsFresh(ctx)
+	// Historical DB records can remain Deposited after their live FSM is
+	// removed. Only current active deposits are eligible for this listing.
+	deposits, err := s.depositManager.GetActiveDepositsInState(deposit.Deposited)
 	if err != nil {
 		return nil, err
 	}
-
-	// Check the spent status of the deposits by looking at their states.
-	ignoreUnknownOutpoints := true
-	deposits, err := s.depositManager.DepositsForOutpoints(
-		ctx, outpoints, ignoreUnknownOutpoints,
-	)
-	if err != nil {
-		return nil, err
-	}
-
+	isUnspent := make(map[wire.OutPoint]struct{}, len(deposits))
 	for _, d := range deposits {
-		if d == nil {
-			continue
-		}
-
-		if d.IsInState(deposit.Deposited) {
+		if d != nil {
 			isUnspent[d.OutPoint] = struct{}{}
 		}
 	}
