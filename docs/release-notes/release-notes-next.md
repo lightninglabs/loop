@@ -24,6 +24,11 @@
   deposit listing. Every selected deposit must be unique, tracked and in the
   deposited state.
 
+* `ListUnspentDeposits` now refreshes the static address deposits before it
+  lists the wallet outputs, and only lists deposits that are currently
+  tracked as deposited. An output that disappeared during the refresh could
+  previously still be listed, with a stale confirmation count.
+
 #### Maintenance
 
 #### Contributors (Alphabetical Order)
