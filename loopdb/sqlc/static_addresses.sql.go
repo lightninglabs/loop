@@ -150,3 +150,48 @@ func (q *Queries) GetStaticAddressID(ctx context.Context, pkscript []byte) (int3
 	err := row.Scan(&id)
 	return id, err
 }
+
+const listStaticAddresses = `-- name: ListStaticAddresses :many
+SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
+WHERE id > $1
+ORDER BY id ASC
+LIMIT $2
+`
+
+type ListStaticAddressesParams struct {
+	AfterID  int32
+	PageSize int32
+}
+
+func (q *Queries) ListStaticAddresses(ctx context.Context, arg ListStaticAddressesParams) ([]StaticAddress, error) {
+	rows, err := q.db.QueryContext(ctx, listStaticAddresses, arg.AfterID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StaticAddress
+	for rows.Next() {
+		var i StaticAddress
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClientPubkey,
+			&i.ServerPubkey,
+			&i.Expiry,
+			&i.ClientKeyFamily,
+			&i.ClientKeyIndex,
+			&i.Pkscript,
+			&i.ProtocolVersion,
+			&i.InitiationHeight,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

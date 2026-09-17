@@ -100,6 +100,29 @@ type addressListStore struct {
 	Store
 
 	addresses []*AddressParameters
+	pages     int
+	failAfter int32
+	err       error
+}
+
+// ListStaticAddresses returns a bounded page from the test's sorted records.
+func (s *addressListStore) ListStaticAddresses(_ context.Context,
+	afterID, limit int32) ([]*AddressParameters, error) {
+
+	s.pages++
+	if s.failAfter > 0 && afterID >= s.failAfter {
+		return nil, s.err
+	}
+	var page []*AddressParameters
+	for _, p := range s.addresses {
+		if p.ID > afterID {
+			page = append(page, p)
+			if len(page) == int(limit) {
+				break
+			}
+		}
+	}
+	return page, nil
 }
 
 // GetAllStaticAddresses returns the configured persisted address records.
@@ -356,7 +379,7 @@ func TestLoadActiveAddressesUsesSingleWalletRead(t *testing.T) {
 		pkScript, err := txscript.PayToAddrScript(addr)
 		require.NoError(t, err)
 
-		params = append(params, &AddressParameters{PkScript: pkScript})
+		params = append(params, &AddressParameters{ID: int32(i + 1), PkScript: pkScript})
 		properties = append(properties, &walletrpc.AddressProperty{
 			Address: addr.EncodeAddress(),
 		})
@@ -382,6 +405,20 @@ func TestLoadActiveAddressesUsesSingleWalletRead(t *testing.T) {
 	require.Equal(t, 1, rawClient.calls)
 	require.Zero(t, wallet.imports)
 	require.Len(t, manager.activeStaticAddresses, addressCount)
+	store := manager.cfg.Store.(*addressListStore)
+	require.Equal(t, 4, store.pages)
+	previousRoot := manager.rootAddress
+	previousAddress := manager.GetParameters(params[0].PkScript)
+	store.failAfter = addressPageSize
+	store.err = errors.New("page read failed")
+	require.ErrorIs(t, manager.loadActiveAddresses(t.Context()), store.err)
+	require.Same(t, previousRoot, manager.rootAddress)
+	require.Same(t, previousAddress, manager.GetParameters(params[0].PkScript))
+	require.Len(t, manager.activeStaticAddresses, addressCount)
+	store.failAfter = 0
+	require.NoError(t, manager.loadActiveAddresses(t.Context()))
+	require.Len(t, manager.activeStaticAddresses, addressCount)
+
 }
 
 // BenchmarkLoadActiveAddresses measures rebuilding the active index for
@@ -408,7 +445,7 @@ func BenchmarkLoadActiveAddresses(b *testing.B) {
 				pkScript, err := txscript.PayToAddrScript(addr)
 				require.NoError(b, err)
 				params = append(
-					params, &AddressParameters{PkScript: pkScript},
+					params, &AddressParameters{ID: int32(i + 1), PkScript: pkScript},
 				)
 				properties = append(
 					properties, &walletrpc.AddressProperty{
@@ -464,6 +501,7 @@ func TestLoadActiveAddressesImportsOnlyMissing(t *testing.T) {
 	}
 	wallet := &addressListWallet{rawClient: rawClient}
 	params := &AddressParameters{
+		ID:           1,
 		ClientPubkey: clientPubKey,
 		ServerPubkey: defaultServerPubkey,
 		PkScript:     pkScript,

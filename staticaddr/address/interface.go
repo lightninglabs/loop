@@ -21,6 +21,11 @@ type Store interface {
 	// address script.
 	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
 
+	// ListStaticAddresses retrieves up to limit addresses in ascending ID
+	// order, strictly after afterID. Use zero to start from the beginning.
+	ListStaticAddresses(ctx context.Context, afterID, limit int32) (
+		[]*AddressParameters, error)
+
 	// GetAllStaticAddresses retrieves all static addresses from the store.
 	GetAllStaticAddresses(ctx context.Context) ([]*AddressParameters, error)
 

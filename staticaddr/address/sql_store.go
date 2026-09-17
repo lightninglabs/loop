@@ -2,6 +2,7 @@ package address
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/loop/loopdb"
@@ -46,6 +47,30 @@ func (s *SqlStore) GetStaticAddressID(ctx context.Context,
 	pkScript []byte) (int32, error) {
 
 	return s.baseDB.Queries.GetStaticAddressID(ctx, pkScript)
+}
+
+// ListStaticAddresses loads one bounded page without offset scans.
+func (s *SqlStore) ListStaticAddresses(ctx context.Context, afterID,
+	limit int32) ([]*AddressParameters, error) {
+
+	if afterID < 0 || limit <= 0 {
+		return nil, fmt.Errorf("invalid static address page: after=%d limit=%d",
+			afterID, limit)
+	}
+	rows, err := s.baseDB.Queries.ListStaticAddresses(ctx,
+		sqlc.ListStaticAddressesParams{AfterID: afterID, PageSize: limit})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*AddressParameters, 0, len(rows))
+	for _, row := range rows {
+		params, err := s.toAddressParameters(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, params)
+	}
+	return result, nil
 }
 
 // GetAllStaticAddresses returns all addresses known to the client.
