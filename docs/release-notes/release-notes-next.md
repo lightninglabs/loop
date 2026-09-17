@@ -7,11 +7,29 @@
 
 #### Breaking Changes
 
+* Shared asset witness builders now require complete, caller-approved virtual
+  transfers. Deposit refunds also require the CSV sequence to be set before
+  signing any inputs.
+
 * Instant Out requests must now set `max_swap_fee_sat`. Requests that omit the
   fee cap are rejected; an explicit zero cap remains valid. Direct users of
   `Manager.NewInstantOut` must pass the fee cap as a required argument.
 
 #### Bug Fixes
+
+* Shared asset sweeps validate asset conservation and Bitcoin output commitments,
+  including change and passive assets, before signing. New deposit addresses use
+  explicit asset V1 and address V1 versions, refund signing preserves existing
+  signatures, and returned control blocks no longer expose mutable kit keys.
+
+* Deposit proof verification now requires genesis-rooted histories and rejects
+  ownership-only proofs, including those hidden in additional inputs.
+
+* Shared asset kits now isolate proof and RPC buffers, reject oversized proofs
+  and unencodable amounts, and enforce distinct x-only signing keys.
+
+* Shared Taproot Asset sweep packets now preserve the destination address
+  version and use the required non-interactive split-root layout.
 
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
@@ -39,6 +57,9 @@
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
 #### Maintenance
+
+* Update Taproot Assets to v0.8.3, taprpc to v1.3.3, and the LND dependency to
+  v0.21.3-beta. The minimum Go build version is now 1.25.13.
 
 * The Docker image build now verifies that every platform of the image index
   holds binaries for the architecture it advertises, and gives a release its
