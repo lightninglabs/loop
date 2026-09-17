@@ -83,6 +83,9 @@
 
 #### Maintenance
 
+* Static-address listings encode addresses directly from P2TR scripts without
+  rebuilding Taproot trees or caching rendered addresses.
+
 * Rename static-address Go APIs to `StaticSingleAddressKeyFamily`,
   `AddressParameters`, and `EnsureStaticAddressRoot`, and consolidate wallet
   UTXO listing into `ListUnspent`. Key-family values remain unchanged.
