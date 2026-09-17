@@ -71,10 +71,14 @@ type ManagerConfig struct {
 
 // Manager manages the address state machines.
 type Manager struct {
-	sync.Mutex
+	// activeMu guards the runtime script index and activated root.
+	activeMu sync.Mutex
 
-	cfg        *ManagerConfig
-	issuanceMu sync.Mutex
+	cfg *ManagerConfig
+
+	// issuanceGate serializes side effects while allowing waiting callers
+	// to cancel independently of the operation currently in progress.
+	issuanceGate chan struct{}
 
 	currentHeight atomic.Int32
 
@@ -86,7 +90,7 @@ type Manager struct {
 	activeStaticAddresses map[string]*AddressParameters
 
 	// rootAddress is the lowest-ID active address, set together with the
-	// script index under the manager mutex only after successful activation.
+	// script index under the activeMu mutex only after successful activation.
 	rootAddress *AddressParameters
 }
 
@@ -99,6 +103,7 @@ func NewManager(cfg *ManagerConfig, currentHeight int32) (*Manager, error) {
 
 	m := &Manager{
 		cfg:                   cfg,
+		issuanceGate:          make(chan struct{}, 1),
 		activeStaticAddresses: make(map[string]*AddressParameters),
 	}
 	m.currentHeight.Store(currentHeight)
@@ -186,10 +191,10 @@ func (m *Manager) loadActiveAddresses(ctx context.Context) error {
 			break
 		}
 	}
-	m.Lock()
+	m.activeMu.Lock()
 	m.activeStaticAddresses = active
 	m.rootAddress = root
-	m.Unlock()
+	m.activeMu.Unlock()
 	return nil
 }
 
@@ -273,6 +278,31 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 	return address, int64(addrParams.Expiry), nil
 }
 
+// lockIssuance waits for exclusive issuance access without trapping canceled
+// callers behind a slow dependency. Cancellation never releases another
+// caller's gate or starts an overlapping initialization attempt.
+func (m *Manager) lockIssuance(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case m.issuanceGate <- struct{}{}:
+		// If acquisition raced with cancellation, avoid starting side effects.
+		if err := ctx.Err(); err != nil {
+			m.unlockIssuance()
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// unlockIssuance releases the gate held by the current issuing caller.
+func (m *Manager) unlockIssuance() {
+	<-m.issuanceGate
+}
+
 // EnsureStaticAddressRoot loads or creates the legacy/root static address
 // parameters. The root address is the only address that requires a
 // ServerNewAddress call; all receive/change addresses derive client keys
@@ -280,21 +310,23 @@ func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
 func (m *Manager) EnsureStaticAddressRoot(ctx context.Context) (*AddressParameters,
 	error) {
 
-	m.Lock()
+	m.activeMu.Lock()
 	root := m.legacyParameters()
-	m.Unlock()
+	m.activeMu.Unlock()
 	if root != nil {
 		return root, nil
 	}
 
-	m.issuanceMu.Lock()
-	defer m.issuanceMu.Unlock()
+	if err := m.lockIssuance(ctx); err != nil {
+		return nil, err
+	}
+	defer m.unlockIssuance()
 
 	// Another caller may have created the root while we were waiting for the
 	// issuance lock.
-	m.Lock()
+	m.activeMu.Lock()
 	root = m.legacyParameters()
-	m.Unlock()
+	m.activeMu.Unlock()
 	if root != nil {
 		return root, nil
 	}
@@ -303,9 +335,9 @@ func (m *Manager) EnsureStaticAddressRoot(ctx context.Context) (*AddressParamete
 	if err != nil {
 		return nil, err
 	}
-	m.Lock()
+	m.activeMu.Lock()
 	root = m.legacyParameters()
-	m.Unlock()
+	m.activeMu.Unlock()
 	if root != nil {
 		return root, nil
 	}
@@ -388,8 +420,10 @@ func (m *Manager) NewChangeAddress(ctx context.Context) (*AddressParameters,
 func (m *Manager) newDerivedAddress(ctx context.Context, root *AddressParameters,
 	keyFamily int32) (*AddressParameters, error) {
 
-	m.issuanceMu.Lock()
-	defer m.issuanceMu.Unlock()
+	if err := m.lockIssuance(ctx); err != nil {
+		return nil, err
+	}
+	defer m.unlockIssuance()
 
 	clientPubKey, err := m.cfg.WalletKit.DeriveNextKey(ctx, keyFamily)
 	if err != nil {
@@ -454,12 +488,12 @@ func (m *Manager) createAddressFromKey(ctx context.Context,
 		return nil, err
 	}
 
-	m.Lock()
+	m.activeMu.Lock()
 	m.activeStaticAddresses[string(pkScript)] = addrParams
 	if m.rootAddress == nil || addrParams.ID < m.rootAddress.ID {
 		m.rootAddress = addrParams
 	}
-	m.Unlock()
+	m.activeMu.Unlock()
 
 	return addrParams, nil
 }
@@ -548,7 +582,7 @@ func staticAddressFromParams(addrParams *AddressParameters) (*script.StaticAddre
 }
 
 // legacyParameters returns the cached active legacy/root address.
-// The caller must hold the manager mutex.
+// The caller must hold the activeMu mutex.
 func (m *Manager) legacyParameters() *AddressParameters {
 	return m.rootAddress
 }
@@ -588,9 +622,9 @@ func (m *Manager) GetTaprootAddressFromScript(pkScript []byte) (
 func (m *Manager) ListUnspent(ctx context.Context, minConfs,
 	maxConfs int32) ([]*lnwallet.Utxo, error) {
 
-	m.Lock()
+	m.activeMu.Lock()
 	empty := len(m.activeStaticAddresses) == 0
-	m.Unlock()
+	m.activeMu.Unlock()
 	if empty {
 		return nil, nil
 	}
@@ -606,8 +640,8 @@ func (m *Manager) ListUnspent(ctx context.Context, minConfs,
 
 	// Filter the list of lnd's unspent utxos for any locally active static
 	// address script.
-	m.Lock()
-	defer m.Unlock()
+	m.activeMu.Lock()
+	defer m.activeMu.Unlock()
 
 	var filteredUtxos []*lnwallet.Utxo
 	for _, utxo := range utxos {
@@ -666,8 +700,8 @@ func (m *Manager) GetLegacyParameters(ctx context.Context) (*AddressParameters,
 
 // GetParameters returns active static address parameters for a pkScript.
 func (m *Manager) GetParameters(pkScript []byte) *AddressParameters {
-	m.Lock()
-	defer m.Unlock()
+	m.activeMu.Lock()
+	defer m.activeMu.Unlock()
 
 	return m.activeStaticAddresses[string(pkScript)]
 }
