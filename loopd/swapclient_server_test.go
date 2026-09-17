@@ -2791,7 +2791,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			mock.SetListUnspent(nil)
 			m.activeOutpoints = map[wire.OutPoint]bool{}
 		}
-		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		server := &swapClientServer{network: lndclient.NetworkTestnet, staticAddressManager: addrMgr, depositManager: depMgr}
 		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
 		require.NoError(t, err)
 		require.Empty(t, resp.Utxos)
@@ -2805,7 +2805,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			utxoDeposited.OutPoint: deposit.Deposited,
 		})
 		depMgr.activeOutpoints = map[wire.OutPoint]bool{}
-		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		server := &swapClientServer{network: lndclient.NetworkTestnet, staticAddressManager: addrMgr, depositManager: depMgr}
 		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
 		require.NoError(t, err)
 		require.Empty(t, resp.Utxos)
@@ -2822,7 +2822,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			reorged.Confirmations = 0
 			mock.SetListUnspent([]*lnwallet.Utxo{&reorged})
 		}
-		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		server := &swapClientServer{network: lndclient.NetworkTestnet, staticAddressManager: addrMgr, depositManager: depMgr}
 		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
 		require.NoError(t, err)
 		require.Len(t, resp.Utxos, 1)
