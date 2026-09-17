@@ -2,6 +2,7 @@ package address
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/loop/loopdb"
