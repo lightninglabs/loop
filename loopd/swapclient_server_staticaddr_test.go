@@ -288,6 +288,7 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	require.NoError(t, err)
 
 	server := &swapClientServer{
+		network:              lndclient.NetworkTestnet,
 		depositManager:       newTestDepositManager(available),
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
@@ -326,16 +327,14 @@ func TestStaticAddressWithdrawalIncludesDepositAddress(t *testing.T) {
 	require.NoError(t, err)
 
 	d := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{3},
-			Index: 3,
-		},
+		Hash:          chainhash.Hash{3},
+		Index:         3,
 		AddressParams: addresses[0],
 	}
 	d.SetState(deposit.Withdrawn)
 
 	server := &swapClientServer{
-		staticAddressManager: addrMgr,
+		network: lndclient.NetworkTestnet,
 	}
 	rpcWithdrawal, err := server.rpcStaticAddressWithdrawal(
 		withdraw.Withdrawal{
@@ -354,10 +353,8 @@ func TestRPCDepositRequiresAddressParams(t *testing.T) {
 	t.Parallel()
 
 	d := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{7},
-			Index: 7,
-		},
+		Hash:  chainhash.Hash{7},
+		Index: 7,
 	}
 
 	server := &swapClientServer{}
@@ -374,20 +371,16 @@ func TestPopulateBlocksUntilExpiryUsesOwningAddress(t *testing.T) {
 
 	const confirmationHeight = int64(590)
 	first := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{8},
-			Index: 8,
-		},
+		Hash:               chainhash.Hash{8},
+		Index:              8,
 		ConfirmationHeight: confirmationHeight,
 		AddressParams: &script.Parameters{
 			Expiry: 20,
 		},
 	}
 	second := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{9},
-			Index: 9,
-		},
+		Hash:               chainhash.Hash{9},
+		Index:              9,
 		ConfirmationHeight: confirmationHeight,
 		AddressParams: &script.Parameters{
 			Expiry: 40,
@@ -423,10 +416,8 @@ func TestStaticAddressLoopInResponseIncludesDepositAddress(t *testing.T) {
 	require.Len(t, addresses, 1)
 
 	d := &deposit.Deposit{
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{10},
-			Index: 10,
-		},
+		Hash:               chainhash.Hash{10},
+		Index:              10,
 		Value:              100_000,
 		ConfirmationHeight: 590,
 		AddressParams:      addresses[0],
@@ -438,6 +429,7 @@ func TestStaticAddressLoopInResponseIncludesDepositAddress(t *testing.T) {
 	}
 
 	server := &swapClientServer{
+		network:              lndclient.NetworkTestnet,
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
 	}
