@@ -61,9 +61,9 @@ func TestListUnspentMatchesActiveScripts(t *testing.T) {
 
 	updated := make(chan struct{})
 	go func() {
-		manager.Lock()
+		manager.activeMu.Lock()
 		manager.activeStaticAddresses[string(second.PkScript)] = second
-		manager.Unlock()
+		manager.activeMu.Unlock()
 		close(updated)
 	}()
 	select {

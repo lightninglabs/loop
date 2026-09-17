@@ -47,6 +47,9 @@
   exclude inactive historical deposits, preventing stale results after
   replacement, reorg, or spending.
 
+* Static-address issuance waiters now honor context cancellation while root
+  creation and address issuance remain serialized and retryable.
+
 * The multi-address migration now rejects databases with existing deposits unless
   exactly one legacy static address is available to establish their ownership.
 
