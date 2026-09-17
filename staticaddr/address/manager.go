@@ -1,8 +1,8 @@
 package address
 
 import (
+	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -81,6 +81,10 @@ type Manager struct {
 	// and updated after successful address issuance. Keys are raw PkScript
 	// bytes converted to strings for map lookup, not encoded Bitcoin addresses.
 	activeStaticAddresses map[string]*AddressParameters
+
+	// rootAddress is the lowest-ID active address, set together with the
+	// script index under the manager mutex only after successful activation.
+	rootAddress *AddressParameters
 }
 
 // NewManager creates a new address manager.
@@ -149,9 +153,11 @@ func (m *Manager) activateAddresses(ctx context.Context,
 	addrParams []*AddressParameters) error {
 
 	active := make(map[string]*AddressParameters, len(addrParams))
+	var root *AddressParameters
 	if len(addrParams) == 0 {
 		m.Lock()
 		m.activeStaticAddresses = active
+		m.rootAddress = root
 		m.Unlock()
 
 		return nil
@@ -180,10 +186,14 @@ func (m *Manager) activateAddresses(ctx context.Context,
 		}
 
 		active[string(param.PkScript)] = param
+		if root == nil || param.ID < root.ID {
+			root = param
+		}
 	}
 
 	m.Lock()
 	m.activeStaticAddresses = active
+	m.rootAddress = root
 	m.Unlock()
 
 	return nil
@@ -454,6 +464,9 @@ func (m *Manager) createAddressFromKey(ctx context.Context,
 
 	m.Lock()
 	m.activeStaticAddresses[string(pkScript)] = addrParams
+	if m.rootAddress == nil || addrParams.ID < m.rootAddress.ID {
+		m.rootAddress = addrParams
+	}
 	m.Unlock()
 
 	return addrParams, nil
@@ -535,21 +548,10 @@ func staticAddressFromParams(addrParams *AddressParameters) (*script.StaticAddre
 	return addrParams.StaticAddress()
 }
 
-// legacyParameters returns the active address with the lowest database ID.
-// The caller must hold the manager mutex while reading the active index.
+// legacyParameters returns the cached active legacy/root address.
+// The caller must hold the manager mutex.
 func (m *Manager) legacyParameters() *AddressParameters {
-	var legacy *AddressParameters
-	for _, addrParams := range m.activeStaticAddresses {
-		if addrParams == nil {
-			continue
-		}
-
-		if legacy == nil || addrParams.ID < legacy.ID {
-			legacy = addrParams
-		}
-	}
-
-	return legacy
+	return m.rootAddress
 }
 
 // GetTaprootAddress returns a taproot address for the given client and server
@@ -652,15 +654,30 @@ func (m *Manager) GetStaticAddress(ctx context.Context) (*script.StaticAddress,
 func (m *Manager) GetLegacyParameters(ctx context.Context) (*AddressParameters,
 	error) {
 
-	addrParams, err := m.cfg.Store.GetLegacyParameters(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	return addrParams, nil
+	m.activeMu.Lock()
+	defer m.activeMu.Unlock()
+
+	if m.rootAddress == nil {
+		return nil, nil
+	}
+
+	// Preserve the store-backed getter's ownership: callers can change the
+	// returned value without mutating the active address snapshot.
+	params := *m.rootAddress
+	params.PkScript = bytes.Clone(params.PkScript)
+	if params.ClientPubkey != nil {
+		clientKey := *params.ClientPubkey
+		params.ClientPubkey = &clientKey
+	}
+	if params.ServerPubkey != nil {
+		serverKey := *params.ServerPubkey
+		params.ServerPubkey = &serverKey
+	}
+	return &params, nil
 }
 
 // GetParameters returns active static address parameters for a pkScript.
