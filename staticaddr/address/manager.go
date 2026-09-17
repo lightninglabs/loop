@@ -597,12 +597,9 @@ func (m *Manager) ListUnspent(ctx context.Context, minConfs,
 	maxConfs int32) ([]*lnwallet.Utxo, error) {
 
 	m.Lock()
-	active := make(map[string]struct{}, len(m.activeStaticAddresses))
-	for pkScript := range m.activeStaticAddresses {
-		active[pkScript] = struct{}{}
-	}
+	empty := len(m.activeStaticAddresses) == 0
 	m.Unlock()
-	if len(active) == 0 {
+	if empty {
 		return nil, nil
 	}
 
@@ -617,9 +614,12 @@ func (m *Manager) ListUnspent(ctx context.Context, minConfs,
 
 	// Filter the list of lnd's unspent utxos for any locally active static
 	// address script.
+	m.Lock()
+	defer m.Unlock()
+
 	var filteredUtxos []*lnwallet.Utxo
 	for _, utxo := range utxos {
-		if _, ok := active[string(utxo.PkScript)]; ok {
+		if _, ok := m.activeStaticAddresses[string(utxo.PkScript)]; ok {
 			filteredUtxos = append(filteredUtxos, utxo)
 		}
 	}
