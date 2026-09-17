@@ -116,6 +116,9 @@
 * Update the OpenTelemetry SDK and its related API modules to v1.45.0.
   [PR #1232](https://github.com/lightninglabs/loop/pull/1232)
 
+* Load static addresses in ID-ordered database pages during startup and root
+  recovery, publishing the runtime index only after all pages succeed.
+
 * Match wallet UTXOs directly against the active address index under a short
   lock instead of copying every address on each poll.
 

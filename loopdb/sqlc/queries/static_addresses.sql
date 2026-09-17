@@ -35,3 +35,9 @@ INSERT INTO static_addresses (
 SELECT * FROM static_addresses
 ORDER BY id ASC
 LIMIT 1;
+
+-- name: ListStaticAddresses :many
+SELECT * FROM static_addresses
+WHERE id > sqlc.arg(after_id)
+ORDER BY id ASC
+LIMIT sqlc.arg(page_size);
