@@ -87,6 +87,9 @@
 
 #### Maintenance
 
+* Load static addresses in ID-ordered database pages during startup and root
+  recovery, publishing the runtime index only after all pages succeed.
+
 * Match wallet UTXOs directly against the active address index under a short
   lock instead of copying every address on each poll.
 

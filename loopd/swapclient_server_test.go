@@ -1942,6 +1942,25 @@ func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
 	return s.params[0], nil
 }
 
+// ListStaticAddresses pages through the persisted test addresses.
+func (s *mockAddressStore) ListStaticAddresses(_ context.Context,
+	afterID, limit int32) ([]*address.AddressParameters, error) {
+
+	var page []*address.AddressParameters
+	for i, p := range s.params {
+		if p.ID == 0 {
+			p.ID = int32(i + 1)
+		}
+		if p.ID > afterID {
+			page = append(page, p)
+			if len(page) == int(limit) {
+				break
+			}
+		}
+	}
+	return page, nil
+}
+
 func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
 	[]*script.Parameters, error) {
 
