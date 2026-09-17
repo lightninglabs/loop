@@ -2004,7 +2004,12 @@ func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
 // listUnspentDepositManager backs ListUnspentDeposits tests without requiring
 // the full deposit manager event loop.
 type listUnspentDepositManager struct {
-	byOutpoint map[string]*deposit.Deposit
+	byOutpoint      map[string]*deposit.Deposit
+	activeOutpoints map[wire.OutPoint]bool
+
+	activeLookupCalls  int
+	recordLookupCalls  int
+	visibleLookupCalls int
 
 	ensureDepositsFreshCalls int
 	onEnsureDepositsFresh    func(*listUnspentDepositManager)
@@ -2026,7 +2031,7 @@ func (m *listUnspentDepositManager) GetActiveDepositsInState(
 
 	deposits := make([]*deposit.Deposit, 0, len(m.byOutpoint))
 	for _, d := range m.byOutpoint {
-		if !d.IsInState(state) {
+		if !d.IsInState(state) || (m.activeOutpoints != nil && !m.activeOutpoints[d.OutPoint]) {
 			continue
 		}
 
@@ -2036,9 +2041,36 @@ func (m *listUnspentDepositManager) GetActiveDepositsInState(
 	return deposits, nil
 }
 
+// AllStringOutpointsActiveDeposits models an exact lookup in the live set.
+func (m *listUnspentDepositManager) AllStringOutpointsActiveDeposits(
+	outpoints []string, state fsm.StateType) ([]*deposit.Deposit, bool) {
+
+	m.activeLookupCalls++
+	seen := make(map[wire.OutPoint]struct{}, len(outpoints))
+	deposits := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, value := range outpoints {
+		op, err := wire.NewOutPointFromString(value)
+		if err != nil {
+			return nil, false
+		}
+		if _, ok := seen[*op]; ok {
+			return nil, false
+		}
+		seen[*op] = struct{}{}
+		d, ok := m.byOutpoint[op.String()]
+		if !ok || !d.IsInState(state) {
+			return nil, false
+		}
+		deposits = append(deposits, d)
+	}
+	return deposits, true
+}
+
 func (m *listUnspentDepositManager) DepositsForOutpoints(
 	_ context.Context, outpoints []string, ignoreUnknown bool) (
 	[]*deposit.Deposit, error) {
+
+	m.recordLookupCalls++
 
 	deposits := make([]*deposit.Deposit, 0, len(outpoints))
 	seen := make(map[string]struct{}, len(outpoints))
@@ -2066,6 +2098,8 @@ func (m *listUnspentDepositManager) DepositsForOutpoints(
 
 func (m *listUnspentDepositManager) GetVisibleDeposits(
 	context.Context) ([]*deposit.Deposit, error) {
+
+	m.visibleLookupCalls++
 
 	return m.allDeposits(), nil
 }
@@ -2228,6 +2262,54 @@ func TestListUnspentDeposits(t *testing.T) {
 			_, ok := got[utxoDeposited.OutPoint.String()]
 			require.True(t, ok)
 		})
+
+	// An old DB row must not resurrect an output removed by reconciliation.
+	t.Run("output disappears during refresh", func(t *testing.T) {
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoDeposited})
+		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+			utxoDeposited.OutPoint: deposit.Deposited,
+		})
+		depMgr.onEnsureDepositsFresh = func(m *listUnspentDepositManager) {
+			mock.SetListUnspent(nil)
+			m.activeOutpoints = map[wire.OutPoint]bool{}
+		}
+		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
+		require.NoError(t, err)
+		require.Empty(t, resp.Utxos)
+		require.Zero(t, depMgr.recordLookupCalls)
+	})
+
+	// Wallet visibility alone does not make a historical deposit active.
+	t.Run("inactive stored deposit excluded", func(t *testing.T) {
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoDeposited})
+		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+			utxoDeposited.OutPoint: deposit.Deposited,
+		})
+		depMgr.activeOutpoints = map[wire.OutPoint]bool{}
+		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
+		require.NoError(t, err)
+		require.Empty(t, resp.Utxos)
+	})
+
+	// Confirmation counts in the response come from the post-refresh snapshot.
+	t.Run("confirmation change during refresh", func(t *testing.T) {
+		mock.SetListUnspent([]*lnwallet.Utxo{utxoDeposited})
+		depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
+			utxoDeposited.OutPoint: deposit.Deposited,
+		})
+		depMgr.onEnsureDepositsFresh = func(_ *listUnspentDepositManager) {
+			reorged := *utxoDeposited
+			reorged.Confirmations = 0
+			mock.SetListUnspent([]*lnwallet.Utxo{&reorged})
+		}
+		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
+		require.NoError(t, err)
+		require.Len(t, resp.Utxos, 1)
+		require.Zero(t, resp.Utxos[0].Confirmations)
+	})
 
 	// A wallet-visible UTXO reconciled by EnsureDepositsFresh should be
 	// returned in the same ListUnspentDeposits call.

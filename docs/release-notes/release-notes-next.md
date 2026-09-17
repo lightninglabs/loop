@@ -39,6 +39,10 @@
 
 #### Bug Fixes
 
+* Static-address unspent listings refresh before reading wallet outputs and
+  exclude inactive historical deposits, preventing stale results after
+  replacement, reorg, or spending.
+
 * The multi-address migration now rejects databases with existing deposits unless
   exactly one legacy static address is available to establish their ownership.
 
@@ -82,6 +86,9 @@
   hashes.
 
 #### Maintenance
+
+* Static-address quotes use one exact lookup of active deposits, retaining
+  state and expiry checks without scanning or rendering deposit history.
 
 * Static-address listings encode addresses directly from P2TR scripts without
   rebuilding Taproot trees or caching rendered addresses.
