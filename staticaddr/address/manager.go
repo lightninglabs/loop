@@ -577,6 +577,18 @@ func (m *Manager) GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
 	)
 }
 
+// GetTaprootAddressFromScript encodes a canonical P2TR output script for the
+// configured network without reconstructing its keys or script tree.
+func (m *Manager) GetTaprootAddressFromScript(pkScript []byte) (
+	*btcutil.AddressTaproot, error) {
+
+	if !txscript.IsPayToTaproot(pkScript) {
+		return nil, fmt.Errorf("invalid static address P2TR script: %x", pkScript)
+	}
+
+	return btcutil.NewAddressTaproot(pkScript[2:], m.cfg.ChainParams)
+}
+
 // ListUnspent returns wallet UTXOs matching any active static address
 // within the requested confirmation range.
 func (m *Manager) ListUnspent(ctx context.Context, minConfs,

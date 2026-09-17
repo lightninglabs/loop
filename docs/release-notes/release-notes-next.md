@@ -112,6 +112,9 @@
 * Update the OpenTelemetry SDK and its related API modules to v1.45.0.
   [PR #1232](https://github.com/lightninglabs/loop/pull/1232)
 
+* Static-address listings encode addresses directly from P2TR scripts without
+  rebuilding Taproot trees or caching rendered addresses.
+
 * Rename static-address Go APIs to `StaticSingleAddressKeyFamily`,
   `AddressParameters`, and `EnsureStaticAddressRoot`, and consolidate wallet
   UTXO listing into `ListUnspent`. Key-family values remain unchanged.

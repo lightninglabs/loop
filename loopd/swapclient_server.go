@@ -2141,9 +2141,8 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 				u.OutPoint, u.PkScript)
 		}
 
-		staticAddress, err := s.staticAddressManager.GetTaprootAddress(
-			params.ClientPubkey, params.ServerPubkey,
-			int64(params.Expiry),
+		staticAddress, err := s.staticAddressManager.GetTaprootAddressFromScript(
+			params.PkScript,
 		)
 		if err != nil {
 			return nil, err
@@ -2937,9 +2936,8 @@ func (s *swapClientServer) rpcDeposit(d *deposit.Deposit) (
 		return nil, fmt.Errorf("static address manager not configured")
 	}
 
-	staticAddress, err := s.staticAddressManager.GetTaprootAddress(
-		d.AddressParams.ClientPubkey, d.AddressParams.ServerPubkey,
-		int64(d.AddressParams.Expiry),
+	staticAddress, err := s.staticAddressManager.GetTaprootAddressFromScript(
+		d.AddressParams.PkScript,
 	)
 	if err != nil {
 		return nil, err
