@@ -19,6 +19,11 @@
   refunds the HTLC after it expires. The swap could get stuck retrying a
   deposit state transition forever and never publish the refund.
 
+* Loop-in quotes for selected static address deposits now resolve the
+  deposits in the set of currently tracked deposits instead of the rendered
+  deposit listing. Every selected deposit must be unique, tracked and in the
+  deposited state.
+
 #### Maintenance
 
 #### Contributors (Alphabetical Order)
