@@ -418,7 +418,6 @@ func TestLoadActiveAddressesUsesSingleWalletRead(t *testing.T) {
 	store.failAfter = 0
 	require.NoError(t, manager.loadActiveAddresses(t.Context()))
 	require.Len(t, manager.activeStaticAddresses, addressCount)
-
 }
 
 // BenchmarkLoadActiveAddresses measures rebuilding the active index for
