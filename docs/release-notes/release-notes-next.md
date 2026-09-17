@@ -30,6 +30,11 @@
 * Static-address loop-in quotes and manual outpoint initiation now reject
   deposits that are too close to expiry before contacting the Loop server.
 
+* Loop-in quotes for selected static address deposits now resolve the
+  deposits in the set of currently tracked deposits instead of the rendered
+  deposit listing. Every selected deposit must be unique, tracked and in the
+  deposited state.
+
 * Static Address deposit reconciliation now preserves authoritative
   first-confirmation heights while lnd is catching up, preventing premature
   expiry decisions from mismatched wallet and block-notification heights.

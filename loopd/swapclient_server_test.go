@@ -1965,6 +1965,10 @@ func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
 type listUnspentDepositManager struct {
 	byOutpoint map[string]*deposit.Deposit
 
+	activeLookupCalls  int
+	recordLookupCalls  int
+	visibleLookupCalls int
+
 	ensureDepositsFreshCalls int
 	onEnsureDepositsFresh    func(*listUnspentDepositManager)
 }
@@ -1995,9 +1999,36 @@ func (m *listUnspentDepositManager) GetActiveDepositsInState(
 	return deposits, nil
 }
 
+// AllStringOutpointsActiveDeposits models an exact lookup in the live set.
+func (m *listUnspentDepositManager) AllStringOutpointsActiveDeposits(
+	outpoints []string, state fsm.StateType) ([]*deposit.Deposit, bool) {
+
+	m.activeLookupCalls++
+	seen := make(map[wire.OutPoint]struct{}, len(outpoints))
+	deposits := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, value := range outpoints {
+		op, err := wire.NewOutPointFromString(value)
+		if err != nil {
+			return nil, false
+		}
+		if _, ok := seen[*op]; ok {
+			return nil, false
+		}
+		seen[*op] = struct{}{}
+		d, ok := m.byOutpoint[op.String()]
+		if !ok || !d.IsInState(state) {
+			return nil, false
+		}
+		deposits = append(deposits, d)
+	}
+	return deposits, true
+}
+
 func (m *listUnspentDepositManager) DepositsForOutpoints(
 	_ context.Context, outpoints []string, ignoreUnknown bool) (
 	[]*deposit.Deposit, error) {
+
+	m.recordLookupCalls++
 
 	deposits := make([]*deposit.Deposit, 0, len(outpoints))
 	seen := make(map[string]struct{}, len(outpoints))
@@ -2025,6 +2056,8 @@ func (m *listUnspentDepositManager) DepositsForOutpoints(
 
 func (m *listUnspentDepositManager) GetVisibleDeposits(
 	context.Context) ([]*deposit.Deposit, error) {
+
+	m.visibleLookupCalls++
 
 	return m.allDeposits(), nil
 }
