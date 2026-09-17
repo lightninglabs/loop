@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
@@ -490,6 +491,11 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 		staticAddressParams.ClientPubkey,
 		staticAddressParams.ServerPubkey,
 		int64(staticAddressParams.Expiry),
+	)
+	require.NoError(t, err)
+
+	staticAddressParams.PkScript, err = txscript.PayToAddrScript(
+		expectedStaticAddress,
 	)
 	require.NoError(t, err)
 
@@ -2717,6 +2723,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			})
 
 			server := &swapClientServer{
+				network:              lndclient.NetworkTestnet,
 				staticAddressManager: addrMgr,
 				depositManager:       depMgr,
 			}
@@ -2756,6 +2763,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			})
 
 			server := &swapClientServer{
+				network:              lndclient.NetworkTestnet,
 				staticAddressManager: addrMgr,
 				depositManager:       depMgr,
 			}
@@ -2840,6 +2848,7 @@ func TestListUnspentDeposits(t *testing.T) {
 		}
 
 		server := &swapClientServer{
+			network:              lndclient.NetworkTestnet,
 			staticAddressManager: addrMgr,
 			depositManager:       depMgr,
 		}
