@@ -1128,6 +1128,10 @@ func (b *Batcher) handleSweeps(ctx context.Context, sweeps []*sweep,
 
 	// If one of the batches accepts the sweep, we provide it to that batch.
 	for _, batch := range b.batches {
+		if !batch.matchesSweepMode(sweep.presigned) {
+			continue
+		}
+
 		accepted, err := batch.addSweeps(ctx, sweeps)
 		if err != nil && !errors.Is(err, ErrBatchShuttingDown) {
 			return err

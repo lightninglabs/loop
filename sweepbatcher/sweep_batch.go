@@ -789,6 +789,23 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 	return true, nil
 }
 
+// matchesSweepMode reports whether this batch can accept the requested signing
+// mode. Empty batches accept either mode; stopped batches accept neither.
+func (b *batch) matchesSweepMode(presigned bool) bool {
+	done, err := b.scheduleNextCall()
+	defer done()
+	if err != nil {
+		return false
+	}
+
+	// Admission keeps every sweep in a batch in the same signing mode.
+	for _, sweep := range b.sweeps {
+		return sweep.presigned == presigned
+	}
+
+	return true
+}
+
 // sweepExists returns true if the batch contains the sweep with the given
 // outpoint.
 func (b *batch) sweepExists(outpoint wire.OutPoint) bool {
