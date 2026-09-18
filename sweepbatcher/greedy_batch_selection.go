@@ -48,6 +48,11 @@ func (b *Batcher) greedyAddSweeps(ctx context.Context, sweeps []*sweep) error {
 	// Collect weight and fee rate info about existing batches.
 	batches := make([]feeDetails, 0, len(b.batches))
 	for _, existingBatch := range b.batches {
+		// Presigned and regular sweeps cannot share a transaction.
+		if !existingBatch.matchesSweepMode(sweeps[0].presigned) {
+			continue
+		}
+
 		// Enforce MaxSweepsPerBatch. If there are already too many
 		// sweeps in the batch, do not add another sweep to prevent the
 		// tx from becoming non-standard.

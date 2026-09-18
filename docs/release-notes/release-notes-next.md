@@ -13,6 +13,10 @@
 
 #### Bug Fixes
 
+* Sweep batch selection now filters out batches with an incompatible signing
+  mode before attempting admission, avoiding spurious warnings when regular
+  and presigned sweeps are pending together.
+
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
   waiting for the server timeout.
