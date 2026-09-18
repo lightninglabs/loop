@@ -1,4 +1,4 @@
--- withdrawals stores finalized static address withdrawals.
+-- withdrawals stores pending and finalized static address withdrawals.
 CREATE TABLE IF NOT EXISTS withdrawals (
     -- id is the auto-incrementing primary key for a withdrawal.
     id INTEGER PRIMARY KEY,
@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS withdrawals (
     -- withdrawal_id is the unique identifier for the withdrawal.
     withdrawal_id BLOB NOT NULL UNIQUE,
 
-    -- withdrawal_tx_id is the transaction tx id of the withdrawal.
+    -- withdrawal_tx_id is the confirmed transaction txid of the withdrawal.
+    -- It remains NULL while the withdrawal is still pending.
     withdrawal_tx_id TEXT UNIQUE,
 
     -- total_deposit_amount is the total amount of the deposits in satoshis.

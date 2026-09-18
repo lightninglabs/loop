@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -11,6 +12,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/utils/chainhashutil"
 	"github.com/lightningnetwork/lnd/clock"
 )
 
@@ -37,7 +39,8 @@ type Querier interface {
 	GetWithdrawalDeposits(ctx context.Context, withdrawalID []byte) (
 		[][]byte, error)
 
-	// GetAllWithdrawals retrieves all withdrawals from the database.
+	// GetAllWithdrawals retrieves all pending and finalized withdrawals from
+	// the database.
 	GetAllWithdrawals(ctx context.Context) ([]sqlc.Withdrawal, error)
 }
 
@@ -69,7 +72,8 @@ func NewSqlStore(db BaseDB, depositStore deposit.Store) *SqlStore {
 	}
 }
 
-// CreateWithdrawal creates a static address withdrawal record in the database.
+// CreateWithdrawal creates a pending static address withdrawal record in the
+// database.
 func (s *SqlStore) CreateWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit) error {
 
@@ -110,8 +114,8 @@ func (s *SqlStore) CreateWithdrawal(ctx context.Context,
 		})
 }
 
-// UpdateWithdrawal updates a withdrawal record with the transaction
-// information, including the withdrawn amount, change amount, and
+// UpdateWithdrawal finalizes a pending withdrawal record with the confirmed
+// transaction information, including the withdrawn amount, change amount, and
 // confirmation height. It is expected that the withdrawal has already been
 // created with CreateWithdrawal, and that the deposits slice contains the
 // deposits associated with the withdrawal.
@@ -169,9 +173,9 @@ func (s *SqlStore) UpdateWithdrawal(ctx context.Context,
 		})
 }
 
-// GetAllWithdrawals retrieves all static address withdrawals from the
-// database. It returns a slice of Withdrawal structs, each containing a list
-// of associated deposits.
+// GetAllWithdrawals retrieves all pending and finalized static address
+// withdrawals from the database. Pending withdrawals return default zero
+// values for fields that are only known after confirmation, and a nil TxID.
 func (s *SqlStore) GetAllWithdrawals(ctx context.Context) ([]Withdrawal,
 	error) {
 
@@ -200,14 +204,22 @@ func (s *SqlStore) GetAllWithdrawals(ctx context.Context) ([]Withdrawal,
 			deposits = append(deposits, deposit)
 		}
 
-		txID, err := chainhash.NewHashFromStr(w.WithdrawalTxID.String)
-		if err != nil {
-			return nil, err
+		var txID *chainhash.Hash
+		if w.WithdrawalTxID.Valid {
+			hash, err := chainhashutil.NewHashFromStrExact(
+				w.WithdrawalTxID.String,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("invalid withdrawal txid %q: %w",
+					w.WithdrawalTxID.String, err)
+			}
+
+			txID = &hash
 		}
 
 		result = append(result, Withdrawal{
 			ID:                 ID(w.WithdrawalID),
-			TxID:               *txID,
+			TxID:               txID,
 			Deposits:           deposits,
 			TotalDepositAmount: btcutil.Amount(w.TotalDepositAmount),
 			WithdrawnAmount:    btcutil.Amount(w.WithdrawnAmount.Int64),
