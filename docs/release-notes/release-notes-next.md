@@ -25,6 +25,9 @@
   mode before attempting admission, avoiding spurious warnings when regular
   and presigned sweeps are pending together.
 
+* Allow reservation proof downloads up to the verifier's 16 MiB limit, so
+  larger proof histories do not leave paid purchases stuck in verification.
+
 * Cancel reservation creation and its response snapshot read when the manager
   shuts down. Both operations share the request timeout.
 
