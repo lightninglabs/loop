@@ -11,6 +11,15 @@ import (
 	"google.golang.org/grpc"
 )
 
+const (
+	// maxReservationProofSize bounds the raw proof accepted by the verifier.
+	maxReservationProofSize = 16 << 20
+
+	// Allow room for the reservation ID, outpoint, and protobuf framing in
+	// addition to a maximum-sized proof. This applies only to the proof RPC.
+	maxReservationProofMessageSize = maxReservationProofSize + 1024
+)
+
 // VerifyReservationProof binds the terminal asset to the shared deposit script,
 // amount, and outpoint, then verifies its full history with tapd. RPC failures
 // remain retryable; invalid proofs are reported as ErrInvalidReservation.
@@ -18,7 +27,7 @@ func VerifyReservationProof(ctx context.Context, verifier deposit.ProofVerifier,
 	kit *deposit.Kit, raw []byte, outpoint wire.OutPoint,
 	amount uint64) (*proof.Proof, error) {
 
-	if verifier == nil || kit == nil || len(raw) == 0 || len(raw) > 16<<20 {
+	if verifier == nil || kit == nil || len(raw) == 0 || len(raw) > maxReservationProofSize {
 		return nil, ErrInvalidReservation
 	}
 	file, err := proof.DecodeFile(raw)

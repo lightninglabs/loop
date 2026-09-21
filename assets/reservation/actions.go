@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -512,7 +513,12 @@ func (f *FSM) VerifyReservationAction(ctx context.Context,
 	if r.FundingOutpoint == nil {
 		return f.fail(errors.New("missing reservation funding outpoint"))
 	}
-	response, err := f.cfg.Server.GetAssetReservationProof(ctx, f.selector())
+	// Full histories can exceed gRPC's default 4 MiB receive limit. Keep
+	// the transport bound aligned with the verifier's proof limit.
+	response, err := f.cfg.Server.GetAssetReservationProof(
+		ctx, f.selector(),
+		grpc.MaxCallRecvMsgSize(maxReservationProofMessageSize),
+	)
 	if err != nil {
 		return f.stayInState(err)
 	}
