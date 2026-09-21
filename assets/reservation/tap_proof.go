@@ -35,7 +35,7 @@ func (v tapProofVerifier) VerifyProof(ctx context.Context, req *taprpc.ProofFile
 	opts ...grpc.CallOption) (*taprpc.VerifyProofResponse, error) {
 
 	if req == nil || len(req.RawProofFile) == 0 ||
-		len(req.RawProofFile) > 16<<20 {
+		len(req.RawProofFile) > maxReservationProofSize {
 
 		return nil, ErrInvalidReservation
 	}
