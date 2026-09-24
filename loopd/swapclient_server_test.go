@@ -2,6 +2,7 @@ package loopd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
+	assetreservation "github.com/lightninglabs/loop/assets/reservation"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout"
 	"github.com/lightninglabs/loop/labels"
@@ -26,6 +28,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
@@ -2214,4 +2217,297 @@ func TestListUnspentDeposits(t *testing.T) {
 			resp.Utxos[0].Outpoint,
 		)
 	})
+}
+
+type assetReservationRPCManager struct {
+	assetReservationManager
+
+	record        *assetreservation.Reservation
+	records       []*assetreservation.Reservation
+	state         fsm.StateType
+	activeOnly    bool
+	approval      *looprpc.ApproveAssetReservationRequest
+	approvalErr   error
+	approvalState fsm.StateType
+	buys          int
+	skipProbe     bool
+}
+
+func (m *assetReservationRPCManager) NewPurchase(_ context.Context,
+	_ assetreservation.ID, _ [32]byte, _ uint64, skipProbe bool) (
+	*assetreservation.Reservation, error) {
+
+	m.buys++
+	m.skipProbe = skipProbe
+	return m.record, nil
+}
+
+func (m *assetReservationRPCManager) Get(context.Context, assetreservation.ID) (
+	*assetreservation.Reservation, error) {
+
+	return m.record, nil
+}
+
+func (m *assetReservationRPCManager) List(_ context.Context,
+	filter assetreservation.StateFilter) (
+	[]*assetreservation.Reservation, error) {
+
+	m.state = filter.State
+	m.activeOnly = filter.ActiveOnly
+	records := m.records
+	if records == nil {
+		records = []*assetreservation.Reservation{m.record}
+	}
+	var matches []*assetreservation.Reservation
+	for _, r := range records {
+		if filter.ActiveOnly && assetreservation.IsFinal(r.State) {
+			continue
+		}
+		if filter.State == "" || filter.State == r.State {
+			matches = append(matches, r)
+		}
+	}
+	return matches, nil
+}
+
+func TestAssetReservationRPCStateFilterPagination(t *testing.T) {
+	m := &assetReservationRPCManager{}
+	for i, state := range []fsm.StateType{
+		assetreservation.Ready, assetreservation.Expired,
+		assetreservation.AwaitApproval, assetreservation.Canceled,
+		assetreservation.Ready,
+	} {
+		r := testRPCAssetReservation()
+		r.ID, r.State = assetreservation.ID{byte(i + 1)}, state
+		m.records = append(m.records, r)
+	}
+	s := &swapClientServer{assetReservationManager: m}
+	req := &looprpc.ListClientAssetReservationsRequest{
+		Limit: 1, State: "Ready",
+	}
+	for i, id := range []byte{1, 5} {
+		page, err := s.List(t.Context(), req)
+		require.NoError(t, err)
+		require.Equal(t, assetreservation.Ready, m.state)
+		require.Len(t, page.Reservations, 1)
+		require.Equal(t, id, page.Reservations[0].ReservationId[0])
+		if i == 0 {
+			require.NotEmpty(t, page.NextAfterId)
+		} else {
+			require.Empty(t, page.NextAfterId)
+		}
+		req.AfterId = page.NextAfterId
+	}
+	page, err := s.List(t.Context(), &looprpc.ListClientAssetReservationsRequest{})
+	require.NoError(t, err)
+	require.Len(t, page.Reservations, 5)
+	page, err = s.List(t.Context(), &looprpc.ListClientAssetReservationsRequest{
+		State: "NeedAdminAttention",
+	})
+	require.NoError(t, err)
+	require.Empty(t, page.Reservations)
+	_, err = s.List(t.Context(), &looprpc.ListClientAssetReservationsRequest{
+		State: "ready",
+	})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = s.List(t.Context(), &looprpc.ListClientAssetReservationsRequest{
+		State: "Ready", ActiveOnly: true,
+	})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// Active-only filtering must survive pagination and retain reservations
+	// awaiting administrative attention, as startup recovery does.
+	admin := testRPCAssetReservation()
+	admin.ID, admin.State = assetreservation.ID{6}, assetreservation.NeedAdminAttention
+	m.records = append(m.records, admin)
+	req = &looprpc.ListClientAssetReservationsRequest{
+		Limit: 2, ActiveOnly: true,
+	}
+	var ids []byte
+	for {
+		page, err := s.List(t.Context(), req)
+		require.NoError(t, err)
+		require.True(t, m.activeOnly)
+		require.Empty(t, m.state)
+		for _, r := range page.Reservations {
+			ids = append(ids, r.ReservationId[0])
+		}
+		if len(page.NextAfterId) == 0 {
+			break
+		}
+		req.AfterId = page.NextAfterId
+	}
+	require.Equal(t, []byte{1, 3, 5, 6}, ids)
+}
+
+func (m *assetReservationRPCManager) Approve(_ context.Context,
+	_ assetreservation.ID, a *looprpc.ApproveAssetReservationRequest) (
+	*assetreservation.Reservation, error) {
+
+	if err := m.record.CheckApproval(a); err != nil {
+		return nil, err
+	}
+	m.approval = a
+	if m.approvalState != "" {
+		m.record.State = m.approvalState
+	}
+	return m.record, m.approvalErr
+}
+
+func TestAssetReservationRPCRequiresSeparateApproval(t *testing.T) {
+	r := testRPCAssetReservation()
+	r.FundingOutpoint = &wire.OutPoint{
+		Index: 1,
+	}
+	r.Probes = assetreservation.ProbeResults{
+		Main:          assetreservation.ProbeSucceeded,
+		CheckedAt:     time.Now(),
+		MainFeeMsat:   10_000,
+		FeeKnown:      true,
+		PrepayFeeMsat: 11,
+	}
+	m := &assetReservationRPCManager{
+		record: r,
+	}
+	s := &swapClientServer{
+		assetReservationManager: m,
+	}
+	got, err := s.Buy(t.Context(), &looprpc.BuyAssetReservationRequest{
+		ReservationId: r.ID[:],
+		AssetId:       r.AssetID[:],
+		Amount:        r.Amount,
+	})
+	require.NoError(t, err)
+	require.Equal(t, r.Fee, got.AssetFee)
+	require.EqualValues(t, 10_000, got.MainProbeFeeMsat)
+	require.True(t, got.ProbeFeeKnown)
+	require.EqualValues(t, 11, got.EstimatedPrepayRouteFeeMsat)
+	require.Nil(t, m.approval)
+	selector := &looprpc.ClientAssetReservationSelector{
+		Selector: &looprpc.ClientAssetReservationSelector_Outpoint{
+			Outpoint: r.FundingOutpoint.String(),
+		},
+	}
+	_, err = s.Get(t.Context(), selector)
+	require.NoError(t, err)
+	require.Equal(t, 1, m.buys)
+	require.Nil(t, m.approval)
+
+	a := &looprpc.ApproveAssetReservationRequest{
+		Reservation:     selector,
+		QuoteHash:       got.QuoteHash,
+		MaxRouteFeeMsat: 1000,
+	}
+	a.QuoteHash[0] ^= 1
+	_, err = s.Approve(t.Context(), a)
+	require.Error(t, err)
+	require.Nil(t, m.approval)
+	a.QuoteHash[0] ^= 1
+	_, err = s.Approve(t.Context(), a)
+	require.NoError(t, err)
+	require.NotNil(t, m.approval)
+}
+
+func TestAssetReservationRPCDisabled(t *testing.T) {
+	s := &swapClientServer{}
+	_, err := s.Buy(t.Context(), &looprpc.BuyAssetReservationRequest{})
+	require.Error(t, err)
+	_, err = s.List(t.Context(), &looprpc.ListClientAssetReservationsRequest{})
+	require.Error(t, err)
+}
+
+func TestAssetReservationRPCSkipProbe(t *testing.T) {
+	r := testRPCAssetReservation()
+	r.SkipProbe = true
+	m := &assetReservationRPCManager{
+		record: r,
+	}
+	s := &swapClientServer{
+		assetReservationManager: m,
+	}
+	got, err := s.Buy(t.Context(), &looprpc.BuyAssetReservationRequest{
+		ReservationId: r.ID[:],
+		AssetId:       r.AssetID[:],
+		Amount:        r.Amount,
+		SkipProbe:     true,
+	})
+	require.NoError(t, err)
+	require.True(t, m.skipProbe)
+	require.True(t, got.SkipProbe)
+	require.Zero(t, got.MainProbe)
+	require.Zero(t, got.ProbesCheckedAt)
+	require.Nil(t, m.approval)
+
+	a := &looprpc.ApproveAssetReservationRequest{
+		Reservation: &looprpc.ClientAssetReservationSelector{
+			Selector: &looprpc.ClientAssetReservationSelector_ReservationId{
+				ReservationId: r.ID[:],
+			},
+		},
+		QuoteHash:       got.QuoteHash,
+		MaxRouteFeeMsat: 1000,
+	}
+	_, err = s.Approve(t.Context(), a)
+	require.Error(t, err)
+	require.Nil(t, m.approval)
+	a.SkipProbe = true
+	_, err = s.Approve(t.Context(), a)
+	require.NoError(t, err)
+	require.True(t, m.approval.SkipProbe)
+}
+
+// testRPCAssetReservation supplies the saved terms exposed by the RPC handlers.
+func testRPCAssetReservation() *assetreservation.Reservation {
+	return &assetreservation.Reservation{
+		ID:    assetreservation.ID{1},
+		State: assetreservation.AwaitApproval,
+		Terms: assetreservation.Terms{
+			AssetID:               [32]byte{2},
+			Amount:                10000,
+			Fee:                   11,
+			CSVDelay:              1440,
+			RequiredConfirmations: 3,
+			ExecutionDelta:        90,
+			MinUsableBlocks:       1000,
+		},
+		Quote: &swapserverrpc.AssetReservationQuote{
+			ReservationId:           []byte{1},
+			PrepayAmountMsat:        11000,
+			EstimatedMainAmountMsat: 10000000,
+			ExpiresAt:               1900000000,
+		},
+	}
+}
+
+func TestAssetReservationRPCReportsCommittedApproval(t *testing.T) {
+	for _, state := range []fsm.StateType{
+		assetreservation.PayPrepay, assetreservation.WaitForDelivery,
+		assetreservation.VerifyReservation, assetreservation.Ready,
+		assetreservation.AwaitApproval,
+	} {
+		t.Run(string(state), func(t *testing.T) {
+			r := testRPCAssetReservation()
+			m := &assetReservationRPCManager{
+				record: r, approvalState: state,
+				approvalErr: errors.New("lost payment reply"),
+			}
+			s := &swapClientServer{assetReservationManager: m}
+			quoteHash, err := assetreservation.QuoteHash(r.Quote)
+			require.NoError(t, err)
+			got, err := s.Approve(t.Context(), &looprpc.ApproveAssetReservationRequest{
+				Reservation: &looprpc.ClientAssetReservationSelector{
+					Selector: &looprpc.ClientAssetReservationSelector_ReservationId{
+						ReservationId: r.ID[:],
+					},
+				},
+				QuoteHash: quoteHash[:], SkipProbe: true,
+			})
+			if state == assetreservation.AwaitApproval {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, string(state), got.State)
+			}
+		})
+	}
 }
