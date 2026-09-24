@@ -541,7 +541,7 @@ The following flags are supported:
 
 Create a new static loop in address.
 
-Creates a new static loop in address. On a fresh installation, loopd creates 	the static-address root lazily when the first address is requested; startup 	alone does not create an address. Funds sent to the address will be locked by 	a 2:2 multisig between us and the loop server, or a timeout path that we can 	sweep once it opens up. The funds can either be cooperatively spent with a 	signature from the server or looped in.
+Creates a fresh static loop in address every time. --label sets local 	address metadata, not the funding transaction label. On a fresh installation, 	loopd creates the static-address root lazily when the first address is 	requested; startup alone does not create an address. Funds sent to the address 	will be locked by a 2:2 multisig between us and the loop server, or a timeout 	path that we can sweep once it opens up. The funds can either be cooperatively 	spent with a signature from the server or looped in.
 
 Usage:
 
@@ -551,9 +551,10 @@ $ loop [GLOBAL FLAGS] static new [COMMAND FLAGS] [ARGUMENTS...]
 
 The following flags are supported:
 
-| Name            | Description | Type | Default value |
-|-----------------|-------------|------|:-------------:|
-| `--help` (`-h`) | show help   | bool |    `false`    |
+| Name            | Description                                     | Type   | Default value |
+|-----------------|-------------------------------------------------|--------|:-------------:|
+| `--label="…"`   | an optional local label for this static address | string |
+| `--help` (`-h`) | show help                                       | bool   |    `false`    |
 
 ### `static deposit` subcommand
 
@@ -581,6 +582,25 @@ The following flags are supported:
 | `--utxo="…"`                    | a utxo specified as outpoint(tx:idx) which will be used as input for the funding transaction. This flag can be repeatedly used to specify multiple utxos as inputs. The selected utxos can either be entirely spent by specifying the sweepall flag or a specified amount can be spent in the utxos through the amt flag | string |      `[]`       |
 | `--label="…"`                   | (optional) a label for the funding transaction                                                                                                                                                                                                                                                                           | string |
 | `--help` (`-h`)                 | show help                                                                                                                                                                                                                                                                                                                | bool   |     `false`     |
+
+### `static updatelabel` subcommand
+
+Update the label for a static address.
+
+Updates the local label for a static address. Use --clear to remove the label without relying on shell-specific empty-string arguments.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static updatelabel [COMMAND FLAGS] <static_address> <label> | <static_address> --clear
+```
+
+The following flags are supported:
+
+| Name            | Description                    | Type | Default value |
+|-----------------|--------------------------------|------|:-------------:|
+| `--clear`       | clear the static address label | bool |    `false`    |
+| `--help` (`-h`) | show help                      | bool |    `false`    |
 
 ### `static listunspent` subcommand (aliases: `l`)
 
@@ -678,7 +698,7 @@ The following flags are supported:
 
 Display a summary of static address related information.
 
-Displays various static address related information about deposits, 	withdrawals, swaps and channel openings. The deprecated static_address field 	is the legacy/root address retained for compatibility, not the current 	receive address. Use "loop static new" to derive a new receive address.
+Displays various static address related information about deposits, 	withdrawals, swaps and channel openings. The deprecated static_address field 	is the legacy/root address retained for compatibility, not the current 	receive address. The label is only for that legacy/root address, not the 	latest receive address or the aggregate deposits. Use "loop static new" to 	derive a fresh receive address.
 
 Usage:
 

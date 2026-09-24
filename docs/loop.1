@@ -427,6 +427,9 @@ Create a new static loop in address.
 .PP
 \fB--help, -h\fP: show help
 
+.PP
+\fB--label\fP="": an optional local label for this static address
+
 .SS deposit
 Create and fund a new static loop in address.
 
@@ -459,6 +462,15 @@ Create and fund a new static loop in address.
 
 .PP
 \fB--utxo\fP="": a utxo specified as outpoint(tx:idx) which will be used as input for the funding transaction. This flag can be repeatedly used to specify multiple utxos as inputs. The selected utxos can either be entirely spent by specifying the sweepall flag or a specified amount can be spent in the utxos through the amt flag (default: [])
+
+.SS updatelabel
+Update the label for a static address.
+
+.PP
+\fB--clear\fP: clear the static address label
+
+.PP
+\fB--help, -h\fP: show help
 
 .SS listunspent, l
 List unspent static address outputs.

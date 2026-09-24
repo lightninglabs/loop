@@ -11,6 +11,12 @@
   directly from the lnd wallet, and deposit listings identify the receiving
   address. [PR #1218](https://github.com/lightninglabs/loop/pull/1218)
 
+* Static addresses now support local labels that can be set at creation,
+  updated or cleared through the CLI and RPC, and viewed per address in
+  unspent deposit listings. The aggregate summary reports only the legacy/root
+  address's label. Address labels are independent of funding transaction
+  labels and are not inherited by change addresses.
+
 #### Breaking Changes
 
 * Static-address wallet funding uses the new `FundStaticAddress` RPC, requiring

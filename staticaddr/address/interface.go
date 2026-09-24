@@ -33,4 +33,9 @@ type Store interface {
 	// L402. This is the immutable legacy/root address that anchors existing
 	// single-address deposits.
 	GetLegacyParameters(ctx context.Context) (*AddressParameters, error)
+	// UpdateStaticAddressLabel updates the local label for a static address by
+	// its pkScript so metadata changes never alter address scripts or server
+	// state.
+	UpdateStaticAddressLabel(ctx context.Context, pkScript []byte,
+		label string) error
 }

@@ -37,6 +37,7 @@ var staticAddressCommands = &cli.Command{
 	Commands: []*cli.Command{
 		newStaticAddressCommand,
 		depositStaticAddressCommand,
+		updateStaticAddressLabelCommand,
 		listUnspentCommand,
 		listDepositsCommand,
 		listWithdrawalsCommand,
@@ -48,18 +49,27 @@ var staticAddressCommands = &cli.Command{
 	},
 }
 
+// newStaticAddressCommand creates a static address and lets operators
+// optionally set a local label at creation time.
 var newStaticAddressCommand = &cli.Command{
 	Name:    "new",
 	Aliases: []string{"n"},
 	Usage:   "Create a new static loop in address.",
 	Description: `
-	Creates a new static loop in address. On a fresh installation, loopd creates
-	the static-address root lazily when the first address is requested; startup
-	alone does not create an address. Funds sent to the address will be locked by
-	a 2:2 multisig between us and the loop server, or a timeout path that we can
-	sweep once it opens up. The funds can either be cooperatively spent with a
-	signature from the server or looped in.
+	Creates a fresh static loop in address every time. --label sets local
+	address metadata, not the funding transaction label. On a fresh installation,
+	loopd creates the static-address root lazily when the first address is
+	requested; startup alone does not create an address. Funds sent to the address
+	will be locked by a 2:2 multisig between us and the loop server, or a timeout
+	path that we can sweep once it opens up. The funds can either be cooperatively
+	spent with a signature from the server or looped in.
 	`,
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  labelFlag.Name,
+			Usage: "an optional local label for this static address",
+		},
+	},
 	Action: newStaticAddress,
 }
 
@@ -148,9 +158,16 @@ var (
 	}
 )
 
+// newStaticAddress requests a new static address while keeping the label as
+// local operator metadata.
 func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() > 0 {
 		return showCommandHelp(ctx, cmd)
+	}
+
+	label := cmd.String(labelFlag.Name)
+	if err := labels.Validate(label); err != nil {
+		return err
 	}
 
 	err := displayNewAddressWarning()
@@ -165,7 +182,78 @@ func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 	defer cleanup()
 
 	resp, err := client.NewStaticAddress(
-		ctx, &looprpc.NewStaticAddressRequest{},
+		ctx, &looprpc.NewStaticAddressRequest{
+			Label: label,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+
+	return nil
+}
+
+// updateStaticAddressLabelCommand updates local metadata for an existing static
+// address so operators can relabel it without affecting the address script or
+// Loop server protocol state.
+var updateStaticAddressLabelCommand = &cli.Command{
+	Name:      "updatelabel",
+	Usage:     "Update the label for a static address.",
+	ArgsUsage: "<static_address> <label> | <static_address> --clear",
+	Description: "Updates the local label for a static address. Use --clear to " +
+		"remove the label without relying on shell-specific empty-string " +
+		"arguments.",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "clear",
+			Usage: "clear the static address label",
+		},
+	},
+	Action: updateStaticAddressLabel,
+}
+
+// updateStaticAddressLabel updates the local label for a static address while
+// leaving the underlying address and swap protocol data unchanged.
+func updateStaticAddressLabel(ctx context.Context, cmd *cli.Command) error {
+	clearLabel := cmd.Bool("clear")
+	staticAddress := cmd.Args().Get(0)
+	label := ""
+
+	switch cmd.NArg() {
+	case 1:
+		if !clearLabel {
+			return errors.New("label is required; use --clear to remove it")
+		}
+	case 2:
+		if clearLabel {
+			return errors.New("cannot specify both label and --clear")
+		}
+
+		label = cmd.Args().Get(1)
+		if label == "" {
+			return errors.New("empty label argument requires --clear")
+		}
+	default:
+		return showCommandHelp(ctx, cmd)
+	}
+
+	if err := labels.Validate(label); err != nil {
+		return err
+	}
+
+	client, cleanup, err := getClient(cmd)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := client.UpdateStaticAddressLabel(
+		ctx, &looprpc.UpdateStaticAddressLabelRequest{
+			StaticAddress: staticAddress,
+			Label:         label,
+		},
 	)
 	if err != nil {
 		return err
@@ -687,7 +775,9 @@ var summaryCommand = &cli.Command{
 	Displays various static address related information about deposits,
 	withdrawals, swaps and channel openings. The deprecated static_address field
 	is the legacy/root address retained for compatibility, not the current
-	receive address. Use "loop static new" to derive a new receive address.
+	receive address. The label is only for that legacy/root address, not the
+	latest receive address or the aggregate deposits. Use "loop static new" to
+	derive a fresh receive address.
 	`,
 	Action: summary,
 }

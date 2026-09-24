@@ -39,7 +39,8 @@
               "static_address": "bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw",
               "amount_sat": "2500000",
               "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
-              "confirmations": "6"
+              "confirmations": "6",
+              "label": ""
             }
           ]
         }
@@ -55,6 +56,7 @@
           "        {\n",
           "            \"amount_sat\": \"2500000\",\n",
           "            \"confirmations\": \"6\",\n",
+          "            \"label\": \"\",\n",
           "            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n",
           "            \"static_address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\"\n",
           "        }\n",
