@@ -46,6 +46,8 @@
 
 * Align the standalone `looprpc` module's OpenTelemetry SDK and OTLP trace
   exporters at v1.45.0, matching the versions used by the root module.
+  Refresh the generated REST bindings and OpenAPI specification for the
+  required grpc-gateway upgrade.
   [PR #1235](https://github.com/lightninglabs/loop/pull/1235)
 
 * Update the `looprpc` gRPC dependency to v1.83.2 and synchronize the
