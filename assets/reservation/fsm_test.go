@@ -62,8 +62,10 @@ type clientHarness struct {
 	lookups            int
 	notifications      int
 	deriveCalls        int
- verifyCalls int
+	verifyCalls        int
 	quoteErr           error
+	quoteValidationErr error
+	quotePending       bool
 	blockQuote         bool
 	quoteStarted       chan struct{}
 	fundingUnavailable bool
@@ -108,6 +110,7 @@ func newClientHarness(t *testing.T) *clientHarness {
 		Clock:       clock.NewTestClock(time.Unix(1800000000, 0)),
 		NotifyAdmin: func(ID, error) { h.notifications++ },
 	}
+	h.store.Store.(*SqlStore).clock = h.cfg.Clock
 	require.NoError(t, h.store.CreateReservation(t.Context(), r))
 	h.restart()
 	return h
@@ -161,6 +164,9 @@ func (h *clientHarness) QuoteAssetReservation(ctx context.Context,
 		return nil, ctx.Err()
 	}
 	require.Equal(h.t, h.id[:], r.ReservationId)
+	if h.quotePending {
+		return &swapserverrpc.AssetReservation{ReservationId: r.ReservationId}, nil
+	}
 	return &swapserverrpc.AssetReservation{
 		ReservationId: h.quote.ReservationId,
 		Quote:         proto.Clone(h.quote).(*swapserverrpc.AssetReservationQuote),
@@ -216,7 +222,7 @@ func (h *clientHarness) CancelAssetReservation(ctx context.Context,
 func (h *clientHarness) ValidateQuote(context.Context,
 	*swapserverrpc.AssetReservationQuote) error {
 
-	return nil
+	return h.quoteValidationErr
 }
 
 func (h *clientHarness) PrepareProbe(_ context.Context,
@@ -322,7 +328,7 @@ func (h *clientHarness) Verify(context.Context, *Reservation, []byte) (
 	FundingStatus, error) {
 
 	h.verifyCalls++
- if h.badProof {
+	if h.badProof {
 		return FundingStatus{}, ErrInvalidReservation
 	}
 	return h.status, nil
@@ -680,27 +686,67 @@ func TestClientFundingRefusalCannotOverrideSettlement(t *testing.T) {
 }
 
 func TestReadyVerifiesOncePerRestart(t *testing.T) {
- h := newClientHarness(t)
- h.event(OnRecover, nil)
- h.approve()
- h.settle()
- h.deliver = true
- h.status.Height = 102
- h.event(OnRecover, nil)
- h.state(Ready)
- calls := h.verifyCalls
- for range 10 { h.event(OnRecover, nil) }
- require.Equal(t, calls, h.verifyCalls)
- h.restart()
- h.event(OnRecover, nil)
- require.Equal(t, calls+1, h.verifyCalls)
- for range 10 { h.event(OnRecover, nil) }
- require.Equal(t, calls+1, h.verifyCalls)
- // A restarted process must not trust persisted proof without verification.
- h.restart()
- h.badProof = true
- h.status.Height = 1540
- h.event(OnRecover, nil)
- h.state(Ready)
- require.ErrorIs(t, h.machine.LastActionError, ErrInvalidReservation)
+	h := newClientHarness(t)
+	h.event(OnRecover, nil)
+	h.approve()
+	h.settle()
+	h.deliver = true
+	h.status.Height = 102
+	h.event(OnRecover, nil)
+	h.state(Ready)
+	calls := h.verifyCalls
+	for range 10 {
+		h.event(OnRecover, nil)
+	}
+	require.Equal(t, calls, h.verifyCalls)
+	h.restart()
+	h.event(OnRecover, nil)
+	require.Equal(t, calls+1, h.verifyCalls)
+	for range 10 {
+		h.event(OnRecover, nil)
+	}
+	require.Equal(t, calls+1, h.verifyCalls)
+	// A restarted process must not trust persisted proof without verification.
+	h.restart()
+	h.badProof = true
+	h.status.Height = 1540
+	h.event(OnRecover, nil)
+	h.state(Ready)
+	require.ErrorIs(t, h.machine.LastActionError, ErrInvalidReservation)
+}
+
+func TestQuoteFailuresStopBeforePayment(t *testing.T) {
+	for _, failure := range []string{"invalid", "pending", "unavailable"} {
+		t.Run(failure, func(t *testing.T) {
+			h := newClientHarness(t)
+			switch failure {
+			case "invalid":
+				h.quoteValidationErr = errors.New("invalid invoice")
+			case "pending":
+				h.quotePending = true
+			case "unavailable":
+				h.quoteErr = errors.New("server offline")
+			}
+			h.event(OnRecover, nil)
+			if failure != "invalid" {
+				h.state(RequestQuote)
+				h.cfg.Clock.(*clock.TestClock).SetTime(
+					h.record().CreatedAt.Add(time.Minute),
+				)
+				h.restart()
+				h.event(OnRecover, nil)
+			}
+			h.state(QuoteFailed)
+			calls := h.quotes
+			h.restart()
+			h.event(OnRecover, nil)
+			require.Equal(t, calls, h.quotes)
+			require.Zero(t, h.sends)
+			require.Nil(t, h.record().ProbeRequest)
+			active, err := h.store.GetReservations(t.Context(),
+				StateFilter{ActiveOnly: true})
+			require.NoError(t, err)
+			require.Empty(t, active)
+		})
+	}
 }

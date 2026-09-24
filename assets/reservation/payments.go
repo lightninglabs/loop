@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"math"
+	"math/big"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -150,6 +151,11 @@ func (p *LndPayments) ValidateQuote(_ context.Context,
 		}, p.cfg.Params, p.cfg.Now(),
 	)
 	if err != nil {
+		return err
+	}
+	if err := compareQuoteRates(
+		rfq.AskAssetRate, probeRFQ.AskAssetRate,
+	); err != nil {
 		return err
 	}
 	if probeRFQ.Peer != hex.EncodeToString(q.EdgeKey) {
@@ -532,3 +538,30 @@ func (p *LndPayments) Pay(ctx context.Context, node *btcec.PublicKey,
 }
 
 var _ Payments = (*LndPayments)(nil)
+
+// compareQuoteRates bounds divergence between the separately negotiated RFQs.
+// This consistency policy is not an independent market price oracle.
+func compareQuoteRates(prepay, probe *rfqrpc.FixedPoint) error {
+	values := make([]*big.Int, 2)
+	for i, rate := range []*rfqrpc.FixedPoint{prepay, probe} {
+		if _, err := payment.Rate(rate); err != nil {
+			return err
+		}
+		values[i], _ = new(big.Int).SetString(rate.Coefficient, 10)
+	}
+	// Compare exact scaled integers, avoiding floating point and invoice rounding.
+	values[0].Mul(values[0], new(big.Int).Exp(big.NewInt(10),
+		new(big.Int).SetUint64(uint64(probe.Scale)), nil))
+	values[1].Mul(values[1], new(big.Int).Exp(big.NewInt(10),
+		new(big.Int).SetUint64(uint64(prepay.Scale)), nil))
+	low, high := values[0], values[1]
+	if low.Cmp(high) > 0 {
+		low, high = high, low
+	}
+	difference := new(big.Int).Sub(high, low)
+	difference.Mul(difference, big.NewInt(100))
+	if difference.Cmp(new(big.Int).Mul(low, big.NewInt(5))) > 0 {
+		return errors.New("prepay and probe rates differ by more than 5 percent")
+	}
+	return nil
+}

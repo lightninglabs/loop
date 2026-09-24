@@ -145,6 +145,7 @@ func (s *SqlStore) GetReservations(ctx context.Context, filter StateFilter) (
 		ActiveOnly:    filter.ActiveOnly,
 		CanceledState: string(Canceled),
 		RejectedState: string(QuoteRejected),
+		FailedState:   string(QuoteFailed),
 		ExpiredState:  string(Expired),
 	})
 	if err != nil {

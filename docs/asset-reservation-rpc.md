@@ -11,7 +11,7 @@ separate service to expose it.
 Local `List.state` filters by one latest saved client state. The query reads
 matching reservations and their latest state together, without loading full
 histories. Alternatively, `List.active_only` excludes `QuoteRejected`,
-`Canceled` and `Expired`, while retaining `Ready` and `NeedAdminAttention`.
+`QuoteFailed`, `Canceled` and `Expired`, while retaining `Ready` and `NeedAdminAttention`.
 The filters are mutually exclusive; omitting both returns all reservations. Names are case-sensitive,
 and unknown names are rejected. Keep the same filter when following
 `next_after_id`. For example:
@@ -162,3 +162,20 @@ the cancellation option separate from reservation identity. Cancellation is
 idempotent and never recreates an invoice. A failed probe requires a fresh
 purchase ID to try again. A successful probe also ends in invoice cancellation,
 but leaves the purchase available for approval.
+
+Quote acquisition has a one-minute deadline measured from persisted purchase
+creation. An invalid quote or an exhausted deadline ends in `QuoteFailed`
+without payment. Transient server errors may retry within that budget; a
+restart does not extend it. The CLI reports that the quote was unavailable or
+invalid and no payment was sent. Server-side unpaid invoices expire separately.
+
+Before approval the CLI prints the exact BTC prepay in sats and millisatoshis,
+and the implied prepay and probe prices in sats per asset unit. RFQ rates must
+be within 5% of each other, relative to the lower rate. Both rates still come
+from the server; consistency alone cannot establish a fair market price.
+
+Reservation recovery runs asynchronously. A bad row or failed initial read
+makes this feature unavailable and logs the cause without stopping ordinary
+Loop In or Out. Repair the underlying issue and restart for recovery. Ready
+reservations verify their saved proof once per process and subsequently refresh
+chain state; an idle bounded chain watch does not log an error.

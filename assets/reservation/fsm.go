@@ -12,6 +12,7 @@ import (
 // States name the action resumed after a restart.
 const (
 	RequestQuote       fsm.StateType = "RequestQuote"
+	QuoteFailed        fsm.StateType = "QuoteFailed"
 	QuoteRejected      fsm.StateType = "QuoteRejected"
 	ProbeRoutes        fsm.StateType = "ProbeRoutes"
 	AwaitApproval      fsm.StateType = "AwaitApproval"
@@ -29,6 +30,7 @@ const (
 const (
 	OnRecover       fsm.EventType = "OnRecover"
 	OnQuote         fsm.EventType = "OnQuote"
+	OnQuoteFailed   fsm.EventType = "OnQuoteFailed"
 	OnQuoteRejected fsm.EventType = "OnQuoteRejected"
 	OnProbed        fsm.EventType = "OnProbed"
 	OnApprove       fsm.EventType = "OnApprove"
@@ -127,6 +129,7 @@ func (f *FSM) states() fsm.States {
 			Transitions: fsm.Transitions{
 				OnRecover:       RequestQuote,
 				OnQuote:         ProbeRoutes,
+				OnQuoteFailed:   QuoteFailed,
 				OnQuoteRejected: QuoteRejected,
 				OnCancel:        CancelPrepay,
 				fsm.OnError:     NeedAdminAttention,
@@ -205,6 +208,8 @@ func (f *FSM) states() fsm.States {
 				OnRecover: NeedAdminAttention,
 			},
 		},
+		QuoteFailed: {Action: fsm.NoOpAction,
+			Transitions: fsm.Transitions{OnRecover: QuoteFailed}},
 		QuoteRejected: {
 			Action:      fsm.NoOpAction,
 			Transitions: fsm.Transitions{OnRecover: QuoteRejected},
@@ -286,5 +291,6 @@ func (f *FSM) fail(err error) fsm.EventType {
 
 // IsFinal reports whether purchase recovery and expiry watching are complete.
 func IsFinal(state fsm.StateType) bool {
-	return state == QuoteRejected || state == Canceled || state == Expired
+	return state == QuoteFailed || state == QuoteRejected ||
+		state == Canceled || state == Expired
 }
