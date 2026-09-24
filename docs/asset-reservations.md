@@ -224,3 +224,10 @@ unfundable held payments, restart without duplicate collection/publication,
 delayed confirmation, and automatic server CSV sweeping. Preserve existing
 asset and BTC flows. Reorg recovery, fee bumping, and tap-sdk migration remain
 separate work; keep this experimental feature disabled for production.
+
+The implemented purchase path bounds quote acquisition to one minute across
+restarts and stops invalid quotes before payment. Approval shows the exact BTC
+prepay and implied price, with a 5% consistency bound between the prepay and
+probe RFQ rates. Reservation recovery runs independently of ordinary swaps.
+Ready monitoring re-verifies saved proof once after restart, then watches chain
+state without repeatedly invoking full proof verification.

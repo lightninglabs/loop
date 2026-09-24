@@ -407,3 +407,31 @@ func assertPaymentAuth(t *testing.T, ctx context.Context, service string) {
 	require.True(t, ok)
 	require.Equal(t, []string{service}, md.Get("macaroon"))
 }
+
+func TestQuoteRateConsistency(t *testing.T) {
+	for _, tc := range []struct {
+		name, prepay, probe     string
+		prepayScale, probeScale uint32
+		valid                   bool
+	}{
+		{"equal", "100", "100", 0, 0, true},
+		{"scale", "1000", "100", 1, 0, true},
+		{"boundary", "105", "100", 0, 0, true},
+		{"over", "106", "100", 0, 0, false},
+		{"expensive prepay", "1", "1000", 0, 0, false},
+		{"expensive probe", "1000", "1", 0, 0, false},
+		{"invalid", "0", "100", 0, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := compareQuoteRates(
+				&rfqrpc.FixedPoint{Coefficient: tc.prepay, Scale: tc.prepayScale},
+				&rfqrpc.FixedPoint{Coefficient: tc.probe, Scale: tc.probeScale},
+			)
+			if tc.valid {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}

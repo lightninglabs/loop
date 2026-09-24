@@ -54,7 +54,7 @@ WHERE (CAST(sqlc.narg('state') AS TEXT) IS NULL
        OR u.update_state IS NULL
        OR u.update_state NOT IN (
            sqlc.arg('canceled_state'), sqlc.arg('expired_state'),
-           sqlc.arg('rejected_state')
+           sqlc.arg('rejected_state'), sqlc.arg('failed_state')
        ))
 ORDER BY r.id;
 

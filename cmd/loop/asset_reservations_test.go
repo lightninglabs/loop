@@ -417,3 +417,13 @@ func TestWaitAssetReservationRejected(t *testing.T) {
 			"code = OutOfRange desc = amount above current maximum")
 	}
 }
+
+func TestReservationApprovalShowsBitcoinPrice(t *testing.T) {
+	info := reservationFeeInfo(&looprpc.ClientAssetReservation{
+		Amount: 10000, AssetFee: 10, PrepayAmountMsat: 12345,
+		EstimatedMainAmountMsat: 12345000,
+	})
+	require.Contains(t, info, "BTC prepay: 12.345000 sats (12345 msat)")
+	require.Contains(t, info, "Implied prepay price: 1.234500 sats/asset unit")
+	require.Contains(t, info, "probe price: 1.234500")
+}

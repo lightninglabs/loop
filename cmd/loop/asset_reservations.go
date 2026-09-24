@@ -250,7 +250,7 @@ func approveAssetReservation(ctx context.Context,
 // funding estimate and any transport minimum. Integer arithmetic avoids
 // overflow and precision loss.
 func reservationFeeInfo(r *looprpc.ClientAssetReservation) string {
-	if r.Amount == 0 {
+	if r.Amount == 0 || r.AssetFee == 0 {
 		return ""
 	}
 	percent := new(big.Rat).SetFrac(
@@ -258,11 +258,21 @@ func reservationFeeInfo(r *looprpc.ClientAssetReservation) string {
 			big.NewInt(100)),
 		new(big.Int).SetUint64(r.Amount),
 	)
-	return fmt.Sprintf("Service fee paid upfront: %d asset units "+
+	sats := func(msat, units uint64) string {
+		denominator := new(big.Int).Mul(new(big.Int).SetUint64(units),
+			big.NewInt(1000))
+		return new(big.Rat).SetFrac(new(big.Int).SetUint64(msat),
+			denominator).FloatString(6)
+	}
+	return fmt.Sprintf("BTC prepay: %s sats (%d msat), plus routing fees.\n"+
+		"Implied prepay price: %s sats/asset unit; probe price: %s.\n"+
+		"Service fee paid upfront: %d asset units "+
 		"(%s%% of principal).\n"+
 		"The fee includes any minimum needed to transport the prepay.\n"+
 		"Remaining swap payment: %d asset units; routing and miner "+
-		"fees are separate.\n", r.AssetFee, percent.FloatString(3),
+		"fees are separate.\n", sats(r.PrepayAmountMsat, 1), r.PrepayAmountMsat,
+		sats(r.PrepayAmountMsat, r.AssetFee),
+		sats(r.EstimatedMainAmountMsat, r.Amount), r.AssetFee, percent.FloatString(3),
 		r.Amount)
 }
 
@@ -354,6 +364,9 @@ func waitAssetReservation(ctx context.Context,
 			return nil, errors.New("missing reservation response")
 		}
 		switch r.State {
+		case string(reservation.QuoteFailed):
+			return nil, errors.New("reservation quote unavailable or invalid; " +
+				"no payment was sent")
 		case string(reservation.QuoteRejected):
 			return nil, fmt.Errorf("cannot initiate swap: %w",
 				status.Error(codes.OutOfRange,

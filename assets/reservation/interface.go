@@ -10,8 +10,8 @@ import (
 
 // StateFilter selects reservations by their latest saved state. State and
 // ActiveOnly are mutually exclusive; neither means all states. ActiveOnly
-// excludes QuoteRejected, Canceled and Expired, retaining Ready and
-// NeedAdminAttention.
+// excludes QuoteFailed, QuoteRejected, Canceled and Expired, retaining Ready
+// and NeedAdminAttention.
 type StateFilter struct {
 	State      fsm.StateType
 	ActiveOnly bool
@@ -25,7 +25,7 @@ func (f StateFilter) Validate() error {
 	switch f.State {
 	case "", RequestQuote, ProbeRoutes, AwaitApproval, PayPrepay,
 		WaitForDelivery, VerifyReservation, Ready, CancelPrepay,
-		QuoteRejected, Canceled, Expired, NeedAdminAttention:
+		QuoteFailed, QuoteRejected, Canceled, Expired, NeedAdminAttention:
 
 	default:
 		return fmt.Errorf("unknown reservation state %q", f.State)

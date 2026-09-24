@@ -193,3 +193,10 @@
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
 #### Contributors (Alphabetical Order)
+
+* Bound experimental reservation quote acquisition to one minute, reject invalid
+  quotes before payment, and show the exact BTC prepay and implied prices before
+  approval. Reject prepay/probe RFQ rates differing by more than 5%.
+* Keep ordinary swaps available if experimental reservation recovery fails, and
+  avoid repeated full proof verification and idle-watch error logs for Ready
+  reservations.

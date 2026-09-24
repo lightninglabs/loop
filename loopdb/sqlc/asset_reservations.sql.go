@@ -230,7 +230,7 @@ WHERE (CAST($1 AS TEXT) IS NULL
        OR u.update_state IS NULL
        OR u.update_state NOT IN (
            $3, $4,
-           $5
+           $5, $6
        ))
 ORDER BY r.id
 `
@@ -241,6 +241,7 @@ type GetAssetReservationsParams struct {
 	CanceledState string
 	ExpiredState  string
 	RejectedState string
+	FailedState   string
 }
 
 type GetAssetReservationsRow struct {
@@ -256,6 +257,7 @@ func (q *Queries) GetAssetReservations(ctx context.Context, arg GetAssetReservat
 		arg.CanceledState,
 		arg.ExpiredState,
 		arg.RejectedState,
+		arg.FailedState,
 	)
 	if err != nil {
 		return nil, err
