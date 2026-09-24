@@ -44,6 +44,10 @@
 
 #### Maintenance
 
+* Update the `swapserverrpc` gRPC dependency to v1.83.2 and synchronize
+  the root module with its required dependencies.
+  [PR #1226](https://github.com/lightninglabs/loop/pull/1226)
+
 * Update the OpenTelemetry OTLP gRPC trace exporter from v1.20.0 to
   v1.45.0 and refresh its required dependencies.
   [PR #1230](https://github.com/lightninglabs/loop/pull/1230)
