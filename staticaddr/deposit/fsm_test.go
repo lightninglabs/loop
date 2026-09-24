@@ -12,6 +12,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSignDescriptorUsesDepositAddress verifies unilateral signing uses the
+// parameters of the address that owns the deposit, without consulting the
+// legacy root address.
+func TestSignDescriptorUsesDepositAddress(t *testing.T) {
+	params := &script.Parameters{
+		ClientPubkey: defaultServerPubkey,
+		ServerPubkey: defaultServerPubkey,
+		Expiry:       144,
+		PkScript:     []byte{0x51, 0x20, 0x01},
+	}
+	deposit := &Deposit{
+		Value:         100_000,
+		AddressParams: params,
+	}
+	depositFSM := &FSM{deposit: deposit}
+
+	signDesc, err := depositFSM.SignDescriptor(t.Context())
+	require.NoError(t, err)
+
+	staticAddress, err := deposit.GetStaticAddressScript()
+	require.NoError(t, err)
+	require.Equal(t, staticAddress.TimeoutLeaf.Script,
+		signDesc.WitnessScript)
+	require.True(t, params.ClientPubkey.IsEqual(signDesc.KeyDesc.PubKey))
+	require.EqualValues(t, deposit.Value, signDesc.Output.Value)
+	require.Equal(t, params.PkScript, signDesc.Output.PkScript)
+}
+
 // TestHandleBlockNotificationIgnoresFinalStates verifies that a block-driven
 // expiry notification cannot mutate deposits that already reached a final
 // state but have not yet been removed from the manager's active set.

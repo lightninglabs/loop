@@ -285,12 +285,13 @@ func TestPrepareAutoloopLoopIn(t *testing.T) {
 		},
 	}
 
-	manager, err := NewManager(&Config{
-		AddressManager: &mockAddressManager{
-			params: &script.Parameters{
-				Expiry: 1_000,
-			},
+	addressMgr := &mockAddressManager{
+		params: &script.Parameters{
+			Expiry: 1_000,
 		},
+	}
+	manager, err := NewManager(&Config{
+		AddressManager: addressMgr,
 		DepositManager: &mockDepositManager{
 			activeDeposits: []*deposit.Deposit{selectedDeposit},
 		},
@@ -325,6 +326,7 @@ func TestPrepareAutoloopLoopIn(t *testing.T) {
 	require.Equal(t, "autoloop", quoteGetter.initiator)
 	require.Equal(t, uint32(1), quoteGetter.numDeposits)
 	require.False(t, quoteGetter.fast)
+	require.EqualValues(t, 1, addressMgr.getParamsCalls.Load())
 }
 
 // TestPrepareAutoloopLoopInExcludedOutpoints verifies that the manager passes

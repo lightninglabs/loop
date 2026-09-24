@@ -228,6 +228,7 @@
           "            \"id\": \"ea6abbf0571c0ba82117ae9f2086614eacea8b2913dc0544b70c00de78353e71\",\n",
           "            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n",
           "            \"state\": \"LOOPING_IN\",\n",
+          "            \"static_address\": \"\",\n",
           "            \"swap_hash\": \"\",\n",
           "            \"value\": \"2500000\"\n",
           "        }\n",
