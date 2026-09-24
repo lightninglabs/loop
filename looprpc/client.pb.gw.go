@@ -10,6 +10,7 @@ package looprpc
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 
@@ -24,866 +25,848 @@ import (
 )
 
 // Suppress "imported and not used" errors
-var _ codes.Code
-var _ io.Reader
-var _ status.Status
-var _ = runtime.String
-var _ = utilities.NewDoubleArray
-var _ = metadata.Join
+var (
+	_ codes.Code
+	_ io.Reader
+	_ status.Status
+	_ = errors.New
+	_ = runtime.String
+	_ = utilities.NewDoubleArray
+	_ = metadata.Join
+)
 
 func request_SwapClient_LoopOut_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq LoopOutRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq LoopOutRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.LoopOut(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_LoopOut_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq LoopOutRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq LoopOutRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.LoopOut(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_LoopIn_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq LoopInRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq LoopInRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.LoopIn(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_LoopIn_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq LoopInRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq LoopInRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.LoopIn(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
-var (
-	filter_SwapClient_ListSwaps_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
-)
+var filter_SwapClient_ListSwaps_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
 
 func request_SwapClient_ListSwaps_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListSwapsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListSwapsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_ListSwaps_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := client.ListSwaps(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_ListSwaps_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListSwapsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListSwapsRequest
+		metadata runtime.ServerMetadata
+	)
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_ListSwaps_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.ListSwaps(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_SweepHtlc_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq SweepHtlcRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq SweepHtlcRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.SweepHtlc(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_SweepHtlc_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq SweepHtlcRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq SweepHtlcRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.SweepHtlc(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_SwapInfo_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq SwapInfoRequest
-	var metadata runtime.ServerMetadata
-
 	var (
-		val string
-		ok  bool
-		err error
-		_   = err
+		protoReq SwapInfoRequest
+		metadata runtime.ServerMetadata
+		err      error
 	)
-
-	val, ok = pathParams["id"]
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["id"]
 	if !ok {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "id")
 	}
-
 	protoReq.Id, err = runtime.Bytes(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
 	}
-
 	msg, err := client.SwapInfo(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_SwapInfo_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq SwapInfoRequest
-	var metadata runtime.ServerMetadata
-
 	var (
-		val string
-		ok  bool
-		err error
-		_   = err
+		protoReq SwapInfoRequest
+		metadata runtime.ServerMetadata
+		err      error
 	)
-
-	val, ok = pathParams["id"]
+	val, ok := pathParams["id"]
 	if !ok {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "id")
 	}
-
 	protoReq.Id, err = runtime.Bytes(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
 	}
-
 	msg, err := server.SwapInfo(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_LoopOutTerms_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq TermsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq TermsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.LoopOutTerms(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_LoopOutTerms_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq TermsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq TermsRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.LoopOutTerms(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
-var (
-	filter_SwapClient_LoopOutQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
-)
+var filter_SwapClient_LoopOutQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
 
 func request_SwapClient_LoopOutQuote_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq QuoteRequest
-	var metadata runtime.ServerMetadata
-
 	var (
-		val string
-		ok  bool
-		err error
-		_   = err
+		protoReq QuoteRequest
+		metadata runtime.ServerMetadata
+		err      error
 	)
-
-	val, ok = pathParams["amt"]
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["amt"]
 	if !ok {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "amt")
 	}
-
 	protoReq.Amt, err = runtime.Int64(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "amt", err)
 	}
-
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_LoopOutQuote_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := client.LoopOutQuote(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_LoopOutQuote_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq QuoteRequest
-	var metadata runtime.ServerMetadata
-
 	var (
-		val string
-		ok  bool
-		err error
-		_   = err
+		protoReq QuoteRequest
+		metadata runtime.ServerMetadata
+		err      error
 	)
-
-	val, ok = pathParams["amt"]
+	val, ok := pathParams["amt"]
 	if !ok {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "amt")
 	}
-
 	protoReq.Amt, err = runtime.Int64(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "amt", err)
 	}
-
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_LoopOutQuote_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.LoopOutQuote(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_GetLoopInTerms_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq TermsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq TermsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.GetLoopInTerms(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_GetLoopInTerms_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq TermsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq TermsRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.GetLoopInTerms(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
-var (
-	filter_SwapClient_GetLoopInQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
-)
+var filter_SwapClient_GetLoopInQuote_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
 
 func request_SwapClient_GetLoopInQuote_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq QuoteRequest
-	var metadata runtime.ServerMetadata
-
 	var (
-		val string
-		ok  bool
-		err error
-		_   = err
+		protoReq QuoteRequest
+		metadata runtime.ServerMetadata
+		err      error
 	)
-
-	val, ok = pathParams["amt"]
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["amt"]
 	if !ok {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "amt")
 	}
-
 	protoReq.Amt, err = runtime.Int64(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "amt", err)
 	}
-
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_GetLoopInQuote_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := client.GetLoopInQuote(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_GetLoopInQuote_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq QuoteRequest
-	var metadata runtime.ServerMetadata
-
 	var (
-		val string
-		ok  bool
-		err error
-		_   = err
+		protoReq QuoteRequest
+		metadata runtime.ServerMetadata
+		err      error
 	)
-
-	val, ok = pathParams["amt"]
+	val, ok := pathParams["amt"]
 	if !ok {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "amt")
 	}
-
 	protoReq.Amt, err = runtime.Int64(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "amt", err)
 	}
-
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_GetLoopInQuote_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.GetLoopInQuote(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
-var (
-	filter_SwapClient_Probe_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
-)
+var filter_SwapClient_Probe_0 = &utilities.DoubleArray{Encoding: map[string]int{"amt": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
 
 func request_SwapClient_Probe_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ProbeRequest
-	var metadata runtime.ServerMetadata
-
 	var (
-		val string
-		ok  bool
-		err error
-		_   = err
+		protoReq ProbeRequest
+		metadata runtime.ServerMetadata
+		err      error
 	)
-
-	val, ok = pathParams["amt"]
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["amt"]
 	if !ok {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "amt")
 	}
-
 	protoReq.Amt, err = runtime.Int64(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "amt", err)
 	}
-
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_Probe_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := client.Probe(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_Probe_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ProbeRequest
-	var metadata runtime.ServerMetadata
-
 	var (
-		val string
-		ok  bool
-		err error
-		_   = err
+		protoReq ProbeRequest
+		metadata runtime.ServerMetadata
+		err      error
 	)
-
-	val, ok = pathParams["amt"]
+	val, ok := pathParams["amt"]
 	if !ok {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "amt")
 	}
-
 	protoReq.Amt, err = runtime.Int64(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "amt", err)
 	}
-
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_Probe_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.Probe(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_GetL402Tokens_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq TokensRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq TokensRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.GetL402Tokens(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_GetL402Tokens_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq TokensRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq TokensRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.GetL402Tokens(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_GetL402Tokens_1(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq TokensRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq TokensRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.GetL402Tokens(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_GetL402Tokens_1(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq TokensRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq TokensRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.GetL402Tokens(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_GetInfo_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq GetInfoRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq GetInfoRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.GetInfo(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_GetInfo_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq GetInfoRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq GetInfoRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.GetInfo(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_StopDaemon_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq StopDaemonRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq StopDaemonRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.StopDaemon(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_StopDaemon_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq StopDaemonRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq StopDaemonRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.StopDaemon(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_GetLiquidityParams_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq GetLiquidityParamsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq GetLiquidityParamsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.GetLiquidityParams(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_GetLiquidityParams_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq GetLiquidityParamsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq GetLiquidityParamsRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.GetLiquidityParams(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_SetLiquidityParams_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq SetLiquidityParamsRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq SetLiquidityParamsRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.SetLiquidityParams(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_SetLiquidityParams_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq SetLiquidityParamsRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq SetLiquidityParamsRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.SetLiquidityParams(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_SuggestSwaps_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq SuggestSwapsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq SuggestSwapsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.SuggestSwaps(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_SuggestSwaps_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq SuggestSwapsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq SuggestSwapsRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.SuggestSwaps(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_ListReservations_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListReservationsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListReservationsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.ListReservations(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_ListReservations_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListReservationsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListReservationsRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.ListReservations(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_InstantOut_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq InstantOutRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq InstantOutRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.InstantOut(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_InstantOut_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq InstantOutRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq InstantOutRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.InstantOut(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_InstantOutQuote_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq InstantOutQuoteRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq InstantOutQuoteRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.InstantOutQuote(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_InstantOutQuote_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq InstantOutQuoteRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq InstantOutQuoteRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.InstantOutQuote(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_ListInstantOuts_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListInstantOutsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListInstantOutsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.ListInstantOuts(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_ListInstantOuts_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListInstantOutsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListInstantOutsRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.ListInstantOuts(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_NewStaticAddress_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq NewStaticAddressRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq NewStaticAddressRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.NewStaticAddress(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_NewStaticAddress_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq NewStaticAddressRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq NewStaticAddressRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.NewStaticAddress(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
-var (
-	filter_SwapClient_ListUnspentDeposits_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
-)
+var filter_SwapClient_ListUnspentDeposits_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
 
 func request_SwapClient_ListUnspentDeposits_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListUnspentDepositsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListUnspentDepositsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_ListUnspentDeposits_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := client.ListUnspentDeposits(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_ListUnspentDeposits_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListUnspentDepositsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListUnspentDepositsRequest
+		metadata runtime.ServerMetadata
+	)
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_ListUnspentDeposits_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.ListUnspentDeposits(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_WithdrawDeposits_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq WithdrawDepositsRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq WithdrawDepositsRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.WithdrawDeposits(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_WithdrawDeposits_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq WithdrawDepositsRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq WithdrawDepositsRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.WithdrawDeposits(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
-var (
-	filter_SwapClient_ListStaticAddressDeposits_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
-)
+var filter_SwapClient_ListStaticAddressDeposits_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
 
 func request_SwapClient_ListStaticAddressDeposits_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListStaticAddressDepositsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListStaticAddressDepositsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_ListStaticAddressDeposits_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := client.ListStaticAddressDeposits(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_ListStaticAddressDeposits_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListStaticAddressDepositsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListStaticAddressDepositsRequest
+		metadata runtime.ServerMetadata
+	)
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_SwapClient_ListStaticAddressDeposits_0); err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.ListStaticAddressDeposits(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_ListStaticAddressWithdrawals_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListStaticAddressWithdrawalRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListStaticAddressWithdrawalRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.ListStaticAddressWithdrawals(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_ListStaticAddressWithdrawals_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListStaticAddressWithdrawalRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListStaticAddressWithdrawalRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.ListStaticAddressWithdrawals(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_ListStaticAddressSwaps_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListStaticAddressSwapsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListStaticAddressSwapsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.ListStaticAddressSwaps(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_ListStaticAddressSwaps_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq ListStaticAddressSwapsRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq ListStaticAddressSwapsRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.ListStaticAddressSwaps(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_GetStaticAddressSummary_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq StaticAddressSummaryRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq StaticAddressSummaryRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.GetStaticAddressSummary(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_GetStaticAddressSummary_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq StaticAddressSummaryRequest
-	var metadata runtime.ServerMetadata
-
+	var (
+		protoReq StaticAddressSummaryRequest
+		metadata runtime.ServerMetadata
+	)
 	msg, err := server.GetStaticAddressSummary(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 func request_SwapClient_StaticAddressLoopIn_0(ctx context.Context, marshaler runtime.Marshaler, client SwapClientClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq StaticAddressLoopInRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq StaticAddressLoopInRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.StaticAddressLoopIn(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
-
 }
 
 func local_request_SwapClient_StaticAddressLoopIn_0(ctx context.Context, marshaler runtime.Marshaler, server SwapClientServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq StaticAddressLoopInRequest
-	var metadata runtime.ServerMetadata
-
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+	var (
+		protoReq StaticAddressLoopInRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-
 	msg, err := server.StaticAddressLoopIn(ctx, &protoReq)
 	return msg, metadata, err
-
 }
 
 // RegisterSwapClientHandlerServer registers the http handlers for service SwapClient to "mux".
 // UnaryRPC     :call SwapClientServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
 // Note that using this registration option will cause many gRPC library features to stop working. Consider using RegisterSwapClientHandlerFromEndpoint instead.
+// GRPC interceptors will not work for this type of registration. To use interceptors, you must use the "runtime.WithMiddlewares" option in the "runtime.NewServeMux" call.
 func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux, server SwapClientServer) error {
-
-	mux.Handle("POST", pattern_SwapClient_LoopOut_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_LoopOut_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/LoopOut", runtime.WithHTTPPathPattern("/v1/loop/out"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/LoopOut", runtime.WithHTTPPathPattern("/v1/loop/out"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -895,20 +878,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_LoopOut_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_LoopIn_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_LoopIn_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/LoopIn", runtime.WithHTTPPathPattern("/v1/loop/in"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/LoopIn", runtime.WithHTTPPathPattern("/v1/loop/in"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -920,20 +898,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_LoopIn_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListSwaps", runtime.WithHTTPPathPattern("/v1/loop/swaps"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListSwaps", runtime.WithHTTPPathPattern("/v1/loop/swaps"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -945,20 +918,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListSwaps_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_SweepHtlc_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_SweepHtlc_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/SweepHtlc", runtime.WithHTTPPathPattern("/v1/loop/out/sweephtlc"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/SweepHtlc", runtime.WithHTTPPathPattern("/v1/loop/out/sweephtlc"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -970,20 +938,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_SweepHtlc_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_SwapInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_SwapInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/SwapInfo", runtime.WithHTTPPathPattern("/v1/loop/swap/{id}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/SwapInfo", runtime.WithHTTPPathPattern("/v1/loop/swap/{id}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -995,20 +958,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_SwapInfo_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_LoopOutTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_LoopOutTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/LoopOutTerms", runtime.WithHTTPPathPattern("/v1/loop/out/terms"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/LoopOutTerms", runtime.WithHTTPPathPattern("/v1/loop/out/terms"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1020,20 +978,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_LoopOutTerms_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_LoopOutQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_LoopOutQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/LoopOutQuote", runtime.WithHTTPPathPattern("/v1/loop/out/quote/{amt}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/LoopOutQuote", runtime.WithHTTPPathPattern("/v1/loop/out/quote/{amt}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1045,20 +998,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_LoopOutQuote_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetLoopInTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetLoopInTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetLoopInTerms", runtime.WithHTTPPathPattern("/v1/loop/in/terms"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetLoopInTerms", runtime.WithHTTPPathPattern("/v1/loop/in/terms"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1070,20 +1018,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetLoopInTerms_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetLoopInQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetLoopInQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetLoopInQuote", runtime.WithHTTPPathPattern("/v1/loop/in/quote/{amt}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetLoopInQuote", runtime.WithHTTPPathPattern("/v1/loop/in/quote/{amt}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1095,20 +1038,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetLoopInQuote_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_Probe_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_Probe_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/Probe", runtime.WithHTTPPathPattern("/v1/loop/in/probe/{amt}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/Probe", runtime.WithHTTPPathPattern("/v1/loop/in/probe/{amt}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1120,20 +1058,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_Probe_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetL402Tokens_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetL402Tokens_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/l402/tokens"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/l402/tokens"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1145,20 +1078,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetL402Tokens_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetL402Tokens_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetL402Tokens_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/lsat/tokens"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/lsat/tokens"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1170,20 +1098,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetL402Tokens_1(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetInfo", runtime.WithHTTPPathPattern("/v1/loop/info"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetInfo", runtime.WithHTTPPathPattern("/v1/loop/info"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1195,20 +1118,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetInfo_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_StopDaemon_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_StopDaemon_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/StopDaemon", runtime.WithHTTPPathPattern("/v1/daemon/stop"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/StopDaemon", runtime.WithHTTPPathPattern("/v1/daemon/stop"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1220,20 +1138,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_StopDaemon_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetLiquidityParams_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetLiquidityParams_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetLiquidityParams", runtime.WithHTTPPathPattern("/v1/liquidity/params"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetLiquidityParams", runtime.WithHTTPPathPattern("/v1/liquidity/params"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1245,20 +1158,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetLiquidityParams_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_SetLiquidityParams_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_SetLiquidityParams_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/SetLiquidityParams", runtime.WithHTTPPathPattern("/v1/liquidity/params"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/SetLiquidityParams", runtime.WithHTTPPathPattern("/v1/liquidity/params"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1270,20 +1178,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_SetLiquidityParams_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_SuggestSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_SuggestSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/SuggestSwaps", runtime.WithHTTPPathPattern("/v1/auto/suggest"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/SuggestSwaps", runtime.WithHTTPPathPattern("/v1/auto/suggest"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1295,20 +1198,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_SuggestSwaps_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListReservations_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListReservations_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListReservations", runtime.WithHTTPPathPattern("/v1/instantout/reservations"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListReservations", runtime.WithHTTPPathPattern("/v1/instantout/reservations"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1320,20 +1218,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListReservations_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_InstantOut_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_InstantOut_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/InstantOut", runtime.WithHTTPPathPattern("/v1/instantout"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/InstantOut", runtime.WithHTTPPathPattern("/v1/instantout"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1345,20 +1238,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_InstantOut_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_InstantOutQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_InstantOutQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/InstantOutQuote", runtime.WithHTTPPathPattern("/v1/instantout/quote"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/InstantOutQuote", runtime.WithHTTPPathPattern("/v1/instantout/quote"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1370,20 +1258,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_InstantOutQuote_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListInstantOuts_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListInstantOuts_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListInstantOuts", runtime.WithHTTPPathPattern("/v1/instantout/swaps"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListInstantOuts", runtime.WithHTTPPathPattern("/v1/instantout/swaps"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1395,20 +1278,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListInstantOuts_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_NewStaticAddress_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_NewStaticAddress_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/NewStaticAddress", runtime.WithHTTPPathPattern("/v1/staticaddr"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/NewStaticAddress", runtime.WithHTTPPathPattern("/v1/staticaddr"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1420,20 +1298,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_NewStaticAddress_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListUnspentDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListUnspentDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListUnspentDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/deposits/unspent"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListUnspentDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/deposits/unspent"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1445,20 +1318,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListUnspentDeposits_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_WithdrawDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_WithdrawDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/WithdrawDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/withdraw"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/WithdrawDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/withdraw"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1470,20 +1338,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_WithdrawDeposits_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListStaticAddressDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListStaticAddressDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/deposits"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/deposits"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1495,20 +1358,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListStaticAddressDeposits_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListStaticAddressWithdrawals_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListStaticAddressWithdrawals_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressWithdrawals", runtime.WithHTTPPathPattern("/v1/staticaddr/withdrawals"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressWithdrawals", runtime.WithHTTPPathPattern("/v1/staticaddr/withdrawals"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1520,20 +1378,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListStaticAddressWithdrawals_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListStaticAddressSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListStaticAddressSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressSwaps", runtime.WithHTTPPathPattern("/v1/staticaddr/swaps"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressSwaps", runtime.WithHTTPPathPattern("/v1/staticaddr/swaps"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1545,20 +1398,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListStaticAddressSwaps_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetStaticAddressSummary_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetStaticAddressSummary_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetStaticAddressSummary", runtime.WithHTTPPathPattern("/v1/staticaddr/summary"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/GetStaticAddressSummary", runtime.WithHTTPPathPattern("/v1/staticaddr/summary"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1570,20 +1418,15 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetStaticAddressSummary_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_StaticAddressLoopIn_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_StaticAddressLoopIn_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/StaticAddressLoopIn", runtime.WithHTTPPathPattern("/v1/staticaddr/loopin"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/looprpc.SwapClient/StaticAddressLoopIn", runtime.WithHTTPPathPattern("/v1/staticaddr/loopin"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1595,9 +1438,7 @@ func RegisterSwapClientHandlerServer(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_StaticAddressLoopIn_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
 
 	return nil
@@ -1624,7 +1465,6 @@ func RegisterSwapClientHandlerFromEndpoint(ctx context.Context, mux *runtime.Ser
 			}
 		}()
 	}()
-
 	return RegisterSwapClientHandler(ctx, mux, conn)
 }
 
@@ -1638,16 +1478,13 @@ func RegisterSwapClientHandler(ctx context.Context, mux *runtime.ServeMux, conn 
 // to "mux". The handlers forward requests to the grpc endpoint over the given implementation of "SwapClientClient".
 // Note: the gRPC framework executes interceptors within the gRPC handler. If the passed in "SwapClientClient"
 // doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
-// "SwapClientClient" to call the correct interceptors.
+// "SwapClientClient" to call the correct interceptors. This client ignores the HTTP middlewares.
 func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux, client SwapClientClient) error {
-
-	mux.Handle("POST", pattern_SwapClient_LoopOut_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_LoopOut_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/LoopOut", runtime.WithHTTPPathPattern("/v1/loop/out"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/LoopOut", runtime.WithHTTPPathPattern("/v1/loop/out"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1658,18 +1495,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_LoopOut_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_LoopIn_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_LoopIn_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/LoopIn", runtime.WithHTTPPathPattern("/v1/loop/in"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/LoopIn", runtime.WithHTTPPathPattern("/v1/loop/in"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1680,18 +1512,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_LoopIn_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListSwaps", runtime.WithHTTPPathPattern("/v1/loop/swaps"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListSwaps", runtime.WithHTTPPathPattern("/v1/loop/swaps"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1702,18 +1529,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListSwaps_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_SweepHtlc_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_SweepHtlc_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/SweepHtlc", runtime.WithHTTPPathPattern("/v1/loop/out/sweephtlc"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/SweepHtlc", runtime.WithHTTPPathPattern("/v1/loop/out/sweephtlc"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1724,18 +1546,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_SweepHtlc_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_SwapInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_SwapInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/SwapInfo", runtime.WithHTTPPathPattern("/v1/loop/swap/{id}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/SwapInfo", runtime.WithHTTPPathPattern("/v1/loop/swap/{id}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1746,18 +1563,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_SwapInfo_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_LoopOutTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_LoopOutTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/LoopOutTerms", runtime.WithHTTPPathPattern("/v1/loop/out/terms"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/LoopOutTerms", runtime.WithHTTPPathPattern("/v1/loop/out/terms"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1768,18 +1580,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_LoopOutTerms_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_LoopOutQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_LoopOutQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/LoopOutQuote", runtime.WithHTTPPathPattern("/v1/loop/out/quote/{amt}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/LoopOutQuote", runtime.WithHTTPPathPattern("/v1/loop/out/quote/{amt}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1790,18 +1597,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_LoopOutQuote_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetLoopInTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetLoopInTerms_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetLoopInTerms", runtime.WithHTTPPathPattern("/v1/loop/in/terms"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetLoopInTerms", runtime.WithHTTPPathPattern("/v1/loop/in/terms"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1812,18 +1614,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetLoopInTerms_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetLoopInQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetLoopInQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetLoopInQuote", runtime.WithHTTPPathPattern("/v1/loop/in/quote/{amt}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetLoopInQuote", runtime.WithHTTPPathPattern("/v1/loop/in/quote/{amt}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1834,18 +1631,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetLoopInQuote_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_Probe_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_Probe_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/Probe", runtime.WithHTTPPathPattern("/v1/loop/in/probe/{amt}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/Probe", runtime.WithHTTPPathPattern("/v1/loop/in/probe/{amt}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1856,18 +1648,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_Probe_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetL402Tokens_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetL402Tokens_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/l402/tokens"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/l402/tokens"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1878,18 +1665,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetL402Tokens_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetL402Tokens_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetL402Tokens_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/lsat/tokens"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetL402Tokens", runtime.WithHTTPPathPattern("/v1/lsat/tokens"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1900,18 +1682,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetL402Tokens_1(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetInfo_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetInfo", runtime.WithHTTPPathPattern("/v1/loop/info"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetInfo", runtime.WithHTTPPathPattern("/v1/loop/info"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1922,18 +1699,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetInfo_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_StopDaemon_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_StopDaemon_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/StopDaemon", runtime.WithHTTPPathPattern("/v1/daemon/stop"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/StopDaemon", runtime.WithHTTPPathPattern("/v1/daemon/stop"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1944,18 +1716,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_StopDaemon_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetLiquidityParams_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetLiquidityParams_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetLiquidityParams", runtime.WithHTTPPathPattern("/v1/liquidity/params"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetLiquidityParams", runtime.WithHTTPPathPattern("/v1/liquidity/params"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1966,18 +1733,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetLiquidityParams_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_SetLiquidityParams_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_SetLiquidityParams_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/SetLiquidityParams", runtime.WithHTTPPathPattern("/v1/liquidity/params"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/SetLiquidityParams", runtime.WithHTTPPathPattern("/v1/liquidity/params"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -1988,18 +1750,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_SetLiquidityParams_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_SuggestSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_SuggestSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/SuggestSwaps", runtime.WithHTTPPathPattern("/v1/auto/suggest"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/SuggestSwaps", runtime.WithHTTPPathPattern("/v1/auto/suggest"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2010,18 +1767,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_SuggestSwaps_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListReservations_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListReservations_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListReservations", runtime.WithHTTPPathPattern("/v1/instantout/reservations"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListReservations", runtime.WithHTTPPathPattern("/v1/instantout/reservations"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2032,18 +1784,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListReservations_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_InstantOut_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_InstantOut_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/InstantOut", runtime.WithHTTPPathPattern("/v1/instantout"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/InstantOut", runtime.WithHTTPPathPattern("/v1/instantout"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2054,18 +1801,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_InstantOut_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_InstantOutQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_InstantOutQuote_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/InstantOutQuote", runtime.WithHTTPPathPattern("/v1/instantout/quote"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/InstantOutQuote", runtime.WithHTTPPathPattern("/v1/instantout/quote"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2076,18 +1818,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_InstantOutQuote_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListInstantOuts_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListInstantOuts_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListInstantOuts", runtime.WithHTTPPathPattern("/v1/instantout/swaps"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListInstantOuts", runtime.WithHTTPPathPattern("/v1/instantout/swaps"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2098,18 +1835,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListInstantOuts_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_NewStaticAddress_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_NewStaticAddress_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/NewStaticAddress", runtime.WithHTTPPathPattern("/v1/staticaddr"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/NewStaticAddress", runtime.WithHTTPPathPattern("/v1/staticaddr"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2120,18 +1852,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_NewStaticAddress_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListUnspentDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListUnspentDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListUnspentDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/deposits/unspent"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListUnspentDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/deposits/unspent"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2142,18 +1869,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListUnspentDeposits_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_WithdrawDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_WithdrawDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/WithdrawDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/withdraw"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/WithdrawDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/withdraw"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2164,18 +1886,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_WithdrawDeposits_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListStaticAddressDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListStaticAddressDeposits_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/deposits"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressDeposits", runtime.WithHTTPPathPattern("/v1/staticaddr/deposits"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2186,18 +1903,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListStaticAddressDeposits_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListStaticAddressWithdrawals_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListStaticAddressWithdrawals_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressWithdrawals", runtime.WithHTTPPathPattern("/v1/staticaddr/withdrawals"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressWithdrawals", runtime.WithHTTPPathPattern("/v1/staticaddr/withdrawals"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2208,18 +1920,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListStaticAddressWithdrawals_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_ListStaticAddressSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_ListStaticAddressSwaps_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressSwaps", runtime.WithHTTPPathPattern("/v1/staticaddr/swaps"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/ListStaticAddressSwaps", runtime.WithHTTPPathPattern("/v1/staticaddr/swaps"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2230,18 +1937,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_ListStaticAddressSwaps_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("GET", pattern_SwapClient_GetStaticAddressSummary_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_SwapClient_GetStaticAddressSummary_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetStaticAddressSummary", runtime.WithHTTPPathPattern("/v1/staticaddr/summary"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/GetStaticAddressSummary", runtime.WithHTTPPathPattern("/v1/staticaddr/summary"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2252,18 +1954,13 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_GetStaticAddressSummary_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
-	mux.Handle("POST", pattern_SwapClient_StaticAddressLoopIn_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_SwapClient_StaticAddressLoopIn_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		var err error
-		var annotatedContext context.Context
-		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/StaticAddressLoopIn", runtime.WithHTTPPathPattern("/v1/staticaddr/loopin"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/looprpc.SwapClient/StaticAddressLoopIn", runtime.WithHTTPPathPattern("/v1/staticaddr/loopin"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -2274,130 +1971,71 @@ func RegisterSwapClientHandlerClient(ctx context.Context, mux *runtime.ServeMux,
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-
 		forward_SwapClient_StaticAddressLoopIn_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
 	})
-
 	return nil
 }
 
 var (
-	pattern_SwapClient_LoopOut_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "out"}, ""))
-
-	pattern_SwapClient_LoopIn_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "in"}, ""))
-
-	pattern_SwapClient_ListSwaps_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "swaps"}, ""))
-
-	pattern_SwapClient_SweepHtlc_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "loop", "out", "sweephtlc"}, ""))
-
-	pattern_SwapClient_SwapInfo_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "loop", "swap", "id"}, ""))
-
-	pattern_SwapClient_LoopOutTerms_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "loop", "out", "terms"}, ""))
-
-	pattern_SwapClient_LoopOutQuote_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "loop", "out", "quote", "amt"}, ""))
-
-	pattern_SwapClient_GetLoopInTerms_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "loop", "in", "terms"}, ""))
-
-	pattern_SwapClient_GetLoopInQuote_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "loop", "in", "quote", "amt"}, ""))
-
-	pattern_SwapClient_Probe_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "loop", "in", "probe", "amt"}, ""))
-
-	pattern_SwapClient_GetL402Tokens_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "l402", "tokens"}, ""))
-
-	pattern_SwapClient_GetL402Tokens_1 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "lsat", "tokens"}, ""))
-
-	pattern_SwapClient_GetInfo_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "info"}, ""))
-
-	pattern_SwapClient_StopDaemon_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "daemon", "stop"}, ""))
-
-	pattern_SwapClient_GetLiquidityParams_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "liquidity", "params"}, ""))
-
-	pattern_SwapClient_SetLiquidityParams_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "liquidity", "params"}, ""))
-
-	pattern_SwapClient_SuggestSwaps_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "auto", "suggest"}, ""))
-
-	pattern_SwapClient_ListReservations_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "instantout", "reservations"}, ""))
-
-	pattern_SwapClient_InstantOut_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "instantout"}, ""))
-
-	pattern_SwapClient_InstantOutQuote_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "instantout", "quote"}, ""))
-
-	pattern_SwapClient_ListInstantOuts_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "instantout", "swaps"}, ""))
-
-	pattern_SwapClient_NewStaticAddress_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "staticaddr"}, ""))
-
-	pattern_SwapClient_ListUnspentDeposits_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "staticaddr", "deposits", "unspent"}, ""))
-
-	pattern_SwapClient_WithdrawDeposits_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "withdraw"}, ""))
-
-	pattern_SwapClient_ListStaticAddressDeposits_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "deposits"}, ""))
-
+	pattern_SwapClient_LoopOut_0                      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "out"}, ""))
+	pattern_SwapClient_LoopIn_0                       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "in"}, ""))
+	pattern_SwapClient_ListSwaps_0                    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "swaps"}, ""))
+	pattern_SwapClient_SweepHtlc_0                    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "loop", "out", "sweephtlc"}, ""))
+	pattern_SwapClient_SwapInfo_0                     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "loop", "swap", "id"}, ""))
+	pattern_SwapClient_LoopOutTerms_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "loop", "out", "terms"}, ""))
+	pattern_SwapClient_LoopOutQuote_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "loop", "out", "quote", "amt"}, ""))
+	pattern_SwapClient_GetLoopInTerms_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "loop", "in", "terms"}, ""))
+	pattern_SwapClient_GetLoopInQuote_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "loop", "in", "quote", "amt"}, ""))
+	pattern_SwapClient_Probe_0                        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "loop", "in", "probe", "amt"}, ""))
+	pattern_SwapClient_GetL402Tokens_0                = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "l402", "tokens"}, ""))
+	pattern_SwapClient_GetL402Tokens_1                = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "lsat", "tokens"}, ""))
+	pattern_SwapClient_GetInfo_0                      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "loop", "info"}, ""))
+	pattern_SwapClient_StopDaemon_0                   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "daemon", "stop"}, ""))
+	pattern_SwapClient_GetLiquidityParams_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "liquidity", "params"}, ""))
+	pattern_SwapClient_SetLiquidityParams_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "liquidity", "params"}, ""))
+	pattern_SwapClient_SuggestSwaps_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "auto", "suggest"}, ""))
+	pattern_SwapClient_ListReservations_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "instantout", "reservations"}, ""))
+	pattern_SwapClient_InstantOut_0                   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "instantout"}, ""))
+	pattern_SwapClient_InstantOutQuote_0              = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "instantout", "quote"}, ""))
+	pattern_SwapClient_ListInstantOuts_0              = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "instantout", "swaps"}, ""))
+	pattern_SwapClient_NewStaticAddress_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "staticaddr"}, ""))
+	pattern_SwapClient_ListUnspentDeposits_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "staticaddr", "deposits", "unspent"}, ""))
+	pattern_SwapClient_WithdrawDeposits_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "withdraw"}, ""))
+	pattern_SwapClient_ListStaticAddressDeposits_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "deposits"}, ""))
 	pattern_SwapClient_ListStaticAddressWithdrawals_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "withdrawals"}, ""))
-
-	pattern_SwapClient_ListStaticAddressSwaps_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "swaps"}, ""))
-
-	pattern_SwapClient_GetStaticAddressSummary_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "summary"}, ""))
-
-	pattern_SwapClient_StaticAddressLoopIn_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "loopin"}, ""))
+	pattern_SwapClient_ListStaticAddressSwaps_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "swaps"}, ""))
+	pattern_SwapClient_GetStaticAddressSummary_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "summary"}, ""))
+	pattern_SwapClient_StaticAddressLoopIn_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "staticaddr", "loopin"}, ""))
 )
 
 var (
-	forward_SwapClient_LoopOut_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_LoopIn_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_ListSwaps_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_SweepHtlc_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_SwapInfo_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_LoopOutTerms_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_LoopOutQuote_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_GetLoopInTerms_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_GetLoopInQuote_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_Probe_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_GetL402Tokens_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_GetL402Tokens_1 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_GetInfo_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_StopDaemon_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_GetLiquidityParams_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_SetLiquidityParams_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_SuggestSwaps_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_ListReservations_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_InstantOut_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_InstantOutQuote_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_ListInstantOuts_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_NewStaticAddress_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_ListUnspentDeposits_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_WithdrawDeposits_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_ListStaticAddressDeposits_0 = runtime.ForwardResponseMessage
-
+	forward_SwapClient_LoopOut_0                      = runtime.ForwardResponseMessage
+	forward_SwapClient_LoopIn_0                       = runtime.ForwardResponseMessage
+	forward_SwapClient_ListSwaps_0                    = runtime.ForwardResponseMessage
+	forward_SwapClient_SweepHtlc_0                    = runtime.ForwardResponseMessage
+	forward_SwapClient_SwapInfo_0                     = runtime.ForwardResponseMessage
+	forward_SwapClient_LoopOutTerms_0                 = runtime.ForwardResponseMessage
+	forward_SwapClient_LoopOutQuote_0                 = runtime.ForwardResponseMessage
+	forward_SwapClient_GetLoopInTerms_0               = runtime.ForwardResponseMessage
+	forward_SwapClient_GetLoopInQuote_0               = runtime.ForwardResponseMessage
+	forward_SwapClient_Probe_0                        = runtime.ForwardResponseMessage
+	forward_SwapClient_GetL402Tokens_0                = runtime.ForwardResponseMessage
+	forward_SwapClient_GetL402Tokens_1                = runtime.ForwardResponseMessage
+	forward_SwapClient_GetInfo_0                      = runtime.ForwardResponseMessage
+	forward_SwapClient_StopDaemon_0                   = runtime.ForwardResponseMessage
+	forward_SwapClient_GetLiquidityParams_0           = runtime.ForwardResponseMessage
+	forward_SwapClient_SetLiquidityParams_0           = runtime.ForwardResponseMessage
+	forward_SwapClient_SuggestSwaps_0                 = runtime.ForwardResponseMessage
+	forward_SwapClient_ListReservations_0             = runtime.ForwardResponseMessage
+	forward_SwapClient_InstantOut_0                   = runtime.ForwardResponseMessage
+	forward_SwapClient_InstantOutQuote_0              = runtime.ForwardResponseMessage
+	forward_SwapClient_ListInstantOuts_0              = runtime.ForwardResponseMessage
+	forward_SwapClient_NewStaticAddress_0             = runtime.ForwardResponseMessage
+	forward_SwapClient_ListUnspentDeposits_0          = runtime.ForwardResponseMessage
+	forward_SwapClient_WithdrawDeposits_0             = runtime.ForwardResponseMessage
+	forward_SwapClient_ListStaticAddressDeposits_0    = runtime.ForwardResponseMessage
 	forward_SwapClient_ListStaticAddressWithdrawals_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_ListStaticAddressSwaps_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_GetStaticAddressSummary_0 = runtime.ForwardResponseMessage
-
-	forward_SwapClient_StaticAddressLoopIn_0 = runtime.ForwardResponseMessage
+	forward_SwapClient_ListStaticAddressSwaps_0       = runtime.ForwardResponseMessage
+	forward_SwapClient_GetStaticAddressSummary_0      = runtime.ForwardResponseMessage
+	forward_SwapClient_StaticAddressLoopIn_0          = runtime.ForwardResponseMessage
 )
