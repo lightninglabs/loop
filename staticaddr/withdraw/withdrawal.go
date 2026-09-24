@@ -29,14 +29,15 @@ func (r *ID) FromByteSlice(b []byte) error {
 	return nil
 }
 
-// Withdrawal represents a finalized static address withdrawal record in the
-// database.
+// Withdrawal represents a static address withdrawal record in the database.
+// The record may be pending or finalized.
 type Withdrawal struct {
 	// ID is the unique identifier of the deposit.
 	ID ID
 
-	// TxID is the transaction ID of the withdrawal.
-	TxID chainhash.Hash
+	// TxID is the transaction ID of the withdrawal. It is nil until the
+	// confirmed withdrawal transaction is persisted.
+	TxID *chainhash.Hash
 
 	// Deposits is a list of deposits used to fund the withdrawal.
 	Deposits []*deposit.Deposit
@@ -46,17 +47,19 @@ type Withdrawal struct {
 	TotalDepositAmount btcutil.Amount
 
 	// WithdrawnAmount is the amount withdrawn. It represents the total
-	// value of selected deposits minus fees and change.
+	// value of selected deposits minus fees and change. It is zero until the
+	// confirmed withdrawal transaction is persisted.
 	WithdrawnAmount btcutil.Amount
 
-	// ChangeAmount is the optional change returned to the static address.
+	// ChangeAmount is the optional change returned to the static address. It
+	// is zero until the confirmed withdrawal transaction is persisted.
 	ChangeAmount btcutil.Amount
 
 	// InitiationTime is the time at which the withdrawal was initiated.
 	InitiationTime time.Time
 
 	// ConfirmationHeight is the block height at which the withdrawal was
-	// confirmed.
+	// confirmed. It is zero until the withdrawal is confirmed.
 	ConfirmationHeight int64
 }
 
