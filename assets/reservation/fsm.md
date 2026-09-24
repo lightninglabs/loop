@@ -6,6 +6,7 @@ Tests use the real SQLite store with node doubles, not real asset transfers.
 ```mermaid
 stateDiagram-v2
     RequestQuote --> ProbeRoutes: exact quote saved
+    RequestQuote --> QuoteFailed: invalid quote or one-minute deadline
     RequestQuote --> QuoteRejected: server refuses funding admission
     ProbeRoutes --> AwaitApproval: main probe succeeded or explicitly skipped
     AwaitApproval --> PayPrepay: exact quote and limits approved
@@ -28,7 +29,11 @@ An `OutOfRange` quote refusal ends in `QuoteRejected` before any probe or
 payment. This terminal state is saved, excluded from active lists and restart
 recovery, and cannot resume when inventory returns. The CLI reports
 `cannot initiate swap: rpc error: code = OutOfRange desc = amount above current maximum`.
-A new attempt requires a fresh purchase ID. Transient quote RPC errors retry.
+A new attempt requires a fresh purchase ID. Transient quote RPC errors and missing quotes retry for at most one minute
+from persisted purchase creation. Invalid quotes end immediately in
+`QuoteFailed`, before any probe or payment. That state is terminal and excluded
+from recovery; server invoices expire independently. A restart cannot reset
+the quote deadline.
 The same terminal state and CLI error represent a later funding refusal: the
 server must confirm cancellation with `funding_unavailable`, and the client
 must first resolve its own payment. An in-flight held prepay stays tracked and
@@ -54,14 +59,19 @@ probing across restarts. Approval must explicitly set it again to permit payment
 without a successful probe. Recovery tracks the single saved probe payment
 and cancellation. A failed probe cancels the unpaid purchase. A new attempt
 uses a fresh purchase ID; recovery never replaces or revives the old quote.
-Quote validation and payment limits remain mandatory.
+Quote validation and payment limits remain mandatory. Prepay and probe RFQ
+rates must differ by at most 5% (relative to the lower rate); this is a
+consistency check, not an independent market-price check. Approval displays
+the exact BTC prepay and implied prepay/probe prices.
 
 Server status is only a delivery hint. Verify the full exported proof with
 tapd and the shared deposit kit, then check exact output, local keys, amount,
 three required confirmations, known spends, and the original CSV clock.
 Spend and expiry tracking follow Instant Out's LND notifications. Recovery
-restores the watches; it does not require wallet history or a synchronous
-unspent assertion.
+restores the watches and fully verifies the saved proof once. Routine Ready
+checks refresh chain state without repeating tapd proof verification. A watch
+interval ending without a block is normal, not an error. No wallet history or
+synchronous unspent assertion is required.
 A late client does not impose a new initial-delivery window: the server checks
 that promise when first delivering. Client `Ready` means verified and unexpired;
 a later swap must still enforce the saved execution cutoff and claim margin.

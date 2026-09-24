@@ -51,6 +51,11 @@ func (f *FSM) RequestQuoteAction(ctx context.Context,
 		return OnQuote
 	}
 
+	if !r.CreatedAt.IsZero() &&
+		!f.cfg.Clock.Now().Before(r.CreatedAt.Add(time.Minute)) {
+
+		return OnQuoteFailed
+	}
 	// Reuse the saved ID and key so a lost reply finds the same purchase.
 	response, err := f.cfg.Server.QuoteAssetReservation(ctx,
 		&swapserverrpc.QuoteAssetReservationRequest{
@@ -69,7 +74,7 @@ func (f *FSM) RequestQuoteAction(ctx context.Context,
 		return f.stayInState(err)
 	}
 	if response == nil || !bytes.Equal(response.ReservationId, r.ID[:]) {
-		return f.fail(errors.New("invalid reservation response"))
+		return OnQuoteFailed
 	}
 	if response.State ==
 		swapserverrpc.AssetReservationStatus_ASSET_RESERVATION_CANCELED {
@@ -83,10 +88,10 @@ func (f *FSM) RequestQuoteAction(ctx context.Context,
 	// Bind the terms to our request, then check the invoices and RFQ
 	// before saving anything the user may later approve.
 	if err := r.ValidateQuote(response.Quote); err != nil {
-		return f.fail(err)
+		return f.rejectQuote(err)
 	}
 	if err := f.cfg.Payments.ValidateQuote(ctx, response.Quote); err != nil {
-		return f.stayInState(err)
+		return f.rejectQuote(err)
 	}
 	r.Quote = proto.Clone(response.Quote).(*swapserverrpc.AssetReservationQuote)
 	r.Terms, _ = TermsFromRPC(r.Quote.Terms)
@@ -102,6 +107,14 @@ func (f *FSM) RequestQuoteAction(ctx context.Context,
 	}
 
 	return OnQuote
+}
+
+// rejectQuote ends local quote work before any payment can be prepared. The
+// server independently expires unpaid invoices; cleanup cannot keep this
+// unapproved purchase retrying an invalid quote indefinitely.
+func (f *FSM) rejectQuote(err error) fsm.EventType {
+	f.LastActionError = err
+	return OnQuoteFailed
 }
 
 // ProbeRoutesAction resumes one payment, never starts another after failure.

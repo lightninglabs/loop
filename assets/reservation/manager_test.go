@@ -45,6 +45,7 @@ func startClientManager(t *testing.T, cfg *Config,
 func TestClientManagerDuplicateRequests(t *testing.T) {
 	h := newClientHarness(t)
 	h.store.Store = NewSqlStore(loopdb.NewTestDB(t).BaseDB)
+	h.store.Store.(*SqlStore).clock = h.cfg.Clock
 	m, stop := startClientManager(t, h.cfg, 1)
 	ctx := t.Context()
 	results := make(chan error, 4)
@@ -86,6 +87,7 @@ func TestClientManagerDuplicateRequests(t *testing.T) {
 func TestClientManagerRestoresBeyondAdmissionLimit(t *testing.T) {
 	h := newClientHarness(t)
 	h.store.Store = NewSqlStore(loopdb.NewTestDB(t).BaseDB)
+	h.store.Store.(*SqlStore).clock = h.cfg.Clock
 	for _, id := range []ID{{1}, {2}} {
 		r := testReservation()
 		r.ID, r.State = id, AwaitApproval
@@ -118,7 +120,7 @@ func TestClientManagerRecoveryFiltersCompleted(t *testing.T) {
 	active.Quote = testPurchaseQuote(active)
 	require.NoError(t, h.store.CreateReservation(t.Context(), active))
 	for i, state := range []fsm.StateType{
-		QuoteRejected, Canceled, Expired,
+		QuoteFailed, QuoteRejected, Canceled, Expired,
 	} {
 		r := testReservation()
 		r.ID, r.State = ID{byte(i + 2)}, state
@@ -164,6 +166,7 @@ func TestClientManagerCancelsPendingNodeCalls(t *testing.T) {
 func TestClientManagerSkipsProbeAcrossRestart(t *testing.T) {
 	h := newClientHarness(t)
 	h.store.Store = NewSqlStore(loopdb.NewTestDB(t).BaseDB)
+	h.store.Store.(*SqlStore).clock = h.cfg.Clock
 	h.blockQuote = true
 	h.quoteStarted = make(chan struct{}, 1)
 	m, stop := startClientManager(t, h.cfg, 1)
@@ -262,6 +265,7 @@ func TestClientManagerCancelsCreation(t *testing.T) {
 			started := make(chan struct{})
 			if phase == "key derivation" {
 				h.store.Store = NewSqlStore(loopdb.NewTestDB(t).BaseDB)
+				h.store.Store.(*SqlStore).clock = h.cfg.Clock
 				h.cfg.Wallet = &blockedCreationWallet{
 					ReservationVerifier: h.cfg.Wallet,
 					started:             started,
