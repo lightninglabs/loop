@@ -44,10 +44,6 @@
 
 #### Maintenance
 
-* Pin the Gateway review action and runtime to v0.7.0 and increase the review
-  job timeout from 15 to 30 minutes so longer reviews can finish.
-  [PR #1234](https://github.com/lightninglabs/loop/pull/1234)
-
 * The Docker image build now verifies that every platform of the image index
   holds binaries for the architecture it advertises, and gives a release its
   tag only once that check has passed.
