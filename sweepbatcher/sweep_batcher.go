@@ -189,6 +189,10 @@ type PresignedHelper interface {
 	// closer to the fee rate passed is selected. If loadOnly is set, it
 	// doesn't try to sign the transaction and only loads a presigned tx.
 	// These rules are enforced by CheckSignedTx function.
+	// If the transaction can't be signed because the co-signers did not
+	// sign it within the helper's time budget, the returned error must
+	// wrap context.DeadlineExceeded. The batcher then treats the failure
+	// to add a sweep to a batch as expected and logs it at info level.
 	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
 		tx *wire.MsgTx, inputAmt btcutil.Amount,
 		minRelayFee, feeRate chainfee.SatPerKWeight,
