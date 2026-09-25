@@ -439,19 +439,37 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", err
 	}
 
-	published, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
-	if err != nil {
-		return "", "", err
-	}
-
-	if !published {
-		return "", "", nil
-	}
-
 	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
 	if err != nil {
 		return "", "", fmt.Errorf("could not get withdrawal "+
 			"pkscript: %w", err)
+	}
+
+	// Attach the finalized withdrawal transaction before transitioning the
+	// deposits. The state transition persists it, allowing recovery to
+	// republish the transaction if publishing blocks or the client restarts.
+	previousWithdrawalTxns := make([]*wire.MsgTx, len(deposits))
+	for i, d := range deposits {
+		d.Lock()
+		previousWithdrawalTxns[i] = d.FinalizedWithdrawalTx
+		d.FinalizedWithdrawalTx = finalizedTx
+		d.Unlock()
+	}
+
+	// Transition before publishing so wallet reconciliation can't remove a
+	// spent deposit from the active set while publication is in progress.
+	err = m.cfg.DepositManager.TransitionDeposits(
+		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
+	)
+	if err != nil {
+		for i, d := range deposits {
+			d.Lock()
+			d.FinalizedWithdrawalTx = previousWithdrawalTxns[i]
+			d.Unlock()
+		}
+
+		return "", "", fmt.Errorf("failed to transition deposits %w",
+			err)
 	}
 
 	// If this is the first time this cluster of deposits is withdrawn, we
@@ -479,24 +497,13 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	// If a previous withdrawal existed across the selected deposits, and
 	// it isn't the same as the new withdrawal, we remove it from the
 	// finalized withdrawals to stop republishing it on block arrivals.
-	deposits[0].Lock()
-	prevTx := deposits[0].FinalizedWithdrawalTx
-	deposits[0].Unlock()
+	previousWithdrawalTx := previousWithdrawalTxns[0]
+	if previousWithdrawalTx != nil &&
+		previousWithdrawalTx.TxHash() != finalizedTx.TxHash() {
 
-	if prevTx != nil && prevTx.TxHash() != finalizedTx.TxHash() {
 		m.mu.Lock()
-		delete(m.finalizedWithdrawalTxns, prevTx.TxHash())
+		delete(m.finalizedWithdrawalTxns, previousWithdrawalTx.TxHash())
 		m.mu.Unlock()
-	}
-
-	// Attach the finalized withdrawal tx to the deposits. After a client
-	// restart we can use this address as an indicator to republish the
-	// withdrawal tx and continue the withdrawal.
-	// Deposits with the same withdrawal tx are part of the same withdrawal.
-	for _, d := range deposits {
-		d.Lock()
-		d.FinalizedWithdrawalTx = finalizedTx
-		d.Unlock()
 	}
 
 	// Add the new withdrawal tx to the finalized withdrawals to republish
@@ -505,23 +512,28 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	m.finalizedWithdrawalTxns[finalizedTx.TxHash()] = finalizedTx
 	m.mu.Unlock()
 
-	// Transition the deposits to the withdrawing state. If the user fee
-	// bumped a withdrawal this results in a NOOP transition.
-	err = m.cfg.DepositManager.TransitionDeposits(
-		ctx, deposits, deposit.OnWithdrawInitiated, deposit.Withdrawing,
-	)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to transition deposits %w",
-			err)
+	// A fee bump is a self-transition, which the deposit FSM doesn't
+	// persist. Explicitly store the replacement transaction in that case.
+	if allWithdrawing {
+		for _, d := range deposits {
+			err = m.cfg.DepositManager.UpdateDeposit(ctx, d)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to update "+
+					"deposit %w", err)
+			}
+		}
 	}
 
-	// Update the deposits in the database.
-	for _, d := range deposits {
-		err = m.cfg.DepositManager.UpdateDeposit(ctx, d)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to update "+
-				"deposit %w", err)
-		}
+	// Publish only after the finalized transaction is durable and local
+	// tracking is set up. Keep that preparation on publication errors because
+	// the wallet RPC outcome can be ambiguous.
+	published, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
+	if err != nil {
+		return "", "", err
+	}
+
+	if !published {
+		return "", "", nil
 	}
 
 	return finalizedTx.TxID(), withdrawalAddress.String(), nil
