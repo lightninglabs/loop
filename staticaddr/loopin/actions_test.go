@@ -3571,3 +3571,44 @@ func (s *initHtlcTestServer) PushStaticAddressHtlcSigs(context.Context,
 
 	return &swapserverrpc.PushStaticAddressHtlcSigsResponse{}, nil
 }
+
+// TestLegacyConfirmationFallbackKeepsLiveDeposits verifies that refreshing the
+// confirmation heights for the legacy fallback reads fresh store copies but
+// keeps the loop-in's own deposit objects. The deposit state machines update
+// those objects; replacing them with copies made later state checks fail
+// forever.
+func TestLegacyConfirmationFallbackKeepsLiveDeposits(t *testing.T) {
+	outpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{15},
+		Index: 0,
+	}
+	live := &deposit.Deposit{OutPoint: outpoint}
+	live.SetState(deposit.LoopingIn)
+	storeCopy := &deposit.Deposit{
+		OutPoint:           outpoint,
+		ConfirmationHeight: 10,
+	}
+	storeCopy.SetState(deposit.LoopingIn)
+
+	f := &FSM{
+		cfg: &Config{
+			DepositManager: &noopDepositManager{
+				deposits: []*deposit.Deposit{storeCopy},
+			},
+		},
+		loopIn: &StaticAddressLoopIn{
+			DepositOutpoints: []string{outpoint.String()},
+			Deposits:         []*deposit.Deposit{live},
+		},
+	}
+
+	// The fresh copy is confirmed deeply enough.
+	reached := f.shouldStartLegacyConfirmationFallback(
+		t.Context(), int32(10+deposit.MinConfs),
+	)
+	require.True(t, reached)
+
+	// The loop-in still refers to the live deposit object.
+	require.Len(t, f.loopIn.Deposits, 1)
+	require.Same(t, live, f.loopIn.Deposits[0])
+}

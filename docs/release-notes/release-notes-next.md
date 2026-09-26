@@ -48,6 +48,10 @@
   `loopd` failed with `exec format error` on ARM hosts.
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
+* A static address loop-in whose HTLC was published without payment now
+  refunds the HTLC after it expires. The swap could get stuck retrying a
+  deposit state transition forever and never publish the refund.
+
 #### Maintenance
 
 * Align the standalone `looprpc` module's OpenTelemetry SDK and OTLP trace

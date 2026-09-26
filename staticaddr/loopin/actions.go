@@ -401,18 +401,18 @@ func (f *FSM) handleInvoiceUpdate(update lndclient.InvoiceUpdate) (
 	}
 }
 
-// selectedDepositConfirmationHeights returns current confirmation heights for
-// the original deposit outpoints selected by this loop-in.
-func selectedDepositConfirmationHeights(
-	loopIn *StaticAddressLoopIn) map[string]int64 {
+// selectedDepositConfirmationHeights returns the confirmation heights of the
+// given deposits for the original deposit outpoints selected by a loop-in.
+func selectedDepositConfirmationHeights(selected []string,
+	deposits []*deposit.Deposit) map[string]int64 {
 
-	confirmations := make(map[string]int64, len(loopIn.Deposits))
-	outpoints := make(map[string]struct{}, len(loopIn.DepositOutpoints))
-	for _, outpoint := range loopIn.DepositOutpoints {
+	confirmations := make(map[string]int64, len(deposits))
+	outpoints := make(map[string]struct{}, len(selected))
+	for _, outpoint := range selected {
 		outpoints[outpoint] = struct{}{}
 	}
 
-	for _, d := range loopIn.Deposits {
+	for _, d := range deposits {
 		if d == nil {
 			continue
 		}
@@ -430,16 +430,27 @@ func selectedDepositConfirmationHeights(
 	return confirmations
 }
 
-// refreshSelectedDeposits reloads the loop-in's selected deposits from the
-// deposit manager/store so recovery does not rely on stale deposit snapshots.
-func (f *FSM) refreshSelectedDeposits(ctx context.Context) error {
+// freshDepositConfirmationHeights reloads the loop-in's selected deposits from
+// the deposit manager/store and returns their current confirmation heights,
+// so recovery does not rely on stale confirmation data.
+//
+// The reloaded deposits are only read. The loop-in keeps its own deposit
+// objects, which are the ones the deposit state machines update; replacing
+// them with store copies would make every later state check read copies that
+// never change.
+func (f *FSM) freshDepositConfirmationHeights(ctx context.Context) (
+	map[string]int64, error) {
+
 	if f.cfg.DepositManager == nil || len(f.loopIn.DepositOutpoints) == 0 {
-		return nil
+		return selectedDepositConfirmationHeights(
+			f.loopIn.DepositOutpoints, f.loopIn.Deposits,
+		), nil
 	}
 
 	err := f.cfg.DepositManager.EnsureDepositsFresh(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to refresh deposit wallet view: %w", err)
+		return nil, fmt.Errorf("unable to refresh deposit wallet view: "+
+			"%w", err)
 	}
 
 	const ignoreUnknownOutpoints = false
@@ -447,17 +458,17 @@ func (f *FSM) refreshSelectedDeposits(ctx context.Context) error {
 		ctx, f.loopIn.DepositOutpoints, ignoreUnknownOutpoints,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(deposits) != len(f.loopIn.DepositOutpoints) {
-		return fmt.Errorf("expected %d selected deposits, got %d",
+		return nil, fmt.Errorf("expected %d selected deposits, got %d",
 			len(f.loopIn.DepositOutpoints), len(deposits))
 	}
 
-	f.loopIn.Deposits = deposits
-
-	return nil
+	return selectedDepositConfirmationHeights(
+		f.loopIn.DepositOutpoints, deposits,
+	), nil
 }
 
 // legacyMinConfsReached returns true once every original deposit is confirmed
@@ -491,22 +502,21 @@ func legacyMinConfsReached(outpoints []string,
 // This fallback preserves the legacy client-side MinConfs behavior when no risk
 // decision has been observed locally: once every original deposit reaches
 // MinConfs, the client treats that as enough confirmation-risk clearance to
-// start the payment window. The selected deposits are refreshed first so
-// recovered swaps do not depend on stale in-memory deposit snapshots.
+// start the payment window. The selected deposits' confirmation heights are
+// refreshed first so recovered swaps do not depend on stale confirmation
+// data.
 func (f *FSM) shouldStartLegacyConfirmationFallback(ctx context.Context,
 	currentHeight int32) bool {
 
-	err := f.refreshSelectedDeposits(ctx)
+	depositConfirmationHeights, err := f.freshDepositConfirmationHeights(
+		ctx,
+	)
 	if err != nil {
 		f.Warnf("unable to refresh selected deposits for legacy "+
 			"confirmation fallback: %v", err)
 
 		return false
 	}
-
-	depositConfirmationHeights := selectedDepositConfirmationHeights(
-		f.loopIn,
-	)
 
 	return legacyMinConfsReached(
 		f.loopIn.DepositOutpoints, depositConfirmationHeights,
