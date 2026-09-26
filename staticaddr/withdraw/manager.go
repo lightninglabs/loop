@@ -54,6 +54,11 @@ var (
 	ErrMissingFinalizedTx = errors.New("deposit does not have a " +
 		"finalized withdrawal tx, can't bump fee")
 
+	// ErrDiffWithdrawalAddress is returned when the user tries to bump the
+	// fee of a withdrawal to a different withdrawal address.
+	ErrDiffWithdrawalAddress = errors.New("can't bump fee to a " +
+		"different withdrawal address")
+
 	// MinConfs is the minimum number of confirmations we require for a
 	// deposit to be considered withdrawn.
 	MinConfs int32 = 3
@@ -395,25 +400,18 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		}
 	}
 
-	var withdrawalAddress btcutil.Address
+	// A fee bump replaces the withdrawal tx that all selected deposits
+	// reference.
+	var prevWithdrawalTx *wire.MsgTx
+	if !allDeposited {
+		prevWithdrawalTx = deposits[0].FinalizedWithdrawalTx
+	}
 
-	// Check if the user provided an address to withdraw to. If not, we'll
-	// generate a new address for them.
-	if destAddr != "" {
-		withdrawalAddress, err = btcutil.DecodeAddress(
-			destAddr, m.cfg.ChainParams,
-		)
-		if err != nil {
-			return "", "", err
-		}
-	} else {
-		withdrawalAddress, err = m.cfg.WalletKit.NextAddr(
-			ctx, lnwallet.DefaultAccountName,
-			walletrpc.AddressType_TAPROOT_PUBKEY, false,
-		)
-		if err != nil {
-			return "", "", err
-		}
+	withdrawalAddress, err := m.withdrawalAddress(
+		ctx, destAddr, prevWithdrawalTx,
+	)
+	if err != nil {
+		return "", "", err
 	}
 
 	var withdrawFeeRate chainfee.SatPerKWeight
@@ -525,6 +523,68 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 	}
 
 	return finalizedTx.TxID(), withdrawalAddress.String(), nil
+}
+
+// withdrawalAddress returns the address that a withdrawal pays. A new
+// withdrawal pays the address the user provided, or a new wallet address if
+// none was provided. A fee bump keeps the address of the withdrawal tx that it
+// replaces, because the monitor of the withdrawal only completes it for a
+// spend that pays this address.
+func (m *Manager) withdrawalAddress(ctx context.Context, destAddr string,
+	prevWithdrawalTx *wire.MsgTx) (btcutil.Address, error) {
+
+	var prevPkScript []byte
+	if prevWithdrawalTx != nil {
+		// The withdrawal output is always the first output.
+		if len(prevWithdrawalTx.TxOut) == 0 {
+			return nil, errors.New("previous withdrawal tx has no " +
+				"outputs")
+		}
+		prevPkScript = prevWithdrawalTx.TxOut[0].PkScript
+	}
+
+	switch {
+	case destAddr != "":
+		address, err := btcutil.DecodeAddress(
+			destAddr, m.cfg.ChainParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if prevPkScript == nil {
+			return address, nil
+		}
+
+		pkScript, err := txscript.PayToAddrScript(address)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(pkScript, prevPkScript) {
+			return nil, ErrDiffWithdrawalAddress
+		}
+
+		return address, nil
+
+	case prevPkScript != nil:
+		_, addresses, _, err := txscript.ExtractPkScriptAddrs(
+			prevPkScript, m.cfg.ChainParams,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(addresses) != 1 {
+			return nil, errors.New("unable to decode the address " +
+				"of the previous withdrawal tx")
+		}
+
+		return addresses[0], nil
+
+	default:
+		return m.cfg.WalletKit.NextAddr(
+			ctx, lnwallet.DefaultAccountName,
+			walletrpc.AddressType_TAPROOT_PUBKEY, false,
+		)
+	}
 }
 
 // CreateFinalizedWithdrawalTx creates and signs a finalized withdrawal
