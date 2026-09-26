@@ -70,6 +70,10 @@
   Cancellation failures are logged, and a failed attempt does not prevent
   the other caller from trying.
 
+* A MuSig2 Loop In no longer reveals the internal key of its HTLC to the
+  server when the swap invoice is canceled. The key is only shared once the
+  invoice is paid.
+
 #### Maintenance
 
 * Align the standalone `looprpc` module's OpenTelemetry SDK and OTLP trace
