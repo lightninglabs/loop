@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -227,6 +228,21 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, err
 	}
 
+	// The server may still be routing the probe when its call fails or is
+	// canceled. It may also answer before the probe reaches us. Once we stop
+	// waiting for the probe, a later HTLC would stay held until lnd releases
+	// it shortly before expiry. Cancel the probe invoice on every subsequent
+	// initiation failure, sharing the watcher's cancellation result.
+	cancelProbe := newProbeInvoiceCanceler(cfg.lnd.Invoices, probeHash)
+	initiationSucceeded := false
+	defer func() {
+		if !initiationSucceeded {
+			cancelProbeInvoice(
+				globalCtx, probeHash, cancelProbe,
+			)
+		}
+	}()
+
 	// Default the HTLC internal key to our sender key.
 	senderInternalPubKey := senderKey
 
@@ -248,7 +264,9 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	probeWaitCtx, probeWaitCancel := context.WithCancel(globalCtx)
 
 	// Launch a goroutine to monitor the probe.
-	probeResult, err := awaitProbe(probeWaitCtx, *cfg.lnd, probeHash)
+	probeResult, err := awaitProbe(
+		probeWaitCtx, *cfg.lnd, probeHash, cancelProbe,
+	)
 	if err != nil {
 		probeWaitCancel()
 		return nil, fmt.Errorf("probe failed: %v", err)
@@ -346,6 +364,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 
 	swap.abandonChan = make(chan struct{}, 1)
 
+	initiationSucceeded = true
+
 	return &loopInInitResult{
 		swap:          swap,
 		serverMessage: swapResp.serverMessage,
@@ -355,7 +375,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 // awaitProbe waits for a probe payment to arrive and cancels it. This is a
 // workaround for the current lack of multi-path probing.
 func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
-	probeHash lntypes.Hash) (chan error, error) {
+	probeHash lntypes.Hash,
+	cancelProbe func(context.Context) error) (chan error, error) {
 
 	// Subscribe to the probe invoice.
 	updateChan, errChan, err := lnd.Invoices.SubscribeSingleInvoice(
@@ -381,9 +402,8 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 					// Cancel probe invoice so that the
 					// server will know that its probe was
 					// successful.
-					err := lnd.Invoices.CancelInvoice(
+					err := cancelProbe(
 						context.WithoutCancel(ctx),
-						probeHash,
 					)
 					if err != nil {
 						log.Errorf("Cancel probe "+
@@ -418,6 +438,76 @@ func awaitProbe(ctx context.Context, lnd lndclient.LndServices,
 	}()
 
 	return probeResult, nil
+}
+
+// invoiceCanceler is the invoice RPC needed for probe cancellation.
+type invoiceCanceler interface {
+	CancelInvoice(context.Context, lntypes.Hash) error
+}
+
+// newProbeInvoiceCanceler returns a cancellation function shared by the probe
+// watcher and initiation cleanup. It serializes attempts and remembers only
+// successful cancellations, so a failed attempt can be retried by the other
+// caller. Its state lives only as long as this probe's callers.
+func newProbeInvoiceCanceler(invoices invoiceCanceler,
+	probeHash lntypes.Hash) func(context.Context) error {
+
+	// The gate acts as a mutex protecting canceled and the cancellation RPC,
+	// while allowing a waiting caller to stop when its context is canceled
+	// or its deadline expires.
+	gate := make(chan struct{}, 1)
+	canceled := false
+
+	return func(ctx context.Context) error {
+		select {
+		case gate <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		defer func() { <-gate }()
+
+		if canceled {
+			return nil
+		}
+
+		// The context may have expired while waiting, even if the select
+		// chose the gate. Do not start another RPC with an expired budget.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if err := invoices.CancelInvoice(ctx, probeHash); err != nil {
+			return err
+		}
+
+		canceled = true
+
+		return nil
+	}
+}
+
+// probeInvoiceCleanupTimeout bounds both waiting for an in-flight cancellation
+// and canceling a probe invoice after a failed swap initiation.
+const probeInvoiceCleanupTimeout = 10 * time.Second
+
+// cancelProbeInvoice cancels the probe invoice of a swap whose initiation
+// failed. The cancellation uses its own context, since the initiation's
+// context may already be canceled. The shared cancelProbe function skips the
+// RPC if either caller has already successfully canceled this probe. All
+// errors, including an invoice deleted without a confirmed cancellation, are
+// logged and leave a subsequent caller free to try again.
+func cancelProbeInvoice(ctx context.Context, probeHash lntypes.Hash,
+	cancelProbe func(context.Context) error) {
+
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), probeInvoiceCleanupTimeout,
+	)
+	defer cancel()
+
+	if err := cancelProbe(cleanupCtx); err != nil {
+		log.Warnf("Unable to cancel probe invoice %v: %v", probeHash,
+			err)
+	}
 }
 
 // resumeLoopInSwap returns a swap object representing a pending swap that has
