@@ -1086,3 +1086,82 @@ func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
 
 	return cfg, inSwap, err
 }
+
+// expiringLoopIn is a loop in whose confirmed htlc is about to expire.
+type expiringLoopIn struct {
+	ctx     *loopInTestContext
+	swap    *loopInSwap
+	htlcTx  wire.MsgTx
+	errChan chan error
+}
+
+// startExpiringLoopIn runs a loop in until its htlc confirmed and the client
+// watches the htlc and the swap invoice.
+func startExpiringLoopIn(t *testing.T) *expiringLoopIn {
+	t.Helper()
+
+	ctx := newLoopInTestContext(t)
+	cfg := newSwapConfig(
+		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
+	req := testLoopInRequest
+	initResult, err := newLoopInSwap(
+		context.Background(), cfg, 600, &req,
+	)
+	require.NoError(t, err)
+	ctx.store.AssertLoopInStored()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- initResult.swap.execute(
+			context.Background(), ctx.cfg, 600,
+		)
+	}()
+
+	ctx.assertState(loopdb.StateInitiated)
+	ctx.assertState(loopdb.StateHtlcPublished)
+	ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
+	htlcTx := <-ctx.lnd.SendOutputsChannel
+	ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
+
+	<-ctx.lnd.RegisterConfChannel
+	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{Tx: &htlcTx}
+	<-ctx.lnd.RegisterSpendChannel
+	ctx.assertSubscribeInvoice(ctx.server.swapHash)
+
+	return &expiringLoopIn{
+		ctx:     ctx,
+		swap:    initResult.swap,
+		htlcTx:  htlcTx,
+		errChan: errChan,
+	}
+}
+
+// TestLoopInCanceledInvoiceKeepsHtlcKey asserts that the htlc key is not
+// revealed after the swap invoice was canceled, not even on later blocks.
+func TestLoopInCanceledInvoiceKeepsHtlcKey(t *testing.T) {
+	defer test.Guard(t)()
+
+	e := startExpiringLoopIn(t)
+	e.ctx.updateInvoiceState(0, invpkg.ContractCanceled)
+
+	expiry := e.swap.LoopInContract.CltvExpiry
+	e.ctx.blockEpochChan <- expiry - 2
+	e.ctx.blockEpochChan <- expiry - 1
+	time.Sleep(100 * time.Millisecond)
+	require.Zero(t, e.ctx.server.pushKeyCalls.Load())
+
+	e.ctx.blockEpochChan <- expiry
+	<-e.ctx.lnd.SignOutputRawChannel
+	timeoutTx := <-e.ctx.lnd.TxPublishChannel
+	e.ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
+		SpendingTx:        timeoutTx,
+		SpenderInputIndex: 0,
+	}
+	<-e.ctx.lnd.FailInvoiceChannel
+	e.ctx.assertState(loopdb.StateFailTimeout)
+	e.ctx.store.AssertLoopInState(loopdb.StateFailTimeout)
+	require.NoError(t, <-e.errChan)
+	require.Zero(t, e.ctx.server.pushKeyCalls.Load())
+}

@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,6 +60,9 @@ type serverMock struct {
 
 	// cancelSwap is a channel that swap cancellations are sent into.
 	cancelSwap chan *outCancelDetails
+
+	// pushKeyCalls counts the htlc key reveals received.
+	pushKeyCalls atomic.Int32
 
 	lnd *test.LndMockServices
 }
@@ -299,6 +303,8 @@ func (s *serverMock) MultiMuSig2SignSweep(ctx context.Context,
 
 func (s *serverMock) PushKey(_ context.Context, _ loopdb.ProtocolVersion,
 	_ lntypes.Hash, _ [32]byte) error {
+
+	s.pushKeyCalls.Add(1)
 
 	return nil
 }

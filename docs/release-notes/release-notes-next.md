@@ -48,6 +48,10 @@
   `loopd` failed with `exec format error` on ARM hosts.
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
+* A MuSig2 Loop In no longer reveals the internal key of its HTLC to the
+  server when the swap invoice is canceled. The key is only shared once the
+  invoice is paid.
+
 #### Maintenance
 
 * Align the standalone `looprpc` module's OpenTelemetry SDK and OTLP trace

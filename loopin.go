@@ -99,6 +99,10 @@ type loopInSwap struct {
 
 	timeoutAddr btcutil.Address
 
+	// invoiceSettled is set once the swap invoice is known to be settled.
+	// Settlement is final, so the flag is never cleared.
+	invoiceSettled bool
+
 	abandonChan chan struct{}
 
 	wg sync.WaitGroup
@@ -904,6 +908,12 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 		return fmt.Errorf("subscribe to swap invoice: %v", err)
 	}
 
+	if s.state == loopdb.StateInvoiceSettled ||
+		s.state == loopdb.StateSuccess {
+
+		s.invoiceSettled = true
+	}
+
 	// publishTxOnTimeout publishes the timeout tx if the contract has
 	// expired and invoice has not been settled.
 	publishTxOnTimeout := func() (btcutil.Amount, error) {
@@ -967,7 +977,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 				return err
 			}
 
-			if invoiceFinalized && !htlcKeyRevealed {
+			if s.invoiceSettled && !htlcKeyRevealed {
 				htlcKeyRevealed = s.tryPushHtlcKey(ctx)
 			}
 
@@ -1030,6 +1040,7 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 				}
 
 				invoiceFinalized = true
+				s.invoiceSettled = true
 				htlcKeyRevealed = s.tryPushHtlcKey(ctx)
 				s.cost.Server = s.AmountRequested -
 					update.AmtPaid
@@ -1052,8 +1063,15 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 // returns an error of any kind we'll log it as a warning but won't act as the
 // swap execution can just go on without the server gaining knowledge of our
 // internal key.
+//
+// The internal key lets the server spend the htlc through its key path, so it
+// is only revealed after the swap invoice was settled. For a canceled invoice
+// the key must stay secret while the htlc can still be spent.
 func (s *loopInSwap) tryPushHtlcKey(ctx context.Context) bool {
 	if s.ProtocolVersion < loopdb.ProtocolVersionMuSig2 {
+		return false
+	}
+	if !s.invoiceSettled {
 		return false
 	}
 
