@@ -780,21 +780,31 @@ func testPreimagePush(t *testing.T) {
 }
 
 // TestFailedOffChainCancellation tests sending of a cancellation message to
-// the server when a swap fails due to off-chain routing.
+// the server when a swap fails due to off-chain routing. The cancellation must
+// name the payment that actually failed.
 func TestFailedOffChainCancellation(t *testing.T) {
-	t.Run("stable protocol", func(t *testing.T) {
-		testFailedOffChainCancellation(t)
-	})
+	for _, failedPayment := range []paymentType{
+		paymentTypeInvoice, paymentTypePrepay,
+	} {
+		name := "swap invoice"
+		if failedPayment == paymentTypePrepay {
+			name = "prepay"
+		}
 
-	t.Run("experimental protocol", func(t *testing.T) {
-		loopdb.EnableExperimentalProtocol()
-		defer loopdb.ResetCurrentProtocolVersion()
+		t.Run(name+" stable protocol", func(t *testing.T) {
+			testFailedOffChainCancellation(t, failedPayment)
+		})
 
-		testFailedOffChainCancellation(t)
-	})
+		t.Run(name+" experimental protocol", func(t *testing.T) {
+			loopdb.EnableExperimentalProtocol()
+			defer loopdb.ResetCurrentProtocolVersion()
+
+			testFailedOffChainCancellation(t, failedPayment)
+		})
+	}
 }
 
-func testFailedOffChainCancellation(t *testing.T) {
+func testFailedOffChainCancellation(t *testing.T, failedPayment paymentType) {
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -892,15 +902,21 @@ func testFailedOffChainCancellation(t *testing.T) {
 		State: lnrpc.Payment_SUCCEEDED,
 	}
 
-	// We want to fail our swap payment and succeed the prepayment, so we send
-	// a failure update to the payment that has the larger amount.
-	if pmt1.Amount > pmt2.Amount {
-		pmt1.TrackPaymentMessage.Updates <- failUpdate
-		pmt2.TrackPaymentMessage.Updates <- successUpdate
-	} else {
-		pmt1.TrackPaymentMessage.Updates <- successUpdate
-		pmt2.TrackPaymentMessage.Updates <- failUpdate
+	// Fail the requested payment and let the other one succeed.
+	swapPayment, prepayPayment := pmt1, pmt2
+	if pmt1.Invoice == swap.LoopOutContract.PrepayInvoice {
+		swapPayment, prepayPayment = pmt2, pmt1
 	}
+	require.Equal(t, swap.LoopOutContract.SwapInvoice, swapPayment.Invoice)
+	require.Equal(
+		t, swap.LoopOutContract.PrepayInvoice, prepayPayment.Invoice,
+	)
+	failed, succeeded := swapPayment, prepayPayment
+	if failedPayment == paymentTypePrepay {
+		failed, succeeded = prepayPayment, swapPayment
+	}
+	succeeded.TrackPaymentMessage.Updates <- successUpdate
+	failed.TrackPaymentMessage.Updates <- failUpdate
 
 	invoice, err := zpay32.Decode(
 		swap.LoopOutContract.SwapInvoice, lnd.ChainParams,
@@ -912,7 +928,7 @@ func testFailedOffChainCancellation(t *testing.T) {
 		hash:        swap.hash,
 		paymentAddr: payAddr,
 		metadata: routeCancelMetadata{
-			paymentType:   paymentTypeInvoice,
+			paymentType:   failedPayment,
 			failureReason: failUpdate.FailureReason,
 			attempts: []uint32{
 				2,
