@@ -79,6 +79,23 @@ func isInvoiceAlreadySettledError(err error) bool {
 		rpcStatus.Message() == invpkg.ErrInvoiceAlreadySettled.Error()
 }
 
+// isInvoiceNotFoundError returns true if the error reports that lnd does not
+// know the invoice, either as the sentinel itself or as its gRPC form.
+func isInvoiceNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, invpkg.ErrInvoiceNotFound) {
+		return true
+	}
+
+	rpcStatus, ok := status.FromError(err)
+	return ok &&
+		rpcStatus.Code() == codes.Unknown &&
+		rpcStatus.Message() == invpkg.ErrInvoiceNotFound.Error()
+}
+
 // loopInSwap contains all the in-memory state related to a pending loop in
 // swap.
 type loopInSwap struct {
@@ -102,6 +119,11 @@ type loopInSwap struct {
 	// invoiceSettled is set once the swap invoice is known to be settled.
 	// Settlement is final, so the flag is never cleared.
 	invoiceSettled bool
+
+	// invoiceCanceled is set once lnd acknowledged the cancellation of the
+	// swap invoice, or no longer knows the invoice. Either way, the server
+	// can no longer pay it.
+	invoiceCanceled bool
 
 	abandonChan chan struct{}
 
@@ -915,23 +937,26 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	}
 
 	// publishTxOnTimeout publishes the timeout tx if the contract has
-	// expired and invoice has not been settled.
+	// expired and the invoice can no longer be settled.
 	publishTxOnTimeout := func() (btcutil.Amount, error) {
-		// Don't publish the timeout tx if the invoice was settled.
-		if s.state == loopdb.StateInvoiceSettled {
+		// Don't publish the timeout tx if the invoice was settled or
+		// the swap succeeded.
+		if s.invoiceSettled || s.state == loopdb.StateInvoiceSettled ||
+			s.state == loopdb.StateSuccess {
+
 			return 0, nil
 		}
 
-		// Don't publish the timeout tx if the swap succeeded.
-		if s.state == loopdb.StateSuccess {
+		if s.height < s.LoopInContract.CltvExpiry {
 			return 0, nil
 		}
 
-		if s.height >= s.LoopInContract.CltvExpiry {
-			return s.publishTimeoutTx(ctx, htlcOutpoint, htlcValue)
+		refund, err := s.authorizeRefund(ctx)
+		if err != nil || !refund {
+			return 0, err
 		}
 
-		return 0, nil
+		return s.publishTimeoutTx(ctx, htlcOutpoint, htlcValue)
 	}
 
 	// Check timeout at current height. After a restart we may want to
@@ -946,8 +971,9 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	invoiceFinalized := false
 	htlcKeyRevealed := false
 	for {
-		// Check stop conditions.
-		if htlcSpend && invoiceFinalized {
+		// Check stop conditions. A canceled invoice is final even if
+		// lnd deleted it and never reports the cancellation.
+		if htlcSpend && (invoiceFinalized || s.invoiceCanceled) {
 			break
 		}
 		if s.state == loopdb.StateInvoiceSettled {
@@ -1059,6 +1085,64 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 	return nil
 }
 
+// authorizeRefund makes sure that the swap invoice can no longer be settled
+// before the expired htlc is refunded, and reports whether the refund may
+// proceed.
+//
+// Once the htlc expired, the server must not be able to pay the invoice
+// anymore: a late payment would give the server the preimage while the client
+// takes back the htlc. lnd's CancelInvoice resolves the race with settlement
+// atomically. It succeeds for an open or already canceled invoice and fails
+// for a settled one, which then blocks the refund. lnd only deletes canceled
+// invoices, so an invoice that it no longer knows can't be settled either,
+// for example one that its garbage collection removed after an earlier
+// cancellation. Any other error leaves the outcome unresolved, so the refund
+// waits for a later attempt.
+func (s *loopInSwap) authorizeRefund(ctx context.Context) (bool, error) {
+	if s.invoiceCanceled {
+		return true, nil
+	}
+
+	err := s.lnd.Invoices.CancelInvoice(ctx, s.hash)
+	switch {
+	case err == nil, isInvoiceNotFoundError(err):
+
+	case isInvoiceAlreadySettledError(err):
+		s.log.Infof("Swap invoice settled before the refund, not " +
+			"refunding the htlc")
+
+		// The swap can complete before the invoice update that
+		// reports the paid amount arrives, so take the amount from the
+		// invoice itself.
+		invoice, lookupErr := s.lnd.Client.LookupInvoice(ctx, s.hash)
+		if lookupErr != nil {
+			s.log.Warnf("Unable to look up the paid amount of the "+
+				"settled swap invoice: %v", lookupErr)
+		} else {
+			s.cost.Server = s.AmountRequested -
+				invoice.AmountPaid.ToSatoshis()
+		}
+
+		s.invoiceSettled = true
+		if s.state == loopdb.StateHtlcPublished {
+			s.setState(loopdb.StateInvoiceSettled)
+			return false, s.persistAndAnnounceState(ctx)
+		}
+
+		return false, nil
+
+	default:
+		s.log.Warnf("Unable to cancel the swap invoice before the "+
+			"refund, retrying at the next block: %v", err)
+
+		return false, nil
+	}
+
+	s.invoiceCanceled = true
+
+	return true, nil
+}
+
 // tryPushHtlcKey attempts to push the htlc key to the server. If the server
 // returns an error of any kind we'll log it as a warning but won't act as the
 // swap execution can just go on without the server gaining knowledge of our
@@ -1124,9 +1208,14 @@ func (s *loopInSwap) processHtlcSpend(ctx context.Context,
 		// swap invoice. We still need to query the final invoice state.
 		// This is not a hodl invoice, so it may be that the invoice was
 		// already settled. This means that the server didn't succeed in
-		// sweeping the htlc after paying the invoice.
+		// sweeping the htlc after paying the invoice. An invoice that
+		// lnd no longer knows was canceled before the refund.
 		err := s.lnd.Invoices.CancelInvoice(ctx, s.hash)
-		if err != nil && !isInvoiceAlreadySettledError(err) {
+		switch {
+		case err == nil, isInvoiceNotFoundError(err):
+			s.invoiceCanceled = true
+
+		case !isInvoiceAlreadySettledError(err):
 			return err
 		}
 	}
