@@ -54,6 +54,10 @@ type serverMock struct {
 	swapHash     lntypes.Hash
 	prepayHash   lntypes.Hash
 
+	// skipProbe makes NewLoopInSwap answer without paying the probe
+	// invoice.
+	skipProbe bool
+
 	// preimagePush is a channel that preimage pushes are sent into.
 	preimagePush chan lntypes.Preimage
 
@@ -190,13 +194,15 @@ func (s *serverMock) NewLoopInSwap(_ context.Context, swapHash lntypes.Hash,
 
 	// Simulate the server paying the probe invoice and expect the client to
 	// cancel the probe payment.
-	probeSub := <-s.lnd.SingleInvoiceSubcribeChannel
-	probeSub.Update <- lndclient.InvoiceUpdate{
-		Invoice: lndclient.Invoice{
-			State: invpkg.ContractAccepted,
-		},
+	if !s.skipProbe {
+		probeSub := <-s.lnd.SingleInvoiceSubcribeChannel
+		probeSub.Update <- lndclient.InvoiceUpdate{
+			Invoice: lndclient.Invoice{
+				State: invpkg.ContractAccepted,
+			},
+		}
+		<-s.lnd.FailInvoiceChannel
 	}
-	<-s.lnd.FailInvoiceChannel
 
 	resp := &newLoopInResponse{
 		expiry:              s.height + testChargeOnChainCltvDelta,
