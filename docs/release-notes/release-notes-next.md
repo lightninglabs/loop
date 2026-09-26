@@ -57,6 +57,12 @@
   failure to the server as a prepay routing failure. It was previously
   reported as a failure to route the swap invoice.
 
+* A fee bump of a static address withdrawal without an address now pays
+  the address of the withdrawal it replaces. It paid a new wallet address
+  before, and the client never recognized its confirmation, so the deposits
+  stayed in the withdrawing state. A fee bump to a different address is
+  rejected.
+
 #### Maintenance
 
 * Align the standalone `looprpc` module's OpenTelemetry SDK and OTLP trace
