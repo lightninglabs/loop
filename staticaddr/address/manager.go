@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -146,13 +147,19 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 // loadActiveAddresses rebuilds the runtime map in ID-ordered database pages.
 // It publishes the complete index and root only after all pages and wallet
-// imports succeed. Callers serialize loading with issuance or run it at startup.
+// imports and key counter reconciliation succeed. Callers serialize loading
+// with issuance or run it at startup.
 func (m *Manager) loadActiveAddresses(ctx context.Context) error {
 	active := make(map[string]*AddressParameters)
+	lastKeys := make(staticAddressKeyMaxima)
 	var (
 		root          *AddressParameters
 		walletScripts map[string]struct{}
 		afterID       int32
+		checked       uint64
+		restored      uint64
+		started       time.Time
+		lastLog       time.Time
 	)
 	for {
 		page, err := m.cfg.Store.ListStaticAddresses(ctx, afterID, addressPageSize)
@@ -163,6 +170,9 @@ func (m *Manager) loadActiveAddresses(ctx context.Context) error {
 			break
 		}
 		if walletScripts == nil {
+			started = time.Now()
+			lastLog = started
+			log.Infof("Checking persisted static address wallet watches")
 			walletScripts, err = m.walletAddressScripts(ctx)
 			if err != nil {
 				return err
@@ -172,7 +182,15 @@ func (m *Manager) loadActiveAddresses(ctx context.Context) error {
 			if param == nil || param.ID <= afterID {
 				return fmt.Errorf("invalid static address page after ID %d", afterID)
 			}
+			if err := lastKeys.observe(param); err != nil {
+				return err
+			}
 			if _, ok := walletScripts[string(param.PkScript)]; !ok {
+				if restored == 0 {
+					log.Infof("Restoring missing static address " +
+						"wallet watches; startup waits for " +
+						"restoration to finish")
+				}
 				staticAddress, err := staticAddressFromParams(param)
 				if err != nil {
 					return err
@@ -180,6 +198,15 @@ func (m *Manager) loadActiveAddresses(ctx context.Context) error {
 				if err := m.importAddressTapscript(ctx, staticAddress); err != nil {
 					return err
 				}
+				restored++
+			}
+			checked++
+			if checked%100 == 0 || time.Since(lastLog) >= 5*time.Second {
+				log.Infof("Static address wallet watch progress: "+
+					"checked=%d, restored=%d, elapsed=%v",
+					checked, restored,
+					time.Since(started).Round(time.Second))
+				lastLog = time.Now()
 			}
 			active[string(param.PkScript)] = param
 			if root == nil {
@@ -191,6 +218,15 @@ func (m *Manager) loadActiveAddresses(ctx context.Context) error {
 			break
 		}
 	}
+	if checked > 0 {
+		log.Infof("Static address wallet watches ready: checked=%d, "+
+			"restored=%d, elapsed=%v", checked, restored,
+			time.Since(started).Round(time.Second))
+	}
+	if err := m.reconcileKeyIndices(ctx, lastKeys); err != nil {
+		return err
+	}
+
 	m.activeMu.Lock()
 	m.activeStaticAddresses = active
 	m.rootAddress = root
