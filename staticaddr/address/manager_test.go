@@ -99,10 +99,13 @@ func (w *addressListWallet) ImportTaprootScript(_ context.Context,
 type addressListStore struct {
 	Store
 
-	addresses []*AddressParameters
-	pages     int
-	failAfter int32
-	err       error
+	addresses    []*AddressParameters
+	pages        int
+	failAfter    int32
+	err          error
+	htlcIndex    uint32
+	hasHtlcIndex bool
+	htlcErr      error
 }
 
 // ListStaticAddresses returns a bounded page from the test's sorted records.
@@ -130,6 +133,14 @@ func (s *addressListStore) GetAllStaticAddresses(context.Context) (
 	[]*AddressParameters, error) {
 
 	return s.addresses, nil
+}
+
+// GetMaxStaticAddressHtlcKeyIndex returns the configured static loop-in HTLC
+// key index.
+func (s *addressListStore) GetMaxStaticAddressHtlcKeyIndex(context.Context,
+	keychain.KeyFamily) (uint32, bool, error) {
+
+	return s.htlcIndex, s.hasHtlcIndex, s.htlcErr
 }
 
 // ImportTaprootScript signals entry, waits for release or cancellation, and

@@ -49,3 +49,112 @@ func (s *SqlStore) GetStaticAddressID(ctx context.Context,
 	return s.baseDB.Queries.GetStaticAddressID(ctx, pkScript)
 }
 
+// ListStaticAddresses loads one bounded page without offset scans.
+func (s *SqlStore) ListStaticAddresses(ctx context.Context, afterID,
+	limit int32) ([]*AddressParameters, error) {
+
+	if afterID < 0 || limit <= 0 {
+		return nil, fmt.Errorf("invalid static address page: after=%d limit=%d",
+			afterID, limit)
+	}
+	rows, err := s.baseDB.Queries.ListStaticAddresses(ctx,
+		sqlc.ListStaticAddressesParams{AfterID: afterID, PageSize: limit})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*AddressParameters, 0, len(rows))
+	for _, row := range rows {
+		params, err := ParametersFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, params)
+	}
+	return result, nil
+}
+
+// GetAllStaticAddresses returns all addresses known to the client.
+func (s *SqlStore) GetAllStaticAddresses(ctx context.Context) (
+	[]*AddressParameters, error) {
+
+	staticAddresses, err := s.baseDB.Queries.AllStaticAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*AddressParameters, 0, len(staticAddresses))
+	for _, address := range staticAddresses {
+		res, err := ParametersFromRow(address)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, res)
+	}
+
+	return result, nil
+}
+
+// GetLegacyParameters returns the first static address created for this L402.
+func (s *SqlStore) GetLegacyParameters(ctx context.Context) (*AddressParameters,
+	error) {
+
+	staticAddress, err := s.baseDB.Queries.GetLegacyAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return ParametersFromRow(staticAddress)
+}
+
+// GetMaxStaticAddressHtlcKeyIndex returns the highest client key index of the
+// given family used by a static address loop-in HTLC.
+func (s *SqlStore) GetMaxStaticAddressHtlcKeyIndex(ctx context.Context,
+	family keychain.KeyFamily) (uint32, bool, error) {
+
+	index, err := s.baseDB.Queries.GetMaxStaticAddressHtlcKeyIndex(
+		ctx, int32(family),
+	)
+	if err != nil {
+		return 0, false, err
+	}
+
+	// The query returns -1 if no static address loop-in HTLC key exists.
+	if index < 0 {
+		return 0, false, nil
+	}
+
+	return uint32(index), true, nil
+}
+
+// ParametersFromRow restores static address parameters from a database row.
+// Joined address rows use this same conversion after unpacking nullable fields.
+func ParametersFromRow(row sqlc.StaticAddress) (
+	*AddressParameters, error) {
+
+	clientPubkey, err := btcec.ParsePubKey(row.ClientPubkey)
+	if err != nil {
+		return nil, err
+	}
+
+	serverPubkey, err := btcec.ParsePubKey(row.ServerPubkey)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AddressParameters{
+		ID:           row.ID,
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		PkScript:     row.Pkscript,
+		Expiry:       uint32(row.Expiry),
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(row.ClientKeyFamily),
+			Index:  uint32(row.ClientKeyIndex),
+		},
+		ProtocolVersion: version.AddressProtocolVersion(
+			row.ProtocolVersion,
+		),
+		InitiationHeight: row.InitiationHeight,
+	}, nil
+}
