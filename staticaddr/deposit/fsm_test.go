@@ -6,21 +6,29 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/loop/fsm"
-	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/swap"
 )
 
 // TestSignDescriptorUsesDepositAddress verifies unilateral signing uses the
 // parameters of the address that owns the deposit, without consulting the
-// legacy root address.
+// legacy root address. The key locator must be set so that lnd derives the
+// signing key directly instead of looking it up by public key.
 func TestSignDescriptorUsesDepositAddress(t *testing.T) {
 	params := &script.Parameters{
 		ClientPubkey: defaultServerPubkey,
 		ServerPubkey: defaultServerPubkey,
 		Expiry:       144,
-		PkScript:     []byte{0x51, 0x20, 0x01},
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamily(swap.StaticSingleAddressKeyFamily),
+			Index:  0,
+		},
+		PkScript: []byte{0x51, 0x20, 0x01},
 	}
 	deposit := &Deposit{
 		Value:         100_000,
@@ -35,7 +43,9 @@ func TestSignDescriptorUsesDepositAddress(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, staticAddress.TimeoutLeaf.Script,
 		signDesc.WitnessScript)
-	require.True(t, params.ClientPubkey.IsEqual(signDesc.KeyDesc.PubKey))
+	require.Nil(t, signDesc.KeyDesc.PubKey)
+	require.Equal(t, params.KeyLocator, signDesc.KeyDesc.KeyLocator)
+	require.False(t, signDesc.KeyDesc.KeyLocator.IsEmpty())
 	require.EqualValues(t, deposit.Value, signDesc.Output.Value)
 	require.Equal(t, params.PkScript, signDesc.Output.PkScript)
 }
@@ -238,7 +248,8 @@ func TestOwnedExpiryDoesNotWaitForDepositLock(t *testing.T) {
 				deposit.Unlock()
 				locked = false
 				select {
-				case <-done:
+				case err := <-done:
+					require.NoError(t, err)
 				case <-time.After(time.Second):
 					t.Fatal("expiry event did not finish after unlocking")
 				}
