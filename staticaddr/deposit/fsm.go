@@ -543,10 +543,14 @@ func (f *FSM) SignDescriptor(_ context.Context) (*lndclient.SignDescriptor,
 		return nil, err
 	}
 
+	// The key locator lets lnd derive the signing key directly. A restored
+	// wallet may not yet have derived the key, so a pubkey-only lookup could
+	// fall back to the wrong key.
 	return &lndclient.SignDescriptor{
 		WitnessScript: address.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
-			PubKey: f.deposit.AddressParams.ClientPubkey,
+			KeyLocator: f.deposit.AddressParams.KeyLocator,
+			PubKey:     f.deposit.AddressParams.ClientPubkey,
 		},
 		Output: wire.NewTxOut(
 			int64(f.deposit.Value), f.deposit.AddressParams.PkScript,
