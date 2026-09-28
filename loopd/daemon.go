@@ -15,6 +15,15 @@ import (
 
 	proxy "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/taproot-assets/taprpc"
+	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/macaroons"
+	bbolterrors "go.etcd.io/bbolt/errors"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
+	"gopkg.in/macaroon-bakery.v2/bakery"
+
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/instantout"
@@ -29,14 +38,6 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	loop_swaprpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/sweepbatcher"
-	"github.com/lightninglabs/taproot-assets/taprpc"
-	"github.com/lightningnetwork/lnd/clock"
-	"github.com/lightningnetwork/lnd/lntypes"
-	"github.com/lightningnetwork/lnd/macaroons"
-	bbolterrors "go.etcd.io/bbolt/errors"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/encoding/protojson"
-	"gopkg.in/macaroon-bakery.v2/bakery"
 )
 
 var (
@@ -98,6 +99,10 @@ type Daemon struct {
 	quit     chan struct{}
 	stopOnce sync.Once
 
+	// startupDone prevents shutdown from racing listener creation or new
+	// wait-group tasks. Early shutdown still closes quit to cancel recovery.
+	startupDone chan struct{}
+
 	mainCtx       context.Context
 	mainCtxCancel func()
 
@@ -124,6 +129,7 @@ func New(config *Config, lisCfg *ListenerCfg) *Daemon {
 		ErrChan: make(chan error, 1),
 
 		quit:        make(chan struct{}),
+		startupDone: make(chan struct{}),
 		cfg:         config,
 		listenerCfg: lisCfg,
 
@@ -143,6 +149,8 @@ func (d *Daemon) Start() error {
 	if !d.started.CompareAndSwap(false, true) {
 		return errOnlyStartOnce
 	}
+	finishStartup := sync.OnceFunc(func() { close(d.startupDone) })
+	defer finishStartup()
 
 	network := lndclient.Network(d.cfg.Network)
 
@@ -188,6 +196,8 @@ func (d *Daemon) Start() error {
 	// If we get here, we already have started several goroutines. So if
 	// anything goes wrong now, we need to cleanly shut down again.
 	err = d.startWebServers()
+	// Release shutdown before the error path waits for ErrChan.
+	finishStartup()
 	if err != nil {
 		errorf("Error while starting daemon: %v", err)
 		d.Stop()
@@ -214,6 +224,7 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	if !d.started.CompareAndSwap(false, true) {
 		return errOnlyStartOnce
 	}
+	defer close(d.startupDone)
 
 	// When starting as a subserver, we get passed in an already established
 	// connection to lnd that might be shared among other subservers.
@@ -947,19 +958,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			}
 		})
 
-		// Wait for the static address manager to be ready before
-		// starting the grpc server.
-		timeOutCtx, cancel := context.WithTimeout(
-			d.mainCtx, initManagerTimeout,
+		// Restoring key counters can require many individually bounded
+		// lnd RPCs. Wait for reconciliation without a fixed total
+		// deadline, but still react to shutdown and manager failures.
+		err := waitForStaticAddressManager(
+			d.mainCtx, initChan, d.internalErrChan, d.quit,
 		)
-		select {
-		case <-timeOutCtx.Done():
-			cancel()
-			return fmt.Errorf("static address manager not "+
-				"ready: %v", timeOutCtx.Err())
-
-		case <-initChan:
-			cancel()
+		if err != nil {
+			d.mainCtxCancel()
+			return fmt.Errorf("static address manager not ready: %w",
+				err)
 		}
 	}
 
@@ -1076,33 +1084,28 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// the wait group here because this goroutine will itself wait for the
 	// stop to complete and signal its completion through the main error
 	// channel.
-	go func() {
-		var runtimeErr error
-
-		// There are only two ways this goroutine can exit. Either there
-		// is an internal error or the caller requests a shutdown.
-		// In both cases we wait for the stop to complete before we
-		// signal the caller that we're done.
-		select {
-		case runtimeErr = <-d.internalErrChan:
-			errorf("Runtime error in daemon, shutting down: "+
-				"%v", runtimeErr)
-
-		case <-d.quit:
-		}
-
-		// We need to shut down before sending the error on the channel,
-		// otherwise a caller might exit the process too early.
-		d.stop()
-		cleanupMacaroonStore()
-		infof("Daemon exited")
-
-		// The caller expects exactly one message. So we send the error
-		// even if it's nil because we cleanly shut down.
-		d.ErrChan <- runtimeErr
-	}()
+	go d.handleRuntimeErrors(cleanupMacaroonStore)
 
 	return nil
+}
+
+// handleRuntimeErrors waits for startup to finish before shutting down all
+// resources, including listeners that startup may still be creating.
+func (d *Daemon) handleRuntimeErrors(cleanupMacaroonStore func()) {
+	var runtimeErr error
+	select {
+	case runtimeErr = <-d.internalErrChan:
+		errorf("Runtime error in daemon, shutting down: %v", runtimeErr)
+	case <-d.quit:
+	}
+
+	<-d.startupDone
+	d.stop()
+	cleanupMacaroonStore()
+	infof("Daemon exited")
+
+	// Signal completion only after all resources have stopped.
+	d.ErrChan <- runtimeErr
 }
 
 // Stop tries to gracefully shut down the daemon. A caller needs to wait for a
@@ -1171,4 +1174,21 @@ func allowCORS(handler http.Handler, origin string) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		handler.ServeHTTP(w, r)
 	})
+}
+
+// waitForStaticAddressManager lets wallet recovery finish before dependent
+// managers start, without losing cancellation or startup error propagation.
+func waitForStaticAddressManager(ctx context.Context, ready <-chan struct{},
+	errs <-chan error, quit <-chan struct{}) error {
+
+	select {
+	case <-ready:
+		return nil
+	case err := <-errs:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-quit:
+		return context.Canceled
+	}
 }
