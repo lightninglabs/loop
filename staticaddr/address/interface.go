@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 // AddressParameters describes one static address for callers of the address
@@ -33,4 +34,10 @@ type Store interface {
 	// L402. This is the immutable legacy/root address that anchors existing
 	// single-address deposits.
 	GetLegacyParameters(ctx context.Context) (*AddressParameters, error)
+
+	// GetMaxStaticAddressHtlcKeyIndex returns the highest client key index
+	// of the given family used by a static address loop-in HTLC. The boolean
+	// is false if no such HTLC key exists.
+	GetMaxStaticAddressHtlcKeyIndex(ctx context.Context,
+		family keychain.KeyFamily) (uint32, bool, error)
 }
