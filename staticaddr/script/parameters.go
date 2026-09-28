@@ -9,6 +9,10 @@ import (
 // Parameters holds all the necessary information for the 2-of-2 multisig
 // address.
 type Parameters struct {
+	// ID is the database primary key of the static address row. A zero value
+	// means the parameters have not been persisted yet.
+	ID int32
+
 	// ClientPubkey is the client's pubkey for the static address. It is
 	// used for the 2-of-2 funding output as well as for the client's
 	// timeout path.

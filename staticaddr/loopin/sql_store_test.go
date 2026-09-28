@@ -9,13 +9,304 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
+
+// TestLoopInChangeAddressRoundTrip verifies that a generated per-swap change
+// address survives both direct lookup and state-based recovery.
+func TestLoopInChangeAddressRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	testDB := loopdb.NewTestDB(t)
+	defer testDB.Close()
+
+	testClock := clock.NewTestClock(time.Now())
+	depositStore := deposit.NewSqlStore(testDB.BaseDB)
+	loopInStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDB), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+	addressStore := address.NewSqlStore(testDB.BaseDB)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+	ownedDeposit := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1},
+			Index: 2,
+		},
+		Value:                100_000,
+		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x03},
+	}
+	setPersistedTestDepositAddress(
+		t, ctx, testDB.BaseDB, ownedDeposit,
+	)
+	require.NoError(t, depositStore.CreateDeposit(ctx, ownedDeposit))
+	ownedDeposit.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.UpdateDeposit(ctx, ownedDeposit))
+
+	_, changeClientPubkey := test.CreateKey(1)
+	_, changeServerPubkey := test.CreateKey(2)
+	changeParams := &address.AddressParameters{
+		ClientPubkey: changeClientPubkey,
+		ServerPubkey: changeServerPubkey,
+		Expiry:       288,
+		KeyLocator: keychain.KeyLocator{
+			Family: 321,
+			Index:  654,
+		},
+		PkScript:         []byte{0x51, 0x20, 0x04},
+		ProtocolVersion:  version.ProtocolVersion_V0,
+		InitiationHeight: 987,
+	}
+	require.NoError(
+		t, addressStore.CreateStaticAddress(ctx, changeParams),
+	)
+	changeParams.ID, err = addressStore.GetStaticAddressID(
+		ctx, changeParams.PkScript,
+	)
+	require.NoError(t, err)
+
+	_, swapClientPubkey := test.CreateKey(3)
+	_, swapServerPubkey := test.CreateKey(4)
+	timeoutAddress, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{5, 6, 7, 8}
+	swap := &StaticAddressLoopIn{
+		SwapHash:                swapHash,
+		SwapPreimage:            lntypes.Preimage{9, 10, 11, 12},
+		DepositOutpoints:        []string{ownedDeposit.OutPoint.String()},
+		Deposits:                []*deposit.Deposit{ownedDeposit},
+		SelectedAmount:          60_000,
+		ClientPubkey:            swapClientPubkey,
+		ServerPubkey:            swapServerPubkey,
+		HtlcTimeoutSweepAddress: timeoutAddress,
+		ChangeAddressParams:     changeParams,
+	}
+	swap.SetState(SignHtlcTx)
+	require.NoError(t, loopInStore.CreateLoopIn(ctx, swap))
+
+	assertChangeAddress := func(t *testing.T,
+		got *address.AddressParameters) {
+
+		t.Helper()
+		require.NotNil(t, got)
+		require.Equal(t, changeParams.ID, got.ID)
+		require.Equal(
+			t, changeParams.ClientPubkey.SerializeCompressed(),
+			got.ClientPubkey.SerializeCompressed(),
+		)
+		require.Equal(
+			t, changeParams.ServerPubkey.SerializeCompressed(),
+			got.ServerPubkey.SerializeCompressed(),
+		)
+		require.Equal(t, changeParams.Expiry, got.Expiry)
+		require.Equal(t, changeParams.KeyLocator, got.KeyLocator)
+		require.Equal(t, changeParams.PkScript, got.PkScript)
+		require.Equal(
+			t, changeParams.ProtocolVersion, got.ProtocolVersion,
+		)
+		require.Equal(
+			t, changeParams.InitiationHeight, got.InitiationHeight,
+		)
+	}
+
+	restoredSwap, err := loopInStore.GetLoopInByHash(ctx, swapHash)
+	require.NoError(t, err)
+	assertChangeAddress(t, restoredSwap.ChangeAddressParams)
+
+	recoveredSwaps, err := loopInStore.GetStaticAddressLoopInSwapsByStates(
+		ctx, []fsm.StateType{SignHtlcTx},
+	)
+	require.NoError(t, err)
+	require.Len(t, recoveredSwaps, 1)
+	assertChangeAddress(t, recoveredSwaps[0].ChangeAddressParams)
+}
+
+// TestMaxStaticAddressHtlcKeyIndex verifies that the address store reports the
+// highest static loop-in HTLC key index of the requested family only.
+func TestMaxStaticAddressHtlcKeyIndex(t *testing.T) {
+	ctx := t.Context()
+	testDB := loopdb.NewTestDB(t)
+	defer testDB.Close()
+
+	loopInStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDB),
+		clock.NewTestClock(time.Now()), &chaincfg.RegressionNetParams,
+	)
+	depositStore := deposit.NewSqlStore(testDB.BaseDB)
+	addressStore := address.NewSqlStore(testDB.BaseDB)
+	legacy := keychain.KeyFamily(swap.StaticSingleAddressKeyFamily)
+
+	_, found, err := addressStore.GetMaxStaticAddressHtlcKeyIndex(
+		ctx, legacy,
+	)
+	require.NoError(t, err)
+	require.False(t, found)
+
+	timeoutAddress, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+	var addressParams *address.AddressParameters
+	for i, locator := range []keychain.KeyLocator{
+		{Family: legacy, Index: 7},
+		{Family: legacy, Index: 3},
+		{Family: legacy + 1, Index: 99},
+	} {
+		depositID, err := deposit.GetRandomDepositID()
+		require.NoError(t, err)
+		swapDeposit := &deposit.Deposit{
+			ID: depositID,
+			OutPoint: wire.OutPoint{
+				Hash:  chainhash.Hash{byte(i + 1)},
+				Index: uint32(i),
+			},
+			Value:                100_000,
+			TimeOutSweepPkScript: []byte{0x00, 0x14, byte(i)},
+		}
+		if i == 0 {
+			setPersistedTestDepositAddress(
+				t, ctx, testDB.BaseDB, swapDeposit,
+			)
+		} else {
+			swapDeposit.AddressParams = addressParams
+		}
+		addressParams = swapDeposit.AddressParams
+		require.NoError(t, depositStore.CreateDeposit(ctx, swapDeposit))
+
+		_, clientPubkey := test.CreateKey(int32(10 + i))
+		_, serverPubkey := test.CreateKey(int32(20 + i))
+		loopIn := &StaticAddressLoopIn{
+			SwapHash:     lntypes.Hash{byte(i + 1)},
+			SwapPreimage: lntypes.Preimage{byte(i + 1)},
+			DepositOutpoints: []string{
+				swapDeposit.OutPoint.String(),
+			},
+			Deposits:                []*deposit.Deposit{swapDeposit},
+			ClientPubkey:            clientPubkey,
+			ServerPubkey:            serverPubkey,
+			HtlcKeyLocator:          locator,
+			HtlcTimeoutSweepAddress: timeoutAddress,
+		}
+		loopIn.SetState(SignHtlcTx)
+		require.NoError(t, loopInStore.CreateLoopIn(ctx, loopIn))
+	}
+
+	index, found, err := addressStore.GetMaxStaticAddressHtlcKeyIndex(
+		ctx, legacy,
+	)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.EqualValues(t, 7, index)
+}
+
+// TestLoopInDepositAddressOwnershipRoundTrip asserts that deposits restored as
+// part of a loop-in retain the static address parameters needed for signing.
+func TestLoopInDepositAddressOwnershipRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	testDB := loopdb.NewTestDB(t)
+	defer testDB.Close()
+
+	testClock := clock.NewTestClock(time.Now())
+	depositStore := deposit.NewSqlStore(testDB.BaseDB)
+	loopInStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDB), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+	addressStore := address.NewSqlStore(testDB.BaseDB)
+
+	_, addressClientPubkey := test.CreateKey(1)
+	_, addressServerPubkey := test.CreateKey(2)
+	addressParams := &script.Parameters{
+		ClientPubkey: addressClientPubkey,
+		ServerPubkey: addressServerPubkey,
+		Expiry:       144,
+		KeyLocator: keychain.KeyLocator{
+			Family: 123,
+			Index:  456,
+		},
+		PkScript:         []byte{0x51, 0x20, 0x02},
+		ProtocolVersion:  version.ProtocolVersion_V0,
+		InitiationHeight: 789,
+	}
+	require.NoError(t, addressStore.CreateStaticAddress(ctx, addressParams))
+
+	var err error
+	addressParams.ID, err = addressStore.GetStaticAddressID(
+		ctx, addressParams.PkScript,
+	)
+	require.NoError(t, err)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+	ownedDeposit := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  wire.NewMsgTx(2).TxHash(),
+			Index: 3,
+		},
+		Value:                100_000,
+		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x03},
+		AddressParams:        addressParams,
+	}
+	ownedDeposit.SetState(deposit.Deposited)
+	require.NoError(t, depositStore.CreateDeposit(ctx, ownedDeposit))
+
+	ownedDeposit.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.UpdateDeposit(ctx, ownedDeposit))
+
+	_, swapClientPubkey := test.CreateKey(3)
+	_, swapServerPubkey := test.CreateKey(4)
+	timeoutAddress, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{0x01, 0x02, 0x03, 0x04}
+	swap := &StaticAddressLoopIn{
+		SwapHash:                swapHash,
+		SwapPreimage:            lntypes.Preimage{0x05, 0x06, 0x07, 0x08},
+		DepositOutpoints:        []string{ownedDeposit.OutPoint.String()},
+		Deposits:                []*deposit.Deposit{ownedDeposit},
+		ClientPubkey:            swapClientPubkey,
+		ServerPubkey:            swapServerPubkey,
+		HtlcTimeoutSweepAddress: timeoutAddress,
+	}
+	swap.SetState(SignHtlcTx)
+	require.NoError(t, loopInStore.CreateLoopIn(ctx, swap))
+
+	restoredSwap, err := loopInStore.GetLoopInByHash(ctx, swapHash)
+	require.NoError(t, err)
+	require.Len(t, restoredSwap.Deposits, 1)
+
+	restoredParams := restoredSwap.Deposits[0].AddressParams
+	require.NotNil(t, restoredParams)
+	require.Equal(t, addressParams.ID, restoredParams.ID)
+	require.Equal(
+		t, addressParams.ClientPubkey.SerializeCompressed(),
+		restoredParams.ClientPubkey.SerializeCompressed(),
+	)
+	require.Equal(
+		t, addressParams.ServerPubkey.SerializeCompressed(),
+		restoredParams.ServerPubkey.SerializeCompressed(),
+	)
+	require.Equal(t, addressParams.Expiry, restoredParams.Expiry)
+	require.Equal(t, addressParams.KeyLocator, restoredParams.KeyLocator)
+	require.Equal(t, addressParams.PkScript, restoredParams.PkScript)
+	require.Equal(t, addressParams.ProtocolVersion,
+		restoredParams.ProtocolVersion)
+	require.Equal(t, addressParams.InitiationHeight,
+		restoredParams.InitiationHeight)
+}
 
 // TestGetStaticAddressLoopInSwapsByStates tests that we can retrieve
 // StaticAddressLoopIn swaps by their states and that the deposits
@@ -88,6 +379,10 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 				0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x50,
 			},
 		}
+
+	setPersistedTestDepositAddress(
+		t, ctxb, testDb.BaseDB, d1, d2, d3, d4,
+	)
 
 	err := depositStore.CreateDeposit(ctxb, d1)
 	require.NoError(t, err)
@@ -293,6 +588,8 @@ func TestCreateLoopIn(t *testing.T) {
 			},
 		}
 
+	setPersistedTestDepositAddress(t, ctx, testDb.BaseDB, d1, d2)
+
 	err := depositStore.CreateDeposit(ctx, d1)
 	require.NoError(t, err)
 	err = depositStore.CreateDeposit(ctx, d2)
@@ -345,6 +642,35 @@ func TestCreateLoopIn(t *testing.T) {
 	require.Len(t, swapHashes[swapHashPending], 2)
 	require.Contains(t, swapHashes[swapHashPending], depositIDs[0])
 	require.Contains(t, swapHashes[swapHashPending], depositIDs[1])
+
+	// Deposits without a swap hash or without a database row must not hide
+	// the swap of the remaining deposits.
+	unmapped := &deposit.Deposit{
+		ID: newID(),
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x2a, 0x2b, 0x3c, 0x4f},
+			Index: 2,
+		},
+		Value: btcutil.Amount(300_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x4e,
+		},
+		AddressParams: d1.AddressParams,
+	}
+	err = depositStore.CreateDeposit(ctx, unmapped)
+	require.NoError(t, err)
+
+	swapHashes, err = swapStore.SwapHashesForDepositIDs(
+		ctx, []deposit.ID{
+			unmapped.ID, newID(), depositIDs[0], depositIDs[1],
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, swapHashes, 1)
+	require.ElementsMatch(
+		t, []deposit.ID{depositIDs[0], depositIDs[1]},
+		swapHashes[swapHashPending],
+	)
 
 	swap, err := swapStore.GetLoopInByHash(ctx, swapHashPending)
 	require.NoError(t, err)
@@ -505,6 +831,8 @@ func TestGetLoopInByHashOrdersDepositsBySnapshot(t *testing.T) {
 		},
 	}
 
+	setPersistedTestDepositAddress(t, ctx, testDb.BaseDB, d1, d2)
+
 	require.NoError(t, depositStore.CreateDeposit(ctx, d1))
 	require.NoError(t, depositStore.CreateDeposit(ctx, d2))
 
@@ -578,6 +906,7 @@ func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
 			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
 		},
 	}
+	setPersistedTestDepositAddress(t, ctxb, testDb.BaseDB, d)
 	require.NoError(t, depositStore.CreateDeposit(ctxb, d))
 
 	d.SetState(deposit.LoopingIn)

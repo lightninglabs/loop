@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -21,6 +23,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"google.golang.org/grpc"
 )
 
 // DefaultMockFee is the default value we use for fee estimates when no values
@@ -36,6 +39,8 @@ type mockWalletKit struct {
 	feeEstimateLock sync.Mutex
 	feeEstimates    map[int32]chainfee.SatPerKWeight
 	minRelayFee     chainfee.SatPerKWeight
+	walletStateLock sync.Mutex
+	importedTaproot map[string]struct{}
 
 	// listUnspent holds test UTXOs to be returned by ListUnspent.
 	listUnspent []*lnwallet.Utxo
@@ -43,11 +48,55 @@ type mockWalletKit struct {
 
 var _ lndclient.WalletKitClient = (*mockWalletKit)(nil)
 
+type mockWalletKitRawClient struct {
+	walletrpc.WalletKitClient
+
+	wallet *mockWalletKit
+}
+
+func (c *mockWalletKitRawClient) ListAddresses(_ context.Context,
+	req *walletrpc.ListAddressesRequest, _ ...grpc.CallOption) (
+	*walletrpc.ListAddressesResponse, error) {
+
+	if req.GetAccountName() != "" &&
+		req.GetAccountName() != waddrmgr.ImportedAddrAccountName {
+
+		return &walletrpc.ListAddressesResponse{}, nil
+	}
+
+	c.wallet.walletStateLock.Lock()
+	addresses := make([]string, 0, len(c.wallet.importedTaproot))
+	for addr := range c.wallet.importedTaproot {
+		addresses = append(addresses, addr)
+	}
+	c.wallet.walletStateLock.Unlock()
+	sort.Strings(addresses)
+
+	if len(addresses) == 0 {
+		return &walletrpc.ListAddressesResponse{}, nil
+	}
+
+	properties := make([]*walletrpc.AddressProperty, 0, len(addresses))
+	for _, addr := range addresses {
+		properties = append(properties, &walletrpc.AddressProperty{
+			Address: addr,
+		})
+	}
+
+	return &walletrpc.ListAddressesResponse{
+		AccountWithAddresses: []*walletrpc.AccountWithAddresses{{
+			Name:        waddrmgr.ImportedAddrAccountName,
+			AddressType: walletrpc.AddressType_TAPROOT_PUBKEY,
+			Addresses:   properties,
+		}},
+	}, nil
+}
+
 func (m *mockWalletKit) RawClientWithMacAuth(
 	ctx context.Context) (context.Context, time.Duration,
 	walletrpc.WalletKitClient) {
 
-	return ctx, 0, nil
+	return ctx, 0, &mockWalletKitRawClient{wallet: m}
 }
 
 func (m *mockWalletKit) ListUnspent(ctx context.Context, minConfs,
@@ -338,5 +387,24 @@ func (m *mockWalletKit) ImportPublicKey(ctx context.Context,
 func (m *mockWalletKit) ImportTaprootScript(ctx context.Context,
 	tapscript *waddrmgr.Tapscript) (btcutil.Address, error) {
 
-	return nil, nil
+	taprootKey, err := tapscript.TaprootKey()
+	if err != nil {
+		return nil, err
+	}
+
+	addr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(taprootKey), m.lnd.ChainParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	m.walletStateLock.Lock()
+	if m.importedTaproot == nil {
+		m.importedTaproot = make(map[string]struct{})
+	}
+	m.importedTaproot[addr.EncodeAddress()] = struct{}{}
+	m.walletStateLock.Unlock()
+
+	return addr, nil
 }
