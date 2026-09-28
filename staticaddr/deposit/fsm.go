@@ -9,11 +9,12 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
+
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
-	"github.com/lightningnetwork/lnd/input"
-	"github.com/lightningnetwork/lnd/keychain"
 )
 
 const (
@@ -552,10 +553,14 @@ func (f *FSM) SignDescriptor(_ context.Context) (*lndclient.SignDescriptor,
 		return nil, err
 	}
 
+	// The key locator lets lnd derive the signing key directly. A restored
+	// wallet may not yet have derived the key, so a pubkey-only lookup could
+	// fall back to the wrong key. Leave PubKey unset so SignOutputRaw sends
+	// the locator instead of selecting its legacy pubkey-only wire format.
 	return &lndclient.SignDescriptor{
 		WitnessScript: address.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
-			PubKey: f.deposit.AddressParams.ClientPubkey,
+			KeyLocator: f.deposit.AddressParams.KeyLocator,
 		},
 		Output: wire.NewTxOut(
 			int64(f.deposit.Value), f.deposit.AddressParams.PkScript,
