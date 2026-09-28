@@ -948,19 +948,16 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 			}
 		})
 
-		// Wait for the static address manager to be ready before
-		// starting the grpc server.
-		timeOutCtx, cancel := context.WithTimeout(
-			d.mainCtx, initManagerTimeout,
+		// Restoring key counters can require many individually bounded
+		// lnd RPCs. Wait for reconciliation without a fixed total
+		// deadline, but still react to shutdown and manager failures.
+		err := waitForStaticAddressManager(
+			d.mainCtx, initChan, d.internalErrChan, d.quit,
 		)
-		select {
-		case <-timeOutCtx.Done():
-			cancel()
-			return fmt.Errorf("static address manager not "+
-				"ready: %v", timeOutCtx.Err())
-
-		case <-initChan:
-			cancel()
+		if err != nil {
+			d.mainCtxCancel()
+			return fmt.Errorf("static address manager not ready: %w",
+				err)
 		}
 	}
 
@@ -1172,4 +1169,21 @@ func allowCORS(handler http.Handler, origin string) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		handler.ServeHTTP(w, r)
 	})
+}
+
+// waitForStaticAddressManager lets wallet recovery finish before dependent
+// managers start, without losing cancellation or startup error propagation.
+func waitForStaticAddressManager(ctx context.Context, ready <-chan struct{},
+	errs <-chan error, quit <-chan struct{}) error {
+
+	select {
+	case <-ready:
+		return nil
+	case err := <-errs:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-quit:
+		return context.Canceled
+	}
 }

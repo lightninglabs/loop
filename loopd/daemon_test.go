@@ -48,3 +48,35 @@ func TestShouldReportManagerErr(t *testing.T) {
 		})
 	}
 }
+
+// TestWaitForStaticAddressManager checks readiness, failures and shutdown while
+// the wallet's key counters are being reconciled before dependent managers run.
+func TestWaitForStaticAddressManager(t *testing.T) {
+	t.Parallel()
+
+	for _, outcome := range []string{"ready", "error", "cancel", "quit"} {
+		t.Run(outcome, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			ready := make(chan struct{})
+			errs := make(chan error, 1)
+			quit := make(chan struct{})
+			var wantErr error
+			switch outcome {
+			case "ready":
+				close(ready)
+			case "error":
+				wantErr = errors.New("key recovery failed")
+				errs <- wantErr
+			case "cancel":
+				wantErr = context.Canceled
+				cancel()
+			case "quit":
+				wantErr = context.Canceled
+				close(quit)
+			}
+			err := waitForStaticAddressManager(ctx, ready, errs, quit)
+			require.ErrorIs(t, err, wantErr)
+		})
+	}
+}

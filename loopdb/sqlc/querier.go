@@ -37,6 +37,7 @@ type Querier interface {
 	GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, error)
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
 	GetLoopOutSwaps(ctx context.Context) ([]GetLoopOutSwapsRow, error)
+	GetMaxStaticAddressHtlcKeyIndex(ctx context.Context, clientKeyFamily int32) (int32, error)
 	GetMigration(ctx context.Context, migrationID string) (MigrationTracker, error)
 	GetParentBatch(ctx context.Context, outpoint string) (SweepBatch, error)
 	GetReservation(ctx context.Context, reservationID []byte) (Reservation, error)

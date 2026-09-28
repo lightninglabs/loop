@@ -41,3 +41,10 @@ SELECT * FROM static_addresses
 WHERE id > sqlc.arg(after_id)
 ORDER BY id ASC
 LIMIT sqlc.arg(page_size);
+
+-- name: GetMaxStaticAddressHtlcKeyIndex :one
+SELECT CAST(COALESCE(MAX(htlc_keys.client_key_index), -1) AS INTEGER)
+FROM htlc_keys
+JOIN static_address_swaps
+    ON static_address_swaps.swap_hash = htlc_keys.swap_hash
+WHERE htlc_keys.client_key_family = $1;

@@ -245,7 +245,20 @@ func Run(rpcCfg RPCConfig) error {
 	// Execute command.
 	if parser.Active == nil {
 		daemon := New(&config, lisCfg)
-		if err := daemon.Start(); err != nil {
+
+		// Startup can take time when restoring wallet key counters.
+		// Forward shutdown before Start returns so recovery can cancel.
+		startupDone := make(chan struct{})
+		go func() {
+			select {
+			case <-interceptor.ShutdownChannel():
+				daemon.Stop()
+			case <-startupDone:
+			}
+		}()
+		err := daemon.Start()
+		close(startupDone)
+		if err != nil {
 			return err
 		}
 

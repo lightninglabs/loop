@@ -117,6 +117,21 @@ func (q *Queries) GetLegacyAddress(ctx context.Context) (StaticAddress, error) {
 	return i, err
 }
 
+const getMaxStaticAddressHtlcKeyIndex = `-- name: GetMaxStaticAddressHtlcKeyIndex :one
+SELECT CAST(COALESCE(MAX(htlc_keys.client_key_index), -1) AS INTEGER)
+FROM htlc_keys
+JOIN static_address_swaps
+    ON static_address_swaps.swap_hash = htlc_keys.swap_hash
+WHERE htlc_keys.client_key_family = $1
+`
+
+func (q *Queries) GetMaxStaticAddressHtlcKeyIndex(ctx context.Context, clientKeyFamily int32) (int32, error) {
+	row := q.db.QueryRowContext(ctx, getMaxStaticAddressHtlcKeyIndex, clientKeyFamily)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getStaticAddress = `-- name: GetStaticAddress :one
 SELECT id, client_pubkey, server_pubkey, expiry, client_key_family, client_key_index, pkscript, protocol_version, initiation_height FROM static_addresses
 WHERE pkscript=$1

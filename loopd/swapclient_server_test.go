@@ -31,6 +31,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -1975,6 +1976,14 @@ func (s *mockAddressStore) GetLegacyParameters(_ context.Context) (
 	}
 
 	return s.params[0], nil
+}
+
+// GetMaxStaticAddressHtlcKeyIndex reports that no static loop-in HTLC keys
+// exist.
+func (s *mockAddressStore) GetMaxStaticAddressHtlcKeyIndex(_ context.Context,
+	_ keychain.KeyFamily) (uint32, bool, error) {
+
+	return 0, false, nil
 }
 
 // mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.

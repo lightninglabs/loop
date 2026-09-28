@@ -107,6 +107,26 @@ func (s *SqlStore) GetLegacyParameters(ctx context.Context) (*AddressParameters,
 	return s.toAddressParameters(staticAddress)
 }
 
+// GetMaxStaticAddressHtlcKeyIndex returns the highest client key index of the
+// given family used by a static address loop-in HTLC.
+func (s *SqlStore) GetMaxStaticAddressHtlcKeyIndex(ctx context.Context,
+	family keychain.KeyFamily) (uint32, bool, error) {
+
+	index, err := s.baseDB.Queries.GetMaxStaticAddressHtlcKeyIndex(
+		ctx, int32(family),
+	)
+	if err != nil {
+		return 0, false, err
+	}
+
+	// The query returns -1 if no static address loop-in HTLC key exists.
+	if index < 0 {
+		return 0, false, nil
+	}
+
+	return uint32(index), true, nil
+}
+
 // toAddressParameters transforms a database representation of a static address
 // to an AddressParameters struct.
 func (s *SqlStore) toAddressParameters(row sqlc.StaticAddress) (

@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -132,6 +133,82 @@ func TestLoopInChangeAddressRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, recoveredSwaps, 1)
 	assertChangeAddress(t, recoveredSwaps[0].ChangeAddressParams)
+}
+
+// TestMaxStaticAddressHtlcKeyIndex verifies that the address store reports the
+// highest static loop-in HTLC key index of the requested family only.
+func TestMaxStaticAddressHtlcKeyIndex(t *testing.T) {
+	ctx := t.Context()
+	testDB := loopdb.NewTestDB(t)
+	defer testDB.Close()
+
+	loopInStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDB),
+		clock.NewTestClock(time.Now()), &chaincfg.RegressionNetParams,
+	)
+	depositStore := deposit.NewSqlStore(testDB.BaseDB)
+	addressStore := address.NewSqlStore(testDB.BaseDB)
+	legacy := keychain.KeyFamily(swap.StaticSingleAddressKeyFamily)
+
+	_, found, err := addressStore.GetMaxStaticAddressHtlcKeyIndex(
+		ctx, legacy,
+	)
+	require.NoError(t, err)
+	require.False(t, found)
+
+	timeoutAddress, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+	var addressParams *address.AddressParameters
+	for i, locator := range []keychain.KeyLocator{
+		{Family: legacy, Index: 7},
+		{Family: legacy, Index: 3},
+		{Family: legacy + 1, Index: 99},
+	} {
+		depositID, err := deposit.GetRandomDepositID()
+		require.NoError(t, err)
+		swapDeposit := &deposit.Deposit{
+			ID: depositID,
+			OutPoint: wire.OutPoint{
+				Hash:  chainhash.Hash{byte(i + 1)},
+				Index: uint32(i),
+			},
+			Value:                100_000,
+			TimeOutSweepPkScript: []byte{0x00, 0x14, byte(i)},
+		}
+		if i == 0 {
+			setPersistedTestDepositAddress(
+				t, ctx, testDB.BaseDB, swapDeposit,
+			)
+		} else {
+			swapDeposit.AddressParams = addressParams
+		}
+		addressParams = swapDeposit.AddressParams
+		require.NoError(t, depositStore.CreateDeposit(ctx, swapDeposit))
+
+		_, clientPubkey := test.CreateKey(int32(10 + i))
+		_, serverPubkey := test.CreateKey(int32(20 + i))
+		loopIn := &StaticAddressLoopIn{
+			SwapHash:     lntypes.Hash{byte(i + 1)},
+			SwapPreimage: lntypes.Preimage{byte(i + 1)},
+			DepositOutpoints: []string{
+				swapDeposit.OutPoint.String(),
+			},
+			Deposits:                []*deposit.Deposit{swapDeposit},
+			ClientPubkey:            clientPubkey,
+			ServerPubkey:            serverPubkey,
+			HtlcKeyLocator:          locator,
+			HtlcTimeoutSweepAddress: timeoutAddress,
+		}
+		loopIn.SetState(SignHtlcTx)
+		require.NoError(t, loopInStore.CreateLoopIn(ctx, loopIn))
+	}
+
+	index, found, err := addressStore.GetMaxStaticAddressHtlcKeyIndex(
+		ctx, legacy,
+	)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.EqualValues(t, 7, index)
 }
 
 // TestLoopInDepositAddressOwnershipRoundTrip asserts that deposits restored as
