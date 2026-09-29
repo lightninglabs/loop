@@ -648,10 +648,17 @@ func (b *batch) addSweeps(ctx context.Context, sweeps []*sweep) (bool, error) {
 		// version of batch transaction.
 		case len(b.sweeps) != 0:
 			if err := b.presign(ctx, sweeps); err != nil {
-				b.Warnf("Failed to add sweep %x to the batch, "+
+				msg := fmt.Sprintf("Failed to add sweep %x to the batch, "+
 					"because failed to presign new version"+
 					" of batch tx: %v",
 					sweeps[0].swapHash[:6], err)
+				if errors.Is(err, context.DeadlineExceeded) ||
+					ctx.Err() != nil {
+
+					b.Infof("%s", msg)
+				} else {
+					b.Warnf("%s", msg)
+				}
 
 				return false, nil
 			}

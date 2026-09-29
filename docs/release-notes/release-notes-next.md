@@ -17,6 +17,12 @@
   mode before attempting admission, avoiding spurious warnings when regular
   and presigned sweeps are pending together.
 
+* A presigned sweep batch that can't admit a sweep because its co-signers did
+  not sign in time now logs the rejection at info level instead of as a
+  warning. Such sweeps are offered to another batch or a new one. Rejections
+  during shutdown are logged at info level too; other presigning failures
+  remain warnings.
+
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
   waiting for the server timeout.
