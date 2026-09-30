@@ -60,16 +60,19 @@ The project is a client daemon (`loopd`) that connects to a user's `lnd` node an
 `lnd` node.
 
 **Maintenance rule:** whenever you start using an `lnd` gRPC method or message
-field that does not exist in older `lnd`, bump `LoopMinRequiredLndVersion` to the
-`lnd` release that introduced that API, and record which API drove the bump in the
-comment above the variable. Pin it to the *real* floor of the APIs the client uses
+field that does not exist in older `lnd`, or start relying on `lnd` behavior that
+older releases lack, bump `LoopMinRequiredLndVersion` to the `lnd` release that
+introduced it, and record which dependency drove the bump in the comment above the
+variable. Pin it to the *real* floor of the APIs the client uses
 — do **not** just track the `go.mod` dependency. Historically this value only
 tracked `go.mod` and drifted out of sync with the APIs actually called (it sat at
 0.17.0 while the client already depended on 0.18.4 APIs). To find the introducing
 release, grep the field/method across `lnd` version tags, e.g.
-`git grep <field> <tag> -- <proto-file>`. As of the current floor (**v0.18.4-beta**)
-the binding dependencies are the asset loop-out fields
-`routerrpc.SendPaymentRequest.first_hop_custom_records` and
+`git grep <field> <tag> -- <proto-file>`. As of the current floor (**v0.19.0-beta**)
+the binding dependency is the L402 token payment: `lndclient`'s `PayInvoice` sends
+`routerrpc.SendPaymentV2` without `timeout_seconds`, which `lnd` defaults to 60
+seconds since v0.19.0-beta and rejects before that. The older dependencies are the
+asset loop-out fields `routerrpc.SendPaymentRequest.first_hop_custom_records` and
 `lnrpc.Route.custom_channel_data` (lnd v0.18.4-beta), plus the sweep-batcher fee
 floor `walletrpc.EstimateFeeResponse.min_relay_fee_sat_per_kw` (lnd v0.18.3-beta).
 

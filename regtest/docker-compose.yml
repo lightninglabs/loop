@@ -30,7 +30,7 @@ services:
       - bitcoind:/home/bitcoin/.bitcoin
 
   lndserver:
-    image: lightninglabs/lnd:v0.18.5-beta
+    image: lightninglabs/lnd:v0.21.0-beta
     container_name: lndserver 
     restart: unless-stopped
     networks:
@@ -110,7 +110,7 @@ services:
 
 
   lndclient:
-    image: lightninglabs/lnd:v0.18.5-beta
+    image: lightninglabs/lnd:v0.21.0-beta
     container_name: lndclient 
     restart: unless-stopped
     networks:
