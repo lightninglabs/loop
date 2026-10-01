@@ -11,6 +11,11 @@
   fee cap are rejected; an explicit zero cap remains valid. Direct users of
   `Manager.NewInstantOut` must pass the fee cap as a required argument.
 
+* Raise the minimum supported LND version to v0.19.0-beta. Since v0.33.3,
+  `loopd` could not buy its L402 token on older LND, which rejected the
+  payment with `timeout_seconds must be specified`, so a `loopd` without a
+  paid token could not use the Loop server.
+
 #### Bug Fixes
 
 * Sweep batch selection now filters out batches with an incompatible signing
@@ -79,5 +84,8 @@
   holds binaries for the architecture it advertises, and gives a release its
   tag only once that check has passed.
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
+
+* The regtest environment now runs LND v0.21.0-beta, the version Loop is built
+  against, instead of v0.18.5-beta.
 
 #### Contributors (Alphabetical Order)

@@ -26,10 +26,16 @@ var (
 	// listed build tags/subservers need to be enabled.
 	//
 	// IMPORTANT: bump this whenever the client starts using an lnd RPC
-	// method or message field that does not exist in older lnd, to the lnd
-	// release that introduced that API (see the maintenance note in
-	// AGENTS.md). The current floor of v0.18.4-beta is set by the highest
-	// such dependency the client has today:
+	// method or message field that does not exist in older lnd, or starts
+	// relying on lnd behavior that older lnd lacks, to the lnd release that
+	// introduced it (see the maintenance note in AGENTS.md). The current
+	// floor of v0.19.0-beta is set by the highest such dependency the
+	// client has today:
+	//   - routerrpc.SendPaymentV2 with timeout_seconds unset, which
+	//     lndclient's PayInvoice sends when aperture's interceptor pays
+	//     for the L402 token (swap_server_client.go): lnd v0.19.0-beta
+	//     defaults the timeout to 60 seconds, older lnd rejects the
+	//     payment with "timeout_seconds must be specified".
 	//   - routerrpc.SendPaymentRequest.first_hop_custom_records and
 	//     lnrpc.Route.custom_channel_data, used by asset loop outs
 	//     (loopout.go): both added in lnd v0.18.4-beta.
@@ -40,8 +46,8 @@ var (
 	//     sweeper's min-relay fee floor.
 	LoopMinRequiredLndVersion = &verrpc.Version{
 		AppMajor: 0,
-		AppMinor: 18,
-		AppPatch: 4,
+		AppMinor: 19,
+		AppPatch: 0,
 		BuildTags: []string{
 			"signrpc", "walletrpc", "chainrpc", "invoicesrpc",
 		},
