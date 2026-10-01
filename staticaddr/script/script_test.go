@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/test"
@@ -28,9 +27,12 @@ func TestStaticAddressScript(t *testing.T) {
 	clientPrivKey, clientPubKey := test.CreateKey(1)
 	serverPrivKey, serverPubKey := test.CreateKey(2)
 
+	var clientKey, serverKey [32]byte
+	copy(clientKey[:], clientPrivKey.Serialize())
+	copy(serverKey[:], serverPrivKey.Serialize())
+
 	// Keys used for the Musig2 session.
-	privKeys := []*btcec.PrivateKey{clientPrivKey, serverPrivKey}
-	pubKeys := []*btcec.PublicKey{clientPubKey, serverPubKey}
+	privKeys := [][32]byte{clientKey, serverKey}
 
 	// Create a new static address.
 	staticAddress, err := NewStaticAddress(
@@ -91,7 +93,7 @@ func TestStaticAddressScript(t *testing.T) {
 				}
 
 				sig, err := utils.MuSig2Sign(
-					version, privKeys, pubKeys, tweak, msg,
+					version, privKeys, tweak, msg,
 				)
 				require.NoError(t, err)
 

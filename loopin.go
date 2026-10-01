@@ -1239,7 +1239,10 @@ func (s *loopInSwap) setState(state loopdb.SwapState) {
 }
 
 // sharedSecretFromHash derives the shared secret from the swap hash using the
-// swap.KeyFamily family and zero as index.
+// swap.KeyFamily family and zero as index. The swap hash is first interpreted
+// with btcec.PrivKeyFromBytes semantics, so the derived ephemeral pubkey uses
+// the same modulo-N normalization as the internal-key code paths that consume
+// the resulting shared secret.
 func sharedSecretFromHash(ctx context.Context, signer lndclient.SignerClient,
 	hash lntypes.Hash) ([32]byte, error) {
 
