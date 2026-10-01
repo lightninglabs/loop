@@ -803,7 +803,12 @@ func (m *Manager) AllStringOutpointsActiveDeposits(outpoints []string,
 }
 
 // TransitionDeposits allows a caller to transition a set of deposits to a new
-// state.
+// state. The deposits are identified by their outpoints: the transition always
+// applies to, locks and checks the manager's own deposit objects, which the
+// deposit state machines update, even if the caller holds copies, for example
+// deposits loaded from the store. Deposits that are already in the expected
+// final state are left untouched, so that retrying a transition that was
+// applied before is harmless.
 // Caveat: The action triggered by the state transitions should not compute
 // heavy things or call external endpoints that can block for a long time as
 // this function blocks until the expectedFinalState is reached. The default
@@ -824,16 +829,18 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	}
 
 	m.mu.Lock()
-	stateMachines, _ := m.toActiveDeposits(&outpoints)
+	stateMachines, activeDeposits := m.toActiveDeposits(&outpoints)
 	m.mu.Unlock()
 
 	if stateMachines == nil {
 		return fmt.Errorf("deposits not found in active deposits")
 	}
 
-	lockedDeposits := lockDeposits(deposits)
+	// The state machines update the manager's deposit objects without
+	// locking them for these events, so lock exactly those objects.
+	lockedDeposits := lockDeposits(activeDeposits)
 	defer unlockDeposits(lockedDeposits)
-	for _, deposit := range deposits {
+	for _, deposit := range activeDeposits {
 		if deposit.isInFinalStateNoLock() {
 			return fmt.Errorf("deposit %v is no longer active in "+
 				"state %v", deposit.OutPoint,
@@ -841,7 +848,11 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 		}
 	}
 
-	for _, sm := range stateMachines {
+	for i, sm := range stateMachines {
+		if activeDeposits[i].isInStateNoLock(expectedFinalState) {
+			continue
+		}
+
 		err := sm.SendEvent(ctx, event, nil)
 		if err != nil {
 			return err

@@ -35,6 +35,16 @@
 * Static-address loop-in quotes and manual outpoint initiation now reject
   deposits that are too close to expiry before contacting the Loop server.
 
+* Loop-in quotes for selected static address deposits now resolve the
+  deposits in the set of currently tracked deposits instead of the rendered
+  deposit listing. Every selected deposit must be unique, tracked and in the
+  deposited state.
+
+* `ListUnspentDeposits` now refreshes the static address deposits before it
+  lists the wallet outputs, and only lists deposits that are currently
+  tracked as deposited. An output that disappeared during the refresh could
+  previously still be listed, with a stale confirmation count.
+
 * Static Address deposit reconciliation now preserves authoritative
   first-confirmation heights while lnd is catching up, preventing premature
   expiry decisions from mismatched wallet and block-notification heights.
@@ -52,6 +62,10 @@
   arm64 userspace. Every published platform was previously built for amd64, so
   `loopd` failed with `exec format error` on ARM hosts.
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
+
+* A static address loop-in whose HTLC was published without payment now
+  refunds the HTLC after it expires. The swap could get stuck retrying a
+  deposit state transition forever and never publish the refund.
 
 #### Maintenance
 
