@@ -2,7 +2,10 @@ package withdraw
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -10,16 +13,26 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btclog/v2"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	// Initialize logger for tests to avoid nil pointer panics.
+	UseLogger(btclog.Disabled)
+}
 
 // TestNewManagerHeightValidation ensures the constructor rejects zero heights.
 func TestNewManagerHeightValidation(t *testing.T) {
@@ -705,4 +718,539 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Mock types for handleWithdrawal tests
+// ---------------------------------------------------------------------------
+
+// mockChainNotifier is a mock implementation of lndclient.ChainNotifierClient.
+type mockChainNotifier struct {
+	mock.Mock
+
+	mu sync.Mutex
+
+	// Track call counts for conditional behavior.
+	spendNtfnCalls int
+	confNtfnCalls  int
+}
+
+func (m *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
+	outpoint *wire.OutPoint, pkScript []byte, heightHint int32,
+	opts ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
+	chan error, error) {
+
+	m.mu.Lock()
+	m.spendNtfnCalls++
+	callNum := m.spendNtfnCalls
+	m.mu.Unlock()
+
+	args := m.Called(ctx, outpoint, pkScript, heightHint, callNum)
+
+	spendChan := args.Get(0)
+	errChan := args.Get(1)
+
+	var sc chan *chainntnfs.SpendDetail
+	var ec chan error
+
+	if spendChan != nil {
+		sc = spendChan.(chan *chainntnfs.SpendDetail)
+	}
+	if errChan != nil {
+		ec = errChan.(chan error)
+	}
+
+	return sc, ec, args.Error(2)
+}
+
+func (m *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
+	txid *chainhash.Hash, pkScript []byte, numConfs, heightHint int32,
+	opts ...lndclient.NotifierOption) (chan *chainntnfs.TxConfirmation,
+	chan error, error) {
+
+	m.mu.Lock()
+	m.confNtfnCalls++
+	callNum := m.confNtfnCalls
+	m.mu.Unlock()
+
+	args := m.Called(ctx, txid, pkScript, numConfs, heightHint, callNum)
+
+	confChan := args.Get(0)
+	errChan := args.Get(1)
+
+	var cc chan *chainntnfs.TxConfirmation
+	var ec chan error
+
+	if confChan != nil {
+		cc = confChan.(chan *chainntnfs.TxConfirmation)
+	}
+	if errChan != nil {
+		ec = errChan.(chan error)
+	}
+
+	return cc, ec, args.Error(2)
+}
+
+func (m *mockChainNotifier) RegisterBlockEpochNtfn(ctx context.Context) (
+	chan int32, chan error, error) {
+
+	args := m.Called(ctx)
+
+	blockChan := args.Get(0)
+	errChan := args.Get(1)
+
+	var bc chan int32
+	var ec chan error
+
+	if blockChan != nil {
+		bc = blockChan.(chan int32)
+	}
+	if errChan != nil {
+		ec = errChan.(chan error)
+	}
+
+	return bc, ec, args.Error(2)
+}
+
+func (m *mockChainNotifier) RawClientWithMacAuth(ctx context.Context) (
+	context.Context, time.Duration, chainrpc.ChainNotifierClient) {
+
+	return ctx, 0, nil
+}
+
+// ---------------------------------------------------------------------------
+// handleWithdrawal tests
+// ---------------------------------------------------------------------------
+
+// testDeposit creates a test deposit with the given parameters.
+func testDeposit(hashByte byte, value btcutil.Amount,
+	confHeight uint32) *deposit.Deposit {
+
+	hash := chainhash.Hash{}
+	hash[0] = hashByte
+	return &deposit.Deposit{
+		OutPoint: wire.OutPoint{
+			Hash:  hash,
+			Index: 0,
+		},
+		Value:              value,
+		ConfirmationHeight: int64(confHeight),
+	}
+}
+
+// TestHandleWithdrawal_HappyPath tests the successful withdrawal flow up to
+// confirmation registration. Full flow including storage persistence requires
+// integration tests since Store is a concrete type (*SqlStore).
+//
+// Tests: spend detected -> confirmation registration succeeds.
+func TestHandleWithdrawal_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create test data.
+	deposits := []*deposit.Deposit{testDeposit(1, 100000, 100)}
+	txHash := chainhash.Hash{0x01}
+	spenderTxHash := chainhash.Hash{0x02}
+	withdrawalPkScript := []byte{0x51, 0x20}
+	staticAddrPkScript := []byte{0x51, 0x21}
+
+	// Create channels for notifications.
+	blockChan := make(chan int32, 1)
+	blockErrChan := make(chan error, 1)
+	spendChan := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan := make(chan error, 1)
+	confChan := make(chan *chainntnfs.TxConfirmation, 1)
+	confErrChan := make(chan error, 1)
+
+	// Set up mocks.
+	mockNotifier := &mockChainNotifier{}
+
+	mockNotifier.On("RegisterBlockEpochNtfn", mock.Anything).
+		Return(blockChan, blockErrChan, nil)
+	mockNotifier.On("RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, 1).
+		Return(spendChan, spendErrChan, nil)
+	mockNotifier.On("RegisterConfirmationsNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, 1).
+		Return(confChan, confErrChan, nil)
+
+	// Create manager with mocks.
+	// Note: Store is nil, so we can't test the full flow including
+	// UpdateWithdrawal. That requires integration tests.
+	m := &Manager{
+		cfg: &ManagerConfig{
+			ChainNotifier: mockNotifier,
+		},
+		finalizedWithdrawalTxns: make(map[chainhash.Hash]*wire.MsgTx),
+	}
+	m.initiationHeight.Store(100)
+
+	// Call handleWithdrawal (spawns goroutine).
+	m.handleWithdrawal(ctx, deposits, txHash, withdrawalPkScript,
+		staticAddrPkScript)
+
+	// Send spend notification.
+	spendChan <- &chainntnfs.SpendDetail{
+		SpenderTxHash:  &spenderTxHash,
+		SpendingHeight: 105,
+	}
+
+	// Give time for spend to be processed and conf registration to occur.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify spend and confirmation registration happened.
+	mockNotifier.AssertCalled(t, "RegisterSpendNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, 1)
+	mockNotifier.AssertCalled(t, "RegisterConfirmationsNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, 1)
+
+	// Cancel to clean up goroutine (we're not testing full confirmation
+	// flow since Store is nil).
+	cancel()
+}
+
+// TestHandleWithdrawal_SpendRegistrationRetry tests that spend registration
+// is retried on next block when it fails.
+func TestHandleWithdrawal_SpendRegistrationRetry(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create test data.
+	deposits := []*deposit.Deposit{testDeposit(1, 100000, 100)}
+	txHash := chainhash.Hash{0x01}
+	spenderTxHash := chainhash.Hash{0x02}
+	withdrawalPkScript := []byte{0x51, 0x20}
+	staticAddrPkScript := []byte{0x51, 0x21}
+
+	// Create channels.
+	blockChan := make(chan int32, 2)
+	blockErrChan := make(chan error, 1)
+	spendChan := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan := make(chan error, 1)
+	confChan := make(chan *chainntnfs.TxConfirmation, 1)
+	confErrChan := make(chan error, 1)
+
+	// Set up mocks.
+	mockNotifier := &mockChainNotifier{}
+
+	mockNotifier.On("RegisterBlockEpochNtfn", mock.Anything).
+		Return(blockChan, blockErrChan, nil)
+
+	// First call fails, second succeeds.
+	mockNotifier.On("RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, 1).
+		Return(nil, nil, errors.New("temporary failure"))
+	mockNotifier.On("RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, 2).
+		Return(spendChan, spendErrChan, nil)
+
+	mockNotifier.On("RegisterConfirmationsNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, 1).
+		Return(confChan, confErrChan, nil)
+
+	// Create manager.
+	m := &Manager{
+		cfg: &ManagerConfig{
+			ChainNotifier: mockNotifier,
+		},
+		finalizedWithdrawalTxns: make(map[chainhash.Hash]*wire.MsgTx),
+	}
+	m.initiationHeight.Store(100)
+
+	// Call handleWithdrawal.
+	m.handleWithdrawal(ctx, deposits, txHash, withdrawalPkScript,
+		staticAddrPkScript)
+
+	// Send block to trigger retry.
+	blockChan <- 101
+
+	// Give time for retry.
+	time.Sleep(50 * time.Millisecond)
+
+	// Send spend notification (on successful registration).
+	spendChan <- &chainntnfs.SpendDetail{
+		SpenderTxHash:  &spenderTxHash,
+		SpendingHeight: 105,
+	}
+
+	// Give time for confirmation registration.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify both spend registrations were attempted.
+	mockNotifier.AssertNumberOfCalls(t, "RegisterSpendNtfn", 2)
+	// Verify we reached confirmation registration (retry worked).
+	mockNotifier.AssertCalled(t, "RegisterConfirmationsNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, 1)
+
+	cancel()
+}
+
+// TestHandleWithdrawal_ConfirmationRegistrationRetry tests that confirmation
+// registration is retried on next block when it fails.
+func TestHandleWithdrawal_ConfirmationRegistrationRetry(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create test data.
+	deposits := []*deposit.Deposit{testDeposit(1, 100000, 100)}
+	txHash := chainhash.Hash{0x01}
+	spenderTxHash := chainhash.Hash{0x02}
+	withdrawalPkScript := []byte{0x51, 0x20}
+	staticAddrPkScript := []byte{0x51, 0x21}
+
+	// Create channels.
+	blockChan := make(chan int32, 2)
+	blockErrChan := make(chan error, 1)
+	spendChan := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan := make(chan error, 1)
+	confChan := make(chan *chainntnfs.TxConfirmation, 1)
+	confErrChan := make(chan error, 1)
+
+	// Set up mocks.
+	mockNotifier := &mockChainNotifier{}
+
+	mockNotifier.On("RegisterBlockEpochNtfn", mock.Anything).
+		Return(blockChan, blockErrChan, nil)
+	mockNotifier.On("RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, 1).
+		Return(spendChan, spendErrChan, nil)
+
+	// First confirmation registration fails, second succeeds.
+	mockNotifier.On("RegisterConfirmationsNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, 1).
+		Return(nil, nil, errors.New("temporary failure"))
+	mockNotifier.On("RegisterConfirmationsNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, 2).
+		Return(confChan, confErrChan, nil)
+
+	// Create manager.
+	m := &Manager{
+		cfg: &ManagerConfig{
+			ChainNotifier: mockNotifier,
+		},
+		finalizedWithdrawalTxns: make(map[chainhash.Hash]*wire.MsgTx),
+	}
+	m.initiationHeight.Store(100)
+
+	// Call handleWithdrawal.
+	m.handleWithdrawal(ctx, deposits, txHash, withdrawalPkScript,
+		staticAddrPkScript)
+
+	// Send spend notification.
+	spendChan <- &chainntnfs.SpendDetail{
+		SpenderTxHash:  &spenderTxHash,
+		SpendingHeight: 105,
+	}
+
+	// Give time for first conf registration to fail.
+	time.Sleep(50 * time.Millisecond)
+
+	// Send block to trigger retry.
+	blockChan <- 106
+
+	// Give time for retry.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify both confirmation registrations were attempted.
+	mockNotifier.AssertNumberOfCalls(t, "RegisterConfirmationsNtfn", 2)
+
+	cancel()
+}
+
+// TestHandleWithdrawal_ContextCanceled tests that the goroutine exits cleanly
+// when the context is canceled.
+func TestHandleWithdrawal_ContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create test data.
+	deposits := []*deposit.Deposit{testDeposit(1, 100000, 100)}
+	txHash := chainhash.Hash{0x01}
+	withdrawalPkScript := []byte{0x51, 0x20}
+	staticAddrPkScript := []byte{0x51, 0x21}
+
+	// Create channels.
+	blockChan := make(chan int32, 1)
+	blockErrChan := make(chan error, 1)
+	spendChan := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan := make(chan error, 1)
+
+	// Set up mocks.
+	mockNotifier := &mockChainNotifier{}
+
+	mockNotifier.On("RegisterBlockEpochNtfn", mock.Anything).
+		Return(blockChan, blockErrChan, nil)
+	mockNotifier.On("RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, 1).
+		Return(spendChan, spendErrChan, nil)
+
+	// Create manager.
+	m := &Manager{
+		cfg: &ManagerConfig{
+			ChainNotifier: mockNotifier,
+		},
+		finalizedWithdrawalTxns: make(map[chainhash.Hash]*wire.MsgTx),
+	}
+	m.initiationHeight.Store(100)
+
+	// Call handleWithdrawal.
+	m.handleWithdrawal(ctx, deposits, txHash, withdrawalPkScript,
+		staticAddrPkScript)
+
+	// Give time for goroutine to start.
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel context.
+	cancel()
+
+	// Give time for goroutine to exit.
+	time.Sleep(100 * time.Millisecond)
+
+	// If we get here without hanging, the test passes.
+	// The goroutine should have exited cleanly.
+	mockNotifier.AssertExpectations(t)
+}
+
+// TestHandleWithdrawal_BlockChannelClosed tests that the goroutine exits
+// cleanly when the block channel is closed.
+func TestHandleWithdrawal_BlockChannelClosed(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create test data.
+	deposits := []*deposit.Deposit{testDeposit(1, 100000, 100)}
+	txHash := chainhash.Hash{0x01}
+	withdrawalPkScript := []byte{0x51, 0x20}
+	staticAddrPkScript := []byte{0x51, 0x21}
+
+	// Create channels.
+	blockChan := make(chan int32)
+	blockErrChan := make(chan error, 1)
+
+	// Set up mocks - spend registration fails to force retry path.
+	mockNotifier := &mockChainNotifier{}
+
+	mockNotifier.On("RegisterBlockEpochNtfn", mock.Anything).
+		Return(blockChan, blockErrChan, nil)
+	mockNotifier.On("RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, 1).
+		Return(nil, nil, errors.New("temporary failure"))
+
+	// Create manager.
+	m := &Manager{
+		cfg: &ManagerConfig{
+			ChainNotifier: mockNotifier,
+		},
+		finalizedWithdrawalTxns: make(map[chainhash.Hash]*wire.MsgTx),
+	}
+	m.initiationHeight.Store(100)
+
+	// Call handleWithdrawal.
+	m.handleWithdrawal(ctx, deposits, txHash, withdrawalPkScript,
+		staticAddrPkScript)
+
+	// Give time for goroutine to hit retry wait.
+	time.Sleep(50 * time.Millisecond)
+
+	// Close block channel.
+	close(blockChan)
+
+	// Give time for goroutine to exit.
+	time.Sleep(100 * time.Millisecond)
+
+	// If we get here without hanging, the test passes.
+	mockNotifier.AssertExpectations(t)
+}
+
+// TestHandleWithdrawal_SpendErrorReregisters tests that an error on the spend
+// error channel causes re-registration.
+func TestHandleWithdrawal_SpendErrorReregisters(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create test data.
+	deposits := []*deposit.Deposit{testDeposit(1, 100000, 100)}
+	txHash := chainhash.Hash{0x01}
+	spenderTxHash := chainhash.Hash{0x02}
+	withdrawalPkScript := []byte{0x51, 0x20}
+	staticAddrPkScript := []byte{0x51, 0x21}
+
+	// Create channels.
+	blockChan := make(chan int32, 1)
+	blockErrChan := make(chan error, 1)
+	spendChan1 := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan1 := make(chan error, 1)
+	spendChan2 := make(chan *chainntnfs.SpendDetail, 1)
+	spendErrChan2 := make(chan error, 1)
+	confChan := make(chan *chainntnfs.TxConfirmation, 1)
+	confErrChan := make(chan error, 1)
+
+	// Set up mocks.
+	mockNotifier := &mockChainNotifier{}
+
+	mockNotifier.On("RegisterBlockEpochNtfn", mock.Anything).
+		Return(blockChan, blockErrChan, nil)
+
+	// First spend registration succeeds but will send error.
+	mockNotifier.On("RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, 1).
+		Return(spendChan1, spendErrChan1, nil)
+	// Second spend registration succeeds normally.
+	mockNotifier.On("RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, 2).
+		Return(spendChan2, spendErrChan2, nil)
+
+	mockNotifier.On("RegisterConfirmationsNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, 1).
+		Return(confChan, confErrChan, nil)
+
+	// Create manager.
+	m := &Manager{
+		cfg: &ManagerConfig{
+			ChainNotifier: mockNotifier,
+		},
+		finalizedWithdrawalTxns: make(map[chainhash.Hash]*wire.MsgTx),
+	}
+	m.initiationHeight.Store(100)
+
+	// Call handleWithdrawal.
+	m.handleWithdrawal(ctx, deposits, txHash, withdrawalPkScript,
+		staticAddrPkScript)
+
+	// Give time for goroutine to register.
+	time.Sleep(50 * time.Millisecond)
+
+	// Send error on first spend channel to trigger re-registration.
+	spendErrChan1 <- errors.New("spend notification error")
+
+	// Give time for re-registration.
+	time.Sleep(50 * time.Millisecond)
+
+	// Send spend on second channel.
+	spendChan2 <- &chainntnfs.SpendDetail{
+		SpenderTxHash:  &spenderTxHash,
+		SpendingHeight: 105,
+	}
+
+	// Give time for confirmation registration.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify both spend registrations were called.
+	mockNotifier.AssertNumberOfCalls(t, "RegisterSpendNtfn", 2)
+	// Verify we reached confirmation registration.
+	mockNotifier.AssertCalled(t, "RegisterConfirmationsNtfn", mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, 1)
+
+	cancel()
 }
