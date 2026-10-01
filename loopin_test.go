@@ -597,6 +597,10 @@ func handleHtlcExpiry(t *testing.T, ctx *loopInTestContext, inSwap *loopInSwap,
 	// Let htlc expire.
 	ctx.blockEpochChan <- inSwap.LoopInContract.CltvExpiry
 
+	// Before refunding, the client cancels the swap invoice so that the
+	// server can no longer pay it.
+	require.Equal(t, ctx.server.swapHash, <-ctx.lnd.FailInvoiceChannel)
+
 	// Expect a signing request for the htlc tx output value.
 	signReq := <-ctx.lnd.SignOutputRawChannel
 	require.Equal(
@@ -1085,4 +1089,239 @@ func startNewLoopIn(t *testing.T, ctx *loopInTestContext, height int32) (
 	}()
 
 	return cfg, inSwap, err
+}
+
+// refundGateInvoices returns scripted errors for invoice cancellations and
+// forwards every other call to the mock invoices client.
+type refundGateInvoices struct {
+	lndclient.InvoicesClient
+
+	cancelErrs chan error
+}
+
+// CancelInvoice returns the next scripted error, or forwards the call.
+func (r *refundGateInvoices) CancelInvoice(ctx context.Context,
+	hash lntypes.Hash) error {
+
+	select {
+	case err := <-r.cancelErrs:
+		if err != nil {
+			return err
+		}
+
+	default:
+	}
+
+	return r.InvoicesClient.CancelInvoice(ctx, hash)
+}
+
+// expiringLoopIn is a loop in whose confirmed htlc is about to expire.
+type expiringLoopIn struct {
+	ctx      *loopInTestContext
+	swap     *loopInSwap
+	htlcTx   wire.MsgTx
+	invoices *refundGateInvoices
+	errChan  chan error
+}
+
+// startExpiringLoopIn runs a loop in until its htlc confirmed and the client
+// watches the htlc and the swap invoice.
+func startExpiringLoopIn(t *testing.T) *expiringLoopIn {
+	t.Helper()
+
+	ctx := newLoopInTestContext(t)
+	cfg := newSwapConfig(
+		&ctx.lnd.LndServices, ctx.store, ctx.server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
+	req := testLoopInRequest
+	initResult, err := newLoopInSwap(
+		context.Background(), cfg, 600, &req,
+	)
+	require.NoError(t, err)
+	ctx.store.AssertLoopInStored()
+
+	invoices := &refundGateInvoices{
+		InvoicesClient: ctx.lnd.LndServices.Invoices,
+		cancelErrs:     make(chan error, 4),
+	}
+	ctx.lnd.LndServices.Invoices = invoices
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- initResult.swap.execute(
+			context.Background(), ctx.cfg, 600,
+		)
+	}()
+
+	ctx.assertState(loopdb.StateInitiated)
+	ctx.assertState(loopdb.StateHtlcPublished)
+	ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
+	htlcTx := <-ctx.lnd.SendOutputsChannel
+	ctx.store.AssertLoopInState(loopdb.StateHtlcPublished)
+
+	<-ctx.lnd.RegisterConfChannel
+	ctx.lnd.ConfChannel <- &chainntnfs.TxConfirmation{Tx: &htlcTx}
+	<-ctx.lnd.RegisterSpendChannel
+	ctx.assertSubscribeInvoice(ctx.server.swapHash)
+
+	return &expiringLoopIn{
+		ctx:      ctx,
+		swap:     initResult.swap,
+		htlcTx:   htlcTx,
+		invoices: invoices,
+		errChan:  errChan,
+	}
+}
+
+// requireNoRefund asserts that no refund is signed.
+func (e *expiringLoopIn) requireNoRefund(t *testing.T) {
+	t.Helper()
+
+	select {
+	case <-e.ctx.lnd.SignOutputRawChannel:
+		t.Fatal("htlc refund was signed")
+
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// TestLoopInRefundGateSettledInvoice asserts that a refund is never published
+// when the swap invoice turns out to be settled at the htlc expiry, even if
+// the client has not seen the settlement yet.
+func TestLoopInRefundGateSettledInvoice(t *testing.T) {
+	defer test.Guard(t)()
+
+	e := startExpiringLoopIn(t)
+	e.invoices.cancelErrs <- status.Error(
+		codes.Unknown, invpkg.ErrInvoiceAlreadySettled.Error(),
+	)
+
+	// The server paid the invoice, but its update has not arrived.
+	invoice, err := e.ctx.lnd.Client.LookupInvoice(
+		context.Background(), e.swap.hash,
+	)
+	require.NoError(t, err)
+	invoice.State = invpkg.ContractSettled
+	invoice.AmountPaid = invoice.Amount
+	e.ctx.lnd.SetInvoice(invoice)
+
+	e.ctx.blockEpochChan <- e.swap.LoopInContract.CltvExpiry
+	e.ctx.store.AssertLoopInState(loopdb.StateInvoiceSettled)
+	e.ctx.assertState(loopdb.StateInvoiceSettled)
+	e.requireNoRefund(t)
+
+	// The server cost is recorded without the invoice update.
+	state := e.ctx.store.AssertLoopInState(loopdb.StateSuccess)
+	e.ctx.assertState(loopdb.StateSuccess)
+	require.Equal(t,
+		e.swap.AmountRequested-invoice.Amount.ToSatoshis(),
+		state.Cost.Server)
+	require.Positive(t, state.Cost.Server)
+	require.NoError(t, <-e.errChan)
+	require.Positive(t, e.ctx.server.pushKeyCalls.Load())
+}
+
+// TestLoopInRefundGateUnresolvedCancellation asserts that an invoice
+// cancellation with an uncertain outcome defers the refund to a later block.
+func TestLoopInRefundGateUnresolvedCancellation(t *testing.T) {
+	defer test.Guard(t)()
+
+	e := startExpiringLoopIn(t)
+	e.invoices.cancelErrs <- status.Error(
+		codes.Unavailable, "connection lost",
+	)
+
+	expiry := e.swap.LoopInContract.CltvExpiry
+	e.ctx.blockEpochChan <- expiry
+	e.requireNoRefund(t)
+
+	// The next block cancels the invoice and refunds the htlc.
+	e.ctx.blockEpochChan <- expiry + 1
+	require.Equal(t, e.ctx.server.swapHash, <-e.ctx.lnd.FailInvoiceChannel)
+
+	signReq := <-e.ctx.lnd.SignOutputRawChannel
+	require.Equal(t, e.htlcTx.TxOut[0].Value,
+		signReq.SignDescriptors[0].Output.Value)
+	timeoutTx := <-e.ctx.lnd.TxPublishChannel
+
+	e.ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
+		SpendingTx:        timeoutTx,
+		SpenderInputIndex: 0,
+	}
+	<-e.ctx.lnd.FailInvoiceChannel
+	e.ctx.updateInvoiceState(0, invpkg.ContractCanceled)
+	e.ctx.assertState(loopdb.StateFailTimeout)
+	e.ctx.store.AssertLoopInState(loopdb.StateFailTimeout)
+	require.NoError(t, <-e.errChan)
+
+	// A canceled invoice never reveals the htlc key.
+	require.Zero(t, e.ctx.server.pushKeyCalls.Load())
+}
+
+// TestLoopInCanceledInvoiceKeepsHtlcKey asserts that the htlc key is not
+// revealed after the swap invoice was canceled, not even on later blocks.
+func TestLoopInCanceledInvoiceKeepsHtlcKey(t *testing.T) {
+	defer test.Guard(t)()
+
+	e := startExpiringLoopIn(t)
+	e.ctx.updateInvoiceState(0, invpkg.ContractCanceled)
+
+	expiry := e.swap.LoopInContract.CltvExpiry
+	e.ctx.blockEpochChan <- expiry - 2
+	e.ctx.blockEpochChan <- expiry - 1
+	time.Sleep(100 * time.Millisecond)
+	require.Zero(t, e.ctx.server.pushKeyCalls.Load())
+
+	e.ctx.blockEpochChan <- expiry
+	<-e.ctx.lnd.FailInvoiceChannel
+	<-e.ctx.lnd.SignOutputRawChannel
+	timeoutTx := <-e.ctx.lnd.TxPublishChannel
+	e.ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
+		SpendingTx:        timeoutTx,
+		SpenderInputIndex: 0,
+	}
+	<-e.ctx.lnd.FailInvoiceChannel
+	e.ctx.assertState(loopdb.StateFailTimeout)
+	e.ctx.store.AssertLoopInState(loopdb.StateFailTimeout)
+	require.NoError(t, <-e.errChan)
+	require.Zero(t, e.ctx.server.pushKeyCalls.Load())
+}
+
+// TestLoopInRefundGateDeletedInvoice asserts that a swap invoice that lnd no
+// longer knows, for example one that its garbage collection deleted after an
+// earlier cancellation, counts as canceled: the expired htlc is refunded, and
+// the swap completes without an update of the deleted invoice.
+func TestLoopInRefundGateDeletedInvoice(t *testing.T) {
+	defer test.Guard(t)()
+
+	e := startExpiringLoopIn(t)
+	notFound := status.Error(
+		codes.Unknown, invpkg.ErrInvoiceNotFound.Error(),
+	)
+
+	// Both the cancellation before the refund and the one after it find
+	// no invoice.
+	e.invoices.cancelErrs <- notFound
+	e.invoices.cancelErrs <- notFound
+
+	e.ctx.blockEpochChan <- e.swap.LoopInContract.CltvExpiry
+	select {
+	case signReq := <-e.ctx.lnd.SignOutputRawChannel:
+		require.Equal(t, e.htlcTx.TxOut[0].Value,
+			signReq.SignDescriptors[0].Output.Value)
+
+	case <-time.After(test.Timeout):
+		t.Fatal("htlc refund was not signed")
+	}
+	timeoutTx := <-e.ctx.lnd.TxPublishChannel
+
+	e.ctx.lnd.SpendChannel <- &chainntnfs.SpendDetail{
+		SpendingTx:        timeoutTx,
+		SpenderInputIndex: 0,
+	}
+	e.ctx.assertState(loopdb.StateFailTimeout)
+	e.ctx.store.AssertLoopInState(loopdb.StateFailTimeout)
+	require.NoError(t, <-e.errChan)
+	require.Zero(t, e.ctx.server.pushKeyCalls.Load())
 }
