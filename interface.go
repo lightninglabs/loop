@@ -297,6 +297,19 @@ type LoopInRequest struct {
 	// RouteHints are optional route hints to reach the destination through
 	// private channels.
 	RouteHints [][]zpay32.HopHint
+
+	// AssetId is the optional asset ID to receive over a Taproot Asset
+	// channel when the server pays the swap invoice.
+	AssetId []byte
+
+	// AssetEdgeNode selects the Taproot Asset channel peer that
+	// should convert the server's satoshi payment into the requested asset.
+	// It is required when AssetId is set.
+	AssetEdgeNode []byte
+
+	// MinAssetAmount is the minimum number of asset units to receive. It is
+	// required when AssetId is set and enforced before requesting a swap.
+	MinAssetAmount uint64
 }
 
 // StaticAddressLoopInRequest contains the required parameters for the swap.
@@ -437,6 +450,9 @@ type LoopInQuote struct {
 // LoopInSwapInfo contains essential information of a loop-in swap after the
 // swap is initiated.
 type LoopInSwapInfo struct { // nolint
+	// AssetAmount is the quoted asset output, or zero for a BTC swap.
+	AssetAmount uint64
+
 	// SwapHash contains the sha256 hash of the swap preimage.
 	SwapHash lntypes.Hash
 

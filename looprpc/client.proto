@@ -474,9 +474,20 @@ message LoopInRequest {
     probing and payment.
     */
     bool private = 10;
+
+    /*
+    The optional asset information to use for the swap. If set, the swap and
+    probe invoices are created by the connected Taproot Assets daemon so that
+    the server's payment is delivered over an asset channel.
+    */
+    AssetLoopInRequest asset_info = 11;
 }
 
 message SwapResponse {
+    // The quoted asset output for an asset Loop In, in indivisible asset units.
+    // Zero for swaps that do not receive assets.
+    uint64 asset_amount = 8;
+
     /*
     Swap identifier to track status in the update stream that is returned from
     the Start() call. Currently this is the hash that locks the htlcs.
@@ -2434,6 +2445,27 @@ message AssetLoopOutRequest {
     An optional expiry unix timestamp for when the rfq quote should expire.
     */
     int64 expiry = 4;
+}
+
+message AssetLoopInRequest {
+    /*
+    The asset ID to receive when the swap invoice is paid. A Taproot Assets
+    client must be connected to loopd when this field is set.
+    */
+    bytes asset_id = 1;
+
+    /*
+    The required node identity public key of the asset channel peer to use for
+    RFQ negotiation and the server's fee quote.
+    */
+    bytes asset_edge_node = 2;
+
+    /*
+    Required minimum output in indivisible asset units. The invoice remains
+    BTC-denominated; the negotiated rate must yield at least this many units
+    after the swap fee. Enforced before the swap is committed or funded.
+    */
+    uint64 min_asset_amount = 3;
 }
 
 message AssetRfqInfo {
