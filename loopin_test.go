@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +45,18 @@ type probeInvoicesMock struct {
 	cancelCalled chan struct{}
 	cancelBlock  chan struct{}
 	cancelCtxErr chan error
+}
+
+// probeInvoiceCancelMock allows tests to control individual cancellation RPCs.
+type probeInvoiceCancelMock struct {
+	cancelInvoice func(context.Context, lntypes.Hash) error
+}
+
+// CancelInvoice invokes the cancellation configured by the test.
+func (p *probeInvoiceCancelMock) CancelInvoice(ctx context.Context,
+	hash lntypes.Hash) error {
+
+	return p.cancelInvoice(ctx, hash)
 }
 
 // cancelErrorInvoicesMock is an InvoicesClient that returns a configured
@@ -182,6 +195,224 @@ func TestProcessHtlcSpendIgnoresGRPCAlreadySettled(t *testing.T) {
 	require.Equal(t, loopdb.StateFailTimeout, initResult.swap.state)
 }
 
+// TestLoopInCancelsProbeInvoiceOnInitiationFailure checks that a failed swap
+// initiation cancels the probe invoice. The probe watcher stops with the
+// initiation call, so nothing else would fail back a probe HTLC that the server
+// routes afterwards. This covers a failed call, and a call that succeeds
+// without the probe having reached the client, which fails the initiation
+// with a probe error.
+func TestLoopInCancelsProbeInvoiceOnInitiationFailure(t *testing.T) {
+	testCases := []struct {
+		name      string
+		serverErr bool
+		expectErr string
+	}{
+		{
+			name:      "server error",
+			serverErr: true,
+			expectErr: "cannot initiate swap",
+		},
+		{
+			name:      "missing probe",
+			expectErr: "probe error",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			defer test.Guard(t)()
+
+			testCtx := newLoopInTestContext(t)
+			if testCase.serverErr {
+				testCtx.server.expectedSwapAmt =
+					testLoopInRequest.Amount + 1
+			} else {
+				testCtx.server.skipProbe = true
+			}
+			cfg := newSwapConfig(
+				&testCtx.lnd.LndServices, testCtx.store,
+				testCtx.server, nil,
+				clock.NewTestClock(time.Unix(123, 0)),
+			)
+
+			_, err := newLoopInSwap(
+				context.Background(), cfg, 600,
+				&testLoopInRequest,
+			)
+			require.ErrorContains(t, err, testCase.expectErr)
+
+			probeSubscription :=
+				<-testCtx.lnd.SingleInvoiceSubcribeChannel
+			select {
+			case canceled := <-testCtx.lnd.FailInvoiceChannel:
+				require.Equal(
+					t, probeSubscription.Hash, canceled,
+				)
+
+			case <-time.After(test.Timeout):
+				t.Fatal("probe invoice was not canceled")
+			}
+		})
+	}
+}
+
+// TestLoopInSkipsCanceledProbeOnInitiationFailure checks that a failure after
+// the probe has arrived does not repeat the watcher's successful cancellation.
+func TestLoopInSkipsCanceledProbeOnInitiationFailure(t *testing.T) {
+	defer test.Guard(t)()
+
+	testCtx := newLoopInTestContext(t)
+	cfg := newSwapConfig(
+		&testCtx.lnd.LndServices, testCtx.store, testCtx.server, nil,
+		clock.NewTestClock(time.Unix(123, 0)),
+	)
+
+	// The server completes the probe, but returns an expiry too far in the
+	// future for the client to accept the swap.
+	testCtx.server.height = 600 + MaxLoopInAcceptDelta
+	_, err := newLoopInSwap(
+		context.Background(), cfg, 600, &testLoopInRequest,
+	)
+	require.ErrorIs(t, err, ErrExpiryTooFar)
+
+	// The server mock consumed the watcher's cancellation. Deferred cleanup
+	// must observe its success without sending another cancellation.
+	select {
+	case <-testCtx.lnd.FailInvoiceChannel:
+		t.Fatal("probe invoice cancellation was repeated")
+	default:
+	}
+}
+
+// TestProbeInvoiceCancelerRemembersSuccess verifies that only a successful
+// cancellation suppresses future RPCs. All failures, including invoice-not-found
+// errors from lnd, must remain visible and allow another attempt.
+func TestProbeInvoiceCancelerRemembersSuccess(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name      string
+		firstErr  error
+		wantCalls int
+	}{
+		{
+			name:      "success",
+			wantCalls: 1,
+		},
+		{
+			name:      "RPC failure",
+			firstErr:  fmt.Errorf("cancel failed"),
+			wantCalls: 2,
+		},
+		{
+			name:      "invoice not found",
+			firstErr:  invpkg.ErrInvoiceNotFound,
+			wantCalls: 2,
+		},
+		{
+			name: "invoice not found over gRPC",
+			firstErr: status.Error(
+				codes.Unknown, invpkg.ErrInvoiceNotFound.Error(),
+			),
+			wantCalls: 2,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			probeHash := lntypes.Hash{1}
+			calls := 0
+			invoices := &probeInvoiceCancelMock{
+				cancelInvoice: func(_ context.Context,
+					hash lntypes.Hash) error {
+
+					require.Equal(t, probeHash, hash)
+					calls++
+					if calls == 1 {
+						return testCase.firstErr
+					}
+					return nil
+				},
+			}
+			cancelProbe := newProbeInvoiceCanceler(invoices, probeHash)
+			ctx := context.Background()
+
+			require.ErrorIs(t, cancelProbe(ctx), testCase.firstErr)
+			require.NoError(t, cancelProbe(ctx))
+			require.NoError(t, cancelProbe(ctx))
+			require.Equal(t, testCase.wantCalls, calls)
+		})
+	}
+}
+
+// TestProbeInvoiceCancelerSerializesCalls verifies that concurrent callers
+// share a successful cancellation and that a waiting caller's deadline does
+// not depend on the in-flight RPC returning.
+func TestProbeInvoiceCancelerSerializesCalls(t *testing.T) {
+	t.Parallel()
+
+	const waiters = 8
+	ctx, cancel := context.WithTimeout(context.Background(), test.Timeout)
+	defer cancel()
+
+	var calls atomic.Int32
+	started := make(chan struct{}, waiters+2)
+	release := make(chan struct{})
+	invoices := &probeInvoiceCancelMock{
+		cancelInvoice: func(ctx context.Context, _ lntypes.Hash) error {
+			calls.Add(1)
+			started <- struct{}{}
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	}
+	cancelProbe := newProbeInvoiceCanceler(invoices, lntypes.Hash{1})
+	results := make(chan error, waiters+1)
+	go func() {
+		results <- cancelProbe(ctx)
+	}()
+
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("first cancellation did not start")
+	}
+
+	// The first RPC stays blocked while the second caller exhausts its
+	// budget. No second RPC should be started, nor should the first be
+	// canceled by the waiting caller's timeout.
+	waitCtx, waitCancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer waitCancel()
+	require.ErrorIs(t, cancelProbe(waitCtx), context.DeadlineExceeded)
+	require.EqualValues(t, 1, calls.Load())
+	select {
+	case err := <-results:
+		t.Fatalf("in-flight cancellation stopped early: %v", err)
+	default:
+	}
+
+	for range waiters {
+		go func() {
+			results <- cancelProbe(ctx)
+		}()
+	}
+	close(release)
+
+	for range waiters + 1 {
+		select {
+		case err := <-results:
+			require.NoError(t, err)
+		case <-ctx.Done():
+			t.Fatal("cancellation callers did not finish")
+		}
+	}
+	require.EqualValues(t, 1, calls.Load())
+}
+
 // SubscribeSingleInvoice returns the mock's preconfigured channels.
 func (p *probeInvoicesMock) SubscribeSingleInvoice(_ context.Context,
 	_ lntypes.Hash) (<-chan lndclient.InvoiceUpdate, <-chan error, error) {
@@ -220,7 +451,10 @@ func TestAwaitProbeCancelInvoiceUsesLiveContext(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	probeResult, err := awaitProbe(ctx, lnd, lntypes.Hash{1})
+	defer cancel()
+	probeHash := lntypes.Hash{1}
+	cancelProbe := newProbeInvoiceCanceler(invoices, probeHash)
+	probeResult, err := awaitProbe(ctx, lnd, probeHash, cancelProbe)
 	require.NoError(t, err)
 
 	invoices.updateChan <- lndclient.InvoiceUpdate{
