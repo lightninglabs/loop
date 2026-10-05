@@ -40,9 +40,10 @@ type AddressManager interface {
 		error)
 
 	// PrepareChangeAddress derives a fresh change key and script without
-	// persisting the address or importing a wallet watch.
-	PrepareChangeAddress(ctx context.Context) (*address.AddressParameters,
-		error)
+	// persisting the address or importing a wallet watch. It inherits the
+	// distinct labels of the spent static address scripts, joined with ", ".
+	PrepareChangeAddress(ctx context.Context,
+		spentPkScripts [][]byte) (*address.AddressParameters, error)
 
 	// ActivateChangeAddress persists and imports the prepared address before
 	// the swap is stored or any spend signatures are released.

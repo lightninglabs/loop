@@ -263,7 +263,8 @@ type changeActivationAddresses struct {
 	activateHook  func(*address.AddressParameters)
 }
 
-func (m *changeActivationAddresses) PrepareChangeAddress(context.Context) (
+func (m *changeActivationAddresses) PrepareChangeAddress(context.Context,
+	[][]byte) (
 	*address.AddressParameters, error) {
 
 	m.prepares++
