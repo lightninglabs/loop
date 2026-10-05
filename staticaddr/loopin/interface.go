@@ -40,8 +40,11 @@ type AddressManager interface {
 		error)
 
 	// NewChangeAddress derives and persists a fresh static address from the
-	// change key family for this operation's change output.
-	NewChangeAddress(ctx context.Context) (*address.AddressParameters, error)
+	// change key family for this operation's change output. The change
+	// address inherits the distinct labels of the spent static address
+	// scripts, joined with ", ".
+	NewChangeAddress(ctx context.Context,
+		spentPkScripts [][]byte) (*address.AddressParameters, error)
 }
 
 // DepositManager handles the interaction of loop-ins with deposits.

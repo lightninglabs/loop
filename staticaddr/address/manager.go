@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -447,9 +449,11 @@ func (m *Manager) NewReceiveAddress(ctx context.Context, label string) (
 
 // NewChangeAddress derives, stores, imports and activates the next change
 // family static address. Swap and withdrawal code calls this before submitting
-// requests that require change.
-func (m *Manager) NewChangeAddress(ctx context.Context) (*AddressParameters,
-	error) {
+// requests that require change. The change address inherits the labels of the
+// spent static address scripts, like wallets label change after the coins it
+// came from.
+func (m *Manager) NewChangeAddress(ctx context.Context,
+	spentPkScripts [][]byte) (*AddressParameters, error) {
 
 	root, err := m.EnsureStaticAddressRoot(ctx)
 	if err != nil {
@@ -457,8 +461,59 @@ func (m *Manager) NewChangeAddress(ctx context.Context) (*AddressParameters,
 	}
 
 	return m.newDerivedAddress(
-		ctx, root, swap.StaticAddressChangeKeyFamily, "",
+		ctx, root, swap.StaticAddressChangeKeyFamily,
+		m.inheritedLabel(spentPkScripts),
 	)
+}
+
+// inheritedLabelSeparator joins the labels a change address inherits.
+const inheritedLabelSeparator = ", "
+
+// inheritedLabel joins the distinct labels of the given static address
+// scripts in spend order. Unknown and unlabeled scripts are skipped. Labels are
+// split on the separator first, so spending a change address doesn't repeat
+// the labels it already inherited. Labels that would push the result past the
+// label limit are dropped whole, so it never ends in a partial label.
+func (m *Manager) inheritedLabel(pkScripts [][]byte) string {
+	m.activeMu.Lock()
+	defer m.activeMu.Unlock()
+
+	var inherited []string
+	for _, pkScript := range pkScripts {
+		params := m.activeStaticAddresses[string(pkScript)]
+		if params == nil || params.Label == "" {
+			continue
+		}
+
+		// A change address's label is itself a joined list, so split it
+		// back into its labels before removing duplicates. Otherwise
+		// "ops, treasury" spent with "treasury" would repeat treasury.
+		parts := strings.SplitSeq(params.Label, inheritedLabelSeparator)
+		for part := range parts {
+			if part != "" && !slices.Contains(inherited, part) {
+				inherited = append(inherited, part)
+			}
+		}
+	}
+
+	// Add whole labels in spend order. If the next one would exceed the
+	// label limit, stop there, so the result never ends in a cut label.
+	var label string
+	for _, part := range inherited {
+		// The first label has nothing before it, so it gets no
+		// separator.
+		next := part
+		if label != "" {
+			next = label + inheritedLabelSeparator + part
+		}
+		if len(next) > labels.MaxLength {
+			break
+		}
+
+		label = next
+	}
+
+	return label
 }
 
 // newDerivedAddress derives a client key in the requested family and creates

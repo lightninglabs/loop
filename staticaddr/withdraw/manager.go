@@ -578,7 +578,9 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 
 	var changeParams *address.AddressParameters
 	if changeAmount > 0 {
-		changeParams, err = m.cfg.AddressManager.NewChangeAddress(ctx)
+		changeParams, err = m.cfg.AddressManager.NewChangeAddress(
+			ctx, staticutil.DepositPkScripts(deposits),
+		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to create static "+
 				"address change output: %w", err)

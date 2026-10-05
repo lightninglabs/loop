@@ -54,6 +54,23 @@ func ToPrevOuts(deposits []*deposit.Deposit) (
 	return prevOuts, nil
 }
 
+// DepositPkScripts returns the static address script of each deposit. A
+// deposit without address parameters yields a nil script, which matches no
+// static address.
+func DepositPkScripts(deposits []*deposit.Deposit) [][]byte {
+	pkScripts := make([][]byte, 0, len(deposits))
+	for _, d := range deposits {
+		if d == nil || d.AddressParams == nil {
+			pkScripts = append(pkScripts, nil)
+			continue
+		}
+
+		pkScripts = append(pkScripts, d.AddressParams.PkScript)
+	}
+
+	return pkScripts
+}
+
 // DepositAddressDescriptors maps each deposit outpoint to the static address
 // descriptor that derives that output.
 //

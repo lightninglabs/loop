@@ -3,15 +3,18 @@ package address
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/stretchr/testify/require"
 )
 
 // TestNewAddressLabels verifies that labels belong to individual receive
-// addresses, not the shared root or automatically generated change.
+// addresses, not the shared root, and that change inherits the labels of the
+// addresses it spends.
 func TestNewAddressLabels(t *testing.T) {
 	fixture := NewAddressManagerTestContext(t)
 	manager := fixture.manager
@@ -44,9 +47,88 @@ func TestNewAddressLabels(t *testing.T) {
 	require.Equal(t, "legacy", updatedRoot.Label)
 	require.Empty(t, root.Label)
 
-	change, err := manager.NewChangeAddress(ctx)
+	// Change joins the distinct labels of the spent addresses in spend
+	// order, skipping unlabeled and unknown ones.
+	newLabeled := func(label string) []byte {
+		addr, _, err := manager.NewAddress(ctx, label)
+		require.NoError(t, err)
+		pkScript, err := txscript.PayToAddrScript(addr)
+		require.NoError(t, err)
+
+		return pkScript
+	}
+	ops := newLabeled("ops")
+	longA := newLabeled(strings.Repeat("a", labels.MaxLength/2))
+	longB := newLabeled(strings.Repeat("b", labels.MaxLength/2))
+	almostA := newLabeled(strings.Repeat("a", labels.MaxLength/2-1))
+	almostC := newLabeled(strings.Repeat("c", labels.MaxLength/2-1))
+	treasury, unlabeled := received[0].PkScript, received[2].PkScript
+
+	changeLabelTests := []struct {
+		name  string
+		spent [][]byte
+		want  string
+	}{
+		{name: "no spent addresses", want: ""},
+		{
+			name:  "duplicate label",
+			spent: [][]byte{treasury, received[1].PkScript},
+			want:  "treasury",
+		},
+		{
+			name:  "unlabeled skipped",
+			spent: [][]byte{unlabeled, treasury},
+			want:  "treasury",
+		},
+		{
+			name:  "unknown skipped",
+			spent: [][]byte{treasury, {0x51}},
+			want:  "treasury",
+		},
+		{
+			name:  "spend order",
+			spent: [][]byte{ops, treasury, ops},
+			want:  "ops, treasury",
+		},
+		{
+			name:  "label over limit dropped whole",
+			spent: [][]byte{longA, longB},
+			want:  strings.Repeat("a", labels.MaxLength/2),
+		},
+		{
+			name:  "labels after limit dropped",
+			spent: [][]byte{longA, ops, longB, treasury},
+			want:  strings.Repeat("a", labels.MaxLength/2) + ", ops",
+		},
+		{
+			name:  "exactly at limit",
+			spent: [][]byte{almostA, almostC},
+			want: strings.Repeat("a", labels.MaxLength/2-1) + ", " +
+				strings.Repeat("c", labels.MaxLength/2-1),
+		},
+	}
+	var change *AddressParameters
+	for _, test := range changeLabelTests {
+		change, err = manager.NewChangeAddress(ctx, test.spent)
+		require.NoError(t, err, test.name)
+		require.Equal(t, test.want, change.Label, test.name)
+		require.NoError(t, labels.Validate(change.Label), test.name)
+		require.Equal(t, test.want,
+			manager.GetParameters(change.PkScript).Label, test.name)
+	}
+
+	// Spending change again with one of its source labels must not repeat
+	// the labels it already inherited.
+	change, err = manager.NewChangeAddress(ctx, [][]byte{ops, treasury})
 	require.NoError(t, err)
-	require.Empty(t, change.Label)
+	require.Equal(t, "ops, treasury", change.Label)
+	for range 3 {
+		change, err = manager.NewChangeAddress(
+			ctx, [][]byte{change.PkScript, treasury},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "ops, treasury", change.Label)
+	}
 
 	for _, label := range []string{"operations", ""} {
 		require.NoError(t, manager.UpdateStaticAddressLabel(

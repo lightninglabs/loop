@@ -1100,11 +1100,12 @@ func TestInitHtlcActionSendsMultiAddressChangeOutput(t *testing.T) {
 		PaymentTimeoutSeconds: 3_600,
 	}
 
+	addressManager := &mockAddressManager{params: changeParams}
 	f := &FSM{
 		StateMachine: &fsm.StateMachine{},
 		cfg: &Config{
 			Server:                               server,
-			AddressManager:                       &mockAddressManager{params: changeParams},
+			AddressManager:                       addressManager,
 			DepositManager:                       &noopDepositManager{},
 			LndClient:                            mockLnd.Client,
 			WalletKit:                            mockLnd.WalletKit,
@@ -1147,6 +1148,13 @@ func TestInitHtlcActionSendsMultiAddressChangeOutput(t *testing.T) {
 		server.request.ChangeOutput.StaticAddress.GetPkScript(),
 	)
 	require.Same(t, changeParams, loopIn.ChangeAddressParams)
+
+	// The change label is derived from the spent deposits' addresses.
+	require.Equal(
+		t, [][]byte{dep.AddressParams.PkScript,
+			secondDep.AddressParams.PkScript},
+		addressManager.spentPkScripts,
+	)
 }
 
 // mockStaticAddressServer captures static-address loop-in requests in tests.
@@ -3550,6 +3558,7 @@ type mockAddressManager struct {
 	params         *script.Parameters
 	getParamsErr   error
 	getParamsCalls atomic.Int32
+	spentPkScripts [][]byte
 }
 
 // GetStaticAddressParameters returns the configured address parameters.
@@ -3565,8 +3574,10 @@ func (m *mockAddressManager) GetStaticAddressParameters(_ context.Context) (
 }
 
 // NewChangeAddress returns configured parameters for tests that need change.
-func (m *mockAddressManager) NewChangeAddress(_ context.Context) (
-	*address.AddressParameters, error) {
+func (m *mockAddressManager) NewChangeAddress(_ context.Context,
+	spentPkScripts [][]byte) (*address.AddressParameters, error) {
+
+	m.spentPkScripts = spentPkScripts
 
 	return m.params, nil
 }

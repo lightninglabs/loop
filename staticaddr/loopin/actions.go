@@ -112,7 +112,11 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	if hasChange {
 		changeAmount := f.loopIn.ExpectedChangeAmount()
 		f.loopIn.ChangeAddressParams, err =
-			f.cfg.AddressManager.NewChangeAddress(ctx)
+			f.cfg.AddressManager.NewChangeAddress(
+				ctx, staticutil.DepositPkScripts(
+					f.loopIn.Deposits,
+				),
+			)
 		if err != nil {
 			err = fmt.Errorf("unable to create static address "+
 				"change output: %w", err)
