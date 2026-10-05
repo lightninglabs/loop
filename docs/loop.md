@@ -48,7 +48,7 @@ The following flags are supported:
 | `--asset_id="…"`             | the asset ID of the asset to loop out, if this is set, the loop daemon will require a connection to a taproot assets daemon                                                                                                                                                    | string   |
 | `--asset_edge_node="…"`      | the pubkey of the edge node of the asset to loop out, this is required if the taproot assets daemon has multiple channels of the given asset id with different edge nodes                                                                                                      | string   |
 | `--force`                    | Assumes yes during confirmation. Using this option will result in an immediate swap                                                                                                                                                                                            | bool     |    `false`    |
-| `--label="…"`                | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved]                                                                                                                                                        | string   |
+| `--label="…"`                | an optional label for this swap, limited to 500 characters. The label may not start with our reserved prefix: [reserved]                                                                                                                                                       | string   |
 | `--verbose` (`-v`)           | show expanded details                                                                                                                                                                                                                                                          | bool     |    `false`    |
 | `--channel="…"`              | the comma-separated list of short channel IDs of the channels to loop out                                                                                                                                                                                                      | string   |
 | `--help` (`-h`)              | show help                                                                                                                                                                                                                                                                      | bool     |    `false`    |
@@ -98,18 +98,18 @@ $ loop [GLOBAL FLAGS] in [COMMAND FLAGS] amt
 
 The following flags are supported:
 
-| Name                | Description                                                                                                             | Type   | Default value |
-|---------------------|-------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
-| `--amt="…"`         | the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms"  | uint   |      `0`      |
-| `--external`        | expect htlc to be published externally                                                                                  | bool   |    `false`    |
-| `--conf_target="…"` | the target number of blocks the on-chain htlc broadcast by the swap client should confirm within                        | uint   |      `0`      |
-| `--last_hop="…"`    | the pubkey of the last hop to use for this swap                                                                         | string |
-| `--label="…"`       | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
-| `--force`           | Assumes yes during confirmation. Using this option will result in an immediate swap                                     | bool   |    `false`    |
-| `--verbose` (`-v`)  | show expanded details                                                                                                   | bool   |    `false`    |
-| `--route_hints="…"` | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination          | string |
-| `--private`         | generates and passes routehints. Should be used if the connected node is only reachable via private channels            | bool   |    `false`    |
-| `--help` (`-h`)     | show help                                                                                                               | bool   |    `false`    |
+| Name                | Description                                                                                                              | Type   | Default value |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
+| `--amt="…"`         | the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms"   | uint   |      `0`      |
+| `--external`        | expect htlc to be published externally                                                                                   | bool   |    `false`    |
+| `--conf_target="…"` | the target number of blocks the on-chain htlc broadcast by the swap client should confirm within                         | uint   |      `0`      |
+| `--last_hop="…"`    | the pubkey of the last hop to use for this swap                                                                          | string |
+| `--label="…"`       | an optional label for this swap, limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
+| `--force`           | Assumes yes during confirmation. Using this option will result in an immediate swap                                      | bool   |    `false`    |
+| `--verbose` (`-v`)  | show expanded details                                                                                                    | bool   |    `false`    |
+| `--route_hints="…"` | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination           | string |
+| `--private`         | generates and passes routehints. Should be used if the connected node is only reachable via private channels             | bool   |    `false`    |
+| `--help` (`-h`)     | show help                                                                                                                | bool   |    `false`    |
 
 ### `terms` command
 
@@ -256,17 +256,17 @@ $ loop [GLOBAL FLAGS] listswaps [COMMAND FLAGS] [ARGUMENTS...]
 
 The following flags are supported:
 
-| Name                  | Description                                                                                                             | Type   | Default value |
-|-----------------------|-------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
-| `--loop_out_only`     | only list swaps that are loop out swaps                                                                                 | bool   |    `false`    |
-| `--loop_in_only`      | only list swaps that are loop in swaps                                                                                  | bool   |    `false`    |
-| `--pending_only`      | only list pending swaps                                                                                                 | bool   |    `false`    |
-| `--label="…"`         | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
-| `--channel="…"`       | the comma-separated list of short channel IDs of the channels to loop out                                               | string |
-| `--last_hop="…"`      | the pubkey of the last hop to use for this swap                                                                         | string |
-| `--max_swaps="…"`     | Max number of swaps to return after filtering                                                                           | uint   |      `0`      |
-| `--start_time_ns="…"` | Unix timestamp in nanoseconds to select swaps initiated after this time                                                 | int    |      `0`      |
-| `--help` (`-h`)       | show help                                                                                                               | bool   |    `false`    |
+| Name                  | Description                                                               | Type   | Default value |
+|-----------------------|---------------------------------------------------------------------------|--------|:-------------:|
+| `--loop_out_only`     | only list swaps that are loop out swaps                                   | bool   |    `false`    |
+| `--loop_in_only`      | only list swaps that are loop in swaps                                    | bool   |    `false`    |
+| `--pending_only`      | only list pending swaps                                                   | bool   |    `false`    |
+| `--label="…"`         | only list swaps with the given label                                      | string |
+| `--channel="…"`       | the comma-separated list of short channel IDs of the channels to loop out | string |
+| `--last_hop="…"`      | the pubkey of the last hop to use for this swap                           | string |
+| `--max_swaps="…"`     | Max number of swaps to return after filtering                             | uint   |      `0`      |
+| `--start_time_ns="…"` | Unix timestamp in nanoseconds to select swaps initiated after this time   | int    |      `0`      |
+| `--help` (`-h`)       | show help                                                                 | bool   |    `false`    |
 
 ### `swapinfo` command
 
@@ -716,7 +716,7 @@ The following flags are supported:
 | `--max_swap_fee_sat="…"` | the maximum swap fee in satoshis. If set, the swap is rejected when the quoted fee exceeds this cap. The maximum allowed value is 10000000. On-chain fees for creating static deposits are unaffected | uint     |      `0`      |
 | `--max_swap_fee_ppm="…"` | the maximum swap fee expressed in parts per million of the swap amount. If set together with --max_swap_fee_sat the tighter cap is used                                                               | uint     |      `0`      |
 | `--last_hop="…"`         | the pubkey of the last hop to use for this swap                                                                                                                                                       | string   |
-| `--label="…"`            | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved]                                                                               | string   |
+| `--label="…"`            | an optional label for this swap, limited to 500 characters. The label may not start with our reserved prefix: [reserved]                                                                              | string   |
 | `--route_hints="…"`      | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination                                                                                        | string   |
 | `--private`              | generates and passes routehints. Should be used if the connected node is only reachable via private channels                                                                                          | bool     |    `false`    |
 | `--force`                | Assumes yes during confirmation. Using this option will result in an immediate swap                                                                                                                   | bool     |    `false`    |
