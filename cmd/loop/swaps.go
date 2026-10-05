@@ -33,7 +33,10 @@ var listSwapsCommand = &cli.Command{
 			Name:  "pending_only",
 			Usage: "only list pending swaps",
 		},
-		labelFlag,
+		&cli.StringFlag{
+			Name:  labelFlag.Name,
+			Usage: "only list swaps with the given label",
+		},
 		channelFlag,
 		lastHopFlag,
 		&cli.Uint64Flag{

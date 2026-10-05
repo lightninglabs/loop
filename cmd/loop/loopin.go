@@ -26,7 +26,7 @@ var (
 
 	labelFlag = &cli.StringFlag{
 		Name: "label",
-		Usage: fmt.Sprintf("an optional label for this swap,"+
+		Usage: fmt.Sprintf("an optional label for this swap, "+
 			"limited to %v characters. The label may not start "+
 			"with our reserved prefix: %v.",
 			labels.MaxLength, labels.Reserved),
