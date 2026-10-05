@@ -539,7 +539,9 @@ func TestMultiAddressRestartRecovery(t *testing.T) {
 
 	_, _, err := testContext.manager.NewAddress(t.Context(), "")
 	require.NoError(t, err)
-	changeParams, err := testContext.manager.NewChangeAddress(t.Context())
+	changeParams, err := testContext.manager.NewChangeAddress(
+		t.Context(), nil,
+	)
 	require.NoError(t, err)
 
 	addresses, err := testContext.manager.GetAllAddresses(t.Context())
