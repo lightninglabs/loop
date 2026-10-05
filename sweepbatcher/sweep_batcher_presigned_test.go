@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcutil"
@@ -45,6 +46,9 @@ type mockPresignedHelper struct {
 	// cleanupCalled is a channel where an element is sent every time
 	// CleanupTransactions is called.
 	cleanupCalled chan struct{}
+
+	// signErr is returned by SignTx when set.
+	signErr error
 }
 
 // newMockPresignedHelper returns new instance of mockPresignedHelper.
@@ -63,6 +67,14 @@ func (h *mockPresignedHelper) SetOutpointOnline(op wire.OutPoint, online bool) {
 	defer h.mu.Unlock()
 
 	h.onlineOutpoints[op] = online
+}
+
+// SetSignError sets the error returned by SignTx.
+func (h *mockPresignedHelper) SetSignError(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.signErr = err
 }
 
 // setChangeForPrimaryDeposit sets the change output of a primary deposit sweep.
@@ -138,6 +150,10 @@ func (h *mockPresignedHelper) SignTx(ctx context.Context,
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	if h.signErr != nil {
+		return nil, h.signErr
+	}
 
 	if feeRate < minRelayFee {
 		return nil, fmt.Errorf("feeRate (%v) is below minRelayFee (%v)",
@@ -854,6 +870,80 @@ func testPresigned_first_publish_fails(t *testing.T,
 	require.Equal(t, op1, tx.TxIn[0].PreviousOutPoint)
 	require.Equal(t, int64(988120), tx.TxOut[0].Value)
 	require.Equal(t, batchPkScript, tx.TxOut[0].PkScript)
+}
+
+// testPresigned_signing_timeout_is_retryable verifies that a remote signing
+// timeout only aborts the current publish attempt. It must not terminate the
+// batch and, through the batch error channel, the whole batcher.
+func testPresigned_signing_timeout_is_retryable(t *testing.T,
+	batcherStore testBatcherStore) {
+
+	defer test.Guard(t)()
+
+	lnd := test.NewMockLnd()
+	presignedHelper := newMockPresignedHelper()
+	batcher := NewBatcher(
+		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
+		testMuSig2SignSweep, testVerifySchnorrSig, lnd.ChainParams,
+		batcherStore, presignedHelper,
+		WithPresignedHelper(presignedHelper),
+		WithPublishDelay(time.Hour),
+	)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	runErrChan := make(chan error, 1)
+	go func() {
+		runErrChan <- batcher.Run(ctx)
+	}()
+
+	op := wire.OutPoint{
+		Hash:  chainhash.Hash{1, 1},
+		Index: 1,
+	}
+	presignedHelper.SetOutpointOnline(op, true)
+	require.NoError(t, batcher.PresignSweepsGroup(
+		ctx, []Input{{Outpoint: op, Value: 1_000_000}},
+		sweepTimeout, destAddr, nil,
+	))
+
+	require.NoError(t, batcher.AddSweep(ctx, &SweepRequest{
+		SwapHash: lntypes.Hash{1, 1, 1},
+		Inputs: []Input{{
+			Value:    1_000_000,
+			Outpoint: op,
+		}},
+		Notifier: &dummyNotifier,
+	}))
+
+	<-lnd.RegisterSpendChannel
+	batch := getOnlyBatch(t, ctx, batcher)
+	presignedHelper.SetSignError(context.DeadlineExceeded)
+	require.NoError(t, batch.publish(ctx))
+
+	select {
+	case err := <-runErrChan:
+		t.Fatalf("batcher stopped after retryable timeout: %v", err)
+
+	default:
+	}
+
+	presignedHelper.SetSignError(nil)
+	publishErrChan := make(chan error, 1)
+	go func() {
+		publishErrChan <- batch.publish(ctx)
+	}()
+
+	select {
+	case <-lnd.TxPublishChannel:
+
+	case <-time.After(test.Timeout):
+		t.Fatal("expected batch to publish after signing recovered")
+	}
+	require.NoError(t, <-publishErrChan)
+
+	cancel()
+	require.ErrorIs(t, <-runErrChan, context.Canceled)
 }
 
 // testPresigned_locktime tests presigned mode for the following scenario: one
@@ -2493,6 +2583,10 @@ func TestPresigned(t *testing.T) {
 
 	t.Run("first_publish_fails", func(t *testing.T) {
 		testPresigned_first_publish_fails(t, NewStoreMock())
+	})
+
+	t.Run("signing_timeout_is_retryable", func(t *testing.T) {
+		testPresigned_signing_timeout_is_retryable(t, NewStoreMock())
 	})
 
 	t.Run("locktime", func(t *testing.T) {

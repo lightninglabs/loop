@@ -1252,6 +1252,16 @@ func (b *batch) publish(ctx context.Context) error {
 			// "output already spent". Don't return the error here
 			// not to break the main loop of the sweep batch.
 			return nil
+		} else if presigned && ctx.Err() == nil &&
+			errors.Is(err, context.DeadlineExceeded) {
+
+			// Presigned batches require remote client signatures. An
+			// offline client can time out a signing attempt. Keep the
+			// batch running so the next block can retry publication,
+			// rather than terminating the entire batcher.
+			b.Infof("presigned batch signing timed out: %v", err)
+
+			return nil
 		} else {
 			logPublishError("signing error", err)
 

@@ -18,6 +18,10 @@
 
 #### Bug Fixes
 
+* Presigned sweep batches now survive remote signing timeouts and retry
+  publication on a later block, preventing an offline co-signer from
+  terminating the sweep batcher and the server that runs it.
+
 * Sweep batch selection now filters out batches with an incompatible signing
   mode before attempting admission, avoiding spurious warnings when regular
   and presigned sweeps are pending together.
