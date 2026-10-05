@@ -18,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -446,9 +447,10 @@ func (m *Manager) NewReceiveAddress(ctx context.Context, label string) (
 }
 
 // NewChangeAddress derives, stores, imports and activates the next change
-// family static address for callers requiring immediate activation.
-func (m *Manager) NewChangeAddress(ctx context.Context) (*AddressParameters,
-	error) {
+// family static address for callers requiring immediate activation. It inherits
+// the distinct labels of the spent static address scripts.
+func (m *Manager) NewChangeAddress(ctx context.Context,
+	spentPkScripts [][]byte) (*AddressParameters, error) {
 
 	root, err := m.EnsureStaticAddressRoot(ctx)
 	if err != nil {
@@ -456,15 +458,17 @@ func (m *Manager) NewChangeAddress(ctx context.Context) (*AddressParameters,
 	}
 
 	return m.newDerivedAddress(
-		ctx, root, swap.StaticAddressChangeKeyFamily, "",
+		ctx, root, swap.StaticAddressChangeKeyFamily,
+		m.inheritedLabel(spentPkScripts),
 	)
 }
 
 // PrepareChangeAddress derives the next change address without persisting or
 // importing it. It first ensures that the shared static address root exists.
 // The caller must activate these same parameters before signing a spend to it.
-func (m *Manager) PrepareChangeAddress(ctx context.Context) (*AddressParameters,
-	error) {
+// The prepared address inherits the labels of the spent static address scripts.
+func (m *Manager) PrepareChangeAddress(ctx context.Context,
+	spentPkScripts [][]byte) (*AddressParameters, error) {
 
 	root, err := m.EnsureStaticAddressRoot(ctx)
 	if err != nil {
@@ -484,6 +488,10 @@ func (m *Manager) PrepareChangeAddress(ctx context.Context) (*AddressParameters,
 	params, _, err := m.addressParametersFromKey(
 		key, root.ServerPubkey, root.Expiry, root.ProtocolVersion,
 	)
+	if err != nil {
+		return nil, err
+	}
+	params.Label = m.inheritedLabel(spentPkScripts)
 	return params, err
 }
 
@@ -523,6 +531,61 @@ func (m *Manager) ActivateChangeAddress(ctx context.Context,
 	defer m.unlockIssuance()
 
 	return m.persistAndActivateAddress(ctx, params, staticAddress)
+}
+
+// inheritedLabelSeparator joins the labels a change address inherits.
+const inheritedLabelSeparator = ", "
+
+// inheritedLabel joins the distinct labels of the given static address
+// scripts in spend order. Unknown and unlabeled scripts are skipped. Labels are
+// split on the separator first, so spending a change address doesn't repeat
+// the labels it already inherited. Labels that would push the result past the
+// label limit are dropped whole, so it never ends in a partial label.
+func (m *Manager) inheritedLabel(pkScripts [][]byte) string {
+	m.activeMu.Lock()
+	defer m.activeMu.Unlock()
+
+	var (
+		label strings.Builder
+		seen  = make(map[string]struct{})
+	)
+	for _, pkScript := range pkScripts {
+		params := m.activeStaticAddresses[string(pkScript)]
+		if params == nil || params.Label == "" {
+			continue
+		}
+
+		// A change address's label is itself a joined list, so split it
+		// back into its labels before removing duplicates. Otherwise
+		// "ops, treasury" spent with "treasury" would repeat treasury.
+		parts := strings.SplitSeq(params.Label, inheritedLabelSeparator)
+		for part := range parts {
+			if part == "" {
+				continue
+			}
+			if _, ok := seen[part]; ok {
+				continue
+			}
+			seen[part] = struct{}{}
+
+			// Stop at the first new label that doesn't fit, so the
+			// result never ends in a cut label.
+			size := len(part)
+			if label.Len() > 0 {
+				size += len(inheritedLabelSeparator)
+			}
+			if label.Len()+size > labels.MaxLength {
+				return label.String()
+			}
+
+			if label.Len() > 0 {
+				label.WriteString(inheritedLabelSeparator)
+			}
+			label.WriteString(part)
+		}
+	}
+
+	return label.String()
 }
 
 // newDerivedAddress derives a client key in the requested family and creates
