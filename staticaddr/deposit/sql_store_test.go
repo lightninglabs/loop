@@ -56,6 +56,7 @@ func TestDepositAddressOwnershipRoundTrip(t *testing.T) {
 		PkScript:         []byte{0x51, 0x20, 0x01},
 		ProtocolVersion:  version.ProtocolVersion_V0,
 		InitiationHeight: 789,
+		Label:            "treasury",
 	}
 
 	err := addressStore.CreateStaticAddress(ctx, addressParams)
@@ -106,6 +107,8 @@ func TestDepositAddressOwnershipRoundTrip(t *testing.T) {
 			restored.AddressParams.ProtocolVersion)
 		require.Equal(t, addressParams.InitiationHeight,
 			restored.AddressParams.InitiationHeight)
+		require.Equal(t, addressParams.Label,
+			restored.AddressParams.Label)
 	}
 
 	restored, err := store.GetDeposit(ctx, depositID)

@@ -634,6 +634,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 			Pkscript:              d.Pkscript,
 			ProtocolVersion:       d.ProtocolVersion,
 			InitiationHeight:      d.InitiationHeight,
+			Label:                 d.Label,
 		}
 
 		sqlcDepositUpdate := sqlc.DepositUpdate{
@@ -775,5 +776,6 @@ func toChangeAddressParameters(row sqlc.GetStaticAddressLoopInSwapRow) (
 			row.ChangeProtocolVersion.Int32,
 		),
 		InitiationHeight: row.ChangeInitiationHeight.Int32,
+		Label:            row.ChangeLabel.String,
 	}, nil
 }

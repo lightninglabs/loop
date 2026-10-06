@@ -37,4 +37,8 @@ type Parameters struct {
 
 	// InitiationHeight is the height at which the address was initiated.
 	InitiationHeight int32
+
+	// Label is local operator metadata for display, not part of the script or
+	// server protocol. Address-manager snapshots must not be mutated in place.
+	Label string
 }

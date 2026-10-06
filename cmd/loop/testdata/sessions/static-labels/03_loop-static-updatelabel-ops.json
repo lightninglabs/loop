@@ -1,0 +1,61 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "updatelabel",
+      "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
+      "ops",
+      "--network=regtest"
+    ],
+    "env": {},
+    "version": "0.33.3-beta commit=v0.33.3-beta-64-g61e66756cf18d59da00a8da4209bd7534865058a commit_hash=61e66756cf18d59da00a8da4209bd7534865058a",
+    "duration": 24379750,
+    "clock_start_unix": 1784236610
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/UpdateStaticAddressLabel",
+        "event": "request",
+        "message_type": "looprpc.UpdateStaticAddressLabelRequest",
+        "payload": {
+          "static_address": "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
+          "label": "ops"
+        }
+      }
+    },
+    {
+      "time_ms": 24,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/UpdateStaticAddressLabel",
+        "event": "response",
+        "message_type": "looprpc.UpdateStaticAddressLabelResponse",
+        "payload": {
+          "static_address": "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
+          "label": "ops"
+        }
+      }
+    },
+    {
+      "time_ms": 24,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"label\": \"ops\",\n",
+          "    \"static_address\": \"bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6\"\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 24,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

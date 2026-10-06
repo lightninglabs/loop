@@ -259,6 +259,24 @@ func (m *mockWalletKit) ListSweeps(_ context.Context, _ int32) (
 	return m.lnd.Sweeps, nil
 }
 
+// GetTransaction returns the wallet transaction with the given txid from the
+// mock's transaction list.
+func (m *mockWalletKit) GetTransaction(_ context.Context,
+	txid chainhash.Hash) (lndclient.Transaction, error) {
+
+	m.lnd.lock.Lock()
+	defer m.lnd.lock.Unlock()
+
+	for _, tx := range m.lnd.Transactions {
+		if tx.Tx != nil && tx.Tx.TxHash() == txid {
+			return tx, nil
+		}
+	}
+
+	return lndclient.Transaction{}, fmt.Errorf("transaction %v not found",
+		txid)
+}
+
 // ListSweepsVerbose returns a list of sweep transactions known to our node
 // with verbose information about each sweep.
 func (m *mockWalletKit) ListSweepsVerbose(ctx context.Context, _ int32) (

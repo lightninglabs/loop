@@ -23,7 +23,9 @@ func TestIssuanceWaiterCancellation(t *testing.T) {
 			if derived {
 				_, err := issue(t.Context())
 				require.NoError(t, err)
-				issue = manager.NewReceiveAddress
+				issue = func(ctx context.Context) (*AddressParameters, error) {
+					return manager.NewReceiveAddress(ctx, "")
+				}
 			}
 			started, release := make(chan struct{}), make(chan struct{})
 			manager.cfg.WalletKit = &blockingImportWallet{
