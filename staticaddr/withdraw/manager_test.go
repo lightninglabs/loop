@@ -1,6 +1,7 @@
 package withdraw
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -705,4 +706,67 @@ func TestCalculateWithdrawalTxValues(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWithdrawalAddress verifies that a new withdrawal pays the requested
+// address or a new wallet address, and that a fee bump keeps the address of
+// the withdrawal that it replaces, which its monitor waits for.
+func TestWithdrawalAddress(t *testing.T) {
+	t.Parallel()
+
+	mockLnd := test.NewMockLnd()
+	m, err := NewManager(&ManagerConfig{
+		WalletKit:   mockLnd.WalletKit,
+		ChainParams: mockLnd.ChainParams,
+	}, 100)
+	require.NoError(t, err)
+
+	newAddress := func(key byte) btcutil.Address {
+		address, err := btcutil.NewAddressTaproot(
+			bytes.Repeat([]byte{key}, 32), mockLnd.ChainParams,
+		)
+		require.NoError(t, err)
+
+		return address
+	}
+	requested := newAddress(1)
+	previous := newAddress(2)
+	walletAddress, err := mockLnd.WalletKit.NextAddr(
+		t.Context(), "", 0, false,
+	)
+	require.NoError(t, err)
+
+	prevPkScript, err := txscript.PayToAddrScript(previous)
+	require.NoError(t, err)
+	prevWithdrawalTx := wire.NewMsgTx(2)
+	prevWithdrawalTx.AddTxOut(&wire.TxOut{
+		Value:    1_000,
+		PkScript: prevPkScript,
+	})
+
+	// A new withdrawal pays the requested address, or a wallet address.
+	address, err := m.withdrawalAddress(t.Context(), requested.String(), nil)
+	require.NoError(t, err)
+	require.Equal(t, requested.String(), address.String())
+
+	address, err = m.withdrawalAddress(t.Context(), "", nil)
+	require.NoError(t, err)
+	require.Equal(t, walletAddress.String(), address.String())
+
+	// A fee bump pays the address of the withdrawal that it replaces, and
+	// can't request another one.
+	address, err = m.withdrawalAddress(t.Context(), "", prevWithdrawalTx)
+	require.NoError(t, err)
+	require.Equal(t, previous.String(), address.String())
+
+	address, err = m.withdrawalAddress(
+		t.Context(), previous.String(), prevWithdrawalTx,
+	)
+	require.NoError(t, err)
+	require.Equal(t, previous.String(), address.String())
+
+	_, err = m.withdrawalAddress(
+		t.Context(), requested.String(), prevWithdrawalTx,
+	)
+	require.ErrorIs(t, err, ErrDiffWithdrawalAddress)
 }
