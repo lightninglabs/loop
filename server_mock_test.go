@@ -49,10 +49,12 @@ type serverMock struct {
 
 	height int32
 
-	swapInvoice  string
-	probeInvoice string
-	swapHash     lntypes.Hash
-	prepayHash   lntypes.Hash
+	swapInvoice     string
+	probeInvoice    string
+	swapHash        lntypes.Hash
+	prepayHash      lntypes.Hash
+	loopInLastHop   *route.Vertex
+	loopInInitiator string
 
 	// preimagePush is a channel that preimage pushes are sent into.
 	preimagePush chan lntypes.Preimage
@@ -168,7 +170,7 @@ func getInvoice(hash lntypes.Hash, amt btcutil.Amount, memo string) (string, err
 
 func (s *serverMock) NewLoopInSwap(_ context.Context, swapHash lntypes.Hash,
 	amount btcutil.Amount, _, _ [33]byte, swapInvoice, probeInvoice string,
-	_ *route.Vertex, _ string) (*newLoopInResponse, error) {
+	lastHop *route.Vertex, initiator string) (*newLoopInResponse, error) {
 
 	_, receiverKey := test.CreateKey(101)
 	_, receiverInternalKey := test.CreateKey(102)
@@ -187,6 +189,8 @@ func (s *serverMock) NewLoopInSwap(_ context.Context, swapHash lntypes.Hash,
 	s.swapInvoice = swapInvoice
 	s.probeInvoice = probeInvoice
 	s.swapHash = swapHash
+	s.loopInLastHop = lastHop
+	s.loopInInitiator = initiator
 
 	// Simulate the server paying the probe invoice and expect the client to
 	// cancel the probe payment.
