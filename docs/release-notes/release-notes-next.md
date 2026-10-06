@@ -53,6 +53,10 @@
   `loopd` failed with `exec format error` on ARM hosts.
   [Issue #1211](https://github.com/lightninglabs/loop/issues/1211)
 
+* When a Loop Out prepayment cannot be routed, the client now reports the
+  failure to the server as a prepay routing failure. It was previously
+  reported as a failure to route the swap invoice.
+
 #### Maintenance
 
 * Align the standalone `looprpc` module's OpenTelemetry SDK and OTLP trace

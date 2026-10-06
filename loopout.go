@@ -1093,7 +1093,7 @@ func (s *loopOutSwap) waitForConfirmedHtlc(globalCtx context.Context) (
 						result.failure())
 
 					s.failOffChain(
-						ctx, paymentTypeInvoice,
+						ctx, paymentTypePrepay,
 						result.status,
 					)
 
