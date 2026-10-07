@@ -401,6 +401,7 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	const (
 		paymentRequestAmount = btcutil.Amount(50_000)
 		quotedSwapFee        = btcutil.Amount(1_234)
+		onchainCost          = btcutil.Amount(1_550)
 		depositValue         = btcutil.Amount(51_234)
 		depositConfHeight    = int64(590)
 		staticAddressExpiry  = uint32(25)
@@ -430,12 +431,14 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 
 	initiationTime := time.Unix(1_234, 567).UTC()
 	lastUpdateTime := time.Unix(2_345, 678).UTC()
+	staticOnchainCost := onchainCost
 	staticLoopIn := &loopin.StaticAddressLoopIn{
 		SwapHash:         swapHash,
 		SwapInvoice:      swapInvoice,
 		InitiationTime:   initiationTime,
 		LastUpdateTime:   lastUpdateTime,
 		QuotedSwapFee:    quotedSwapFee,
+		OnchainCost:      &staticOnchainCost,
 		DepositOutpoints: []string{depositOutpoint.String()},
 		Deposits:         []*deposit.Deposit{testDeposit},
 	}
@@ -501,7 +504,8 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	require.Equal(t, initiationTime.UnixNano(), swap.InitiationTime)
 	require.Equal(t, lastUpdateTime.UnixNano(), swap.LastUpdateTime)
 	require.Equal(t, int64(quotedSwapFee), swap.CostServer)
-	require.Zero(t, swap.CostOnchain)
+	require.Equal(t, int64(onchainCost), swap.CostOnchain)
+	require.True(t, swap.CostOnchainKnown)
 	require.Zero(t, swap.CostOffchain)
 	require.Len(t, swap.Deposits, 1)
 
@@ -516,6 +520,16 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 		t, depositConfHeight+int64(staticAddressExpiry)-600,
 		rpcDeposit.BlocksUntilExpiry,
 	)
+
+	// A consumed swap with an unknown on-chain cost isn't flagged as known.
+	staticLoopIn.OnchainCost = nil
+	resp, err = server.ListStaticAddressSwaps(
+		ctx, &looprpc.ListStaticAddressSwapsRequest{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.Swaps, 1)
+	require.Zero(t, resp.Swaps[0].CostOnchain)
+	require.False(t, resp.Swaps[0].CostOnchainKnown)
 }
 
 // TestStaticAddressLoopInMarshallUsesStaticTypeAndP2WSH protects the RPC
@@ -595,6 +609,75 @@ func TestStaticAddressLoopInMarshallFailuresLeaveLegacyFieldsDefault(
 				t, test.wantStaticState,
 				rpcSwap.GetStaticLoopInState(),
 			)
+		})
+	}
+}
+
+// TestStaticAddressLoopInOnchainCost tests that the persisted on-chain cost is
+// reported by the generic swap representation, and that the cost is only
+// flagged as known once it is persisted.
+func TestStaticAddressLoopInOnchainCost(t *testing.T) {
+	knownCost := btcutil.Amount(1_550)
+	zeroCost := btcutil.Amount(0)
+
+	tests := []struct {
+		name      string
+		state     fsm.StateType
+		cost      *btcutil.Amount
+		wantCost  int64
+		wantKnown bool
+	}{
+		{
+			name:      "succeeded with cost",
+			state:     loopin.Succeeded,
+			cost:      &knownCost,
+			wantCost:  int64(knownCost),
+			wantKnown: true,
+		},
+		{
+			name:      "succeeded with known zero cost",
+			state:     loopin.Succeeded,
+			cost:      &zeroCost,
+			wantKnown: true,
+		},
+		{
+			name:  "succeeded with unknown cost",
+			state: loopin.Succeeded,
+		},
+		{
+			name:  "timeout swept with unknown cost",
+			state: loopin.HtlcTimeoutSwept,
+		},
+		{
+			name:  "pending",
+			state: loopin.MonitorInvoiceAndHtlcTx,
+		},
+		{
+			name:  "failed",
+			state: loopin.Failed,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, staticLoopIn := newGenericStaticLoopInServer(t)
+			staticLoopIn.SetState(test.state)
+			staticLoopIn.OnchainCost = test.cost
+
+			cost, known := staticAddressLoopInSwapOnchainCost(
+				staticLoopIn,
+			)
+			require.Equal(t, test.wantCost, cost)
+			require.Equal(t, test.wantKnown, known)
+
+			loopSwap, err := server.staticAddressLoopInSwapInfo(
+				t.Context(), staticLoopIn,
+			)
+			require.NoError(t, err)
+
+			rpcSwap, err := server.marshallSwap(t.Context(), loopSwap)
+			require.NoError(t, err)
+			require.Equal(t, test.wantCost, rpcSwap.CostOnchain)
 		})
 	}
 }

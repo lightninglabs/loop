@@ -2264,6 +2264,8 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			swapAmount = swp.SelectedAmount
 		}
 		costServer := staticAddressLoopInSwapServerCost(swp)
+		costOnchain, costOnchainKnown :=
+			staticAddressLoopInSwapOnchainCost(swp)
 		initiationTime := staticAddressLoopInTimestamp(swp.InitiationTime)
 		lastUpdateTime := staticAddressLoopInTimestamp(swp.LastUpdateTime)
 		swap := &looprpc.StaticAddressLoopInSwap{
@@ -2276,6 +2278,8 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			InitiationTime:               initiationTime,
 			LastUpdateTime:               lastUpdateTime,
 			CostServer:                   costServer,
+			CostOnchain:                  costOnchain,
+			CostOnchainKnown:             costOnchainKnown,
 		}
 
 		clientSwaps = append(clientSwaps, swap)
@@ -2297,10 +2301,8 @@ func staticAddressLoopInTimestamp(t time.Time) int64 {
 }
 
 // staticAddressLoopInSwapServerCost returns the paid server cost using the
-// legacy ListSwaps cost semantics. Static loop-ins currently only persist the
-// accepted quote fee, and that fee is paid once the swap invoice settles.
-// Timeout-path miner fees are not persisted, so cost_onchain and cost_offchain
-// remain zero instead of returning an estimate as an actual cost.
+// legacy ListSwaps cost semantics. Static loop-ins only persist the accepted
+// quote fee, and that fee is paid once the swap invoice settles.
 func staticAddressLoopInSwapServerCost(swp *loopin.StaticAddressLoopIn) int64 {
 	switch swp.GetState() {
 	case loopin.PaymentReceived, loopin.Succeeded,
@@ -2311,6 +2313,19 @@ func staticAddressLoopInSwapServerCost(swp *loopin.StaticAddressLoopIn) int64 {
 	default:
 		return 0
 	}
+}
+
+// staticAddressLoopInSwapOnchainCost returns the persisted on-chain cost of a
+// static loop-in, and whether it is known. Miner fees of the htlc timeout path
+// aren't persisted, so they aren't part of the cost.
+func staticAddressLoopInSwapOnchainCost(
+	swp *loopin.StaticAddressLoopIn) (int64, bool) {
+
+	if swp.OnchainCost == nil {
+		return 0, false
+	}
+
+	return int64(*swp.OnchainCost), true
 }
 
 // staticAddressLoopInSwapInfos loads the static-address loop-in manager swaps
@@ -2386,15 +2401,18 @@ func staticAddressLoopInSwapInfoWithChainParams(
 		lastUpdate = swp.InitiationTime
 	}
 
+	onchainCost, _ := staticAddressLoopInSwapOnchainCost(swp)
+
 	return &loop.SwapInfo{
 		SwapStateData: loopdb.SwapStateData{
 			// Mirror ListStaticAddressSwaps by reporting only the persisted
-			// client-visible server cost. On-chain and off-chain costs stay
-			// zero until static loop-ins persist real fee data.
+			// client-visible costs. An unknown on-chain cost is reported as
+			// zero, and off-chain costs stay zero.
 			Cost: loopdb.SwapCost{
 				Server: btcutil.Amount(
 					staticAddressLoopInSwapServerCost(swp),
 				),
+				Onchain: btcutil.Amount(onchainCost),
 			},
 		},
 		SwapContract: loopdb.SwapContract{
