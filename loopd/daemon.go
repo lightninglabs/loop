@@ -575,6 +575,21 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		clock.NewDefaultClock(), d.lnd.ChainParams,
 	)
 
+	// Run the static loop-in on-chain cost migration. It runs before the
+	// notification manager starts, because static loop-in sweep requests
+	// that arrive before the loop-in manager subscribes are dropped. It
+	// only fills in the cost of past swaps, so a failure doesn't stop
+	// loopd. The migration isn't marked as done then, so it is retried on
+	// the next start.
+	err = loopin.MigrateOnchainCost(
+		d.mainCtx, swapDb, d.lnd.Client, d.lnd.WalletKit,
+		deposit.NewSqlStore(baseDb), staticAddressLoopInStore,
+	)
+	if err != nil {
+		warnf("Static loop-in on-chain cost migration failed, retrying "+
+			"on next start: %v", err)
+	}
+
 	// Start the notification manager.
 	notificationCfg := &notifications.Config{
 		Client:       loop_swaprpc.NewSwapServerClient(swapClient.Conn),
@@ -716,6 +731,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 		return err
 	}
+
 	statusUpdater := &staticLoopInStatusUpdater{
 		statusChan:  statusChan,
 		mainCtx:     d.mainCtx,
