@@ -121,6 +121,30 @@ SET
     selected_amount = $2
 WHERE swap_hash = $1;
 
+-- name: GetStaticAddressLoopInSwapsWithoutOnchainCost :many
+SELECT
+    s.swap_hash,
+    s.deposit_outpoints,
+    u.update_state
+FROM
+    static_address_swaps s
+        JOIN
+    static_address_swap_updates u ON u.id = (
+        SELECT id
+        FROM static_address_swap_updates
+        WHERE swap_hash = s.swap_hash
+        ORDER BY update_timestamp DESC, id DESC
+        LIMIT 1
+    )
+WHERE
+    s.onchain_cost IS NULL;
+
+-- name: SetUnknownStaticAddressLoopInOnchainCost :exec
+UPDATE static_address_swaps
+SET
+    onchain_cost = $2
+WHERE swap_hash = $1 AND onchain_cost IS NULL;
+
 -- name: MapDepositToSwap :exec
 UPDATE
     deposits

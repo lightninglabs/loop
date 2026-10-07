@@ -75,12 +75,23 @@ func (c *onchainCostTestContext) createLoopInWithDeposits(
 	swapHash lntypes.Hash, state fsm.StateType,
 	deposits []*deposit.Deposit) *StaticAddressLoopIn {
 
-	t := c.t
-
 	depositOutpoints := make([]string, 0, len(deposits))
 	for _, d := range deposits {
 		depositOutpoints = append(depositOutpoints, d.OutPoint.String())
 	}
+
+	return c.createLoopInWithOutpoints(
+		swapHash, state, deposits, depositOutpoints,
+	)
+}
+
+// createLoopInWithOutpoints stores a loop-in in the given state that uses the
+// given stored deposits and records the given deposit outpoints.
+func (c *onchainCostTestContext) createLoopInWithOutpoints(
+	swapHash lntypes.Hash, state fsm.StateType, deposits []*deposit.Deposit,
+	depositOutpoints []string) *StaticAddressLoopIn {
+
+	t := c.t
 
 	_, clientPubKey := test.CreateKey(1)
 	_, serverPubKey := test.CreateKey(2)
@@ -155,6 +166,106 @@ func TestSqlStoreOnchainCost(t *testing.T) {
 	loopIn.OnchainCost = nil
 	require.NoError(t, c.swapStore.UpdateLoopIn(t.Context(), loopIn))
 	require.Equal(t, cost, *c.onchainCost(loopIn.SwapHash))
+}
+
+// TestBatchSetUnknownOnchainCosts tests that the batch update only sets the
+// cost of swaps that don't have one yet.
+func TestBatchSetUnknownOnchainCosts(t *testing.T) {
+	c := newOnchainCostTestContext(t)
+	unknown := c.createLoopIn(
+		lntypes.Hash{0x1}, Succeeded,
+		wire.OutPoint{Hash: chainhash.Hash{0x1}, Index: 0},
+	)
+	known := c.createLoopIn(
+		lntypes.Hash{0x2}, Succeeded,
+		wire.OutPoint{Hash: chainhash.Hash{0x2}, Index: 0},
+	)
+	storedCost := btcutil.Amount(42)
+	known.OnchainCost = &storedCost
+	require.NoError(t, c.swapStore.UpdateLoopIn(t.Context(), known))
+
+	err := c.swapStore.BatchSetUnknownOnchainCosts(
+		t.Context(), map[lntypes.Hash]btcutil.Amount{
+			unknown.SwapHash: 700,
+			known.SwapHash:   700,
+		},
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, btcutil.Amount(700), *c.onchainCost(unknown.SwapHash))
+	require.Equal(t, storedCost, *c.onchainCost(known.SwapHash))
+}
+
+// TestSwapsWithoutOnchainCost tests that only swaps without a cost are
+// returned, with their latest state. Updates with the same timestamp are
+// ordered by insertion.
+func TestSwapsWithoutOnchainCost(t *testing.T) {
+	c := newOnchainCostTestContext(t)
+
+	// The test clock doesn't advance, so both updates of the swap have the
+	// same timestamp.
+	outpoint := wire.OutPoint{Hash: chainhash.Hash{0x1}, Index: 0}
+	swap := c.createLoopIn(
+		lntypes.Hash{0x1}, MonitorInvoiceAndHtlcTx, outpoint,
+	)
+	swap.SetState(Succeeded)
+	require.NoError(t, c.swapStore.UpdateLoopIn(t.Context(), swap))
+
+	known := c.createLoopIn(
+		lntypes.Hash{0x2}, Succeeded,
+		wire.OutPoint{Hash: chainhash.Hash{0x2}, Index: 0},
+	)
+	cost := btcutil.Amount(42)
+	known.OnchainCost = &cost
+	require.NoError(t, c.swapStore.UpdateLoopIn(t.Context(), known))
+
+	swaps, err := c.swapStore.swapsWithoutOnchainCost(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []swapWithoutOnchainCost{{
+		SwapHash:         swap.SwapHash,
+		State:            Succeeded,
+		DepositOutpoints: []string{outpoint.String()},
+	}}, swaps)
+}
+
+// TestSwapsWithoutOnchainCostLatestUpdate tests that the latest state of a
+// swap is taken from the update with the latest timestamp, not the latest
+// inserted one.
+func TestSwapsWithoutOnchainCostLatestUpdate(t *testing.T) {
+	testDb := loopdb.NewTestDB(t)
+	t.Cleanup(func() { testDb.Close() })
+
+	now := time.Now()
+	testClock := clock.NewTestClock(now)
+	c := &onchainCostTestContext{
+		t:            t,
+		db:           loopdb.NewStoreMock(t),
+		depositStore: deposit.NewSqlStore(testDb.BaseDB),
+		swapStore: NewSqlStore(
+			loopdb.NewTypedStore[Querier](testDb), testClock,
+			&chaincfg.MainNetParams,
+		),
+	}
+
+	swap := c.createLoopIn(
+		lntypes.Hash{0x1}, MonitorInvoiceAndHtlcTx,
+		wire.OutPoint{Hash: chainhash.Hash{0x1}, Index: 0},
+	)
+
+	// The latest update is inserted before an update with an earlier
+	// timestamp.
+	testClock.SetTime(now.Add(2 * time.Second))
+	swap.SetState(Succeeded)
+	require.NoError(t, c.swapStore.UpdateLoopIn(t.Context(), swap))
+
+	testClock.SetTime(now.Add(time.Second))
+	swap.SetState(PaymentReceived)
+	require.NoError(t, c.swapStore.UpdateLoopIn(t.Context(), swap))
+
+	swaps, err := c.swapStore.swapsWithoutOnchainCost(t.Context())
+	require.NoError(t, err)
+	require.Len(t, swaps, 1)
+	require.Equal(t, Succeeded, swaps[0].State)
 }
 
 // TestToNullAmount tests that an unknown amount is stored as NULL, while a

@@ -361,6 +361,54 @@ func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dolla
 	return items, nil
 }
 
+const getStaticAddressLoopInSwapsWithoutOnchainCost = `-- name: GetStaticAddressLoopInSwapsWithoutOnchainCost :many
+SELECT
+    s.swap_hash,
+    s.deposit_outpoints,
+    u.update_state
+FROM
+    static_address_swaps s
+        JOIN
+    static_address_swap_updates u ON u.id = (
+        SELECT id
+        FROM static_address_swap_updates
+        WHERE swap_hash = s.swap_hash
+        ORDER BY update_timestamp DESC, id DESC
+        LIMIT 1
+    )
+WHERE
+    s.onchain_cost IS NULL
+`
+
+type GetStaticAddressLoopInSwapsWithoutOnchainCostRow struct {
+	SwapHash         []byte
+	DepositOutpoints string
+	UpdateState      string
+}
+
+func (q *Queries) GetStaticAddressLoopInSwapsWithoutOnchainCost(ctx context.Context) ([]GetStaticAddressLoopInSwapsWithoutOnchainCostRow, error) {
+	rows, err := q.db.QueryContext(ctx, getStaticAddressLoopInSwapsWithoutOnchainCost)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetStaticAddressLoopInSwapsWithoutOnchainCostRow
+	for rows.Next() {
+		var i GetStaticAddressLoopInSwapsWithoutOnchainCostRow
+		if err := rows.Scan(&i.SwapHash, &i.DepositOutpoints, &i.UpdateState); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertStaticAddressLoopIn = `-- name: InsertStaticAddressLoopIn :exec
 INSERT INTO static_address_swaps (
     swap_hash,
@@ -519,6 +567,23 @@ type RecordStaticAddressRiskDecisionParams struct {
 
 func (q *Queries) RecordStaticAddressRiskDecision(ctx context.Context, arg RecordStaticAddressRiskDecisionParams) error {
 	_, err := q.db.ExecContext(ctx, recordStaticAddressRiskDecision, arg.SwapHash, arg.ConfirmationRiskDecision, arg.ConfirmationRiskDecisionTime)
+	return err
+}
+
+const setUnknownStaticAddressLoopInOnchainCost = `-- name: SetUnknownStaticAddressLoopInOnchainCost :exec
+UPDATE static_address_swaps
+SET
+    onchain_cost = $2
+WHERE swap_hash = $1 AND onchain_cost IS NULL
+`
+
+type SetUnknownStaticAddressLoopInOnchainCostParams struct {
+	SwapHash    []byte
+	OnchainCost sql.NullInt64
+}
+
+func (q *Queries) SetUnknownStaticAddressLoopInOnchainCost(ctx context.Context, arg SetUnknownStaticAddressLoopInOnchainCostParams) error {
+	_, err := q.db.ExecContext(ctx, setUnknownStaticAddressLoopInOnchainCost, arg.SwapHash, arg.OnchainCost)
 	return err
 }
 

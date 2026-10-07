@@ -44,6 +44,7 @@ type Querier interface {
 	GetStaticAddress(ctx context.Context, pkscript []byte) (StaticAddress, error)
 	GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byte) (GetStaticAddressLoopInSwapRow, error)
 	GetStaticAddressLoopInSwapsByStates(ctx context.Context, dollar_1 sql.NullString) ([]GetStaticAddressLoopInSwapsByStatesRow, error)
+	GetStaticAddressLoopInSwapsWithoutOnchainCost(ctx context.Context) ([]GetStaticAddressLoopInSwapsWithoutOnchainCostRow, error)
 	GetSwapUpdates(ctx context.Context, swapHash []byte) ([]SwapUpdate, error)
 	GetSweepStatus(ctx context.Context, outpoint string) (bool, error)
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
@@ -68,6 +69,7 @@ type Querier interface {
 	OverrideSelectedSwapAmount(ctx context.Context, arg OverrideSelectedSwapAmountParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	RecordStaticAddressRiskDecision(ctx context.Context, arg RecordStaticAddressRiskDecisionParams) error
+	SetUnknownStaticAddressLoopInOnchainCost(ctx context.Context, arg SetUnknownStaticAddressLoopInOnchainCostParams) error
 	SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error)
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
