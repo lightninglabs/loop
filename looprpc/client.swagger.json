@@ -2600,12 +2600,16 @@
         "cost_onchain": {
           "type": "string",
           "format": "int64",
-          "description": "On-chain transaction cost."
+          "description": "On-chain cost: the share of the fees of the transactions that funded the\nswap's deposits. Fees of the htlc timeout path are not included."
         },
         "cost_offchain": {
           "type": "string",
           "format": "int64",
           "description": "Off-chain routing fees."
+        },
+        "cost_onchain_known": {
+          "type": "boolean",
+          "description": "Set if cost_onchain is known. It isn't set before the swap consumed its\ndeposits or if the swap failed. It also isn't set if the client wallet\ndoesn't know the fee of a deposit funding transaction, for example for a\ndeposit funded by an external wallet, if looking up the fee failed when the\nswap consumed its deposits, or if the daemon doesn't report the on-chain\ncost of static loop-ins. cost_onchain is zero if it isn't set."
         }
       }
     },
@@ -2864,7 +2868,7 @@
         "cost_onchain": {
           "type": "string",
           "format": "int64",
-          "title": "On-chain transaction cost"
+          "description": "On-chain transaction cost. For static address loop-ins it is the share of\nthe fees of the transactions that funded the deposits, and zero if that\ncost is unknown. ListStaticAddressSwaps reports whether it is known."
         },
         "cost_offchain": {
           "type": "string",

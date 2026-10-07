@@ -1504,7 +1504,9 @@ type SwapStatus struct {
 	HtlcAddressP2Tr string `protobuf:"bytes,18,opt,name=htlc_address_p2tr,json=htlcAddressP2tr,proto3" json:"htlc_address_p2tr,omitempty"`
 	// Swap server cost
 	CostServer int64 `protobuf:"varint,8,opt,name=cost_server,json=costServer,proto3" json:"cost_server,omitempty"`
-	// On-chain transaction cost
+	// On-chain transaction cost. For static address loop-ins it is the share of
+	// the fees of the transactions that funded the deposits, and zero if that
+	// cost is unknown. ListStaticAddressSwaps reports whether it is known.
 	CostOnchain int64 `protobuf:"varint,9,opt,name=cost_onchain,json=costOnchain,proto3" json:"cost_onchain,omitempty"`
 	// Off-chain routing fees
 	CostOffchain int64 `protobuf:"varint,10,opt,name=cost_offchain,json=costOffchain,proto3" json:"cost_offchain,omitempty"`
@@ -5970,12 +5972,20 @@ type StaticAddressLoopInSwap struct {
 	LastUpdateTime int64 `protobuf:"varint,8,opt,name=last_update_time,json=lastUpdateTime,proto3" json:"last_update_time,omitempty"`
 	// Swap server cost.
 	CostServer int64 `protobuf:"varint,9,opt,name=cost_server,json=costServer,proto3" json:"cost_server,omitempty"`
-	// On-chain transaction cost.
+	// On-chain cost: the share of the fees of the transactions that funded the
+	// swap's deposits. Fees of the htlc timeout path are not included.
 	CostOnchain int64 `protobuf:"varint,10,opt,name=cost_onchain,json=costOnchain,proto3" json:"cost_onchain,omitempty"`
 	// Off-chain routing fees.
-	CostOffchain  int64 `protobuf:"varint,11,opt,name=cost_offchain,json=costOffchain,proto3" json:"cost_offchain,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CostOffchain int64 `protobuf:"varint,11,opt,name=cost_offchain,json=costOffchain,proto3" json:"cost_offchain,omitempty"`
+	// Set if cost_onchain is known. It isn't set before the swap consumed its
+	// deposits or if the swap failed. It also isn't set if the client wallet
+	// doesn't know the fee of a deposit funding transaction, for example for a
+	// deposit funded by an external wallet, if looking up the fee failed when the
+	// swap consumed its deposits, or if the daemon doesn't report the on-chain
+	// cost of static loop-ins. cost_onchain is zero if it isn't set.
+	CostOnchainKnown bool `protobuf:"varint,12,opt,name=cost_onchain_known,json=costOnchainKnown,proto3" json:"cost_onchain_known,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *StaticAddressLoopInSwap) Reset() {
@@ -6083,6 +6093,13 @@ func (x *StaticAddressLoopInSwap) GetCostOffchain() int64 {
 		return x.CostOffchain
 	}
 	return 0
+}
+
+func (x *StaticAddressLoopInSwap) GetCostOnchainKnown() bool {
+	if x != nil {
+		return x.CostOnchainKnown
+	}
+	return false
 }
 
 type StaticAddressLoopInRequest struct {
@@ -7247,7 +7264,7 @@ const file_client_proto_rawDesc = "" +
 	"\x1dtotal_deposit_amount_satoshis\x18\x03 \x01(\x03R\x1atotalDepositAmountSatoshis\x12:\n" +
 	"\x19withdrawn_amount_satoshis\x18\x04 \x01(\x03R\x17withdrawnAmountSatoshis\x124\n" +
 	"\x16change_amount_satoshis\x18\x05 \x01(\x03R\x14changeAmountSatoshis\x12/\n" +
-	"\x13confirmation_height\x18\x06 \x01(\rR\x12confirmationHeight\"\x83\x04\n" +
+	"\x13confirmation_height\x18\x06 \x01(\rR\x12confirmationHeight\"\xb1\x04\n" +
 	"\x17StaticAddressLoopInSwap\x12\x1b\n" +
 	"\tswap_hash\x18\x01 \x01(\fR\bswapHash\x12+\n" +
 	"\x11deposit_outpoints\x18\x02 \x03(\tR\x10depositOutpoints\x12;\n" +
@@ -7261,7 +7278,8 @@ const file_client_proto_rawDesc = "" +
 	"costServer\x12!\n" +
 	"\fcost_onchain\x18\n" +
 	" \x01(\x03R\vcostOnchain\x12#\n" +
-	"\rcost_offchain\x18\v \x01(\x03R\fcostOffchain\"\xef\x02\n" +
+	"\rcost_offchain\x18\v \x01(\x03R\fcostOffchain\x12,\n" +
+	"\x12cost_onchain_known\x18\f \x01(\bR\x10costOnchainKnown\"\xef\x02\n" +
 	"\x1aStaticAddressLoopInRequest\x12\x1c\n" +
 	"\toutpoints\x18\x01 \x03(\tR\toutpoints\x121\n" +
 	"\x15max_swap_fee_satoshis\x18\x02 \x01(\x03R\x12maxSwapFeeSatoshis\x12\x19\n" +
