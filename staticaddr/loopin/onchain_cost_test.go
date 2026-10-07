@@ -11,8 +11,12 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
 
@@ -583,4 +587,199 @@ func TestFundingTransactions(t *testing.T) {
 	getter = &fakeTxGetter{err: errors.New("wallet unavailable")}
 	_, err = fundingTransactions(t.Context(), getter, deposits)
 	require.ErrorContains(t, err, "wallet unavailable")
+}
+
+// TestWithOnchainCost tests that the on-chain cost is set when an action
+// reports that the swap consumed its deposits.
+func TestWithOnchainCost(t *testing.T) {
+	tx := fundingTx(0, otherOut(700_000), staticOut(300_000))
+	external := fundingTx(1, staticOut(300_000))
+
+	newFSM := func(deposits ...*deposit.Deposit) *FSM {
+		mockLnd := test.NewMockLnd()
+		mockLnd.Transactions = []lndclient.Transaction{
+			walletTx(tx, 1_550, true),
+			walletTx(external, 2_000, false),
+		}
+
+		return &FSM{
+			StateMachine: &fsm.StateMachine{},
+			cfg: &Config{
+				WalletKit:      mockLnd.WalletKit,
+				DepositManager: knownDeposits(tx, external),
+			},
+			loopIn: &StaticAddressLoopIn{
+				DepositOutpoints: outpointsOf(deposits...),
+			},
+		}
+	}
+
+	returning := func(event fsm.EventType) fsm.Action {
+		return func(context.Context, fsm.EventContext) fsm.EventType {
+			return event
+		}
+	}
+
+	t.Run("consumed", func(t *testing.T) {
+		f := newFSM(depositOf(tx, 1))
+		action := f.withOnchainCost(
+			returning(OnPaymentReceived), OnPaymentReceived,
+		)
+
+		require.Equal(t, OnPaymentReceived, action(t.Context(), nil))
+		require.NotNil(t, f.loopIn.OnchainCost)
+		require.Equal(t, btcutil.Amount(1_550), *f.loopIn.OnchainCost)
+	})
+
+	t.Run("not consumed", func(t *testing.T) {
+		f := newFSM(depositOf(tx, 1))
+		action := f.withOnchainCost(
+			returning(OnRecover), OnPaymentReceived,
+		)
+
+		require.Equal(t, OnRecover, action(t.Context(), nil))
+		require.Nil(t, f.loopIn.OnchainCost)
+	})
+
+	t.Run("unknown fee", func(t *testing.T) {
+		f := newFSM(depositOf(external, 0))
+		action := f.withOnchainCost(
+			returning(OnHtlcTimeoutSwept), OnHtlcTimeoutSwept,
+		)
+
+		require.Equal(t, OnHtlcTimeoutSwept, action(t.Context(), nil))
+		require.Nil(t, f.loopIn.OnchainCost)
+	})
+
+	t.Run("existing cost kept", func(t *testing.T) {
+		f := newFSM(depositOf(tx, 1))
+		existing := btcutil.Amount(42)
+		f.loopIn.OnchainCost = &existing
+
+		action := f.withOnchainCost(
+			returning(OnPaymentReceived), OnPaymentReceived,
+		)
+
+		require.Equal(t, OnPaymentReceived, action(t.Context(), nil))
+		require.Equal(t, existing, *f.loopIn.OnchainCost)
+	})
+}
+
+// flakyWalletKit fails a given number of transaction lookups before it uses
+// the wrapped wallet kit, and counts the lookups.
+type flakyWalletKit struct {
+	lndclient.WalletKitClient
+
+	failures int
+	calls    int
+}
+
+// GetTransaction fails while failures are left.
+func (f *flakyWalletKit) GetTransaction(ctx context.Context,
+	txid chainhash.Hash) (lndclient.Transaction, error) {
+
+	f.calls++
+	if f.failures > 0 {
+		f.failures--
+
+		return lndclient.Transaction{}, errors.New("lnd unavailable")
+	}
+
+	return f.WalletKitClient.GetTransaction(ctx, txid)
+}
+
+// TestSetOnchainCostLookupError tests that a lookup error leaves the cost
+// unknown after a single attempt, so that the swap isn't held up.
+func TestSetOnchainCostLookupError(t *testing.T) {
+	tx := fundingTx(0, otherOut(700_000), staticOut(300_000))
+
+	mockLnd := test.NewMockLnd()
+	mockLnd.Transactions = []lndclient.Transaction{
+		walletTx(tx, 1_550, true),
+	}
+	walletKit := &flakyWalletKit{
+		WalletKitClient: mockLnd.WalletKit,
+		failures:        1,
+	}
+
+	f := &FSM{
+		StateMachine: &fsm.StateMachine{},
+		cfg: &Config{
+			WalletKit:      walletKit,
+			DepositManager: knownDeposits(tx),
+		},
+		loopIn: &StaticAddressLoopIn{
+			DepositOutpoints: outpointsOf(depositOf(tx, 1)),
+		},
+	}
+	f.setOnchainCost(t.Context())
+
+	require.Nil(t, f.loopIn.OnchainCost)
+	require.Equal(t, 1, walletKit.calls)
+}
+
+// outpointsOf returns the outpoints of the given deposits as strings.
+func outpointsOf(deposits ...*deposit.Deposit) []string {
+	outpoints := make([]string, len(deposits))
+	for i, d := range deposits {
+		outpoints[i] = d.OutPoint.String()
+	}
+
+	return outpoints
+}
+
+// TestOnchainCostPersistedOnRecovery runs the loop-in FSM from a stored swap
+// in MonitorInvoiceAndHtlcTx whose invoice is already paid, as after a
+// restart, and checks that the on-chain cost is persisted with the swap.
+func TestOnchainCostPersistedOnRecovery(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	c := newOnchainCostTestContext(t)
+	tx := fundingTx(0, otherOut(700_000), staticOut(300_000))
+	swapHash := lntypes.Hash{1, 2, 9}
+
+	// The swap is stored without a cost, as if loopd stopped before the
+	// paid invoice was processed.
+	stored := c.createLoopIn(
+		swapHash, MonitorInvoiceAndHtlcTx,
+		wire.OutPoint{Hash: tx.TxHash(), Index: 1},
+	)
+	require.Nil(t, c.onchainCost(swapHash))
+
+	mockLnd := test.NewMockLnd()
+	mockLnd.Transactions = []lndclient.Transaction{
+		walletTx(tx, 1_550, true),
+	}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractSettled,
+	})
+
+	f, _ := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionRejected,
+		mockLnd.LndServices.Invoices,
+	)
+	f.cfg.Store = c.swapStore
+	f.loopIn.DepositOutpoints = stored.DepositOutpoints
+
+	resultChan := make(chan error, 1)
+	go func() {
+		resultChan <- f.SendEvent(ctx, OnRecover, nil)
+	}()
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	select {
+	case err := <-resultChan:
+		require.NoError(t, err)
+
+	case <-ctx.Done():
+		t.Fatalf("fsm did not finish: %v", ctx.Err())
+	}
+
+	loopIn, err := c.swapStore.GetLoopInByHash(ctx, swapHash)
+	require.NoError(t, err)
+	require.Equal(t, Succeeded, loopIn.GetState())
+	require.NotNil(t, loopIn.OnchainCost)
+	require.Equal(t, btcutil.Amount(1_550), *loopIn.OnchainCost)
 }

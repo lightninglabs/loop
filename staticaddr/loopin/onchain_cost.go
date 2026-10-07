@@ -284,3 +284,21 @@ func depositFeeShare(tx *wire.MsgTx, fee btcutil.Amount, index uint32,
 
 	return btcutil.Amount(share + int64(fee) - allocated), nil
 }
+
+// outpointDeposits returns deposits for the given outpoints. Only their
+// outpoints are set, which is all that the on-chain cost needs.
+func outpointDeposits(outpoints []string) ([]*deposit.Deposit, error) {
+	deposits := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, o := range outpoints {
+		outpoint, err := wire.NewOutPointFromString(o)
+		if err != nil {
+			return nil, err
+		}
+
+		deposits = append(deposits, &deposit.Deposit{
+			OutPoint: *outpoint,
+		})
+	}
+
+	return deposits, nil
+}

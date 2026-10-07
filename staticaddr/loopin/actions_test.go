@@ -2918,6 +2918,7 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 		DepositManager: depositMgr,
 		InvoicesClient: invoicesClient,
 		LndClient:      mockLnd.Client,
+		WalletKit:      mockLnd.WalletKit,
 		ChainParams:    mockLnd.ChainParams,
 	}
 
