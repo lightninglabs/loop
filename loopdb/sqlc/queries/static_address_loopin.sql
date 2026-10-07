@@ -29,7 +29,8 @@ INSERT INTO static_address_swaps (
 UPDATE static_address_swaps
 SET
     htlc_tx_fee_rate_sat_kw = $2,
-    htlc_timeout_sweep_tx_id = $3
+    htlc_timeout_sweep_tx_id = $3,
+    onchain_cost = COALESCE($4, onchain_cost)
 WHERE
     swap_hash = $1;
 

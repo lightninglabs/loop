@@ -364,6 +364,7 @@ func (s *SqlStore) UpdateLoopIn(ctx context.Context,
 			String: htlcTimeoutSweepTxID,
 			Valid:  htlcTimeoutSweepTxID != "",
 		},
+		OnchainCost: toNullAmount(loopIn.OnchainCost),
 	}
 
 	updateTime := sqlStoreUpdateTime(s.clock)
@@ -448,6 +449,18 @@ func (s *SqlStore) BatchUpdateSelectedSwapAmounts(ctx context.Context,
 
 			return nil
 		})
+}
+
+// toNullAmount converts an optional amount to a nullable database integer.
+func toNullAmount(amount *btcutil.Amount) sql.NullInt64 {
+	if amount == nil {
+		return sql.NullInt64{}
+	}
+
+	return sql.NullInt64{
+		Int64: int64(*amount),
+		Valid: true,
+	}
 }
 
 // IsStored returns true if a swap with the given hash is stored in the
@@ -665,6 +678,11 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	if swap.ConfirmationRiskDecisionTime.Valid {
 		loopIn.ConfirmationRiskDecisionTime =
 			swap.ConfirmationRiskDecisionTime.Time
+	}
+
+	if swap.OnchainCost.Valid {
+		onchainCost := btcutil.Amount(swap.OnchainCost.Int64)
+		loopIn.OnchainCost = &onchainCost
 	}
 
 	if len(updates) > 0 {

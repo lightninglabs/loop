@@ -108,6 +108,10 @@ type StaticAddressLoopIn struct {
 	// swap quote.
 	QuotedSwapFee btcutil.Amount
 
+	// OnchainCost is the client-side on-chain cost of the swap from its
+	// deposit funding transaction fees. It is nil if the cost is unknown.
+	OnchainCost *btcutil.Amount
+
 	// The outpoints in the format txid:vout that are part of the loop-in
 	// swap.
 	DepositOutpoints []string
