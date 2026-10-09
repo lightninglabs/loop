@@ -39,6 +39,19 @@
   first-confirmation heights while lnd is catching up, preventing premature
   expiry decisions from mismatched wallet and block-notification heights.
 
+* Static Address loop-ins now report the fee of the transactions that funded
+  their deposits as `cost_onchain`, which was previously always zero. A fee
+  shared by several deposits is split across them by value, so it is counted
+  once even if the deposits are used in different swaps. Past swaps are filled
+  in on startup. Change that a partial loop-in or withdrawal sends back to the
+  static address costs nothing, and fees of the htlc timeout path are not
+  included. If the client wallet doesn't know a deposit funding fee, for
+  example for deposits funded by an external wallet, or if looking up the fee
+  fails, the cost is reported as unknown. The new `cost_onchain_known` field
+  in `ListStaticAddressSwaps` tells a known cost from an unknown one.
+  `ListSwaps` and `loop monitor` report an unknown cost as zero.
+  [Issue #1174](https://github.com/lightninglabs/loop/issues/1174)
+
 * Rapid reservation funding confirmations no longer cause initialization to
   time out while waiting for an intermediate client state.
 

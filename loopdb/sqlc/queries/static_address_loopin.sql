@@ -29,7 +29,8 @@ INSERT INTO static_address_swaps (
 UPDATE static_address_swaps
 SET
     htlc_tx_fee_rate_sat_kw = $2,
-    htlc_timeout_sweep_tx_id = $3
+    htlc_timeout_sweep_tx_id = $3,
+    onchain_cost = COALESCE($4, onchain_cost)
 WHERE
     swap_hash = $1;
 
@@ -119,6 +120,30 @@ UPDATE static_address_swaps
 SET
     selected_amount = $2
 WHERE swap_hash = $1;
+
+-- name: GetStaticAddressLoopInSwapsWithoutOnchainCost :many
+SELECT
+    s.swap_hash,
+    s.deposit_outpoints,
+    u.update_state
+FROM
+    static_address_swaps s
+        JOIN
+    static_address_swap_updates u ON u.id = (
+        SELECT id
+        FROM static_address_swap_updates
+        WHERE swap_hash = s.swap_hash
+        ORDER BY update_timestamp DESC, id DESC
+        LIMIT 1
+    )
+WHERE
+    s.onchain_cost IS NULL;
+
+-- name: SetUnknownStaticAddressLoopInOnchainCost :exec
+UPDATE static_address_swaps
+SET
+    onchain_cost = $2
+WHERE swap_hash = $1 AND onchain_cost IS NULL;
 
 -- name: MapDepositToSwap :exec
 UPDATE

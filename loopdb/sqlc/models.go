@@ -151,6 +151,7 @@ type StaticAddressSwap struct {
 	Fast                         bool
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
+	OnchainCost                  sql.NullInt64
 }
 
 type StaticAddressSwapUpdate struct {

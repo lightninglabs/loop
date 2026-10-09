@@ -3,6 +3,7 @@ package loopin
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/lightninglabs/loop/fsm"
@@ -137,6 +138,14 @@ var FinalStates = []fsm.StateType{
 	HtlcTimeoutSwept, Succeeded, SucceededTransitioningFailed, Failed,
 }
 
+// ConsumedStates are the loop-in states in which the swap has consumed its
+// deposits, either because the swap invoice was paid or because the htlc
+// timeout path confirmed.
+var ConsumedStates = []fsm.StateType{
+	PaymentReceived, Succeeded, SucceededTransitioningFailed,
+	HtlcTimeoutSwept,
+}
+
 var AllStates = append(
 	append([]fsm.StateType{}, PendingStates...), FinalStates...,
 )
@@ -189,7 +198,9 @@ func (f *FSM) LoopInStatesV0() fsm.States {
 				OnRecover:          MonitorInvoiceAndHtlcTx,
 				fsm.OnError:        UnlockDeposits,
 			},
-			Action: f.MonitorInvoiceAndHtlcTxAction,
+			Action: f.withOnchainCost(
+				f.MonitorInvoiceAndHtlcTxAction, OnPaymentReceived,
+			),
 		},
 		SweepHtlcTimeout: fsm.State{
 			Transitions: fsm.Transitions{
@@ -205,7 +216,9 @@ func (f *FSM) LoopInStatesV0() fsm.States {
 				OnRecover:          MonitorHtlcTimeoutSweep,
 				fsm.OnError:        Failed,
 			},
-			Action: f.MonitorHtlcTimeoutSweepAction,
+			Action: f.withOnchainCost(
+				f.MonitorHtlcTimeoutSweepAction, OnHtlcTimeoutSwept,
+			),
 		},
 		PaymentReceived: fsm.State{
 			Transitions: fsm.Transitions{
@@ -234,6 +247,62 @@ func (f *FSM) LoopInStatesV0() fsm.States {
 		Failed: fsm.State{
 			Action: fsm.NoOpAction,
 		},
+	}
+}
+
+// withOnchainCost wraps an action so that the on-chain cost of the swap is set
+// when the action returns consumedEvent, and persisted with the next state.
+func (f *FSM) withOnchainCost(action fsm.Action,
+	consumedEvent fsm.EventType) fsm.Action {
+
+	return func(ctx context.Context, eventCtx fsm.EventContext) fsm.EventType {
+		event := action(ctx, eventCtx)
+		if event == consumedEvent {
+			f.setOnchainCost(ctx)
+		}
+
+		return event
+	}
+}
+
+// onchainCostTimeout bounds the on-chain cost lookup, which runs before the
+// swap moves on to its next state.
+const onchainCostTimeout = 10 * time.Second
+
+// setOnchainCost determines the on-chain cost of the swap from the fees of the
+// deposit funding transactions. If the lookup fails, the cost remains unknown.
+// Failing to determine the cost doesn't affect the swap.
+func (f *FSM) setOnchainCost(ctx context.Context) {
+	if f.loopIn.OnchainCost != nil {
+		return
+	}
+
+	// Use the outpoints that the swap recorded, since a deposit that was
+	// reused after a failed attempt can still be mapped to that attempt.
+	deposits, err := outpointDeposits(f.loopIn.DepositOutpoints)
+	if err != nil {
+		f.Warnf("Unable to parse deposit outpoints to determine "+
+			"on-chain cost: %v", err)
+
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, onchainCostTimeout)
+	defer cancel()
+
+	cost, known, err := depositOnchainCost(
+		ctx, f.cfg.WalletKit, f.cfg.DepositManager, deposits,
+	)
+	switch {
+	case err != nil:
+		f.Warnf("Unable to determine on-chain cost: %v", err)
+
+	case !known:
+		f.Infof("On-chain cost unknown, the wallet doesn't know the " +
+			"fee of a deposit funding transaction")
+
+	default:
+		f.loopIn.OnchainCost = &cost
 	}
 }
 

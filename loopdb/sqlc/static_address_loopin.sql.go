@@ -153,7 +153,7 @@ func (q *Queries) GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]
 const getStaticAddressLoopInSwap = `-- name: GetStaticAddressLoopInSwap :one
 SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.fast, static_address_swaps.confirmation_risk_decision, static_address_swaps.confirmation_risk_decision_time,
+    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.fast, static_address_swaps.confirmation_risk_decision, static_address_swaps.confirmation_risk_decision_time, static_address_swaps.onchain_cost,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM
     swaps
@@ -191,6 +191,7 @@ type GetStaticAddressLoopInSwapRow struct {
 	Fast                         bool
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
+	OnchainCost                  sql.NullInt64
 	SwapHash_3                   []byte
 	SenderScriptPubkey           []byte
 	ReceiverScriptPubkey         []byte
@@ -229,6 +230,7 @@ func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byt
 		&i.Fast,
 		&i.ConfirmationRiskDecision,
 		&i.ConfirmationRiskDecisionTime,
+		&i.OnchainCost,
 		&i.SwapHash_3,
 		&i.SenderScriptPubkey,
 		&i.ReceiverScriptPubkey,
@@ -243,7 +245,7 @@ func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byt
 const getStaticAddressLoopInSwapsByStates = `-- name: GetStaticAddressLoopInSwapsByStates :many
 SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.fast, static_address_swaps.confirmation_risk_decision, static_address_swaps.confirmation_risk_decision_time,
+    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.fast, static_address_swaps.confirmation_risk_decision, static_address_swaps.confirmation_risk_decision_time, static_address_swaps.onchain_cost,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM
     swaps
@@ -292,6 +294,7 @@ type GetStaticAddressLoopInSwapsByStatesRow struct {
 	Fast                         bool
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
+	OnchainCost                  sql.NullInt64
 	SwapHash_3                   []byte
 	SenderScriptPubkey           []byte
 	ReceiverScriptPubkey         []byte
@@ -336,6 +339,7 @@ func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dolla
 			&i.Fast,
 			&i.ConfirmationRiskDecision,
 			&i.ConfirmationRiskDecisionTime,
+			&i.OnchainCost,
 			&i.SwapHash_3,
 			&i.SenderScriptPubkey,
 			&i.ReceiverScriptPubkey,
@@ -344,6 +348,54 @@ func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dolla
 			&i.ClientKeyFamily,
 			&i.ClientKeyIndex,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getStaticAddressLoopInSwapsWithoutOnchainCost = `-- name: GetStaticAddressLoopInSwapsWithoutOnchainCost :many
+SELECT
+    s.swap_hash,
+    s.deposit_outpoints,
+    u.update_state
+FROM
+    static_address_swaps s
+        JOIN
+    static_address_swap_updates u ON u.id = (
+        SELECT id
+        FROM static_address_swap_updates
+        WHERE swap_hash = s.swap_hash
+        ORDER BY update_timestamp DESC, id DESC
+        LIMIT 1
+    )
+WHERE
+    s.onchain_cost IS NULL
+`
+
+type GetStaticAddressLoopInSwapsWithoutOnchainCostRow struct {
+	SwapHash         []byte
+	DepositOutpoints string
+	UpdateState      string
+}
+
+func (q *Queries) GetStaticAddressLoopInSwapsWithoutOnchainCost(ctx context.Context) ([]GetStaticAddressLoopInSwapsWithoutOnchainCostRow, error) {
+	rows, err := q.db.QueryContext(ctx, getStaticAddressLoopInSwapsWithoutOnchainCost)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetStaticAddressLoopInSwapsWithoutOnchainCostRow
+	for rows.Next() {
+		var i GetStaticAddressLoopInSwapsWithoutOnchainCostRow
+		if err := rows.Scan(&i.SwapHash, &i.DepositOutpoints, &i.UpdateState); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -518,6 +570,23 @@ func (q *Queries) RecordStaticAddressRiskDecision(ctx context.Context, arg Recor
 	return err
 }
 
+const setUnknownStaticAddressLoopInOnchainCost = `-- name: SetUnknownStaticAddressLoopInOnchainCost :exec
+UPDATE static_address_swaps
+SET
+    onchain_cost = $2
+WHERE swap_hash = $1 AND onchain_cost IS NULL
+`
+
+type SetUnknownStaticAddressLoopInOnchainCostParams struct {
+	SwapHash    []byte
+	OnchainCost sql.NullInt64
+}
+
+func (q *Queries) SetUnknownStaticAddressLoopInOnchainCost(ctx context.Context, arg SetUnknownStaticAddressLoopInOnchainCostParams) error {
+	_, err := q.db.ExecContext(ctx, setUnknownStaticAddressLoopInOnchainCost, arg.SwapHash, arg.OnchainCost)
+	return err
+}
+
 const swapHashForDepositID = `-- name: SwapHashForDepositID :one
 SELECT
     swap_hash
@@ -538,7 +607,8 @@ const updateStaticAddressLoopIn = `-- name: UpdateStaticAddressLoopIn :exec
 UPDATE static_address_swaps
 SET
     htlc_tx_fee_rate_sat_kw = $2,
-    htlc_timeout_sweep_tx_id = $3
+    htlc_timeout_sweep_tx_id = $3,
+    onchain_cost = COALESCE($4, onchain_cost)
 WHERE
     swap_hash = $1
 `
@@ -547,9 +617,15 @@ type UpdateStaticAddressLoopInParams struct {
 	SwapHash             []byte
 	HtlcTxFeeRateSatKw   int64
 	HtlcTimeoutSweepTxID sql.NullString
+	OnchainCost          sql.NullInt64
 }
 
 func (q *Queries) UpdateStaticAddressLoopIn(ctx context.Context, arg UpdateStaticAddressLoopInParams) error {
-	_, err := q.db.ExecContext(ctx, updateStaticAddressLoopIn, arg.SwapHash, arg.HtlcTxFeeRateSatKw, arg.HtlcTimeoutSweepTxID)
+	_, err := q.db.ExecContext(ctx, updateStaticAddressLoopIn,
+		arg.SwapHash,
+		arg.HtlcTxFeeRateSatKw,
+		arg.HtlcTimeoutSweepTxID,
+		arg.OnchainCost,
+	)
 	return err
 }
