@@ -80,6 +80,10 @@
 
 #### Maintenance
 
+* Update `github.com/moby/sys/user` to v0.4.1 in `looprpc` and synchronize
+  the root module with its required version.
+  [PR #1250](https://github.com/lightninglabs/loop/pull/1250)
+
 * Align the standalone `looprpc` module's OpenTelemetry SDK and OTLP trace
   exporters at v1.45.0, matching the versions used by the root module.
   Refresh the generated REST bindings and OpenAPI specification for the
