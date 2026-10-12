@@ -63,6 +63,13 @@
   stayed in the withdrawing state. A fee bump to a different address is
   rejected.
 
+* A Loop In whose initiation fails now cancels its probe invoice. A probe
+  payment that reached the node after the failure was previously held for
+  hours, until shortly before its expiry. The probe watcher and failure
+  cleanup share successful cancellation results to avoid duplicate requests.
+  Cancellation failures are logged, and a failed attempt does not prevent
+  the other caller from trying.
+
 #### Maintenance
 
 * Align the standalone `looprpc` module's OpenTelemetry SDK and OTLP trace
