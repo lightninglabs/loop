@@ -13,7 +13,7 @@ import (
 
 const allDeposits = `-- name: AllDeposits :many
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known
 FROM
     deposits
 ORDER BY
@@ -40,6 +40,8 @@ func (q *Queries) AllDeposits(ctx context.Context) ([]Deposit, error) {
 			&i.ExpirySweepTxid,
 			&i.FinalizedWithdrawalTx,
 			&i.SwapHash,
+			&i.OnchainCost,
+			&i.OnchainCostKnown,
 		); err != nil {
 			return nil, err
 		}
@@ -63,7 +65,9 @@ INSERT INTO deposits (
     confirmation_height,
     timeout_sweep_pk_script,
     expiry_sweep_txid,
-    finalized_withdrawal_tx
+    finalized_withdrawal_tx,
+    onchain_cost,
+    onchain_cost_known
 ) VALUES (
              $1,
              $2,
@@ -72,7 +76,9 @@ INSERT INTO deposits (
              $5,
              $6,
              $7,
-             $8
+             $8,
+             $9,
+             $10
          )
 `
 
@@ -85,6 +91,8 @@ type CreateDepositParams struct {
 	TimeoutSweepPkScript  []byte
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
+	OnchainCost           int64
+	OnchainCostKnown      sql.NullBool
 }
 
 func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) error {
@@ -97,13 +105,15 @@ func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) er
 		arg.TimeoutSweepPkScript,
 		arg.ExpirySweepTxid,
 		arg.FinalizedWithdrawalTx,
+		arg.OnchainCost,
+		arg.OnchainCostKnown,
 	)
 	return err
 }
 
 const depositForOutpoint = `-- name: DepositForOutpoint :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known
 FROM
     deposits
 WHERE
@@ -131,13 +141,15 @@ func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpoint
 		&i.ExpirySweepTxid,
 		&i.FinalizedWithdrawalTx,
 		&i.SwapHash,
+		&i.OnchainCost,
+		&i.OnchainCostKnown,
 	)
 	return i, err
 }
 
 const getDeposit = `-- name: GetDeposit :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known
 FROM
     deposits
 WHERE
@@ -158,6 +170,8 @@ func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (Deposit, er
 		&i.ExpirySweepTxid,
 		&i.FinalizedWithdrawalTx,
 		&i.SwapHash,
+		&i.OnchainCost,
+		&i.OnchainCostKnown,
 	)
 	return i, err
 }
@@ -206,6 +220,28 @@ type InsertDepositUpdateParams struct {
 
 func (q *Queries) InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error {
 	_, err := q.db.ExecContext(ctx, insertDepositUpdate, arg.DepositID, arg.UpdateState, arg.UpdateTimestamp)
+	return err
+}
+
+const setDepositOnchainCost = `-- name: SetDepositOnchainCost :exec
+UPDATE deposits
+SET
+    onchain_cost = $2,
+    onchain_cost_known = $3
+WHERE
+    deposit_id = $1
+AND
+    onchain_cost_known IS NULL
+`
+
+type SetDepositOnchainCostParams struct {
+	DepositID        []byte
+	OnchainCost      int64
+	OnchainCostKnown sql.NullBool
+}
+
+func (q *Queries) SetDepositOnchainCost(ctx context.Context, arg SetDepositOnchainCostParams) error {
+	_, err := q.db.ExecContext(ctx, setDepositOnchainCost, arg.DepositID, arg.OnchainCost, arg.OnchainCostKnown)
 	return err
 }
 

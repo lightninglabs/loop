@@ -45,7 +45,7 @@ func (q *Queries) DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([
 
 const depositsForSwapHash = `-- name: DepositsForSwapHash :many
 SELECT
-    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash,
+    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.onchain_cost, d.onchain_cost_known,
     u.update_state,
     u.update_timestamp
 FROM
@@ -73,6 +73,8 @@ type DepositsForSwapHashRow struct {
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
 	SwapHash              []byte
+	OnchainCost           int64
+	OnchainCostKnown      sql.NullBool
 	UpdateState           sql.NullString
 	UpdateTimestamp       sql.NullTime
 }
@@ -97,6 +99,8 @@ func (q *Queries) DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]D
 			&i.ExpirySweepTxid,
 			&i.FinalizedWithdrawalTx,
 			&i.SwapHash,
+			&i.OnchainCost,
+			&i.OnchainCostKnown,
 			&i.UpdateState,
 			&i.UpdateTimestamp,
 		); err != nil {
