@@ -127,6 +127,17 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	err = depositStore.UpdateDeposit(ctxb, d4)
 	require.NoError(t, err)
 
+	// Store a known on-chain cost for the looped-in deposit only, to check
+	// that it is loaded with the swap's deposits.
+	d3Cost := deposit.OnchainCost{
+		Amount: 900,
+		Status: deposit.OnchainCostKnown,
+	}
+	err = depositStore.SetOnchainCosts(
+		ctxb, map[deposit.ID]deposit.OnchainCost{d3.ID: d3Cost},
+	)
+	require.NoError(t, err)
+
 	_, clientPubKey := test.CreateKey(1)
 	_, serverPubKey := test.CreateKey(2)
 	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
@@ -212,6 +223,7 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	require.Equal(t, d1.OutPoint, pendingDeposits[0].OutPoint)
 	require.Equal(t, d1.Value, pendingDeposits[0].Value)
 	require.Equal(t, deposit.LoopingIn, pendingDeposits[0].GetState())
+	require.Equal(t, deposit.OnchainCost{}, pendingDeposits[0].OnchainCost)
 
 	finalizedSwaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(ctxb, FinalStates)
 	require.NoError(t, err)
@@ -244,6 +256,7 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	require.Equal(t, d3.OutPoint, finalizedDeposits[0].OutPoint)
 	require.Equal(t, d3.Value, finalizedDeposits[0].Value)
 	require.Equal(t, deposit.LoopedIn, finalizedDeposits[0].GetState())
+	require.Equal(t, d3Cost, finalizedDeposits[0].OnchainCost)
 }
 
 // TestCreateLoopIn tests that CreateLoopIn correctly creates a new

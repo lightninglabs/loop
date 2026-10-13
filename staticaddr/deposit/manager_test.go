@@ -201,6 +201,13 @@ func (s *mockStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	return args.Get(0).([]*Deposit), args.Error(1)
 }
 
+// SetOnchainCosts does nothing.
+func (s *mockStore) SetOnchainCosts(context.Context,
+	map[ID]OnchainCost) error {
+
+	return nil
+}
+
 type MockChainNotifier struct {
 	mock.Mock
 }

@@ -38,6 +38,10 @@ type Store interface {
 
 	// AllDeposits retrieves all deposits from the store.
 	AllDeposits(ctx context.Context) ([]*Deposit, error)
+
+	// SetOnchainCosts stores the on-chain cost of the given deposits. A
+	// deposit whose cost has already been determined keeps it.
+	SetOnchainCosts(ctx context.Context, costs map[ID]OnchainCost) error
 }
 
 // AddressManager handles fetching of address parameters.

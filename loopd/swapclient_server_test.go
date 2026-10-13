@@ -1960,6 +1960,12 @@ func (s *mockDepositStore) AllDeposits(_ context.Context) ([]*deposit.Deposit,
 	return deposits, nil
 }
 
+func (s *mockDepositStore) SetOnchainCosts(_ context.Context,
+	_ map[deposit.ID]deposit.OnchainCost) error {
+
+	return nil
+}
+
 // listUnspentDepositManager backs ListUnspentDeposits tests without requiring
 // the full deposit manager event loop.
 type listUnspentDepositManager struct {
