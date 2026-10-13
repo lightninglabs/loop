@@ -539,6 +539,62 @@ func (s *SqlStore) DepositIDsForSwapHash(ctx context.Context,
 	return depositIDs, nil
 }
 
+// DepositsForSwap returns the deposits that are mapped to the swap with the
+// given hash. Each deposit is mapped to the last swap that used it.
+func (s *SqlStore) DepositsForSwap(ctx context.Context,
+	swapHash lntypes.Hash) ([]*deposit.Deposit, error) {
+
+	rows, err := s.baseDB.DepositsForSwapHash(ctx, swapHash[:])
+	if err != nil {
+		return nil, err
+	}
+
+	return toDeposits(rows)
+}
+
+// toDeposits converts the deposit rows of a swap to deposits.
+func toDeposits(rows []sqlc.DepositsForSwapHashRow) ([]*deposit.Deposit,
+	error) {
+
+	deposits := make([]*deposit.Deposit, 0, len(rows))
+	for _, d := range rows {
+		id := deposit.ID{}
+		err := id.FromByteSlice(d.DepositID)
+		if err != nil {
+			return nil, err
+		}
+
+		sqlcDeposit := sqlc.Deposit{
+			DepositID:             id[:],
+			TxHash:                d.TxHash,
+			Amount:                d.Amount,
+			OutIndex:              d.OutIndex,
+			ConfirmationHeight:    d.ConfirmationHeight,
+			TimeoutSweepPkScript:  d.TimeoutSweepPkScript,
+			ExpirySweepTxid:       d.ExpirySweepTxid,
+			FinalizedWithdrawalTx: d.FinalizedWithdrawalTx,
+			OnchainCost:           d.OnchainCost,
+			OnchainCostKnown:      d.OnchainCostKnown,
+		}
+
+		sqlcDepositUpdate := sqlc.DepositUpdate{
+			DepositID:       id[:],
+			UpdateState:     d.UpdateState.String,
+			UpdateTimestamp: d.UpdateTimestamp.Time,
+		}
+		deposit, err := deposit.ToDeposit(
+			sqlcDeposit, sqlcDepositUpdate,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		deposits = append(deposits, deposit)
+	}
+
+	return deposits, nil
+}
+
 // toStaticAddressLoopIn converts sql rows to an instant out struct.
 func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	swap sqlc.GetStaticAddressLoopInSwapRow,
@@ -593,40 +649,9 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		}
 	}
 
-	depositList := make([]*deposit.Deposit, 0, len(deposits))
-	for _, d := range deposits {
-		id := deposit.ID{}
-		err = id.FromByteSlice(d.DepositID)
-		if err != nil {
-			return nil, err
-		}
-
-		sqlcDeposit := sqlc.Deposit{
-			DepositID:             id[:],
-			TxHash:                d.TxHash,
-			Amount:                d.Amount,
-			OutIndex:              d.OutIndex,
-			ConfirmationHeight:    d.ConfirmationHeight,
-			TimeoutSweepPkScript:  d.TimeoutSweepPkScript,
-			ExpirySweepTxid:       d.ExpirySweepTxid,
-			FinalizedWithdrawalTx: d.FinalizedWithdrawalTx,
-			OnchainCost:           d.OnchainCost,
-			OnchainCostKnown:      d.OnchainCostKnown,
-		}
-
-		sqlcDepositUpdate := sqlc.DepositUpdate{
-			DepositID:       id[:],
-			UpdateState:     d.UpdateState.String,
-			UpdateTimestamp: d.UpdateTimestamp.Time,
-		}
-		deposit, err := deposit.ToDeposit(
-			sqlcDeposit, sqlcDepositUpdate,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		depositList = append(depositList, deposit)
+	depositList, err := toDeposits(deposits)
+	if err != nil {
+		return nil, err
 	}
 	depositList = orderDepositsBySnapshot(depositList, depositOutpoints)
 
