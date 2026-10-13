@@ -1359,6 +1359,15 @@
           "type": "string",
           "format": "byte",
           "description": "The swap hash of the swap that this deposit is part of. This field is only\nset if the deposit is part of a loop-in swap."
+        },
+        "cost_onchain": {
+          "type": "string",
+          "format": "int64",
+          "description": "The on-chain cost of the deposit in satoshis: its share of the fee of the\ntransaction that funded it. The fee is split by value across the\ntransaction's deposit outputs, so if the transaction also paid someone\nelse, its whole fee is charged to the deposits. Change that a partial\nloop-in or withdrawal sent back to the static address costs nothing.\nloopd determines the cost within about 10 seconds of finding the deposit,\nalso before the deposit confirms, and reports it as pending until then.\n\nTo add up the on-chain cost of deposits, only use the deposits of\nListStaticAddressDeposits. The deposits of a swap or withdrawal can\ninclude deposits that another swap or withdrawal also lists, for example\ndeposits that a failed swap gave back."
+        },
+        "cost_onchain_status": {
+          "$ref": "#/definitions/looprpcOnchainCostStatus",
+          "description": "Whether cost_onchain is known: ONCHAIN_COST_STATUS_COMPLETE if the client\nwallet knows the fee of the deposit's funding transaction,\nONCHAIN_COST_STATUS_UNKNOWN if it doesn't, for example for a deposit\nfunded by an external wallet, or ONCHAIN_COST_STATUS_PENDING if the cost\nhasn't been determined yet. The cost of a single deposit is never\npartial."
         }
       }
     },
@@ -2273,6 +2282,17 @@
         }
       }
     },
+    "looprpcOnchainCostStatus": {
+      "type": "string",
+      "enum": [
+        "ONCHAIN_COST_STATUS_UNKNOWN",
+        "ONCHAIN_COST_STATUS_PARTIAL",
+        "ONCHAIN_COST_STATUS_COMPLETE",
+        "ONCHAIN_COST_STATUS_PENDING"
+      ],
+      "default": "ONCHAIN_COST_STATUS_UNKNOWN",
+      "description": " - ONCHAIN_COST_STATUS_UNKNOWN: The on-chain cost is unknown and zero. This is also the value if the\ndaemon doesn't report the on-chain cost.\n\nFor a deposit, the client wallet doesn't know the fee of its funding\ntransaction, for example because an external wallet funded it or because\nthe wallet doesn't have the transaction. Once a daemon that reports the\non-chain cost has set this status for a deposit, it doesn't change.\n\nFor a static loop-in, either the swap wasn't paid and its htlc hasn't\ntimed out, for example because it is still pending or failed before its\nhtlc timeout sweep was published, or none of its deposits count for it,\nor the funding fee of none of its deposits is known, for example because\nthey were all funded by an external wallet. A pending swap can still get\na cost once it is paid or its htlc times out.\n - ONCHAIN_COST_STATUS_PARTIAL: The funding fees of some of a swap's deposits are known, and cost_onchain\nonly includes those. The others are left out, for example a deposit\nfunded by an external wallet. cost_onchain can be zero if the known\ndeposits are change, which costs nothing.\n - ONCHAIN_COST_STATUS_COMPLETE: The funding fees of all deposits are known and included in the cost.\nFees of the htlc timeout path are never included. For a deposit, its\ncost is known.\n - ONCHAIN_COST_STATUS_PENDING: The on-chain cost hasn't been determined yet. loopd looks it up within\nabout 10 seconds of finding a deposit, and keeps trying while lnd isn't\nsynced to the chain or the lookup fails. For a deposit, cost_onchain is\nzero. For a static loop-in, the cost of a deposit the swap spent hasn't\nbeen determined yet, and cost_onchain only includes the deposits whose\nfunding fee is known so far."
+    },
     "looprpcOutQuoteResponse": {
       "type": "object",
       "properties": {
@@ -2600,12 +2620,16 @@
         "cost_onchain": {
           "type": "string",
           "format": "int64",
-          "description": "On-chain transaction cost."
+          "description": "On-chain cost: the sum of the on-chain costs of the deposits the swap\nspent, see Deposit.cost_onchain. A deposit's whole fee share counts for\nthe swap that spends it, also if the swap only loops in part of it, and\nits change costs nothing. A swap that wasn't paid but whose htlc spent\nits deposits has this cost once its htlc timed out, also if it failed\nafter publishing its htlc timeout sweep, but the fees of the htlc and its\ntimeout sweep are not included. Any other failed swap reports an unknown\ncost. In the rare case that a swap takes back deposits that a later swap\nhad already taken, their cost is reported for the later swap if it was\npaid, and otherwise for neither swap. Don't add this cost to the cost of\nthe swap's deposits: it includes them, and can be lower than their sum,\nfor example if the swap failed or still waits for its payment."
         },
         "cost_offchain": {
           "type": "string",
           "format": "int64",
           "description": "Off-chain routing fees."
+        },
+        "cost_onchain_status": {
+          "$ref": "#/definitions/looprpcOnchainCostStatus",
+          "description": "Whether cost_onchain is unknown, partial, complete or pending."
         }
       }
     },
@@ -2864,7 +2888,7 @@
         "cost_onchain": {
           "type": "string",
           "format": "int64",
-          "title": "On-chain transaction cost"
+          "description": "On-chain transaction cost. For static address loop-ins it is the sum of\nthe on-chain costs of the deposits the swap spent. It doesn't say\nwhether that cost is known: an unknown cost is zero and a partial or\npending cost is only its known part. ListStaticAddressSwaps reports\nwhether it is unknown, partial, complete or pending. A swap update is\nonly sent when the swap changes state, so a pending cost isn't updated\nhere until the swap's next state, and not at all once the swap is\nfinal."
         },
         "cost_offchain": {
           "type": "string",
