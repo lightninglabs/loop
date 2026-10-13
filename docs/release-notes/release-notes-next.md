@@ -5,6 +5,39 @@
 * Instant Out now validates server invoices against a caller-approved maximum
   swap fee.
 
+* Static Address deposits and loop-ins now report their on-chain cost. A
+  deposit's cost is its share of the fee of the transaction that funded it: the
+  fee is split across the transaction's deposit outputs by value, so it is
+  counted once even if the deposits are used in different swaps, and if the
+  transaction also paid someone else, its whole fee is charged to the deposits.
+  Change that a partial loop-in or withdrawal sends back to the static address
+  costs nothing. If the client wallet doesn't know the funding fee, for example
+  for a deposit funded by an external wallet, the deposit's cost is unknown. The
+  new `cost_onchain` and `cost_onchain_status` fields of
+  `ListStaticAddressDeposits` show a deposit's cost, also before it confirms. To
+  add up the cost of deposits, use these deposits, since the deposits of swaps
+  and withdrawals can include the same deposit. A static loop-in's
+  `cost_onchain`, which was previously always zero, is the sum of the costs of
+  the deposits it spent, including a deposit's whole fee share when only part of
+  it is looped in. A swap that wasn't paid but whose htlc spent its deposits has
+  the cost once its htlc timed out, also if it failed after publishing its htlc
+  timeout sweep, but fees of the htlc timeout path are not included. Any other
+  failed swap reports an unknown cost. The new `cost_onchain_status` field in
+  `ListStaticAddressSwaps` says whether the cost is complete, partial (only some
+  funding fees are known), unknown (none are known, or the swap spent no
+  deposits) or pending (the cost of a deposit hasn't been determined yet, so
+  only the known funding fees are included). `loop monitor` doesn't show the
+  status: it reports an unknown cost as zero and a partial or pending cost as
+  its known part. loopd looks up a deposit's cost within about 10 seconds of
+  finding it, and the cost of existing deposits shortly after the first start
+  after upgrading. If lnd isn't synced to the chain or the lookup fails, the
+  cost stays pending and loopd tries again while it runs. In the rare case that
+  a swap takes back deposits that a later swap had already taken, their cost is
+  reported for the later swap if it was paid, and otherwise for neither swap. A
+  retried swap from before deposits were mapped to swaps can report an unknown
+  cost.
+  [Issue #1174](https://github.com/lightninglabs/loop/issues/1174)
+
 #### Breaking Changes
 
 * Instant Out requests must now set `max_swap_fee_sat`. Requests that omit the
