@@ -10,6 +10,7 @@
       "[{\"hop_hints\":[{\"node_id\":\"022222222222222222222222222222222222222222222222222222222222222222\",\"chan_id\":\"111111111111111\",\"cltv_expiry_delat\":80}]}]",
       "250000"
     ],
+    "env": null,
     "version": "0.35.0-beta commit= commit_hash=",
     "run_error": "unable to parse route hint 0: proto: (line 1:123): unknown field \"cltv_expiry_delat\"",
     "duration": 1073888,

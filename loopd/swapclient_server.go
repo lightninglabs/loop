@@ -529,6 +529,7 @@ func (s *swapClientServer) marshallSwap(ctx context.Context,
 		LastHop:          lastHop,
 		OutgoingChanSet:  outGoingChanSet,
 		AssetInfo:        assetInfo,
+		AssetLoopInInfo:  marshalAssetLoopInInfo(loopSwap.AssetLoopInInfo),
 	}
 	if swapType == looprpc.SwapType_STATIC_LOOP_IN {
 		rpcSwap.StaticLoopInStateOptional =
@@ -886,8 +887,10 @@ func filterSwap(swapInfo *loop.SwapInfo, filter *looprpc.ListSwapsFilter) bool {
 	}
 
 	// If we only want to return asset swaps, we only return swaps that have
-	// an asset id set.
-	if filter.AssetSwapOnly && swapInfo.AssetSwapInfo == nil {
+	// asset terms set.
+	if filter.AssetSwapOnly && swapInfo.AssetSwapInfo == nil &&
+		swapInfo.AssetLoopInInfo == nil {
+
 		return false
 	}
 
@@ -1071,6 +1074,11 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	req *looprpc.QuoteRequest) (*looprpc.InQuoteResponse, error) {
 
 	infof("Loop in quote request received")
+	if req.AssetLoopIn != nil && (req.AutoSelectDeposits ||
+		len(req.DepositOutpoints) != 0 || req.Fast) {
+
+		return nil, fmt.Errorf("asset quotes require standard loop in")
+	}
 
 	var (
 		selectedAmount     = btcutil.Amount(req.Amt)
@@ -1238,6 +1246,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 
 	quote, err := s.loopInQuoter.LoopInQuote(
 		ctx, &loop.LoopInQuoteRequest{
+			AssetInfo:      unmarshalAssetLoopInQuote(req.AssetLoopIn),
 			Amount:         selectedAmount,
 			HtlcConfTarget: htlcConfTarget,
 			ExternalHtlc:   req.ExternalHtlc,
@@ -1253,6 +1262,7 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 	}
 
 	return &looprpc.InQuoteResponse{
+		AssetInfo:         marshalAssetLoopInInfo(quote.AssetInfo),
 		HtlcPublishFeeSat: int64(quote.MinerFee),
 		SwapFeeSat:        int64(quote.SwapFee),
 		ConfTarget:        htlcConfTarget,
@@ -1400,7 +1410,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		RouteHints:     routeHints,
 	}
 	if in.AssetInfo != nil {
-		if len(in.AssetInfo.AssetId) != 32 {
+		if len(in.AssetInfo.GroupKey) == 0 && len(in.AssetInfo.AssetId) != 32 {
 			return nil, fmt.Errorf("asset id must be set to a 32 byte " +
 				"value")
 		}
@@ -1412,6 +1422,7 @@ func (s *swapClientServer) LoopIn(ctx context.Context,
 		req.AssetId = in.AssetInfo.AssetId
 		req.AssetEdgeNode = in.AssetInfo.AssetEdgeNode
 		req.MinAssetAmount = in.AssetInfo.MinAssetAmount
+		req.GroupKey = in.AssetInfo.GroupKey
 	}
 	if in.LastHop != nil {
 		lastHop, err := route.NewVertexFromBytes(in.LastHop)

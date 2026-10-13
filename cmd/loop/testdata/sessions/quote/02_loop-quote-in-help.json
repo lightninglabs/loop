@@ -20,63 +20,26 @@
       "kind": "stdout",
       "data": {
         "lines": [
-          "NAME:\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "NAME:\n",
           "   loop quote in - get a quote for the cost of a loop in swap\n",
           "\n",
-          "USAGE:\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "USAGE:\n",
           "   loop quote in amt\n",
           "\n",
-          "DESCRIPTION:\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "DESCRIPTION:\n",
           "   Allows to determine the cost of a swap up front.Either specify an amount or deposit outpoints.\n",
           "\n",
-          "OPTIONS:\n"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
+          "OPTIONS:\n",
           "   --last_hop string                                        the pubkey of the last hop to use for the quote\n",
           "   --conf_target uint                                       the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)\n",
           "   --verbose, -v                                            show expanded details (default: false)\n",
           "   --private                                                generates and passes routehints. Should be used if the connected node is only reachable via private channels (default: false)\n",
           "   --route_hints string                                     a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination\n",
-          "   --deposit_outpoint string [ --deposit_outpoint string ]  one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx"
-        ]
-      }
-    },
-    {
-      "time_ms": 1,
-      "kind": "stdout",
-      "data": {
-        "lines": [
-          "\n",
+          "   --asset_id string                                        asset ID to receive\n",
+          "   --group_key string                                       group key to receive instead of asset_id\n",
+          "   --asset_edge_node string                                 required asset edge public key\n",
+          "   --min_asset_amount uint                                  optional minimum output in asset units (default: 0)\n",
+          "   --deposit_outpoint string [ --deposit_outpoint string ]  one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx\n",
           "   --help, -h                                               show help\n"
         ]
       }

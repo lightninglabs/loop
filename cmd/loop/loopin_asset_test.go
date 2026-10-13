@@ -83,6 +83,11 @@ func TestAssetLoopInCLI(t *testing.T) {
 			err: "must match",
 		},
 		{
+			name: "both selectors",
+			args: []string{"--group_key", edge},
+			err:  "mutually exclusive",
+		},
+		{
 			name: "edge quote",
 			args: []string{
 				"--asset_edge_node", edge,
@@ -101,6 +106,8 @@ func TestAssetLoopInCLI(t *testing.T) {
 			err := cmd.Run(t.Context(), args)
 			require.ErrorContains(t, err, tc.err)
 			if tc.quoted {
+				require.NotNil(t, conn.quote.AssetLoopIn)
+				require.EqualValues(t, 4900, conn.quote.AssetLoopIn.MinAssetAmount)
 				require.Equal(
 					t, pub.SerializeCompressed(),
 					conn.quote.LoopInLastHop,
@@ -110,4 +117,43 @@ func TestAssetLoopInCLI(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAssetGroupCLI ensures both CLI entry points send group-only selectors.
+func TestAssetGroupCLI(t *testing.T) {
+	_, pub := btcec.PrivKeyFromBytes([]byte{1})
+	key := hex.EncodeToString(pub.SerializeCompressed())
+	for _, prefix := range [][]string{{"loop", "in"}, {"loop", "quote", "in"}} {
+		conn := &assetQuoteConn{}
+		restore := hookGrpc(&assetQuoteTransport{conn: conn})
+		args := append([]string{}, prefix...)
+		args = append(args, "--group_key", key, "--asset_edge_node", key,
+			"--min_asset_amount", "4900", "500000")
+		err := newRootCommandForReplay().Run(t.Context(), args)
+		restore()
+		require.ErrorContains(t, err, "quote reached")
+		require.NotNil(t, conn.quote.AssetLoopIn)
+		require.Empty(t, conn.quote.AssetLoopIn.AssetId)
+		require.Equal(t, pub.SerializeCompressed(), conn.quote.AssetLoopIn.GroupKey)
+	}
+}
+
+// TestAssetQuoteDisplay checks the terms shown before swap confirmation.
+func TestAssetQuoteDisplay(t *testing.T) {
+	output := captureStdout(t, func() {
+		printQuoteInResp(&looprpc.QuoteRequest{Amt: 500_000},
+			&looprpc.InQuoteResponse{
+				AssetInfo: &looprpc.AssetLoopInInfo{
+					AssetAmount:    4964,
+					MinAssetAmount: 4960,
+					AssetRate: &looprpc.FixedPoint{
+						Coefficient: "1000000",
+					},
+				},
+			}, false)
+	})
+	require.Contains(t, output, "Expected asset output: 4964 units")
+	require.Contains(t, output, "Minimum asset output: 4960 units")
+	require.Contains(t, output, "Asset rate: 1000000 * 10^-0 units/BTC")
+	require.Contains(t, output, "Execution requotes")
 }

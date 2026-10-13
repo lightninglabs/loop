@@ -618,6 +618,9 @@ message SwapStatus {
 
     // If the swap was an asset swap, the asset information will be returned.
     AssetLoopOutInfo asset_info = 19;
+
+    // Immutable receiving terms for an asset Loop In, including after restart.
+    AssetLoopInInfo asset_loop_in_info = 21;
 }
 
 enum SwapType {
@@ -976,6 +979,10 @@ message QuoteRequest {
     Note that this feature is only available for static address loop in swaps.
     */
     bool fast = 11;
+
+    // Asset selector and edge for a standard Loop In quote. The minimum may
+    // be zero to discover a rate. Unsupported for static address quotes.
+    AssetLoopInRequest asset_loop_in = 12;
 }
 
 message InQuoteResponse {
@@ -1012,6 +1019,10 @@ message InQuoteResponse {
     selected deposits.
     */
     int64 quoted_amt = 7;
+
+    // Provisional receiving quote. Execution negotiates a fresh quote and
+    // enforces the caller's min_asset_amount before funding and settlement.
+    AssetLoopInInfo asset_info = 8;
 }
 
 message OutQuoteResponse {
@@ -2450,7 +2461,7 @@ message AssetLoopOutRequest {
 message AssetLoopInRequest {
     /*
     The asset ID to receive when the swap invoice is paid. A Taproot Assets
-    client must be connected to loopd when this field is set.
+    client must be connected to loopd for either asset selector.
     */
     bytes asset_id = 1;
 
@@ -2463,9 +2474,28 @@ message AssetLoopInRequest {
     /*
     Required minimum output in indivisible asset units. The invoice remains
     BTC-denominated; the negotiated rate must yield at least this many units
-    after the swap fee. Enforced before the swap is committed or funded.
+    after the swap fee. Enforced before funding and against actual accepted
+    HTLC units before settlement. May be zero in a quote-only request.
     */
     uint64 min_asset_amount = 3;
+
+    // Compressed 33-byte group public key, mutually exclusive with asset_id.
+    // Allows receiving any asset belonging to this group.
+    bytes group_key = 4;
+}
+
+// AssetLoopInInfo describes receiving terms. Amounts are indivisible units.
+message AssetLoopInInfo {
+    bytes asset_id = 1;
+    bytes group_key = 2;
+    bytes asset_edge_node = 3;
+    uint64 min_asset_amount = 4;
+    // Quoted output, not the actual settled amount.
+    uint64 asset_amount = 5;
+    // Asset units per BTC, before rounding individual HTLCs to whole units.
+    FixedPoint asset_rate = 6;
+    // Unix timestamp in seconds. Quote RPC results are provisional.
+    uint64 quote_expiry = 7;
 }
 
 message AssetRfqInfo {

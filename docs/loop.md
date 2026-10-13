@@ -111,7 +111,8 @@ The following flags are supported:
 | `--private`              | generates and passes routehints. Should be used if the connected node is only reachable via private channels            | bool   |    `false`    |
 | `--asset_id="…"`         | the asset ID to receive over an asset channel; requires loopd to be connected to a Taproot Assets daemon                | string |
 | `--asset_edge_node="…"`  | the required pubkey of the asset channel peer to use for the loop in                                                    | string |
-| `--min_asset_amount="…"` | minimum output in indivisible asset units; required with asset_id                                                       | uint   |      `0`      |
+| `--group_key="…"`        | compressed group public key to receive; mutually exclusive with asset_id                                                | string |
+| `--min_asset_amount="…"` | minimum output in indivisible asset units; required with asset_id or group_key                                          | uint   |      `0`      |
 | `--help` (`-h`)          | show help                                                                                                               | bool   |    `false`    |
 
 ### `terms` command
@@ -185,6 +186,10 @@ The following flags are supported:
 | `--verbose` (`-v`)       | show expanded details                                                                                                                                                                                          | bool   |    `false`    |
 | `--private`              | generates and passes routehints. Should be used if the connected node is only reachable via private channels                                                                                                   | bool   |    `false`    |
 | `--route_hints="…"`      | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination                                                                                                 | string |
+| `--asset_id="…"`         | asset ID to receive                                                                                                                                                                                            | string |
+| `--group_key="…"`        | group key to receive instead of asset_id                                                                                                                                                                       | string |
+| `--asset_edge_node="…"`  | required asset edge public key                                                                                                                                                                                 | string |
+| `--min_asset_amount="…"` | optional minimum output in asset units                                                                                                                                                                         | uint   |      `0`      |
 | `--deposit_outpoint="…"` | one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx | string |     `[]`      |
 | `--help` (`-h`)          | show help                                                                                                                                                                                                      | bool   |    `false`    |
 

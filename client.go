@@ -392,12 +392,13 @@ func (s *Client) FetchSwaps(ctx context.Context) ([]*SwapInfo, error) {
 
 	for _, swp := range loopInSwaps {
 		swapInfo := &SwapInfo{
-			SwapType:      swap.TypeIn,
-			SwapContract:  swp.Contract.SwapContract,
-			SwapStateData: swp.State(),
-			SwapHash:      swp.Hash,
-			LastUpdate:    swp.LastUpdateTime(),
-			LastHop:       swp.Contract.LastHop,
+			SwapType:        swap.TypeIn,
+			SwapContract:    swp.Contract.SwapContract,
+			SwapStateData:   swp.State(),
+			SwapHash:        swp.Hash,
+			LastUpdate:      swp.LastUpdateTime(),
+			LastHop:         swp.Contract.LastHop,
+			AssetLoopInInfo: swp.Contract.AssetSwapInfo,
 		}
 
 		htlc, err := utils.GetHtlc(
@@ -766,14 +767,14 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 func (s *Client) LoopIn(globalCtx context.Context,
 	request *LoopInRequest) (*LoopInSwapInfo, error) {
 
-	if request.AssetId != nil {
+	if request.AssetId != nil || request.GroupKey != nil {
 		if s.AssetClient == nil {
 			return nil, errors.New("asset client must be set when " +
 				"using an asset id")
 		}
 
-		log.Infof("Loop in %v with asset %x (last hop: %v)",
-			request.Amount, request.AssetId, request.LastHop)
+		log.Infof("Loop in %v with asset %x, group %x (last hop: %v)",
+			request.Amount, request.AssetId, request.GroupKey, request.LastHop)
 	} else {
 		log.Infof("Loop in %v (last hop: %v)",
 			request.Amount, request.LastHop)
@@ -827,6 +828,23 @@ func (s *Client) LoopIn(globalCtx context.Context,
 func (s *Client) LoopInQuote(ctx context.Context,
 	request *LoopInQuoteRequest) (*LoopInQuote, error) {
 
+	if request.AssetInfo != nil {
+		a := request.AssetInfo
+		r := &LoopInRequest{
+			AssetId: a.AssetId, GroupKey: a.GroupKey,
+			AssetEdgeNode: a.AssetEdgeNode,
+			LastHop:       request.LastHop, Private: request.Private,
+			RouteHints: request.RouteHints,
+		}
+		if request.NumDeposits != 0 || request.Fast {
+			return nil, fmt.Errorf("asset quotes require standard loop in")
+		}
+		if err := validateAssetLoopIn(r, s.AssetClient, false); err != nil {
+			return nil, err
+		}
+		request.LastHop = r.LastHop
+	}
+
 	// Retrieve current server terms to calculate swap fee.
 	terms, err := s.Server.GetLoopInTerms(ctx, request.Initiator)
 	if err != nil {
@@ -878,14 +896,21 @@ func (s *Client) LoopInQuote(ctx context.Context,
 
 	swapFee := quote.SwapFee
 
-	// We don't calculate the on-chain fee if the HTLC is going to be
-	// published externally.
-	// We also don't calculate the on-chain fee if the loop in is funded by
-	// static address deposits because we don't publish the HTLC on-chain.
+	var assetInfo *loopdb.LoopInAssetSwap
+	if request.AssetInfo != nil {
+		assetInfo, err = s.quoteAssetLoopIn(
+			ctx, request.AssetInfo, request.Amount-swapFee,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// External HTLCs and static address deposits need no publication fee.
 	if request.ExternalHtlc || request.NumDeposits > 0 {
 		return &LoopInQuote{
-			SwapFee:  swapFee,
-			MinerFee: 0,
+			AssetInfo: assetInfo,
+			SwapFee:   swapFee,
+			MinerFee:  0,
 		}, nil
 	}
 
@@ -902,6 +927,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 	)
 	if err != nil && strings.Contains(err.Error(), "insufficient funds") {
 		return &LoopInQuote{
+			AssetInfo: assetInfo,
 			SwapFee:   swapFee,
 			MinerFee:  MinerFeeEstimationFailed,
 			CltvDelta: quote.CltvDelta,
@@ -912,6 +938,7 @@ func (s *Client) LoopInQuote(ctx context.Context,
 	}
 
 	return &LoopInQuote{
+		AssetInfo: assetInfo,
 		SwapFee:   swapFee,
 		MinerFee:  minerFee,
 		CltvDelta: quote.CltvDelta,

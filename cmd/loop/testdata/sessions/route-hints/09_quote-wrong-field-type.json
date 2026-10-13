@@ -10,6 +10,7 @@
       "[{\"hop_hints\":\"not-an-array\"}]",
       "250000"
     ],
+    "env": null,
     "version": "0.35.0-beta commit= commit_hash=",
     "run_error": "unable to parse route hint 0: proto: syntax error (line 1:14): unexpected token \"not-an-array\"",
     "duration": 1265213,

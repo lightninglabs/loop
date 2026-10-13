@@ -90,7 +90,9 @@ func TestAddAssetInvoice(t *testing.T) {
 		Memo:      "asset invoice",
 		ValueMsat: 50_000_000,
 	}
-	quote := &rfqrpc.PeerAcceptedBuyQuote{Peer: "peer"}
+	quote := &rfqrpc.PeerAcceptedBuyQuote{
+		Peer: "peer", AskAssetRate: &rfqrpc.FixedPoint{Coefficient: "1000000"},
+	}
 
 	tests := []struct {
 		name        string
@@ -122,7 +124,7 @@ func TestAddAssetInvoice(t *testing.T) {
 			}
 
 			invoice, err := client.AddAssetInvoice(
-				t.Context(), assetID, peer, invoiceReq,
+				t.Context(), assetID, nil, peer, invoiceReq,
 				test.paymentHash, 0,
 			)
 			require.NoError(t, err)
@@ -180,7 +182,7 @@ func TestAddAssetInvoiceRejectsIncompleteResponse(t *testing.T) {
 				},
 			}
 			_, err := client.AddAssetInvoice(
-				t.Context(), make([]byte, 32), nil,
+				t.Context(), make([]byte, 32), nil, nil,
 				&lnrpc.Invoice{}, nil, 0,
 			)
 			require.ErrorContains(t, err, test.err)
@@ -212,7 +214,7 @@ func TestAssetInvoiceMinimum(t *testing.T) {
 			}
 			client := &TapdClient{TaprootAssetChannelsClient: mock}
 			invoice, err := client.AddAssetInvoice(
-				t.Context(), make([]byte, 32), nil,
+				t.Context(), make([]byte, 32), nil, nil,
 				&lnrpc.Invoice{ValueMsat: 50_000_000}, nil, tc.minimum,
 			)
 			require.NotNil(t, mock.request.AssetRateLimit)

@@ -13,7 +13,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
-	"github.com/lightninglabs/taproot-assets/rpcutils"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/priceoraclerpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
@@ -68,7 +67,7 @@ type AssetInvoice struct {
 // set, a hold invoice is created instead of a regular invoice. A nonzero
 // minAssetAmount sets the RFQ rate floor and verifies the quoted output in
 // indivisible asset units.
-func (c *TapdClient) AddAssetInvoice(ctx context.Context, assetID,
+func (c *TapdClient) AddAssetInvoice(ctx context.Context, assetID, groupKey,
 	peerPubkey []byte, invoice *lnrpc.Invoice,
 	paymentHash *lntypes.Hash, minAssetAmount uint64) (*AssetInvoice, error) {
 
@@ -78,6 +77,7 @@ func (c *TapdClient) AddAssetInvoice(ctx context.Context, assetID,
 
 	req := &tapchannelrpc.AddInvoiceRequest{
 		AssetId:        assetID,
+		GroupKey:       groupKey,
 		PeerPubkey:     peerPubkey,
 		InvoiceRequest: invoice,
 	}
@@ -127,28 +127,22 @@ func (c *TapdClient) AddAssetInvoice(ctx context.Context, assetID,
 			"request")
 	}
 
-	var assetAmount uint64
-	if minAssetAmount != 0 {
-		rate, err := rpcutils.UnmarshalRfqFixedPoint(
-			resp.AcceptedBuyQuote.AskAssetRate,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("invalid asset rate: %w", err)
-		}
-		amt, err := lnrpc.UnmarshallAmt(invoice.Value, invoice.ValueMsat)
-		if err != nil {
-			return nil, err
-		}
-		units := rfqmath.MilliSatoshiToUnits(amt, *rate).ScaleTo(0)
-		var ok bool
-		assetAmount, ok = units.ToUint64Checked()
-		if !ok {
-			return nil, fmt.Errorf("quoted asset output overflows uint64")
-		}
-		if assetAmount < minAssetAmount {
-			return nil, fmt.Errorf("quoted asset output %d is below "+
-				"minimum %d", assetAmount, minAssetAmount)
-		}
+	rate, err := unmarshalAssetRate(resp.AcceptedBuyQuote.AskAssetRate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset rate: %w", err)
+	}
+	amt, err := lnrpc.UnmarshallAmt(invoice.Value, invoice.ValueMsat)
+	if err != nil {
+		return nil, err
+	}
+	units := rfqmath.MilliSatoshiToUnits(amt, *rate).ScaleTo(0)
+	assetAmount, ok := units.ToUint64Checked()
+	if !ok {
+		return nil, fmt.Errorf("quoted asset output overflows uint64")
+	}
+	if assetAmount < minAssetAmount {
+		return nil, fmt.Errorf("quoted asset output %d is below "+
+			"minimum %d", assetAmount, minAssetAmount)
 	}
 
 	return &AssetInvoice{

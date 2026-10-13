@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"time"
@@ -39,6 +40,10 @@ var quoteInCommand = &cli.Command{
 		verboseFlag,
 		privateFlag,
 		routeHintsFlag,
+		&cli.StringFlag{Name: "asset_id", Usage: "asset ID to receive"},
+		&cli.StringFlag{Name: "group_key", Usage: "group key to receive instead of asset_id"},
+		&cli.StringFlag{Name: "asset_edge_node", Usage: "required asset edge public key"},
+		&cli.Uint64Flag{Name: "min_asset_amount", Usage: "optional minimum output in asset units"},
 		&cli.StringSliceFlag{
 			Name: "deposit_outpoint",
 			Usage: "one or more static address deposit outpoints " +
@@ -112,6 +117,39 @@ func quoteIn(ctx context.Context, cmd *cli.Command) error {
 		quoteReq.LoopInLastHop = lastHopVertex[:]
 	}
 
+	if cmd.IsSet("asset_id") || cmd.IsSet("group_key") ||
+		cmd.IsSet("asset_edge_node") || cmd.IsSet("min_asset_amount") {
+
+		if cmd.IsSet("asset_id") == cmd.IsSet("group_key") {
+			return fmt.Errorf("specify exactly one of asset_id or group_key")
+		}
+		if len(depositOutpoints) != 0 {
+			return fmt.Errorf("asset quotes require standard loop in")
+		}
+		id, err := hex.DecodeString(cmd.String("asset_id"))
+		if err != nil {
+			return err
+		}
+		group, err := hex.DecodeString(cmd.String("group_key"))
+		if err != nil {
+			return err
+		}
+		// Omitted selectors must stay nil to preserve exclusivity.
+		if !cmd.IsSet("asset_id") {
+			id = nil
+		}
+		if !cmd.IsSet("group_key") {
+			group = nil
+		}
+		edge, err := hex.DecodeString(cmd.String("asset_edge_node"))
+		if err != nil {
+			return err
+		}
+		quoteReq.AssetLoopIn = &looprpc.AssetLoopInRequest{
+			AssetId: id, GroupKey: group, AssetEdgeNode: edge,
+			MinAssetAmount: cmd.Uint64("min_asset_amount"),
+		}
+	}
 	quoteResp, err := client.GetLoopInQuote(ctx, quoteReq)
 	if err != nil {
 		return err
@@ -227,6 +265,18 @@ func quoteOut(ctx context.Context, cmd *cli.Command) error {
 
 func printQuoteInResp(req *looprpc.QuoteRequest,
 	resp *looprpc.InQuoteResponse, verbose bool) {
+
+	if resp.AssetInfo != nil && resp.AssetInfo.AssetRate != nil {
+		fmt.Printf("Expected asset output: %d units\n",
+			resp.AssetInfo.AssetAmount)
+		fmt.Printf("Asset rate: %s * 10^-%d units/BTC\n",
+			resp.AssetInfo.AssetRate.Coefficient,
+			resp.AssetInfo.AssetRate.Scale)
+		fmt.Printf("Minimum asset output: %d units\n",
+			resp.AssetInfo.MinAssetAmount)
+		fmt.Println("Execution requotes; output below the minimum " +
+			"is rejected.")
+	}
 
 	totalFee := resp.HtlcPublishFeeSat + resp.SwapFeeSat
 	amt := req.Amt

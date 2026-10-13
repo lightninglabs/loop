@@ -74,7 +74,8 @@
           "deposit_outpoints": [],
           "asset_info": null,
           "auto_select_deposits": true,
-          "fast": false
+          "fast": false,
+          "asset_loop_in": null
         }
       }
     },

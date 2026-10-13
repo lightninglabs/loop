@@ -442,10 +442,15 @@ func (m *tapdInvoiceClientMock) AddInvoice(_ context.Context,
 		return nil, err
 	}
 	now := time.Now().Truncate(time.Second)
-	preimage := lntypes.Preimage(req.InvoiceRequest.RPreimage)
+	var preimage lntypes.Preimage
+	copy(preimage[:], req.InvoiceRequest.RPreimage)
+	hash := preimage.Hash()
+	if req.HodlInvoice != nil {
+		hash = lntypes.Hash(req.HodlInvoice.PaymentHash)
+	}
 	inv, err := zpay32.NewInvoice(
 		&chaincfg.TestNet3Params,
-		preimage.Hash(), now,
+		hash, now,
 		zpay32.Description("swap"),
 		zpay32.Amount(lnwire.MilliSatoshi(req.InvoiceRequest.ValueMsat)),
 		zpay32.Expiry(time.Duration(req.InvoiceRequest.Expiry)*time.Second),
@@ -600,6 +605,15 @@ func TestLoopInSwapInvoiceRouteHintsMatchProbe(t *testing.T) {
 // TestLoopInAssetInvoices verifies that both invoices sent to the server are
 // created by tapd and pinned to the same asset edge node.
 func TestLoopInAssetInvoices(t *testing.T) {
+	t.Run("asset ID", func(t *testing.T) {
+		testLoopInAssetInvoices(t, false)
+	})
+	t.Run("group key", func(t *testing.T) {
+		testLoopInAssetInvoices(t, true)
+	})
+}
+
+func testLoopInAssetInvoices(t *testing.T, group bool) {
 	t.Parallel()
 
 	ctx := newLoopInTestContext(t)
@@ -626,16 +640,21 @@ func TestLoopInAssetInvoices(t *testing.T) {
 		AssetEdgeNode:  assetPeer[:],
 		MinAssetAmount: 490,
 	}
+	if group {
+		req.AssetId = nil
+		req.GroupKey = assetPeer[:]
+	}
 
 	initResult, err := newLoopInSwap(t.Context(), cfg, 600, &req)
 	require.NoError(t, err)
 	require.Len(t, invoiceClient.requests, 1)
 
 	swapReq := invoiceClient.requests[0]
-	require.Equal(t, assetID, swapReq.AssetId)
+	require.Equal(t, req.AssetId, swapReq.AssetId)
+	require.Equal(t, req.GroupKey, swapReq.GroupKey)
 	require.Equal(t, assetPeer[:], swapReq.PeerPubkey)
 	require.NotNil(t, swapReq.AssetRateLimit)
-	require.Nil(t, swapReq.HodlInvoice)
+	require.NotNil(t, swapReq.HodlInvoice)
 	require.Equal(t, "swap", swapReq.InvoiceRequest.Memo)
 	require.Equal(
 		t, assetLoopInInvoiceExpiry, swapReq.InvoiceRequest.Expiry,
@@ -645,8 +664,8 @@ func TestLoopInAssetInvoices(t *testing.T) {
 			req.Amount-testSwapFee,
 		), swapReq.InvoiceRequest.ValueMsat,
 	)
-	swapPreimage := lntypes.Preimage(swapReq.InvoiceRequest.RPreimage)
-	require.Equal(t, initResult.swap.hash, swapPreimage.Hash())
+	require.Empty(t, swapReq.InvoiceRequest.RPreimage)
+	require.Equal(t, initResult.swap.hash[:], swapReq.HodlInvoice.PaymentHash)
 	require.False(t, swapReq.InvoiceRequest.Private)
 
 	probe, err := zpay32.Decode(ctx.server.probeInvoice, ctx.lnd.ChainParams)
@@ -656,6 +675,9 @@ func TestLoopInAssetInvoices(t *testing.T) {
 	test.RequireRouteHintsEqual(t, swapInvoice.RouteHints, probe.RouteHints)
 	require.Equal(t, *swapInvoice.MilliSat, *probe.MilliSat)
 	require.EqualValues(t, 497, initResult.assetAmount)
+	require.Equal(t, req.AssetId, initResult.swap.AssetSwapInfo.AssetId)
+	require.Equal(t, req.GroupKey, initResult.swap.AssetSwapInfo.GroupKey)
+	require.Equal(t, req.MinAssetAmount, initResult.swap.AssetSwapInfo.MinAssetAmount)
 
 	expectedProbeHash := lntypes.Hash(sha256.Sum256(initResult.swap.hash[:]))
 	expectedProbeHash[0] ^= 1

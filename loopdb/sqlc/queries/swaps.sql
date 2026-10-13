@@ -139,9 +139,10 @@ INSERT INTO loopin_swaps (
     swap_hash,
     htlc_conf_target,
     last_hop,
-    external_htlc
+    external_htlc,
+    asset_info
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 );
 
 -- name: InsertHtlcKeys :exec

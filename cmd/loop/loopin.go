@@ -99,10 +99,15 @@ var (
 				Usage: "the required pubkey of the asset channel " +
 					"peer to use for the loop in",
 			},
+			&cli.StringFlag{
+				Name: "group_key",
+				Usage: "compressed group public key to receive; " +
+					"mutually exclusive with asset_id",
+			},
 			&cli.Uint64Flag{
 				Name: "min_asset_amount",
 				Usage: "minimum output in indivisible asset units; " +
-					"required with asset_id",
+					"required with asset_id or group_key",
 			},
 		},
 		Action: loopIn,
@@ -172,22 +177,36 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 
 	var assetInfo *looprpc.AssetLoopInRequest
 	if (cmd.IsSet("asset_edge_node") || cmd.IsSet("min_asset_amount")) &&
-		!cmd.IsSet("asset_id") {
+		!cmd.IsSet("asset_id") && !cmd.IsSet("group_key") {
 
 		return fmt.Errorf("asset_id must be set with asset options")
 	}
-	if cmd.IsSet("asset_id") {
+	if cmd.IsSet("asset_id") && cmd.IsSet("group_key") {
+		return fmt.Errorf("asset_id and group_key are mutually exclusive")
+	}
+	if cmd.IsSet("asset_id") || cmd.IsSet("group_key") {
 		if cmd.Bool(privateFlag.Name) || len(hints) != 0 {
 			return fmt.Errorf("private and route_hints are not supported " +
 				"when looping in an asset")
 		}
 
-		assetID, err := hex.DecodeString(cmd.String("asset_id"))
-		if err != nil {
-			return fmt.Errorf("invalid asset id: %w", err)
-		}
-		if len(assetID) != 32 {
-			return fmt.Errorf("asset id must be a 32 byte value")
+		var assetID, groupKey []byte
+		if cmd.IsSet("asset_id") {
+			assetID, err = hex.DecodeString(cmd.String("asset_id"))
+			if err != nil {
+				return fmt.Errorf("invalid asset id: %w", err)
+			}
+			if len(assetID) != 32 {
+				return fmt.Errorf("asset id must be a 32 byte value")
+			}
+		} else {
+			groupKey, err = hex.DecodeString(cmd.String("group_key"))
+			if err != nil || len(groupKey) != 33 {
+				return fmt.Errorf("group key must be a 33 byte public key")
+			}
+			if _, err := btcec.ParsePubKey(groupKey); err != nil {
+				return fmt.Errorf("invalid group key: %w", err)
+			}
 		}
 
 		var assetEdgeNode []byte
@@ -216,6 +235,7 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 
 		assetInfo = &looprpc.AssetLoopInRequest{
 			AssetId:        assetID,
+			GroupKey:       groupKey,
 			AssetEdgeNode:  assetEdgeNode,
 			MinAssetAmount: cmd.Uint64("min_asset_amount"),
 		}
@@ -228,6 +248,7 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 		LoopInLastHop:    lastHop,
 		LoopInRouteHints: hints,
 		Private:          cmd.Bool(privateFlag.Name),
+		AssetLoopIn:      assetInfo,
 	}
 
 	quote, err := client.GetLoopInQuote(ctx, quoteReq)
@@ -251,8 +272,9 @@ func loopIn(ctx context.Context, cmd *cli.Command) error {
 
 	limits := getInLimits(quote)
 	if assetInfo != nil {
-		fmt.Printf("Minimum asset output: %d units of %x\n",
-			assetInfo.MinAssetAmount, assetInfo.AssetId)
+		if quote.AssetInfo == nil || quote.AssetInfo.AssetRate == nil {
+			return fmt.Errorf("server did not return an asset quote")
+		}
 	}
 
 	// Skip showing details if configured

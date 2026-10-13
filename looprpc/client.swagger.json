@@ -446,6 +446,38 @@
             "in": "query",
             "required": false,
             "type": "boolean"
+          },
+          {
+            "name": "asset_loop_in.asset_id",
+            "description": "The asset ID to receive when the swap invoice is paid. A Taproot Assets\nclient must be connected to loopd for either asset selector.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "asset_loop_in.asset_edge_node",
+            "description": "The required node identity public key of the asset channel peer to use for\nRFQ negotiation and the server's fee quote.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "asset_loop_in.min_asset_amount",
+            "description": "Required minimum output in indivisible asset units. The invoice remains\nBTC-denominated; the negotiated rate must yield at least this many units\nafter the swap fee. Enforced before funding and against actual accepted\nHTLC units before settlement. May be zero in a quote-only request.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "uint64"
+          },
+          {
+            "name": "asset_loop_in.group_key",
+            "description": "Compressed 33-byte group public key, mutually exclusive with asset_id.\nAllows receiving any asset belonging to this group.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
           }
         ],
         "tags": [
@@ -653,6 +685,38 @@
             "in": "query",
             "required": false,
             "type": "boolean"
+          },
+          {
+            "name": "asset_loop_in.asset_id",
+            "description": "The asset ID to receive when the swap invoice is paid. A Taproot Assets\nclient must be connected to loopd for either asset selector.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "asset_loop_in.asset_edge_node",
+            "description": "The required node identity public key of the asset channel peer to use for\nRFQ negotiation and the server's fee quote.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "asset_loop_in.min_asset_amount",
+            "description": "Required minimum output in indivisible asset units. The invoice remains\nBTC-denominated; the negotiated rate must yield at least this many units\nafter the swap fee. Enforced before funding and against actual accepted\nHTLC units before settlement. May be zero in a quote-only request.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "uint64"
+          },
+          {
+            "name": "asset_loop_in.group_key",
+            "description": "Compressed 33-byte group public key, mutually exclusive with asset_id.\nAllows receiving any asset belonging to this group.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
           }
         ],
         "tags": [
@@ -1177,13 +1241,49 @@
       "description": "- `unknown`: Unknown address type\n- `p2tr`: Pay to taproot pubkey (`TAPROOT_PUBKEY` = 1)",
       "title": "`AddressType` has to be one of:"
     },
+    "looprpcAssetLoopInInfo": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "format": "byte"
+        },
+        "group_key": {
+          "type": "string",
+          "format": "byte"
+        },
+        "asset_edge_node": {
+          "type": "string",
+          "format": "byte"
+        },
+        "min_asset_amount": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "asset_amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Quoted output, not the actual settled amount."
+        },
+        "asset_rate": {
+          "$ref": "#/definitions/looprpcFixedPoint",
+          "description": "Asset units per BTC, before rounding individual HTLCs to whole units."
+        },
+        "quote_expiry": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Unix timestamp in seconds. Quote RPC results are provisional."
+        }
+      },
+      "description": "AssetLoopInInfo describes receiving terms. Amounts are indivisible units."
+    },
     "looprpcAssetLoopInRequest": {
       "type": "object",
       "properties": {
         "asset_id": {
           "type": "string",
           "format": "byte",
-          "description": "The asset ID to receive when the swap invoice is paid. A Taproot Assets\nclient must be connected to loopd when this field is set."
+          "description": "The asset ID to receive when the swap invoice is paid. A Taproot Assets\nclient must be connected to loopd for either asset selector."
         },
         "asset_edge_node": {
           "type": "string",
@@ -1193,7 +1293,12 @@
         "min_asset_amount": {
           "type": "string",
           "format": "uint64",
-          "description": "Required minimum output in indivisible asset units. The invoice remains\nBTC-denominated; the negotiated rate must yield at least this many units\nafter the swap fee. Enforced before the swap is committed or funded."
+          "description": "Required minimum output in indivisible asset units. The invoice remains\nBTC-denominated; the negotiated rate must yield at least this many units\nafter the swap fee. Enforced before funding and against actual accepted\nHTLC units before settlement. May be zero in a quote-only request."
+        },
+        "group_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "Compressed 33-byte group public key, mutually exclusive with asset_id.\nAllows receiving any asset belonging to this group."
         }
       }
     },
@@ -1564,6 +1669,10 @@
           "type": "string",
           "format": "int64",
           "description": "If the quote request was for a static address loop in and only contained\ndeposit outpoints the quote response will return the total amount of the\nselected deposits."
+        },
+        "asset_info": {
+          "$ref": "#/definitions/looprpcAssetLoopInInfo",
+          "description": "Provisional receiving quote. Execution negotiates a fresh quote and\nenforces the caller's min_asset_amount before funding and settlement."
         }
       }
     },
@@ -2920,6 +3029,10 @@
         "asset_info": {
           "$ref": "#/definitions/looprpcAssetLoopOutInfo",
           "description": "If the swap was an asset swap, the asset information will be returned."
+        },
+        "asset_loop_in_info": {
+          "$ref": "#/definitions/looprpcAssetLoopInInfo",
+          "description": "Immutable receiving terms for an asset Loop In, including after restart."
         }
       }
     },

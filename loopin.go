@@ -134,7 +134,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, fmt.Errorf("private and route_hints both set")
 	}
 
-	assetLoopIn := request.AssetId != nil
+	assetLoopIn := request.AssetId != nil || request.GroupKey != nil
 	if !assetLoopIn && (len(request.AssetEdgeNode) != 0 ||
 		request.MinAssetAmount != 0) {
 
@@ -142,37 +142,8 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 			"options are set")
 	}
 	if assetLoopIn {
-		if len(request.AssetId) != 32 {
-			return nil, fmt.Errorf("asset id must be a 32 byte value")
-		}
-		if cfg.assets == nil {
-			return nil, fmt.Errorf("asset client must be set when " +
-				"using an asset id")
-		}
-		if request.Private || len(request.RouteHints) != 0 {
-			return nil, fmt.Errorf("private and route hints are not " +
-				"supported for asset loop ins")
-		}
-		if len(request.AssetEdgeNode) != 33 {
-			return nil, fmt.Errorf("asset edge node is required and " +
-				"must be a 33 byte public key")
-		}
-
-		pubKey, err := btcec.ParsePubKey(request.AssetEdgeNode)
-		if err != nil {
-			return nil, fmt.Errorf("invalid asset edge node: %w", err)
-		}
-		assetPeer := route.NewVertex(pubKey)
-
-		if request.LastHop != nil &&
-			!bytes.Equal(request.LastHop[:], assetPeer[:]) {
-
-			return nil, fmt.Errorf("last hop and asset edge node " +
-				"must match")
-		}
-		request.LastHop = &assetPeer
-		if request.MinAssetAmount == 0 {
-			return nil, fmt.Errorf("minimum asset amount must be positive")
+		if err := validateAssetLoopIn(request, cfg.assets, true); err != nil {
+			return nil, err
 		}
 
 		request.Initiator += " asset_in"
@@ -235,6 +206,15 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		log.Error("Cannot generate preimage")
 	}
 	swapHash := lntypes.Hash(sha256.Sum256(swapPreimage[:]))
+	initiationSucceeded := false
+	if assetLoopIn {
+		defer func() {
+			if !initiationSucceeded {
+				cancelProbeInvoice(globalCtx, swapHash,
+					newProbeInvoiceCanceler(cfg.lnd.Invoices, swapHash))
+			}
+		}()
+	}
 
 	// Derive a sender key for this swap.
 	keyDesc, err := cfg.lnd.WalletKit.DeriveNextKey(
@@ -249,6 +229,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	var (
 		swapInvoice     string
 		assetAmount     uint64
+		assetInfo       *loopdb.LoopInAssetSwap
 		assetRouteHints [][]zpay32.HopHint
 	)
 	if assetLoopIn {
@@ -258,13 +239,12 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		}
 
 		assetInvoice, err := cfg.assets.AddAssetInvoice(
-			globalCtx, request.AssetId, assetPeer, &lnrpc.Invoice{
+			globalCtx, request.AssetId, request.GroupKey, assetPeer, &lnrpc.Invoice{
 				Memo:      "swap",
-				RPreimage: swapPreimage[:],
 				ValueMsat: int64(lnwire.NewMSatFromSatoshis(swapInvoiceAmt)),
 				Expiry:    assetLoopInInvoiceExpiry,
 				Private:   false,
-			}, nil, request.MinAssetAmount,
+			}, &swapHash, request.MinAssetAmount,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("create asset swap invoice: %w", err)
@@ -286,6 +266,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		request.LastHop = &quotePeer
 		swapInvoice = assetInvoice.PaymentRequest
 		assetAmount = assetInvoice.AssetAmount
+		assetInfo = assetLoopInTerms(request, assetInvoice)
 		decoded, err := zpay32.Decode(swapInvoice, cfg.lnd.ChainParams)
 		if err != nil {
 			return nil, fmt.Errorf("decode asset invoice: %w", err)
@@ -379,7 +360,6 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 	// it shortly before expiry. Cancel the probe invoice on every subsequent
 	// initiation failure, sharing the watcher's cancellation result.
 	cancelProbe := newProbeInvoiceCanceler(cfg.lnd.Invoices, probeHash)
-	initiationSucceeded := false
 	defer func() {
 		if !initiationSucceeded {
 			cancelProbeInvoice(
@@ -453,6 +433,7 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		HtlcConfTarget: request.HtlcConfTarget,
 		LastHop:        request.LastHop,
 		ExternalHtlc:   request.ExternalHtlc,
+		AssetSwapInfo:  assetInfo,
 		SwapContract: loopdb.SwapContract{
 			InitiationHeight: currentHeight,
 			InitiationTime:   initiationTime,
@@ -752,6 +733,7 @@ func (s *loopInSwap) sendUpdate(ctx context.Context) error {
 	}
 
 	info.ExternalHtlc = s.ExternalHtlc
+	info.AssetLoopInInfo = s.AssetSwapInfo
 
 	// In order to avoid potentially dangerous ownership sharing we copy the
 	// last hop vertex.
@@ -1249,6 +1231,13 @@ func (s *loopInSwap) waitForSwapComplete(ctx context.Context,
 				update.State)
 
 			switch update.State {
+			case invpkg.ContractAccepted:
+				if s.AssetSwapInfo != nil {
+					if err := s.settleAssetInvoice(ctx, update); err != nil {
+						return err
+					}
+				}
+
 			// Swap invoice was paid, so update server cost balance.
 			case invpkg.ContractSettled:
 				// If invoice settlement and htlc spend happen

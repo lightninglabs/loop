@@ -459,6 +459,10 @@ func TestFetchSwapsLastHop(t *testing.T) {
 	ctx := createClientTestContext(t, nil)
 
 	lastHop := route.Vertex{1, 2, 3}
+	assetInfo := &loopdb.LoopInAssetSwap{
+		GroupKey: htlcKeys.SenderScriptKey[:], MinAssetAmount: 100,
+		AssetAmount: 101, RateCoefficient: "1000000",
+	}
 
 	// Create a loop in swap.
 	swapHash := lntypes.Hash{1, 1, 1}
@@ -469,7 +473,8 @@ func TestFetchSwapsLastHop(t *testing.T) {
 			ProtocolVersion: loopdb.ProtocolVersionMuSig2,
 			HtlcKeys:        htlcKeys,
 		},
-		LastHop: &lastHop,
+		LastHop:       &lastHop,
+		AssetSwapInfo: assetInfo,
 	}
 	err := ctx.store.CreateLoopIn(context.Background(), swapHash, swap)
 	require.NoError(t, err, "CreateLoopOut failed")
@@ -491,7 +496,8 @@ func TestFetchSwapsLastHop(t *testing.T) {
 		},
 
 		// Make sure LastHop is filled.
-		LastHop: &lastHop,
+		LastHop:         &lastHop,
+		AssetLoopInInfo: assetInfo,
 	}
 
 	// Calculate HtlcAddressP2TR.
