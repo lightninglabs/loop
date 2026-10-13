@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
+	"github.com/btcsuite/btcwallet/wallet"
 	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -339,4 +340,22 @@ func (m *mockWalletKit) ImportTaprootScript(ctx context.Context,
 	tapscript *waddrmgr.Tapscript) (btcutil.Address, error) {
 
 	return nil, nil
+}
+
+// GetTransaction returns the mock transaction with the given hash, or the
+// error lnd returns if the wallet doesn't have it.
+func (m *mockWalletKit) GetTransaction(_ context.Context,
+	txid chainhash.Hash) (lndclient.Transaction, error) {
+
+	m.lnd.lock.Lock()
+	defer m.lnd.lock.Unlock()
+
+	for _, tx := range m.lnd.Transactions {
+		if tx.Tx != nil && tx.Tx.TxHash() == txid {
+			return tx, nil
+		}
+	}
+
+	return lndclient.Transaction{}, fmt.Errorf("%w: txid %v",
+		wallet.ErrNoTx, txid)
 }

@@ -300,6 +300,23 @@ func TestManager(t *testing.T) {
 		t.Fatal("manager timed out starting")
 	}
 
+	// The manager determines the on-chain cost of the recovered deposit
+	// right away. The wallet doesn't have its funding transaction, so the
+	// cost is unknown.
+	require.Eventually(t, func() bool {
+		testContext.manager.mu.Lock()
+		defer testContext.manager.mu.Unlock()
+
+		for _, d := range testContext.manager.deposits {
+			cost := d.GetOnchainCost()
+			if cost.Status != OnchainCostUnknown {
+				return false
+			}
+		}
+
+		return len(testContext.manager.deposits) == 1
+	}, defaultTimeout, 10*time.Millisecond)
+
 	// Notify about the last block before the expiry.
 	testContext.blockChan <- int32(
 		defaultDepositConfirmations + defaultExpiry - 1,
