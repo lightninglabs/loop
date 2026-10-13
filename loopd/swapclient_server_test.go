@@ -2,6 +2,7 @@ package loopd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -401,6 +402,7 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	const (
 		paymentRequestAmount = btcutil.Amount(50_000)
 		quotedSwapFee        = btcutil.Amount(1_234)
+		onchainCost          = btcutil.Amount(1_550)
 		depositValue         = btcutil.Amount(51_234)
 		depositConfHeight    = int64(590)
 		staticAddressExpiry  = uint32(25)
@@ -425,6 +427,10 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 		Value:              depositValue,
 		ConfirmationHeight: depositConfHeight,
 		SwapHash:           &swapHash,
+		OnchainCost: deposit.OnchainCost{
+			Amount: onchainCost,
+			Status: deposit.OnchainCostKnown,
+		},
 	}
 	testDeposit.SetState(deposit.LoopedIn)
 
@@ -501,7 +507,11 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	require.Equal(t, initiationTime.UnixNano(), swap.InitiationTime)
 	require.Equal(t, lastUpdateTime.UnixNano(), swap.LastUpdateTime)
 	require.Equal(t, int64(quotedSwapFee), swap.CostServer)
-	require.Zero(t, swap.CostOnchain)
+	require.Equal(t, int64(onchainCost), swap.CostOnchain)
+	require.Equal(
+		t, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_COMPLETE,
+		swap.CostOnchainStatus,
+	)
 	require.Zero(t, swap.CostOffchain)
 	require.Len(t, swap.Deposits, 1)
 
@@ -516,6 +526,341 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 		t, depositConfHeight+int64(staticAddressExpiry)-600,
 		rpcDeposit.BlocksUntilExpiry,
 	)
+	require.Equal(t, int64(onchainCost), rpcDeposit.CostOnchain)
+	require.Equal(
+		t, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_COMPLETE,
+		rpcDeposit.CostOnchainStatus,
+	)
+
+	// A deposit whose cost is unknown makes the swap's cost unknown, and
+	// one whose cost hasn't been determined yet makes it pending.
+	for _, test := range []struct {
+		cost   deposit.OnchainCost
+		status looprpc.OnchainCostStatus
+	}{
+		{
+			cost: deposit.OnchainCost{
+				Status: deposit.OnchainCostUnknown,
+			},
+			status: looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN,
+		},
+		{
+			status: looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_PENDING,
+		},
+	} {
+		testDeposit.OnchainCost = test.cost
+		resp, err = server.ListStaticAddressSwaps(
+			ctx, &looprpc.ListStaticAddressSwapsRequest{},
+		)
+		require.NoError(t, err)
+		require.Len(t, resp.Swaps, 1)
+		require.Zero(t, resp.Swaps[0].CostOnchain)
+		require.Equal(t, test.status, resp.Swaps[0].CostOnchainStatus)
+		require.Zero(t, resp.Swaps[0].Deposits[0].CostOnchain)
+		require.Equal(
+			t, test.status,
+			resp.Swaps[0].Deposits[0].CostOnchainStatus,
+		)
+	}
+}
+
+// TestListStaticAddressSwapsOnchainCostOfReusedDeposits tests that deposits
+// that a failed swap gave back and a later swap spent only count for the later
+// swap, and that a partial cost reports its known part.
+func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
+	ctx := t.Context()
+	lnd := mock_lnd.NewMockLnd()
+
+	newInvoice := func() string {
+		_, invoice, err := lnd.Client.AddInvoice(
+			ctx, &invoicesrpc.AddInvoiceData{
+				Value: lnwire.NewMSatFromSatoshis(50_000),
+			},
+		)
+		require.NoError(t, err)
+
+		return invoice
+	}
+
+	failedHash := lntypes.Hash{1}
+	succeededHash := lntypes.Hash{2}
+
+	// Both deposits were first selected by the failed swap and then
+	// spent by the succeeded one, so they are mapped to it.
+	walletDeposit := &deposit.Deposit{
+		ID: deposit.ID{1},
+		OutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{1},
+		},
+		Value:    100_000,
+		SwapHash: &succeededHash,
+		OnchainCost: deposit.OnchainCost{
+			Amount: 900,
+			Status: deposit.OnchainCostKnown,
+		},
+	}
+	walletDeposit.SetState(deposit.LoopedIn)
+
+	externalDeposit := &deposit.Deposit{
+		ID: deposit.ID{2},
+		OutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{2},
+		},
+		Value:    200_000,
+		SwapHash: &succeededHash,
+		OnchainCost: deposit.OnchainCost{
+			Status: deposit.OnchainCostUnknown,
+		},
+	}
+	externalDeposit.SetState(deposit.LoopedIn)
+
+	outpoints := []string{
+		walletDeposit.OutPoint.String(),
+		externalDeposit.OutPoint.String(),
+	}
+	failed := &loopin.StaticAddressLoopIn{
+		SwapHash:         failedHash,
+		SwapInvoice:      newInvoice(),
+		DepositOutpoints: outpoints,
+	}
+	failed.SetState(loopin.Failed)
+
+	succeeded := &loopin.StaticAddressLoopIn{
+		SwapHash:         succeededHash,
+		SwapInvoice:      newInvoice(),
+		DepositOutpoints: outpoints,
+		Deposits: []*deposit.Deposit{
+			walletDeposit, externalDeposit,
+		},
+	}
+	succeeded.SetState(loopin.Succeeded)
+
+	depositMgr := deposit.NewManager(&deposit.ManagerConfig{
+		Store: &mockDepositStore{
+			byOutpoint: map[string]*deposit.Deposit{
+				outpoints[0]: walletDeposit,
+				outpoints[1]: externalDeposit,
+			},
+		},
+	})
+	staticLoopInMgr, err := loopin.NewManager(&loopin.Config{
+		Store: &mockStaticAddressLoopInStore{
+			swaps: []*loopin.StaticAddressLoopIn{
+				failed, succeeded,
+			},
+		},
+		DepositManager: depositMgr,
+	}, 1)
+	require.NoError(t, err)
+
+	_, clientPubkey := mock_lnd.CreateKey(1)
+	_, serverPubkey := mock_lnd.CreateKey(2)
+	addrMgr, err := address.NewManager(&address.ManagerConfig{
+		Store: &mockAddressStore{
+			params: []*script.Parameters{{
+				ClientPubkey: clientPubkey,
+				ServerPubkey: serverPubkey,
+				Expiry:       25,
+				PkScript:     []byte("pkscript"),
+			}},
+		},
+		WalletKit:   lnd.WalletKit,
+		ChainParams: lnd.ChainParams,
+	}, 1)
+	require.NoError(t, err)
+
+	server := &swapClientServer{
+		network:              lndclient.NetworkTestnet,
+		lnd:                  &lnd.LndServices,
+		staticAddressManager: addrMgr,
+		depositManager:       depositMgr,
+		staticLoopInManager:  staticLoopInMgr,
+	}
+	resp, err := server.ListStaticAddressSwaps(
+		ctx, &looprpc.ListStaticAddressSwapsRequest{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.Swaps, 2)
+
+	bySwap := make(map[lntypes.Hash]*looprpc.StaticAddressLoopInSwap)
+	for _, swap := range resp.Swaps {
+		hash, err := lntypes.MakeHash(swap.SwapHash)
+		require.NoError(t, err)
+		bySwap[hash] = swap
+	}
+
+	require.Zero(t, bySwap[failedHash].CostOnchain)
+	require.Equal(
+		t, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN,
+		bySwap[failedHash].CostOnchainStatus,
+	)
+	require.Equal(t, int64(900), bySwap[succeededHash].CostOnchain)
+	require.Equal(
+		t, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_PARTIAL,
+		bySwap[succeededHash].CostOnchainStatus,
+	)
+
+	// The deposits report their own cost.
+	depositsResp, err := server.ListStaticAddressDeposits(
+		ctx, &looprpc.ListStaticAddressDepositsRequest{
+			Outpoints: outpoints,
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, depositsResp.FilteredDeposits, 2)
+	byOutpoint := make(map[string]*looprpc.Deposit)
+	for _, d := range depositsResp.FilteredDeposits {
+		byOutpoint[d.Outpoint] = d
+	}
+	require.Equal(t, int64(900), byOutpoint[outpoints[0]].CostOnchain)
+	require.Equal(
+		t, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_COMPLETE,
+		byOutpoint[outpoints[0]].CostOnchainStatus,
+	)
+	require.Zero(t, byOutpoint[outpoints[1]].CostOnchain)
+	require.Equal(
+		t, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN,
+		byOutpoint[outpoints[1]].CostOnchainStatus,
+	)
+}
+
+// TestToClientWithdrawalDeposit tests that the deposits of a withdrawal report
+// their on-chain cost.
+func TestToClientWithdrawalDeposit(t *testing.T) {
+	tests := []struct {
+		name   string
+		cost   deposit.OnchainCost
+		amount int64
+		status looprpc.OnchainCostStatus
+	}{
+		{
+			name: "known",
+			cost: deposit.OnchainCost{
+				Amount: 700, Status: deposit.OnchainCostKnown,
+			},
+			amount: 700,
+			status: looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_COMPLETE,
+		},
+		{
+			name: "unknown",
+			cost: deposit.OnchainCost{
+				Status: deposit.OnchainCostUnknown,
+			},
+			status: looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN,
+		},
+		{
+			name:   "not determined yet",
+			status: looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_PENDING,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			d := &deposit.Deposit{
+				ID: deposit.ID{1},
+				OutPoint: wire.OutPoint{
+					Hash: chainhash.Hash{2}, Index: 1,
+				},
+				Value:       100_000,
+				OnchainCost: test.cost,
+			}
+			d.SetState(deposit.Withdrawn)
+
+			rpcDeposit := toClientWithdrawalDeposit(d)
+			require.Equal(t, d.ID[:], rpcDeposit.Id)
+			require.Equal(t, d.OutPoint.String(), rpcDeposit.Outpoint)
+			require.Equal(t, int64(100_000), rpcDeposit.Value)
+			require.Equal(
+				t, looprpc.DepositState_WITHDRAWN,
+				rpcDeposit.State,
+			)
+			require.Equal(t, test.amount, rpcDeposit.CostOnchain)
+			require.Equal(t, test.status, rpcDeposit.CostOnchainStatus)
+		})
+	}
+}
+
+// TestStaticAddressLoopInSwapInfoOnchainCost tests that the generic swap
+// representation reports the on-chain cost of a static loop-in's deposits: a
+// partial or pending cost as its known part and an unknown cost as zero.
+func TestStaticAddressLoopInSwapInfoOnchainCost(t *testing.T) {
+	tests := []struct {
+		name  string
+		costs []deposit.OnchainCost
+		want  int64
+	}{
+		{
+			name: "known",
+			costs: []deposit.OnchainCost{{
+				Amount: 700, Status: deposit.OnchainCostKnown,
+			}},
+			want: 700,
+		},
+		{
+			name: "partial",
+			costs: []deposit.OnchainCost{
+				{Amount: 700, Status: deposit.OnchainCostKnown},
+				{Status: deposit.OnchainCostUnknown},
+			},
+			want: 700,
+		},
+		{
+			name: "unknown",
+			costs: []deposit.OnchainCost{{
+				Status: deposit.OnchainCostUnknown,
+			}},
+		},
+		{
+			name:  "not determined yet",
+			costs: []deposit.OnchainCost{{}},
+		},
+		{
+			name: "one not determined yet",
+			costs: []deposit.OnchainCost{
+				{Amount: 700, Status: deposit.OnchainCostKnown},
+				{},
+			},
+			want: 700,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, staticLoopIn := newGenericStaticLoopInServer(t)
+
+			template := staticLoopIn.Deposits[0]
+			staticLoopIn.Deposits = nil
+			for i, cost := range test.costs {
+				d := &deposit.Deposit{
+					OutPoint: wire.OutPoint{
+						Hash:  template.Hash,
+						Index: uint32(i),
+					},
+					Value:       template.Value,
+					OnchainCost: cost,
+				}
+				d.SetState(deposit.LoopedIn)
+				staticLoopIn.Deposits = append(
+					staticLoopIn.Deposits, d,
+				)
+			}
+
+			loopSwap, err := server.staticAddressLoopInSwapInfo(
+				t.Context(), staticLoopIn,
+			)
+			require.NoError(t, err)
+			require.Equal(
+				t, btcutil.Amount(test.want),
+				loopSwap.Cost.Onchain,
+			)
+
+			rpcSwap, err := server.marshallSwap(
+				t.Context(), loopSwap,
+			)
+			require.NoError(t, err)
+			require.Equal(t, test.want, rpcSwap.CostOnchain)
+		})
+	}
 }
 
 // TestStaticAddressLoopInMarshallUsesStaticTypeAndP2WSH protects the RPC
@@ -675,6 +1020,17 @@ func TestMonitorSnapshotIncludesFinalStaticAddressLoopIns(t *testing.T) {
 	require.Len(t, completedSwaps, 1)
 }
 
+// swapDepositsFunc is a swap deposit store backed by a function.
+type swapDepositsFunc func(context.Context, lntypes.Hash) ([]*deposit.Deposit,
+	error)
+
+// DepositsForSwap calls the function.
+func (f swapDepositsFunc) DepositsForSwap(ctx context.Context,
+	swapHash lntypes.Hash) ([]*deposit.Deposit, error) {
+
+	return f(ctx, swapHash)
+}
+
 // TestStaticLoopInStatusUpdaterUsesSwapHtlcAddress protects the live-update
 // invariant that static loop-in status events derive the HTLC address from the
 // swap, not from reusable static address parameters.
@@ -683,16 +1039,113 @@ func TestStaticLoopInStatusUpdaterUsesSwapHtlcAddress(t *testing.T) {
 	_, staticLoopIn := newGenericStaticLoopInServer(t)
 	staticLoopIn.AddressParams = nil
 	statusChan := make(chan loop.SwapInfo, 1)
-	updater := &staticLoopInStatusUpdater{
-		statusChan:  statusChan,
-		mainCtx:     ctx,
-		chainParams: &chaincfg.TestNet3Params,
-	}
+	updater := newStaticLoopInStatusUpdater(
+		statusChan, ctx, &chaincfg.TestNet3Params,
+		swapDepositsFunc(func(context.Context, lntypes.Hash) (
+			[]*deposit.Deposit, error) {
+
+			return nil, nil
+		}),
+	)
 
 	err := updater.sendUpdate(ctx, staticLoopIn)
 	require.NoError(t, err)
 	swapInfo := <-statusChan
 	assertStaticLoopInUsesSwapHtlcAddress(t, staticLoopIn, swapInfo)
+}
+
+// TestStaticLoopInStatusUpdaterOnchainCost tests that live static loop-in
+// updates report the on-chain cost of the deposits mapped to the swap, not of
+// the deposits the swap holds in memory.
+func TestStaticLoopInStatusUpdaterOnchainCost(t *testing.T) {
+	logger := btclog.NewSLogger(
+		btclog.NewDefaultHandler(os.Stdout),
+	)
+	setLogger(logger.SubSystem(Subsystem))
+
+	knownDeposit := func(state fsm.StateType,
+		amount btcutil.Amount) *deposit.Deposit {
+
+		d := &deposit.Deposit{
+			OutPoint: wire.OutPoint{Hash: chainhash.Hash{1}},
+			Value:    51_000,
+			OnchainCost: deposit.OnchainCost{
+				Amount: amount,
+				Status: deposit.OnchainCostKnown,
+			},
+		}
+		d.SetState(state)
+
+		return d
+	}
+
+	tests := []struct {
+		name     string
+		state    fsm.StateType
+		inMemory []*deposit.Deposit
+		mapped   []*deposit.Deposit
+		err      error
+		want     btcutil.Amount
+	}{
+		{
+			// The swap gave its deposits back and a later swap
+			// spent them, so they are mapped to the later swap.
+			name:  "deposits taken by another swap",
+			state: loopin.Failed,
+			inMemory: []*deposit.Deposit{
+				knownDeposit(deposit.LoopedIn, 900),
+			},
+		},
+		{
+			// The swap loaded its deposits before their cost was
+			// determined.
+			name:     "cost determined later",
+			state:    loopin.PaymentReceived,
+			inMemory: []*deposit.Deposit{{Value: 51_000}},
+			mapped: []*deposit.Deposit{
+				knownDeposit(deposit.LoopedIn, 700),
+			},
+			want: 700,
+		},
+		{
+			name:  "loading the deposits fails",
+			state: loopin.PaymentReceived,
+			inMemory: []*deposit.Deposit{
+				knownDeposit(deposit.LoopedIn, 900),
+			},
+			err: errors.New("db unavailable"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			_, staticLoopIn := newGenericStaticLoopInServer(t)
+			staticLoopIn.SetState(test.state)
+			staticLoopIn.Deposits = test.inMemory
+
+			statusChan := make(chan loop.SwapInfo, 1)
+			updater := newStaticLoopInStatusUpdater(
+				statusChan, ctx, &chaincfg.TestNet3Params,
+				swapDepositsFunc(func(_ context.Context,
+					swapHash lntypes.Hash) (
+					[]*deposit.Deposit, error) {
+
+					require.Equal(
+						t, staticLoopIn.SwapHash,
+						swapHash,
+					)
+
+					return test.mapped, test.err
+				}),
+			)
+
+			err := updater.sendUpdate(ctx, staticLoopIn)
+			require.NoError(t, err)
+			swapInfo := <-statusChan
+			require.Equal(t, test.want, swapInfo.Cost.Onchain)
+		})
+	}
 }
 
 // TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate protects the
