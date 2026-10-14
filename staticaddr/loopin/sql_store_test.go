@@ -616,3 +616,87 @@ func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
 	require.Equal(t, currentOutpoint, storedSwap.Deposits[0].OutPoint)
 	require.Equal(t, int64(42), storedSwap.Deposits[0].ConfirmationHeight)
 }
+
+// TestLatestLoopInUpdateIsLastInserted tests that a swap's current state is
+// its last inserted update, also if an earlier update has a later timestamp,
+// as happens for updates written in local time east of UTC before an upgrade
+// that writes them in UTC.
+func TestLatestLoopInUpdateIsLastInserted(t *testing.T) {
+	testDb := loopdb.NewTestDB(t)
+	defer testDb.Close()
+
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	testClock := clock.NewTestClock(now)
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+	d := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{2},
+			Index: 0,
+		},
+		Value:                btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x01},
+	}
+	d.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.CreateDeposit(ctx, d))
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:                lntypes.Hash{2},
+		SwapPreimage:            lntypes.Preimage{2},
+		InitiationTime:          now,
+		DepositOutpoints:        []string{d.OutPoint.String()},
+		Deposits:                []*deposit.Deposit{d},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	loopIn.SetState(SignHtlcTx)
+	require.NoError(t, swapStore.CreateLoopIn(ctx, loopIn))
+
+	// An update written before the upgrade in local time two hours east of
+	// UTC has a timestamp two hours later than the updates after it.
+	_, err = testDb.BaseDB.ExecContext(
+		ctx, "INSERT INTO static_address_swap_updates (swap_hash, "+
+			"update_state, update_timestamp) VALUES ($1, $2, $3)",
+		loopIn.SwapHash[:], string(MonitorInvoiceAndHtlcTx),
+		now.Add(2*time.Hour),
+	)
+	require.NoError(t, err)
+
+	// The swap succeeds after the upgrade.
+	testClock.SetTime(now.Add(time.Minute))
+	loopIn.SetState(Succeeded)
+	require.NoError(t, swapStore.UpdateLoopIn(ctx, loopIn))
+
+	pending, err := swapStore.GetStaticAddressLoopInSwapsByStates(
+		ctx, PendingStates,
+	)
+	require.NoError(t, err)
+	require.Empty(t, pending)
+
+	final, err := swapStore.GetStaticAddressLoopInSwapsByStates(
+		ctx, FinalStates,
+	)
+	require.NoError(t, err)
+	require.Len(t, final, 1)
+	require.Equal(t, Succeeded, final[0].GetState())
+
+	loaded, err := swapStore.GetLoopInByHash(ctx, loopIn.SwapHash)
+	require.NoError(t, err)
+	require.Equal(t, Succeeded, loaded.GetState())
+	require.True(t, now.Add(time.Minute).Equal(loaded.LastUpdateTime))
+}

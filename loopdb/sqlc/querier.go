@@ -32,6 +32,7 @@ type Querier interface {
 	GetLastUpdateID(ctx context.Context, swapHash []byte) (int32, error)
 	GetLatestDepositUpdate(ctx context.Context, depositID []byte) (DepositUpdate, error)
 	GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopInSwapRow, error)
+	// The last update is the swap's current state.
 	GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]StaticAddressSwapUpdate, error)
 	GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, error)
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
