@@ -124,8 +124,11 @@ FROM
     static_address_swap_updates
 WHERE
     swap_hash = $1
+ORDER BY
+    id ASC
 `
 
+// The last update is the swap's current state.
 func (q *Queries) GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]StaticAddressSwapUpdate, error) {
 	rows, err := q.db.QueryContext(ctx, getLoopInSwapUpdates, swapHash)
 	if err != nil {
@@ -257,10 +260,11 @@ FROM
     htlc_keys ON swaps.swap_hash = htlc_keys.swap_hash
         JOIN
     static_address_swap_updates u ON swaps.swap_hash = u.swap_hash
-        -- This subquery ensures that we are checking only the latest update for
-        -- each swap_hash.
-        AND u.update_timestamp = (
-            SELECT MAX(update_timestamp)
+        -- This subquery picks the latest update for each swap_hash by id, not
+        -- by timestamp, since a later update can have an earlier timestamp,
+        -- for example after the clock was set back.
+        AND u.id = (
+            SELECT MAX(id)
             FROM static_address_swap_updates
             WHERE swap_hash = u.swap_hash
         )
