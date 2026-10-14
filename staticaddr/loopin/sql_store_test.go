@@ -899,3 +899,80 @@ func TestLatestLoopInUpdateIsLastInserted(t *testing.T) {
 	require.Equal(t, Succeeded, loaded.GetState())
 	require.True(t, now.Add(time.Minute).Equal(loaded.LastUpdateTime))
 }
+
+// TestSqlStoreTimesOutsideUTC tests that the times the store writes read back
+// unchanged when the clock isn't in UTC. A Postgres TIMESTAMP column drops the
+// time zone, so a time written in local time would read back shifted by the
+// offset.
+func TestSqlStoreTimesOutsideUTC(t *testing.T) {
+	testDb := loopdb.NewTestDB(t)
+	defer testDb.Close()
+
+	ctx := t.Context()
+	newYork := time.FixedZone("EDT", -4*60*60)
+	now := time.Now().In(newYork).Truncate(time.Microsecond)
+
+	testClock := clock.NewTestClock(now)
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+	d := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{1},
+			Index: 0,
+		},
+		Value:                btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x01},
+	}
+	d.SetState(deposit.LoopingIn)
+	require.NoError(t, depositStore.CreateDeposit(ctx, d))
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:                lntypes.Hash{1},
+		SwapPreimage:            lntypes.Preimage{1},
+		InitiationTime:          now,
+		DepositOutpoints:        []string{d.OutPoint.String()},
+		Deposits:                []*deposit.Deposit{d},
+		ClientPubkey:            clientPubKey,
+		ServerPubkey:            serverPubKey,
+		HtlcTimeoutSweepAddress: addr,
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+	require.NoError(t, swapStore.CreateLoopIn(ctx, loopIn))
+
+	err = swapStore.RecordStaticAddressRiskDecision(
+		ctx, loopIn.SwapHash, ConfirmationRiskDecisionAccepted,
+	)
+	require.NoError(t, err)
+
+	loaded, err := swapStore.GetLoopInByHash(ctx, loopIn.SwapHash)
+	require.NoError(t, err)
+	require.True(t, now.Equal(loaded.InitiationTime),
+		"initiation time %v, want %v", loaded.InitiationTime, now)
+	require.True(t, now.Equal(loaded.ConfirmationRiskDecisionTime),
+		"risk decision time %v, want %v",
+		loaded.ConfirmationRiskDecisionTime, now)
+	require.True(t, now.Equal(loaded.LastUpdateTime),
+		"update time %v, want %v", loaded.LastUpdateTime, now)
+
+	later := now.Add(time.Minute)
+	testClock.SetTime(later)
+	loopIn.SetState(Succeeded)
+	require.NoError(t, swapStore.UpdateLoopIn(ctx, loopIn))
+
+	loaded, err = swapStore.GetLoopInByHash(ctx, loopIn.SwapHash)
+	require.NoError(t, err)
+	require.True(t, later.Equal(loaded.LastUpdateTime),
+		"update time %v, want %v", loaded.LastUpdateTime, later)
+}
