@@ -28,9 +28,17 @@
   during shutdown are logged at info level too; other presigning failures
   remain warnings.
 
+* Static Address loop-in sweep signing requests and their authenticated
+  responses are now processed concurrently, preventing slow connections from
+  delaying later responses until the server times them out. Sweep work is
+  bounded, and server-provided prevouts are validated before signing.
+
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
   waiting for the server timeout.
+
+* Static Address loop-in requests now fail promptly after the manager exits,
+  including shutdown and initialization failures.
 
 * Static-address loop-in quotes and manual outpoint initiation now reject
   deposits that are too close to expiry before contacting the Loop server.
