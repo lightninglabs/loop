@@ -987,11 +987,52 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		deposit.SweepHtlcTimeout,
 	)
 
+	// mapDepositsToSwap maps the deposits, which this swap is sweeping, to
+	// this swap. They might have been given back after the payment
+	// deadline and selected by another swap since, which mapped them to
+	// that swap. It is only called once all deposits are locked for this
+	// swap's htlc timeout sweep, so that deposits another swap still owns,
+	// for example after it completed, stay mapped to that swap.
+	mapDepositsToSwap := func(reason string) error {
+		depositsToSwap := make(
+			map[deposit.ID]lntypes.Hash, len(f.loopIn.Deposits),
+		)
+		for _, d := range f.loopIn.Deposits {
+			if d != nil {
+				depositsToSwap[d.ID] = f.loopIn.SwapHash
+			}
+		}
+
+		err := f.cfg.Store.BatchMapDepositsToSwapHashes(
+			ctx, depositsToSwap,
+		)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			return fmt.Errorf("unable to map deposits to the swap "+
+				"after %s: %w", reason, err)
+		}
+
+		return nil
+	}
+
 	// transitionDepositsToHtlcTimeout locks deposits into timeout sweeping once
 	// the HTLC is confirmed and the invoice cannot be paid.
 	transitionDepositsToHtlcTimeout := func(reason string) error {
 		if depositsLockedForHtlcTimeout ||
 			depositsInState(deposit.SweepHtlcTimeout) {
+
+			// Map the deposits again, in case loopd stopped after
+			// locking them and before mapping them. This doesn't
+			// cover a restart while another swap was mapped to only
+			// some of the deposits, since this swap then only
+			// recovers the others.
+			err := mapDepositsToSwap(reason)
+			if err != nil {
+				return err
+			}
 
 			depositsLockedForHtlcTimeout = true
 			return nil
@@ -1001,7 +1042,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			[]*deposit.Deposit, 0, len(f.loopIn.Deposits),
 		)
 		for _, d := range f.loopIn.Deposits {
-			if d != nil && d.IsInState(deposit.SweepHtlcTimeout) {
+			if d == nil {
+				return fmt.Errorf("nil deposit in swap %v",
+					f.loopIn.SwapHash)
+			}
+
+			if d.IsInState(deposit.SweepHtlcTimeout) {
 				continue
 			}
 
@@ -1025,19 +1071,20 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			// The transition can return an error after every deposit
 			// already reached the target state. Treat that as
 			// success, but never advance with a partial transition.
-			if depositsInState(deposit.SweepHtlcTimeout) {
-				depositsLockedForHtlcTimeout = true
-
-				return nil
+			if !depositsInState(deposit.SweepHtlcTimeout) {
+				return fmt.Errorf("unable to transition deposits "+
+					"to the htlc timeout sweeping state after "+
+					"%s: %w", reason, transitionErr)
 			}
-
-			return fmt.Errorf("unable to transition deposits to the htlc "+
-				"timeout sweeping state after %s: %w",
-				reason, transitionErr)
 		}
 		if !depositsInState(deposit.SweepHtlcTimeout) {
 			return fmt.Errorf("not all deposits reached the htlc timeout "+
 				"sweeping state after %s", reason)
+		}
+
+		err := mapDepositsToSwap(reason)
+		if err != nil {
+			return err
 		}
 
 		depositsLockedForHtlcTimeout = true
