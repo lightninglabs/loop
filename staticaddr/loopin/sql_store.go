@@ -24,10 +24,10 @@ import (
 
 const OutpointSeparator = ";"
 
-// sqlStoreUpdateTime returns the PostgreSQL-compatible timestamp precision used
-// for persisted loop-in update metadata.
+// sqlStoreUpdateTime returns the time for persisted loop-in update metadata, in
+// UTC and with the PostgreSQL-compatible timestamp precision.
 func sqlStoreUpdateTime(clock clock.Clock) time.Time {
-	return clock.Now().Truncate(time.Microsecond)
+	return clock.Now().UTC().Truncate(time.Microsecond)
 }
 
 var (
@@ -253,7 +253,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 	swapArgs := sqlc.InsertSwapParams{
 		SwapHash:         loopIn.SwapHash[:],
 		Preimage:         loopIn.SwapPreimage[:],
-		InitiationTime:   loopIn.InitiationTime,
+		InitiationTime:   loopIn.InitiationTime.UTC(),
 		AmountRequested:  amountRequested,
 		CltvExpiry:       loopIn.HtlcCltvExpiry,
 		MaxSwapFee:       int64(loopIn.MaxSwapFee),
@@ -409,7 +409,7 @@ func (s *SqlStore) RecordStaticAddressRiskDecision(ctx context.Context,
 		SwapHash:                 swapHash[:],
 		ConfirmationRiskDecision: string(decision),
 		ConfirmationRiskDecisionTime: sql.NullTime{
-			Time:  s.clock.Now(),
+			Time:  s.clock.Now().UTC(),
 			Valid: true,
 		},
 	}
