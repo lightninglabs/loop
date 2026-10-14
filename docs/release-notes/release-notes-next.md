@@ -39,6 +39,13 @@
   first-confirmation heights while lnd is catching up, preventing premature
   expiry decisions from mismatched wallet and block-notification heights.
 
+* Static address loop-ins now store their times in UTC. On Postgres outside
+  UTC, these times read back shifted, which moved the payment deadline:
+  later east of UTC, and already over west of UTC, so the invoice was
+  cancelled straight away. Times stored before upgrading keep their local
+  time, so a swap's state and `loop monitor` now follow the order in which
+  its updates were stored instead of their times.
+
 * Rapid reservation funding confirmations no longer cause initialization to
   time out while waiting for an intermediate client state.
 
