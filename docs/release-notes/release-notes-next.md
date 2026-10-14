@@ -33,6 +33,13 @@
   tracked as deposited. An output that disappeared during the refresh could
   previously still be listed, with a stale confirmation count.
 
+* Static address loop-ins now store their times in UTC. On Postgres outside
+  UTC, these times read back shifted, which moved the payment deadline:
+  later east of UTC, and already over west of UTC, so the invoice was
+  cancelled straight away. Times stored before upgrading keep their local
+  time, so a swap's state and `loop monitor` now follow the order in which
+  its updates were stored instead of their times.
+
 #### Maintenance
 
 * Update the root module's `github.com/klauspost/compress` dependency to
