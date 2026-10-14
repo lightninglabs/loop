@@ -1330,6 +1330,7 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 		LndClient:           mockLnd.Client,
 		ChainParams:         mockLnd.ChainParams,
 		NotificationManager: notificationMgr,
+		Store:               &mockStore{},
 	}
 
 	f, err := NewFSM(ctx, loopIn, cfg, false)
@@ -3085,6 +3086,9 @@ func TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits(t *testing.T) 
 	)
 	// A confirmed HTLC consumes every original input.
 	f.cfg.TxOutChecker = &recordingTxOutChecker{}
+	// The confirmed htlc tx spends the deposits, so they are mapped to the
+	// swap once they are locked.
+	f.cfg.Store = &mockStore{}
 	f.loopIn.HtlcCltvExpiry = mockLnd.Height
 
 	firstDeposit := f.loopIn.Deposits[0]
@@ -3403,6 +3407,10 @@ func newDecoyMonitorTest(t *testing.T, ctx context.Context) *decoyMonitorTest {
 
 	txOuts := &decoyTxOutChecker{}
 	f.cfg.TxOutChecker = txOuts
+
+	// The htlc tx spends the deposits, so they are mapped to the swap once
+	// they are locked.
+	f.cfg.Store = &mockStore{}
 
 	return &decoyMonitorTest{
 		t:          t,
@@ -5001,6 +5009,13 @@ func (n *noopDepositManager) RestoreLoopInClaim(context.Context,
 	return nil
 }
 
+// ClaimHtlcTimeoutDeposits implements DepositManager with a no-op.
+func (n *noopDepositManager) ClaimHtlcTimeoutDeposits(context.Context,
+	[]*deposit.Deposit, lntypes.Hash) error {
+
+	return nil
+}
+
 func (n *noopDepositManager) GetLoopInClaim(wire.OutPoint) (lntypes.Hash, bool) {
 	return lntypes.Hash{}, false
 }
@@ -5073,6 +5088,25 @@ func newRecordingDepositManager(
 func (r *recordingDepositManager) GetLoopInClaim(outpoint wire.OutPoint) (lntypes.Hash, bool) {
 	owner, ok := r.claims[outpoint]
 	return owner, ok
+}
+
+// ClaimHtlcTimeoutDeposits records the swap as the owner of the deposits,
+// like the real manager.
+func (r *recordingDepositManager) ClaimHtlcTimeoutDeposits(_ context.Context,
+	deposits []*deposit.Deposit, swapHash lntypes.Hash) error {
+
+	if r.claims == nil {
+		r.claims = make(map[wire.OutPoint]lntypes.Hash)
+	}
+	for _, d := range deposits {
+		r.claims[d.OutPoint] = swapHash
+		if active, ok := r.active[d.OutPoint]; ok {
+			hash := swapHash
+			active.SwapHash = &hash
+		}
+	}
+
+	return nil
 }
 
 // TransitionDeposits records the transition and returns the configured error.
@@ -5223,6 +5257,34 @@ func (r *recordingDepositManager) DepositsForOutpoints(_ context.Context,
 	}
 
 	return deposits, nil
+}
+
+// AllStringOutpointsActiveDeposits returns the manager's own deposit objects
+// for the outpoints, like the real manager. It returns false if one of them
+// isn't owned by the manager or isn't in the given state.
+func (r *recordingDepositManager) AllStringOutpointsActiveDeposits(
+	outpoints []string, state fsm.StateType) ([]*deposit.Deposit, bool) {
+
+	deposits := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		op, err := wire.NewOutPointFromString(outpoint)
+		if err != nil {
+			return nil, false
+		}
+
+		d, ok := r.active[*op]
+		if !ok {
+			return nil, false
+		}
+
+		if state != fsm.EmptyState && !d.IsInState(state) {
+			return nil, false
+		}
+
+		deposits = append(deposits, d)
+	}
+
+	return deposits, true
 }
 
 type recordingRiskStore struct {
@@ -5485,6 +5547,11 @@ func TestMonitorInvoiceAndHtlcTxSweepsTimeoutAfterLegacyRefresh(t *testing.T) {
 	)
 	f.loopIn.HtlcCltvExpiry = mockLnd.Height
 	f.loopIn.PaymentTimeoutSeconds = 1
+
+	// The confirmed htlc tx spends the deposits, so they are mapped to the
+	// swap once they are locked. The legacy fallback reloads the accepted
+	// risk decision from the store.
+	f.cfg.Store = newDecisionStore(swapHash)
 
 	// The selected deposit is confirmed deeply enough for the legacy
 	// fallback, which reloads it and starts the payment deadline.

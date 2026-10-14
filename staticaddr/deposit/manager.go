@@ -1248,6 +1248,49 @@ func (m *Manager) RestoreLoopInClaim(ctx context.Context,
 	return nil
 }
 
+// ClaimHtlcTimeoutDeposits records the swap as the owner of deposits that its
+// confirmed htlc tx spent and that are locked for its htlc timeout sweep. A
+// deposit the swap already owns is left untouched. It fails without changing
+// any deposit if one of them is not active or not in SweepHtlcTimeout, for
+// example because another swap completed with it.
+func (m *Manager) ClaimHtlcTimeoutDeposits(ctx context.Context,
+	deposits []*Deposit, swapHash lntypes.Hash) error {
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	outpoints, err := depositOutpoints(deposits)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, active := m.toActiveDeposits(&outpoints)
+	if active == nil {
+		return errors.New("cannot claim an inactive htlc timeout " +
+			"deposit")
+	}
+	locked := lockDeposits(active)
+	defer unlockDeposits(locked)
+	for _, d := range active {
+		if !d.isInStateNoLock(SweepHtlcTimeout) {
+			return fmt.Errorf("deposit %v is not locked for an "+
+				"htlc timeout sweep", d.OutPoint)
+		}
+	}
+	for _, d := range active {
+		if d.SwapHash != nil && *d.SwapHash == swapHash {
+			continue
+		}
+
+		// The confirmed htlc tx identifies the owner, so a restored
+		// timeout is no longer ambiguous.
+		d.SwapHash = new(swapHash)
+		d.recoveredTimeout = false
+	}
+	return nil
+}
+
 // GetLoopInClaim returns the current owner of an active loop-in or timeout.
 func (m *Manager) GetLoopInClaim(outpoint wire.OutPoint) (lntypes.Hash, bool) {
 	m.mu.Lock()
