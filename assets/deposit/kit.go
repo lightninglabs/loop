@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets/htlc"
 	"github.com/lightninglabs/loop/assets/internal/policy"
+	assetsweep "github.com/lightninglabs/loop/assets/sweep"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -482,7 +483,9 @@ func (d *Kit) validateAsset(depositAsset *asset.Asset) error {
 }
 
 // validateProof verifies the proof's commitment structure and binds its
-// internal key and timeout sibling to this deposit kit.
+// internal key and timeout sibling to this deposit kit. It allows co-anchored
+// leaves, which a signer may supply in its transfer; acceptance additionally
+// requires the proof to describe the complete anchor commitment.
 func (d *Kit) validateProof(depositProof *proof.Proof) (
 	*commitment.TapCommitment, error) {
 
@@ -717,8 +720,9 @@ func (d *Kit) GenTimeoutBtcControlBlock(taprootAssetRoot []byte) (
 		return nil, fmt.Errorf("asset root must be %d bytes",
 			chainhash.HashSize)
 	}
+	internalKey := *d.muSig2Key.PreTweakedKey
 	controlBlock := &txscript.ControlBlock{
-		InternalKey:    d.muSig2Key.PreTweakedKey,
+		InternalKey:    &internalKey,
 		LeafVersion:    txscript.BaseLeafVersion,
 		InclusionProof: append([]byte(nil), taprootAssetRoot...),
 	}
@@ -880,13 +884,29 @@ func verifyTapscriptSignature(tx *wire.MsgTx, sweep *validatedSweep,
 	return nil
 }
 
+// AssetInputIndex returns the unique proof-bound deposit input after validating
+// the proof and PSBT prevouts. Callers must set this input's sequence to the
+// deposit's CSV expiry before signing any transaction inputs.
+func (d *Kit) AssetInputIndex(depositProof *proof.Proof,
+	sweepPacket *psbt.Packet) (uint32, error) {
+
+	sweep, err := d.validateSweep(depositProof, sweepPacket)
+	if err != nil {
+		return 0, err
+	}
+
+	return uint32(sweep.assetInputIndex), nil
+}
+
 // CreateTimeoutWitness signs the exact proof-bound deposit input and returns
-// its input index and timeout-path witness. The method sets the required CSV
-// sequence on a transaction copy before signing, then writes that sequence to
-// the caller's PSBT only after the signature has been verified.
+// its input index and timeout-path witness. The caller must set the deposit
+// input's sequence to the CSV expiry before calling this method. The PSBT is
+// never mutated here, preserving signatures on other inputs. The transfer
+// must contain the caller-approved, complete active and passive asset packets.
 func (d *Kit) CreateTimeoutWitness(ctx context.Context,
 	signer lndclient.SignerClient, depositProof *proof.Proof,
-	sweepPacket *psbt.Packet) (*htlc.SpendWitness, error) {
+	sweepPacket *psbt.Packet, transfer *assetsweep.Transfer) (
+	*htlc.SpendWitness, error) {
 
 	if signer == nil {
 		return nil, fmt.Errorf("signer is required")
@@ -895,8 +915,15 @@ func (d *Kit) CreateTimeoutWitness(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	sweepTx := sweepPacket.UnsignedTx.Copy()
-	sweepTx.TxIn[sweep.assetInputIndex].Sequence = d.csvExpiry
+	sequence := sweepPacket.UnsignedTx.TxIn[sweep.assetInputIndex].Sequence
+	if sequence != d.csvExpiry {
+		return nil, fmt.Errorf("asset input sequence must be %d, got %d",
+			d.csvExpiry, sequence)
+	}
+	if err := transfer.Validate(depositProof, sweepPacket); err != nil {
+		return nil, err
+	}
+	sweepTx := sweepPacket.UnsignedTx
 	timeoutScript, err := d.GenTimeoutPathScript()
 	if err != nil {
 		return nil, err
@@ -936,8 +963,6 @@ func (d *Kit) CreateTimeoutWitness(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	sweepPacket.UnsignedTx.TxIn[sweep.assetInputIndex].Sequence = d.csvExpiry
-
 	return &htlc.SpendWitness{
 		InputIndex: uint32(sweep.assetInputIndex),
 		Witness: wire.TxWitness{

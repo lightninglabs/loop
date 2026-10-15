@@ -25,6 +25,11 @@
   internal keys; claims and refunds use script keys. Reusing each party's key
   for both roles preserves existing contracts.
 
+* Shared asset witness builders now require complete, caller-approved virtual
+  transfers. Deposit refunds also require the CSV sequence to be set before
+  signing any inputs. Construct transfers with `sweep.NewTransfer` to snapshot
+  the approved Bitcoin output values, scripts and order before signing.
+
 * Remove the ambiguous deposit `Kit.VerifyProof` method. Use the amount-bound
   `AnchorRootFromProofCommitment` for previously verified proofs, or
   `VerifyProofFile` to verify a complete history and bind the deposit contract.
@@ -40,6 +45,10 @@
 
 #### Bug Fixes
 
+* Shared asset sweep signing now requires Bitcoin locktimes and input sequences
+  to enforce asset timelocks, preventing anchors from confirming before their
+  asset transitions are valid while preserving existing signatures.
+
 * Sweep batch selection now filters out batches with an incompatible signing
   mode before attempting admission, avoiding spurious warnings when regular
   and presigned sweeps are pending together.
@@ -54,6 +63,14 @@
   responses are now processed concurrently, preventing slow connections from
   delaying later responses until the server times them out. Sweep work is
   bounded, and server-provided prevouts are validated before signing.
+
+* Shared asset sweeps validate asset conservation and Bitcoin output commitments,
+  including change, passive assets, and the STXO and spender leaves required by
+  Taproot Assets v0.8.5, before signing. Fresh inclusion and exclusion proofs
+  check the complete Bitcoin transaction, rejecting extra outputs that would
+  invalidate asset proofs. New deposit addresses use
+  explicit asset V1 and address V1 versions, refund signing preserves existing
+  signatures, and returned control blocks no longer expose mutable kit keys.
 
 * Deposit proof verification now requires genesis-rooted histories and rejects
   ownership-only proofs, including those hidden in additional inputs.

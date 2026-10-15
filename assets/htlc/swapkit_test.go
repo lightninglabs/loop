@@ -13,6 +13,8 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	assettest "github.com/lightninglabs/loop/assets/internal/test"
+	"github.com/lightninglabs/loop/assets/sweep"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -652,6 +654,7 @@ func (s *localSigner) SignOutputRaw(_ context.Context, tx *wire.MsgTx,
 }
 
 type witnessFixture struct {
+	transfer     *sweep.Transfer
 	kit          *SwapKit
 	proof        *proof.Proof
 	packet       *psbt.Packet
@@ -819,8 +822,18 @@ func newWitnessFixtureForDirection(t *testing.T, sequence uint32,
 		sweepPacket.Inputs[idx].WitnessUtxo = prevOutputs[idx]
 	}
 
+	opTrueScript, err := GetOpTrueScript()
+	require.NoError(t, err)
+	_, _, _, opTrueControl, err := CreateOpTrueLeaf()
+	require.NoError(t, err)
+	controlBytes, err := opTrueControl.ToBytes()
+	require.NoError(t, err)
+	transfer := assettest.Sweep(t, []*proof.Proof{assetProof}, sweepPacket,
+		wire.TxWitness{opTrueScript, controlBytes})
+
 	return &witnessFixture{
-		kit: kit, proof: assetProof, packet: sweepPacket,
+		transfer: transfer,
+		kit:      kit, proof: assetProof, packet: sweepPacket,
 		prevOutputs: prevOutputs, senderKey: senderKey,
 		receiverKey: receiverKey, preimage: preimage,
 		assetInIndex: assetInIndex,
@@ -933,7 +946,7 @@ func TestCreateProofBoundWitnesses(t *testing.T) {
 		}
 		witness, err := fixture.kit.CreatePreimageWitness(
 			t.Context(), signer, fixture.proof, fixture.packet,
-			keychain.KeyLocator{}, fixture.preimage,
+			keychain.KeyLocator{}, fixture.preimage, fixture.transfer,
 		)
 		require.NoError(t, err)
 		require.Equal(t, 1, signer.calls)
@@ -949,7 +962,7 @@ func TestCreateProofBoundWitnesses(t *testing.T) {
 		}
 		witness, err := fixture.kit.CreateTimeoutWitness(
 			t.Context(), signer, fixture.proof, fixture.packet,
-			keychain.KeyLocator{},
+			keychain.KeyLocator{}, fixture.transfer,
 		)
 		require.NoError(t, err)
 		require.Equal(t, 1, signer.calls)
@@ -980,7 +993,7 @@ func TestProofBoundWitnessValidation(t *testing.T) {
 				_, err := fixture.kit.CreatePreimageWitness(
 					t.Context(), signer, fixture.proof,
 					fixture.packet, keychain.KeyLocator{},
-					lntypes.Preimage{1},
+					lntypes.Preimage{1}, fixture.transfer,
 				)
 				return err
 			},
@@ -995,7 +1008,7 @@ func TestProofBoundWitnessValidation(t *testing.T) {
 
 				_, err := fixture.kit.CreateTimeoutWitness(
 					t.Context(), signer, fixture.proof,
-					fixture.packet, keychain.KeyLocator{},
+					fixture.packet, keychain.KeyLocator{}, fixture.transfer,
 				)
 				return err
 			},
@@ -1015,7 +1028,7 @@ func TestProofBoundWitnessValidation(t *testing.T) {
 					fixture.kit.CsvExpiry()
 				_, err := fixture.kit.CreateTimeoutWitness(
 					t.Context(), signer, fixture.proof,
-					fixture.packet, keychain.KeyLocator{},
+					fixture.packet, keychain.KeyLocator{}, fixture.transfer,
 				)
 				return err
 			},
@@ -1118,7 +1131,7 @@ func TestProofBoundWitnessValidation(t *testing.T) {
 			_, err := fixture.kit.CreatePreimageWitness(
 				t.Context(), signer, fixture.proof,
 				fixture.packet, keychain.KeyLocator{},
-				fixture.preimage,
+				fixture.preimage, fixture.transfer,
 			)
 			require.Error(t, err)
 		})

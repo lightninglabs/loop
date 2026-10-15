@@ -6,6 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
+	assettest "github.com/lightninglabs/loop/assets/internal/test"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/stretchr/testify/require"
@@ -125,11 +126,14 @@ func TestDepositProofGroup(t *testing.T) {
 			f.prevOutputs[f.assetInIndex].PkScript =
 				p.AnchorTx.TxOut[p.InclusionProof.OutputIndex].PkScript
 			f.packet.UnsignedTx.TxIn[f.assetInIndex].PreviousOutPoint = outpoint
+			f.transfer = assettest.Sweep(
+				t, []*proof.Proof{p}, f.packet, opTrueWitness(t),
+			)
 			signer := &localSigner{
 				privateKey: f.funderKey, expectedInput: f.assetInIndex,
 			}
 			witness, err := kit.CreateTimeoutWitness(
-				t.Context(), signer, p, f.packet,
+				t.Context(), signer, p, f.packet, f.transfer,
 			)
 			check(err)
 			if test.valid {

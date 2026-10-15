@@ -25,4 +25,8 @@ func TestProofVersionPolicy(t *testing.T) {
 		require.NoError(t, rootErr)
 		require.NoError(t, inputErr)
 	}
+	f := newWitnessFixture(t, SuccessSequence)
+	f.transfer.Packets[0].Inputs[0].Proof.Version = 2
+	require.ErrorContains(t, f.transfer.Validate(f.proof, f.packet),
+		"unsupported transition proof version")
 }
