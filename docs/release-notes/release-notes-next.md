@@ -105,6 +105,9 @@
 * Update the OpenTelemetry SDK and its related API modules to v1.45.0.
   [PR #1232](https://github.com/lightninglabs/loop/pull/1232)
 
+* Update Taproot Assets to v0.8.5, taprpc to v1.3.3, and the LND dependency to
+  v0.21.3-beta. The minimum Go build version is now 1.25.13.
+
 * The Docker image build now verifies that every platform of the image index
   holds binaries for the architecture it advertises, and gives a release its
   tag only once that check has passed.
