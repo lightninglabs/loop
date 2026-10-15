@@ -7,7 +7,7 @@ require (
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b
-	github.com/btcsuite/btcwallet v0.16.18
+	github.com/btcsuite/btcwallet v0.16.19
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.6
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
@@ -23,16 +23,17 @@ require (
 	github.com/lightninglabs/lndclient v0.21.0-2
 	github.com/lightninglabs/loop/looprpc v1.0.17-0.20261021185954-333ed1efccdd
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
-	github.com/lightninglabs/taproot-assets v0.8.1
-	github.com/lightninglabs/taproot-assets/taprpc v1.2.0
+	github.com/lightninglabs/taproot-assets v0.8.6
+	github.com/lightninglabs/taproot-assets/taprpc v1.3.3
 	github.com/lightningnetwork/lightning-onion v1.3.0
-	github.com/lightningnetwork/lnd v0.21.0-beta
+	github.com/lightningnetwork/lnd v0.21.3-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
+	github.com/lightningnetwork/lnd/fn/v2 v2.0.9
 	github.com/lightningnetwork/lnd/queue v1.2.0
 	github.com/lightningnetwork/lnd/ticker v1.1.1
 	github.com/lightningnetwork/lnd/tlv v1.3.2
-	github.com/lightningnetwork/lnd/tor v1.1.6
+	github.com/lightningnetwork/lnd/tor v1.1.7
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli-docs/v3 v3.1.1-0.20251020101624-bec07369b4f6
@@ -115,10 +116,10 @@ require (
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
+	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.4-0.20250610182311-2f1d46ef18b7 // indirect
 	github.com/lightninglabs/neutrino v0.17.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.3 // indirect
 	github.com/lightningnetwork/lnd/actor v0.0.6 // indirect
-	github.com/lightningnetwork/lnd/fn/v2 v2.0.9 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.5.1 // indirect
 	github.com/lightningnetwork/lnd/sqldb v1.0.13 // indirect
@@ -237,3 +238,8 @@ go 1.27.3
 // vulnerable legacy pgx v4/pgproto3 dependency chain. Remove this replacement
 // once the required lnd version includes an sqldb release with that migration.
 replace github.com/lightningnetwork/lnd/sqldb v1.0.13 => github.com/lightningnetwork/lnd/sqldb v1.0.13-0.20260514041430-e9b422f78581
+
+// Select tapd v0.8.6's bounded TLV decoder in this main module. Dependency
+// replacements are not inherited, and the equivalent lnd/tlv v1.4.1 release
+// requires Go 1.26.8 and btcd v2.
+replace github.com/lightningnetwork/lnd/tlv => github.com/lightninglabs/taproot-assets/third_party/lnd/tlv v0.0.0-20261016193543-734ce74dd1e8

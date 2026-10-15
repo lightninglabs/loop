@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
-	github.com/lightningnetwork/lnd v0.21.0-beta
+	github.com/lightningnetwork/lnd v0.21.3-beta
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/macaroon-bakery.v2 v2.3.0
@@ -28,7 +28,7 @@ require (
 	github.com/btcsuite/btcd/v2transport v1.0.1 // indirect
 	github.com/btcsuite/btclog v1.0.0 // indirect
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b // indirect
-	github.com/btcsuite/btcwallet v0.16.18 // indirect
+	github.com/btcsuite/btcwallet v0.16.19 // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.5 // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.2 // indirect
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.5 // indirect
@@ -99,7 +99,7 @@ require (
 	github.com/lightningnetwork/lnd/sqldb v1.0.13 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
 	github.com/lightningnetwork/lnd/tlv v1.3.2 // indirect
-	github.com/lightningnetwork/lnd/tor v1.1.6 // indirect
+	github.com/lightningnetwork/lnd/tor v1.1.7 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
@@ -204,3 +204,8 @@ replace dario.cat/mergo => github.com/darccio/mergo v1.0.1
 // vulnerable legacy pgx v4/pgproto3 dependency chain. Remove this replacement
 // once the required lnd version includes an sqldb release with that migration.
 replace github.com/lightningnetwork/lnd/sqldb v1.0.13 => github.com/lightningnetwork/lnd/sqldb v1.0.13-0.20260514041430-e9b422f78581
+
+// Select tapd v0.8.6's bounded TLV decoder in this main module. Dependency
+// replacements are not inherited, and the equivalent lnd/tlv v1.4.1 release
+// requires Go 1.26.8 and btcd v2.
+replace github.com/lightningnetwork/lnd/tlv => github.com/lightninglabs/taproot-assets/third_party/lnd/tlv v0.0.0-20261016193543-734ce74dd1e8
