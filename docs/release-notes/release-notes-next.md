@@ -42,6 +42,11 @@
 
 #### Bug Fixes
 
+* Shared Taproot Asset sweep packets now preserve the destination address
+  version and use the required non-interactive split-root layout. Every input's
+  group key must match the destination address, so the recipient's Bitcoin
+  script matches the address.
+
 * Shared asset sweeps validate asset conservation and Bitcoin output commitments,
   including change, passive assets, and the STXO and spender leaves required by
   Taproot Assets v0.8.5, before signing. Fresh inclusion and exclusion proofs
