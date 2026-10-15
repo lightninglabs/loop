@@ -9,6 +9,7 @@
       "[{\"hop_hints\":[{\"node_id\":\"022222222222222222222222222222222222222222222222222222222222222222\",\"chan_id\":\"111111111111111\",\"fee_base_msat\":1000,\"fee_proportional_millionths\":1,\"cltv_expiry_delta\":80}]}]",
       "250000"
     ],
+    "env": null,
     "version": "0.35.0-beta commit= commit_hash=",
     "run_error": "swap canceled",
     "duration": 14666178,
@@ -52,7 +53,8 @@
           "deposit_outpoints": [],
           "asset_info": null,
           "auto_select_deposits": false,
-          "fast": false
+          "fast": false,
+          "asset_loop_in": null
         }
       }
     },

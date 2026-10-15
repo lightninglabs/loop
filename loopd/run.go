@@ -39,6 +39,8 @@ var (
 	//   - routerrpc.SendPaymentRequest.first_hop_custom_records and
 	//     lnrpc.Route.custom_channel_data, used by asset loop outs
 	//     (loopout.go): both added in lnd v0.18.4-beta.
+	//   - lnrpc.InvoiceHTLC.custom_channel_data, used to enforce the
+	//     asset Loop In settlement minimum: added in lnd v0.18.4-beta.
 	//   - walletrpc.EstimateFeeResponse.min_relay_fee_sat_per_kw, read by
 	//     the sweep batcher fee floor via lndclient WalletKit.MinRelayFee
 	//     (sweepbatcher/, loopd/sweep_htlc.go): added in lnd v0.18.3-beta.

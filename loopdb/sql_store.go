@@ -3,6 +3,7 @@ package loopdb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -272,7 +273,10 @@ func (db *BaseDB) CreateLoopIn(ctx context.Context, hash lntypes.Hash,
 			return err
 		}
 
-		loopInInsertArgs := loopInToInsertArgs(hash, swap)
+		loopInInsertArgs, err := loopInToInsertArgs(hash, swap)
+		if err != nil {
+			return err
+		}
 
 		// Next insert the loop out relevant data.
 		err = tx.InsertLoopIn(ctx, loopInInsertArgs)
@@ -311,7 +315,10 @@ func (db *BaseDB) BatchCreateLoopIn(ctx context.Context,
 				return err
 			}
 
-			loopInInsertArgs := loopInToInsertArgs(swapHash, swap)
+			loopInInsertArgs, err := loopInToInsertArgs(swapHash, swap)
+			if err != nil {
+				return err
+			}
 
 			// Next insert the loop in relevant data.
 			err = tx.InsertLoopIn(ctx, loopInInsertArgs)
@@ -531,7 +538,7 @@ func loopOutToInsertArgs(hash lntypes.Hash,
 // loopInToInsertArgs converts a LoopInContract struct to the arguments needed
 // to insert it into the database.
 func loopInToInsertArgs(hash lntypes.Hash,
-	loopIn *LoopInContract) sqlc.InsertLoopInParams {
+	loopIn *LoopInContract) (sqlc.InsertLoopInParams, error) {
 
 	loopInInsertParams := sqlc.InsertLoopInParams{
 		SwapHash:       hash[:],
@@ -543,7 +550,14 @@ func loopInToInsertArgs(hash lntypes.Hash,
 		loopInInsertParams.LastHop = loopIn.LastHop[:]
 	}
 
-	return loopInInsertParams
+	if loopIn.AssetSwapInfo != nil {
+		info, err := json.Marshal(loopIn.AssetSwapInfo)
+		if err != nil {
+			return loopInInsertParams, err
+		}
+		loopInInsertParams.AssetInfo = info
+	}
+	return loopInInsertParams, nil
 }
 
 // swapToHtlcKeysInsertArgs extracts the htlc keys from a SwapContract struct
@@ -712,6 +726,12 @@ func (db *BaseDB) convertLoopInRow(row sqlc.GetLoopInSwapsRow,
 		},
 	}
 
+	if len(row.AssetInfo) != 0 {
+		err := json.Unmarshal(row.AssetInfo, &loopIn.Contract.AssetSwapInfo)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if row.LastHop != nil {
 		lastHop, err := route.NewVertexFromBytes(row.LastHop)
 		if err != nil {

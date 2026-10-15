@@ -29,7 +29,7 @@ func (q *Queries) GetLastUpdateID(ctx context.Context, swapHash []byte) (int32, 
 const getLoopInSwap = `-- name: GetLoopInSwap :one
 SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    loopin_swaps.swap_hash, loopin_swaps.htlc_conf_target, loopin_swaps.last_hop, loopin_swaps.external_htlc,
+    loopin_swaps.swap_hash, loopin_swaps.htlc_conf_target, loopin_swaps.last_hop, loopin_swaps.external_htlc, loopin_swaps.asset_info,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM
     swaps
@@ -57,6 +57,7 @@ type GetLoopInSwapRow struct {
 	HtlcConfTarget         int32
 	LastHop                []byte
 	ExternalHtlc           bool
+	AssetInfo              []byte
 	SwapHash_3             []byte
 	SenderScriptPubkey     []byte
 	ReceiverScriptPubkey   []byte
@@ -85,6 +86,7 @@ func (q *Queries) GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopIn
 		&i.HtlcConfTarget,
 		&i.LastHop,
 		&i.ExternalHtlc,
+		&i.AssetInfo,
 		&i.SwapHash_3,
 		&i.SenderScriptPubkey,
 		&i.ReceiverScriptPubkey,
@@ -99,7 +101,7 @@ func (q *Queries) GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopIn
 const getLoopInSwaps = `-- name: GetLoopInSwaps :many
 SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    loopin_swaps.swap_hash, loopin_swaps.htlc_conf_target, loopin_swaps.last_hop, loopin_swaps.external_htlc,
+    loopin_swaps.swap_hash, loopin_swaps.htlc_conf_target, loopin_swaps.last_hop, loopin_swaps.external_htlc, loopin_swaps.asset_info,
     htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
 FROM
     swaps
@@ -127,6 +129,7 @@ type GetLoopInSwapsRow struct {
 	HtlcConfTarget         int32
 	LastHop                []byte
 	ExternalHtlc           bool
+	AssetInfo              []byte
 	SwapHash_3             []byte
 	SenderScriptPubkey     []byte
 	ReceiverScriptPubkey   []byte
@@ -161,6 +164,7 @@ func (q *Queries) GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, erro
 			&i.HtlcConfTarget,
 			&i.LastHop,
 			&i.ExternalHtlc,
+			&i.AssetInfo,
 			&i.SwapHash_3,
 			&i.SenderScriptPubkey,
 			&i.ReceiverScriptPubkey,
@@ -485,9 +489,10 @@ INSERT INTO loopin_swaps (
     swap_hash,
     htlc_conf_target,
     last_hop,
-    external_htlc
+    external_htlc,
+    asset_info
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 `
 
@@ -496,6 +501,7 @@ type InsertLoopInParams struct {
 	HtlcConfTarget int32
 	LastHop        []byte
 	ExternalHtlc   bool
+	AssetInfo      []byte
 }
 
 func (q *Queries) InsertLoopIn(ctx context.Context, arg InsertLoopInParams) error {
@@ -504,6 +510,7 @@ func (q *Queries) InsertLoopIn(ctx context.Context, arg InsertLoopInParams) erro
 		arg.HtlcConfTarget,
 		arg.LastHop,
 		arg.ExternalHtlc,
+		arg.AssetInfo,
 	)
 	return err
 }

@@ -80,6 +80,7 @@
           "        {\n",
           "            \"amt\": \"500000\",\n",
           "            \"asset_info\": null,\n",
+          "            \"asset_loop_in_info\": null,\n",
           "            \"cost_offchain\": \"0\",\n",
           "            \"cost_onchain\": \"0\",\n",
           "            \"cost_server\": \"0\",\n",

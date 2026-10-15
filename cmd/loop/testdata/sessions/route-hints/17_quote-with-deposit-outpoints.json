@@ -11,6 +11,7 @@
       "--deposit_outpoint",
       "1111111111111111111111111111111111111111111111111111111111111111:0,2222222222222222222222222222222222222222222222222222222222222222:0"
     ],
+    "env": null,
     "version": "0.35.0-beta commit= commit_hash=",
     "duration": 19677447,
     "clock_start_unix": 1787783959
@@ -96,7 +97,8 @@
           ],
           "asset_info": null,
           "auto_select_deposits": false,
-          "fast": false
+          "fast": false,
+          "asset_loop_in": null
         }
       }
     },

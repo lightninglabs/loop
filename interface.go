@@ -297,6 +297,23 @@ type LoopInRequest struct {
 	// RouteHints are optional route hints to reach the destination through
 	// private channels.
 	RouteHints [][]zpay32.HopHint
+
+	// AssetId is the optional asset ID to receive over a Taproot Asset
+	// channel when the server pays the swap invoice.
+	AssetId []byte
+
+	// AssetEdgeNode selects the Taproot Asset channel peer that
+	// should convert the server's satoshi payment into the requested asset.
+	// It is required when AssetId or GroupKey is set.
+	AssetEdgeNode []byte
+
+	// MinAssetAmount is the minimum number of asset units to receive. It is
+	// required when AssetId or GroupKey is set, and is enforced both before
+	// requesting a swap and before releasing the settlement preimage.
+	MinAssetAmount uint64
+
+	// GroupKey selects a group instead of one asset ID (mutually exclusive).
+	GroupKey []byte
 }
 
 // StaticAddressLoopInRequest contains the required parameters for the swap.
@@ -375,6 +392,10 @@ type In struct {
 // LoopInQuoteRequest specifies the swap parameters for which a quote is
 // requested.
 type LoopInQuoteRequest struct {
+	// AssetInfo requests a provisional asset rate for this standard Loop In.
+	// Its minimum can be zero while discovering the current output.
+	AssetInfo *AssetLoopInQuoteRequest
+
 	// Amount specifies the requested swap amount in sat. This does not
 	// include the swap and miner fee.
 	Amount btcutil.Amount
@@ -422,6 +443,10 @@ type LoopInQuoteRequest struct {
 // LoopInQuote contains estimates for the fees making up the total swap cost
 // for the client.
 type LoopInQuote struct {
+	// AssetInfo is a provisional quote, not a commitment to execute at this
+	// rate. Execution negotiates afresh subject to MinAssetAmount.
+	AssetInfo *loopdb.LoopInAssetSwap
+
 	// SwapFee is the fee that the swap server is charging for the swap.
 	SwapFee btcutil.Amount
 
@@ -437,6 +462,9 @@ type LoopInQuote struct {
 // LoopInSwapInfo contains essential information of a loop-in swap after the
 // swap is initiated.
 type LoopInSwapInfo struct { // nolint
+	// AssetAmount is the quoted asset output, or zero for a BTC swap.
+	AssetAmount uint64
+
 	// SwapHash contains the sha256 hash of the swap preimage.
 	SwapHash lntypes.Hash
 
@@ -523,6 +551,17 @@ type SwapInfo struct {
 
 	// AssetSwapInfo contains the asset information for the swap.
 	AssetSwapInfo *loopdb.LoopOutAssetSwap
+
+	// AssetLoopInInfo contains persisted receiving terms for an asset swap.
+	AssetLoopInInfo *loopdb.LoopInAssetSwap
+}
+
+// AssetLoopInQuoteRequest selects the asset and edge for a receiving quote.
+type AssetLoopInQuoteRequest struct {
+	AssetId        []byte
+	GroupKey       []byte
+	AssetEdgeNode  []byte
+	MinAssetAmount uint64
 }
 
 // LastUpdate returns the last update time of the swap.

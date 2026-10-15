@@ -31,7 +31,8 @@
           "deposit_outpoints": [],
           "asset_info": null,
           "auto_select_deposits": false,
-          "fast": false
+          "fast": false,
+          "asset_loop_in": null
         }
       }
     },
@@ -88,7 +89,8 @@
           "label": "",
           "initiator": "loop-cli",
           "route_hints": [],
-          "private": false
+          "private": false,
+          "asset_info": null
         }
       }
     },

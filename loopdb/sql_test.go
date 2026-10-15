@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -233,6 +234,26 @@ func TestSQLliteLoopInStore(t *testing.T) {
 	t.Run("loop in with label", func(t *testing.T) {
 		testSqliteLoopInStore(t, labelledSwap)
 	})
+	for _, group := range []bool{false, true} {
+		t.Run(fmt.Sprintf("asset group=%v", group), func(t *testing.T) {
+			assetSwap := pendingSwap
+			assetSwap.AssetSwapInfo = &LoopInAssetSwap{
+				AssetId: []byte{1}, AssetEdgeNode: senderKey[:],
+				MinAssetAmount: 4964, AssetAmount: 4964,
+				RateCoefficient: "1000000", QuoteExpiry: 12345,
+			}
+			if group {
+				assetSwap.AssetSwapInfo.AssetId = nil
+				assetSwap.AssetSwapInfo.GroupKey = senderKey[:]
+			}
+			testSqliteLoopInStore(t, assetSwap)
+			encoded, err := serializeLoopInContract(&assetSwap)
+			require.NoError(t, err)
+			decoded, err := deserializeLoopInContract(encoded)
+			require.NoError(t, err)
+			require.Equal(t, assetSwap.AssetSwapInfo, decoded.AssetSwapInfo)
+		})
+	}
 }
 
 func testSqliteLoopInStore(t *testing.T, pendingSwap LoopInContract) {

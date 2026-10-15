@@ -9,6 +9,7 @@ bitcoin into and out of the Lightning Network.
 - Opportunistic transaction batching to save on fees
 - Instant Loop-Outs for faster off-chain to on-chain swaps
 - Static, reusable addresses for Loop-Ins
+- [Receive Taproot Assets with Loop In](docs/asset-loop-in.md)
 - Progress monitoring of in-flight swaps
 
 ## Use Cases

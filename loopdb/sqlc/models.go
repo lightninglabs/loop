@@ -70,6 +70,7 @@ type LoopinSwap struct {
 	HtlcConfTarget int32
 	LastHop        []byte
 	ExternalHtlc   bool
+	AssetInfo      []byte
 }
 
 type LoopoutSwap struct {

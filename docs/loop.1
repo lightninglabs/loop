@@ -107,6 +107,12 @@ perform an on-chain to off-chain swap (loop in)
 \fB--amt\fP="": the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms" (default: 0)
 
 .PP
+\fB--asset_edge_node\fP="": the required pubkey of the asset channel peer to use for the loop in
+
+.PP
+\fB--asset_id\fP="": the asset ID to receive over an asset channel; requires loopd to be connected to a Taproot Assets daemon
+
+.PP
 \fB--conf_target\fP="": the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)
 
 .PP
@@ -116,6 +122,9 @@ perform an on-chain to off-chain swap (loop in)
 \fB--force\fP: Assumes yes during confirmation. Using this option will result in an immediate swap
 
 .PP
+\fB--group_key\fP="": compressed group public key to receive; mutually exclusive with asset_id
+
+.PP
 \fB--help, -h\fP: show help
 
 .PP
@@ -123,6 +132,9 @@ perform an on-chain to off-chain swap (loop in)
 
 .PP
 \fB--last_hop\fP="": the pubkey of the last hop to use for this swap
+
+.PP
+\fB--min_asset_amount\fP="": minimum output in indivisible asset units; required with asset_id or group_key (default: 0)
 
 .PP
 \fB--private\fP: generates and passes routehints. Should be used if the connected node is only reachable via private channels
@@ -155,16 +167,28 @@ get a quote for the cost of a swap
 get a quote for the cost of a loop in swap
 
 .PP
+\fB--asset_edge_node\fP="": required asset edge public key
+
+.PP
+\fB--asset_id\fP="": asset ID to receive
+
+.PP
 \fB--conf_target\fP="": the target number of blocks the on-chain htlc broadcast by the swap client should confirm within (default: 0)
 
 .PP
 \fB--deposit_outpoint\fP="": one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx (default: [])
 
 .PP
+\fB--group_key\fP="": group key to receive instead of asset_id
+
+.PP
 \fB--help, -h\fP: show help
 
 .PP
 \fB--last_hop\fP="": the pubkey of the last hop to use for the quote
+
+.PP
+\fB--min_asset_amount\fP="": optional minimum output in asset units (default: 0)
 
 .PP
 \fB--private\fP: generates and passes routehints. Should be used if the connected node is only reachable via private channels

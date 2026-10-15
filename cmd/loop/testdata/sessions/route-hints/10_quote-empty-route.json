@@ -10,6 +10,7 @@
       "[{}]",
       "250000"
     ],
+    "env": null,
     "version": "0.35.0-beta commit= commit_hash=",
     "run_error": "rpc error: code = Unknown desc = route hint 0 has no hop hints",
     "duration": 3785371,
@@ -38,7 +39,8 @@
           "deposit_outpoints": [],
           "asset_info": null,
           "auto_select_deposits": false,
-          "fast": false
+          "fast": false,
+          "asset_loop_in": null
         }
       }
     },

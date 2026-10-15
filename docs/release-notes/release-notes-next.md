@@ -5,6 +5,13 @@
 * Instant Out now validates server invoices against a caller-approved maximum
   swap fee.
 
+* Loop In can now receive over a Taproot Asset channel selected by asset ID or
+  group key. Quotes show the rate and expected output before confirmation.
+  Swaps require an explicit edge and minimum asset output, persist the asset
+  terms for status and restart recovery, and check actual received units before
+  settling multipart payments. The swap and probe share a quote valid for the
+  30-day invoice lifetime.
+
 #### Breaking Changes
 
 * Instant Out requests must now set `max_swap_fee_sat`. Requests that omit the

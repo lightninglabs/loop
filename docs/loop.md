@@ -98,18 +98,22 @@ $ loop [GLOBAL FLAGS] in [COMMAND FLAGS] amt
 
 The following flags are supported:
 
-| Name                | Description                                                                                                             | Type   | Default value |
-|---------------------|-------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
-| `--amt="…"`         | the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms"  | uint   |      `0`      |
-| `--external`        | expect htlc to be published externally                                                                                  | bool   |    `false`    |
-| `--conf_target="…"` | the target number of blocks the on-chain htlc broadcast by the swap client should confirm within                        | uint   |      `0`      |
-| `--last_hop="…"`    | the pubkey of the last hop to use for this swap                                                                         | string |
-| `--label="…"`       | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
-| `--force`           | Assumes yes during confirmation. Using this option will result in an immediate swap                                     | bool   |    `false`    |
-| `--verbose` (`-v`)  | show expanded details                                                                                                   | bool   |    `false`    |
-| `--route_hints="…"` | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination          | string |
-| `--private`         | generates and passes routehints. Should be used if the connected node is only reachable via private channels            | bool   |    `false`    |
-| `--help` (`-h`)     | show help                                                                                                               | bool   |    `false`    |
+| Name                     | Description                                                                                                             | Type   | Default value |
+|--------------------------|-------------------------------------------------------------------------------------------------------------------------|--------|:-------------:|
+| `--amt="…"`              | the amount in satoshis to loop in. To check for the minimum and maximum amounts to loop in please consult "loop terms"  | uint   |      `0`      |
+| `--external`             | expect htlc to be published externally                                                                                  | bool   |    `false`    |
+| `--conf_target="…"`      | the target number of blocks the on-chain htlc broadcast by the swap client should confirm within                        | uint   |      `0`      |
+| `--last_hop="…"`         | the pubkey of the last hop to use for this swap                                                                         | string |
+| `--label="…"`            | an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved] | string |
+| `--force`                | Assumes yes during confirmation. Using this option will result in an immediate swap                                     | bool   |    `false`    |
+| `--verbose` (`-v`)       | show expanded details                                                                                                   | bool   |    `false`    |
+| `--route_hints="…"`      | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination          | string |
+| `--private`              | generates and passes routehints. Should be used if the connected node is only reachable via private channels            | bool   |    `false`    |
+| `--asset_id="…"`         | the asset ID to receive over an asset channel; requires loopd to be connected to a Taproot Assets daemon                | string |
+| `--asset_edge_node="…"`  | the required pubkey of the asset channel peer to use for the loop in                                                    | string |
+| `--group_key="…"`        | compressed group public key to receive; mutually exclusive with asset_id                                                | string |
+| `--min_asset_amount="…"` | minimum output in indivisible asset units; required with asset_id or group_key                                          | uint   |      `0`      |
+| `--help` (`-h`)          | show help                                                                                                               | bool   |    `false`    |
 
 ### `terms` command
 
@@ -182,6 +186,10 @@ The following flags are supported:
 | `--verbose` (`-v`)       | show expanded details                                                                                                                                                                                          | bool   |    `false`    |
 | `--private`              | generates and passes routehints. Should be used if the connected node is only reachable via private channels                                                                                                   | bool   |    `false`    |
 | `--route_hints="…"`      | a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination                                                                                                 | string |
+| `--asset_id="…"`         | asset ID to receive                                                                                                                                                                                            | string |
+| `--group_key="…"`        | group key to receive instead of asset_id                                                                                                                                                                       | string |
+| `--asset_edge_node="…"`  | required asset edge public key                                                                                                                                                                                 | string |
+| `--min_asset_amount="…"` | optional minimum output in asset units                                                                                                                                                                         | uint   |      `0`      |
 | `--deposit_outpoint="…"` | one or more static address deposit outpoints to quote for. Deposit outpoints are not to be used in combination with an amount. Eachadditional outpoint can be added by specifying --deposit_outpoint tx_id:idx | string |     `[]`      |
 | `--help` (`-h`)          | show help                                                                                                                                                                                                      | bool   |    `false`    |
 

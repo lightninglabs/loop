@@ -3,6 +3,7 @@ package loopdb
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -26,6 +27,23 @@ type LoopInContract struct {
 	// ExternalHtlc specifies whether the htlc is published by an external
 	// source.
 	ExternalHtlc bool
+
+	// AssetSwapInfo contains the receiving terms, including the settlement
+	// floor. Nil denotes a legacy automatically settled BTC invoice.
+	AssetSwapInfo *LoopInAssetSwap
+}
+
+// LoopInAssetSwap stores the immutable terms of a hold-invoice asset swap.
+// Amounts are indivisible units; the rate is asset units per BTC.
+type LoopInAssetSwap struct {
+	AssetId         []byte `json:"asset_id,omitempty"`
+	GroupKey        []byte `json:"group_key,omitempty"`
+	AssetEdgeNode   []byte `json:"asset_edge_node"`
+	MinAssetAmount  uint64 `json:"min_asset_amount"`
+	AssetAmount     uint64 `json:"asset_amount"`
+	RateCoefficient string `json:"rate_coefficient"`
+	RateScale       uint32 `json:"rate_scale"`
+	QuoteExpiry     uint64 `json:"quote_expiry"`
 }
 
 // LoopIn is a combination of the contract and the updates.
@@ -111,6 +129,11 @@ func serializeLoopInContract(swap *LoopInContract) (
 		return nil, err
 	}
 
+	if swap.AssetSwapInfo != nil {
+		if err := json.NewEncoder(&b).Encode(swap.AssetSwapInfo); err != nil {
+			return nil, err
+		}
+	}
 	return b.Bytes(), nil
 }
 
@@ -209,5 +232,11 @@ func deserializeLoopInContract(value []byte) (*LoopInContract, error) {
 		return nil, err
 	}
 
+	if r.Len() != 0 {
+		err := json.NewDecoder(r).Decode(&contract.AssetSwapInfo)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &contract, nil
 }

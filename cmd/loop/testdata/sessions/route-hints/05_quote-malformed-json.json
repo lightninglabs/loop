@@ -10,6 +10,7 @@
       "[",
       "250000"
     ],
+    "env": null,
     "version": "0.35.0-beta commit= commit_hash=",
     "run_error": "unable to parse route hints: unexpected end of JSON input",
     "duration": 662211,
