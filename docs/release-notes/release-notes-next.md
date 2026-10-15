@@ -16,6 +16,19 @@
   using the original interactive template must explicitly call
   `CreateInteractiveHtlcVpkt` and validate the actual anchor proof.
 
+* Shared deposit kits now require trusted asset genesis metadata, and the group
+  key for grouped assets, when creating or validating addresses. Proof-only
+  operations continue to accept kits constructed with just the asset ID.
+
+* Shared asset HTLC and deposit kit constructors now require explicit sender
+  and receiver internal and script keys. Cooperative spends aggregate only
+  internal keys; claims and refunds use script keys. Reusing each party's key
+  for both roles preserves existing contracts.
+
+* Remove the ambiguous deposit `Kit.VerifyProof` method. Use the amount-bound
+  `AnchorRootFromProofCommitment` for previously verified proofs, or
+  `VerifyProofFile` to verify a complete history and bind the deposit contract.
+
 * Instant Out requests must now set `max_swap_fee_sat`. Requests that omit the
   fee cap are rejected; an explicit zero cap remains valid. Direct users of
   `Manager.NewInstantOut` must pass the fee cap as a required argument.
@@ -41,6 +54,23 @@
   responses are now processed concurrently, preventing slow connections from
   delaying later responses until the server times them out. Sweep work is
   bounded, and server-provided prevouts are validated before signing.
+
+* Deposit proof verification now requires genesis-rooted histories and rejects
+  ownership-only proofs, including those hidden in additional inputs.
+
+* Shared asset HTLC and deposit proof acceptance now requires the proof to
+  describe the complete anchor commitment. A funder could otherwise hide an
+  extra leaf in the anchor output and block the receiver's claim after the
+  receiver paid the invoice or revealed the preimage.
+
+* Shared asset kits now isolate proof and RPC buffers, reject oversized proofs
+  and unencodable amounts, and enforce distinct x-only signing keys across all
+  sender and receiver roles. Each party may still reuse its own internal key
+  as its script key for legacy contracts.
+
+* Shared legacy asset contracts now freeze address, asset, virtual packet,
+  commitment and proof versions in one policy definition. Unknown input proof
+  semantics are rejected before commitment reconstruction or verification.
 
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
@@ -89,6 +119,15 @@
 
 * Shared asset HTLC helpers and funding templates now return independent NUMS
   keys so caller mutations cannot change later contracts.
+
+* Shared deposit and HTLC addresses are now checked against their complete
+  contracts, with output keys derived from trusted asset metadata. RPC responses
+  must agree with their encoded addresses; shared validators also accept peer
+  addresses.
+
+* Deposit proof acceptance and refund signing now enforce the expected group
+  key when trusted asset metadata is supplied. Proof-only kits without that
+  metadata remain supported.
 
 #### Maintenance
 
