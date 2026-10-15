@@ -72,6 +72,11 @@
   commitment and proof versions in one policy definition. Unknown input proof
   semantics are rejected before commitment reconstruction or verification.
 
+* Shared Taproot Asset sweep packets now preserve the destination address
+  version and use the required non-interactive split-root layout. Every input's
+  group key must match the destination address, so the recipient's Bitcoin
+  script matches the address.
+
 * Instant Out now attempts to cancel server-side swaps when client
   initialization fails, allowing locked reservations to be released without
   waiting for the server timeout.
