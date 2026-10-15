@@ -2,10 +2,19 @@
 
 #### New Features
 
+* Shared asset HTLCs now expose the direction-neutral `AssetHTLCV0` policy for
+  both Asset Loop In and Asset Loop Out. `LegacyDepositV0` remains an alias
+  with the same policy value and on-chain contract terms.
+
 * Instant Out now validates server invoices against a caller-approved maximum
   swap fee.
 
 #### Breaking Changes
+
+* `SwapKit.CreateHtlcVpkt` now returns a non-interactive funding template that
+  matches V1 HTLC addresses for exact-value and change sends. Integrations
+  using the original interactive template must explicitly call
+  `CreateInteractiveHtlcVpkt` and validate the actual anchor proof.
 
 * Instant Out requests must now set `max_swap_fee_sat`. Requests that omit the
   fee cap are rejected; an explicit zero cap remains valid. Direct users of
@@ -77,6 +86,9 @@
   cleanup share successful cancellation results to avoid duplicate requests.
   Cancellation failures are logged, and a failed attempt does not prevent
   the other caller from trying.
+
+* Shared asset HTLC helpers and funding templates now return independent NUMS
+  keys so caller mutations cannot change later contracts.
 
 #### Maintenance
 
