@@ -61,7 +61,7 @@ type Querier interface {
 	InsertMigration(ctx context.Context, arg InsertMigrationParams) error
 	InsertReservationUpdate(ctx context.Context, arg InsertReservationUpdateParams) error
 	InsertStaticAddressLoopIn(ctx context.Context, arg InsertStaticAddressLoopInParams) error
-	InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) error
+	InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) (int32, error)
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
