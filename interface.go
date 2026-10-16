@@ -501,6 +501,11 @@ type SwapInfo struct {
 	// swaps, it remains the fsm.StateType zero value, fsm.EmptyState.
 	StaticAddressLoopInState fsm.StateType
 
+	// StaticAddressLoopInUpdateID is the id of the latest persisted update
+	// of a static address loop-in. Unlike LastUpdate, it increases with
+	// each update of the swap.
+	StaticAddressLoopInUpdateID int32
+
 	// HtlcAddressP2WSH stores the address of the P2WSH (native segwit)
 	// swap htlc. This is used for both loop-in and loop-out.
 	HtlcAddressP2WSH btcutil.Address
