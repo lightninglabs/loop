@@ -7,7 +7,9 @@ INSERT INTO deposits (
     confirmation_height,
     timeout_sweep_pk_script,
     expiry_sweep_txid,
-    finalized_withdrawal_tx
+    finalized_withdrawal_tx,
+    onchain_cost,
+    onchain_cost_known
 ) VALUES (
              $1,
              $2,
@@ -16,7 +18,9 @@ INSERT INTO deposits (
              $5,
              $6,
              $7,
-             $8
+             $8,
+             $9,
+             $10
          );
 
 -- name: UpdateDeposit :exec
@@ -77,3 +81,13 @@ WHERE
 ORDER BY
     update_timestamp DESC
 LIMIT 1;
+
+-- name: SetDepositOnchainCost :exec
+UPDATE deposits
+SET
+    onchain_cost = $2,
+    onchain_cost_known = $3
+WHERE
+    deposit_id = $1
+AND
+    onchain_cost_known IS NULL;

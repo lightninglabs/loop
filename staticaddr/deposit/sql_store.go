@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -49,6 +50,19 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		Amount:               int64(deposit.Value),
 		ConfirmationHeight:   deposit.GetConfirmationHeight(),
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
+	}
+
+	// Store the on-chain cost if it was determined when the deposit was
+	// found, otherwise leave it NULL so that it is determined later.
+	cost := deposit.GetOnchainCost()
+	if cost.Status != OnchainCostUndetermined {
+		params, err := setOnchainCostParams(deposit.ID, cost)
+		if err != nil {
+			return err
+		}
+
+		createArgs.OnchainCost = params.OnchainCost
+		createArgs.OnchainCostKnown = params.OnchainCostKnown
 	}
 
 	updateArgs := sqlc.InsertDepositUpdateParams{
@@ -296,9 +310,12 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		swapHash = &hash
 	}
 
+	onchainCost := toOnchainCost(row.OnchainCost, row.OnchainCostKnown)
+
 	return &Deposit{
-		ID:    id,
-		state: fsm.StateType(lastUpdate.UpdateState),
+		ID:          id,
+		OnchainCost: onchainCost,
+		state:       fsm.StateType(lastUpdate.UpdateState),
 		OutPoint: wire.OutPoint{
 			Hash:  *txHash,
 			Index: uint32(row.OutIndex),
@@ -309,5 +326,74 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		ExpirySweepTxid:       expirySweepTxid,
 		SwapHash:              swapHash,
 		FinalizedWithdrawalTx: finalizedWithdrawalTx,
+	}, nil
+}
+
+// toOnchainCost converts the stored on-chain cost of a deposit.
+func toOnchainCost(amount int64, known sql.NullBool) OnchainCost {
+	switch {
+	case !known.Valid:
+		return OnchainCost{}
+
+	case known.Bool:
+		return OnchainCost{
+			Amount: btcutil.Amount(amount),
+			Status: OnchainCostKnown,
+		}
+
+	default:
+		return OnchainCost{Status: OnchainCostUnknown}
+	}
+}
+
+// SetOnchainCosts stores the on-chain cost of the given deposits. A deposit
+// whose cost has already been determined keeps it.
+func (s *SqlStore) SetOnchainCosts(ctx context.Context,
+	costs map[ID]OnchainCost) error {
+
+	if len(costs) == 0 {
+		return nil
+	}
+
+	return s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
+		func(q *sqlc.Queries) error {
+			for id, cost := range costs {
+				params, err := setOnchainCostParams(id, cost)
+				if err != nil {
+					return err
+				}
+
+				err = q.SetDepositOnchainCost(ctx, params)
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		})
+}
+
+// setOnchainCostParams returns the parameters to store the given on-chain
+// cost of a deposit. Only a determined cost can be stored.
+func setOnchainCostParams(id ID,
+	cost OnchainCost) (sqlc.SetDepositOnchainCostParams, error) {
+
+	switch cost.Status {
+	case OnchainCostKnown, OnchainCostUnknown:
+
+	default:
+		return sqlc.SetDepositOnchainCostParams{}, fmt.Errorf(
+			"deposit %x: invalid on-chain cost status %d", id,
+			cost.Status,
+		)
+	}
+
+	return sqlc.SetDepositOnchainCostParams{
+		DepositID:   id[:],
+		OnchainCost: int64(cost.Amount),
+		OnchainCostKnown: sql.NullBool{
+			Bool:  cost.Status == OnchainCostKnown,
+			Valid: true,
+		},
 	}, nil
 }

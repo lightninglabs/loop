@@ -27,6 +27,36 @@ func (r *ID) FromByteSlice(b []byte) error {
 	return nil
 }
 
+// OnchainCostStatus tells whether the on-chain cost of a deposit is known. It
+// is stored as onchain_cost_known: NULL if undetermined, otherwise whether the
+// cost is known.
+type OnchainCostStatus uint8
+
+const (
+	// OnchainCostUndetermined means the cost hasn't been determined yet.
+	OnchainCostUndetermined OnchainCostStatus = iota
+
+	// OnchainCostKnown means the client wallet knows the fee of the
+	// deposit's funding transaction, and the cost is the deposit's share
+	// of it.
+	OnchainCostKnown
+
+	// OnchainCostUnknown means the client wallet doesn't know the fee of
+	// the deposit's funding transaction, for example for a deposit funded
+	// by an external wallet. The cost is zero then.
+	OnchainCostUnknown
+)
+
+// OnchainCost is the client-side on-chain cost of a deposit.
+type OnchainCost struct {
+	// Amount is the deposit's share of the fee of its funding
+	// transaction. It is zero unless the status is known.
+	Amount btcutil.Amount
+
+	// Status tells whether the cost is known.
+	Status OnchainCostStatus
+}
+
 // Deposit bundles an utxo at a static address together with manager-relevant
 // data.
 //
@@ -70,6 +100,20 @@ type Deposit struct {
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.
 	FinalizedWithdrawalTx *wire.MsgTx
+
+	// OnchainCost is the deposit's share of the fee of its funding
+	// transaction. The manager determines it shortly after it finds the
+	// deposit. It is protected by the deposit lock for deposits the
+	// manager holds; use GetOnchainCost to read it.
+	OnchainCost OnchainCost
+}
+
+// GetOnchainCost returns the on-chain cost of the deposit.
+func (d *Deposit) GetOnchainCost() OnchainCost {
+	d.Lock()
+	defer d.Unlock()
+
+	return d.OnchainCost
 }
 
 // IsInFinalState returns true if the deposit is final.

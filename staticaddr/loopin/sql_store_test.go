@@ -127,6 +127,17 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	err = depositStore.UpdateDeposit(ctxb, d4)
 	require.NoError(t, err)
 
+	// Store a known on-chain cost for the looped-in deposit only, to check
+	// that it is loaded with the swap's deposits.
+	d3Cost := deposit.OnchainCost{
+		Amount: 900,
+		Status: deposit.OnchainCostKnown,
+	}
+	err = depositStore.SetOnchainCosts(
+		ctxb, map[deposit.ID]deposit.OnchainCost{d3.ID: d3Cost},
+	)
+	require.NoError(t, err)
+
 	_, clientPubKey := test.CreateKey(1)
 	_, serverPubKey := test.CreateKey(2)
 	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
@@ -212,6 +223,7 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	require.Equal(t, d1.OutPoint, pendingDeposits[0].OutPoint)
 	require.Equal(t, d1.Value, pendingDeposits[0].Value)
 	require.Equal(t, deposit.LoopingIn, pendingDeposits[0].GetState())
+	require.Equal(t, deposit.OnchainCost{}, pendingDeposits[0].OnchainCost)
 
 	finalizedSwaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(ctxb, FinalStates)
 	require.NoError(t, err)
@@ -244,6 +256,7 @@ func TestGetStaticAddressLoopInSwapsByStates(t *testing.T) {
 	require.Equal(t, d3.OutPoint, finalizedDeposits[0].OutPoint)
 	require.Equal(t, d3.Value, finalizedDeposits[0].Value)
 	require.Equal(t, deposit.LoopedIn, finalizedDeposits[0].GetState())
+	require.Equal(t, d3Cost, finalizedDeposits[0].OnchainCost)
 }
 
 // TestCreateLoopIn tests that CreateLoopIn correctly creates a new
@@ -615,4 +628,190 @@ func TestGetLoopInByHashPreservesStoredDepositOutpoints(t *testing.T) {
 	require.Len(t, storedSwap.Deposits, 1)
 	require.Equal(t, currentOutpoint, storedSwap.Deposits[0].OutPoint)
 	require.Equal(t, int64(42), storedSwap.Deposits[0].ConfirmationHeight)
+}
+
+// TestSqlStoreDepositsForSwap tests that DepositsForSwap returns the deposits
+// mapped to a swap with their on-chain cost, and no deposit that a later swap
+// took.
+func TestSqlStoreDepositsForSwap(t *testing.T) {
+	ctx := t.Context()
+	testDb := loopdb.NewTestDB(t)
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb),
+		clock.NewTestClock(time.Now()), &chaincfg.RegressionNetParams,
+	)
+
+	knownCost := deposit.OnchainCost{
+		Amount: 1_550, Status: deposit.OnchainCostKnown,
+	}
+	newDeposit := func(seed byte,
+		cost deposit.OnchainCost) *deposit.Deposit {
+
+		id, err := deposit.GetRandomDepositID()
+		require.NoError(t, err)
+
+		d := &deposit.Deposit{
+			ID: id,
+			OutPoint: wire.OutPoint{
+				Hash: chainhash.Hash{seed},
+			},
+			Value:                100_000,
+			TimeOutSweepPkScript: []byte{0x00, 0x14, seed},
+			OnchainCost:          cost,
+		}
+		require.NoError(t, depositStore.CreateDeposit(ctx, d))
+
+		d.SetState(deposit.LoopingIn)
+		require.NoError(t, depositStore.UpdateDeposit(ctx, d))
+
+		return d
+	}
+	known := newDeposit(1, knownCost)
+	taken := newDeposit(2, deposit.OnchainCost{})
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	createSwap := func(seed byte,
+		deposits ...*deposit.Deposit) lntypes.Hash {
+
+		outpoints := make([]string, 0, len(deposits))
+		for _, d := range deposits {
+			outpoints = append(outpoints, d.OutPoint.String())
+		}
+
+		swap := StaticAddressLoopIn{
+			SwapHash:                lntypes.Hash{seed},
+			SwapPreimage:            lntypes.Preimage{seed},
+			DepositOutpoints:        outpoints,
+			Deposits:                deposits,
+			ClientPubkey:            clientPubKey,
+			ServerPubkey:            serverPubKey,
+			HtlcTimeoutSweepAddress: addr,
+		}
+		swap.SetState(SignHtlcTx)
+		require.NoError(t, swapStore.CreateLoopIn(ctx, &swap))
+
+		return swap.SwapHash
+	}
+
+	// The first swap tries both deposits, then a later swap takes one of
+	// them.
+	first := createSwap(1, known, taken)
+	later := createSwap(2, taken)
+
+	deposits, err := swapStore.DepositsForSwap(ctx, first)
+	require.NoError(t, err)
+	require.Len(t, deposits, 1)
+	require.Equal(t, known.ID, deposits[0].ID)
+	require.Equal(t, knownCost, deposits[0].GetOnchainCost())
+	require.True(t, deposits[0].IsInState(deposit.LoopingIn))
+
+	deposits, err = swapStore.DepositsForSwap(ctx, later)
+	require.NoError(t, err)
+	require.Len(t, deposits, 1)
+	require.Equal(t, taken.ID, deposits[0].ID)
+	require.Equal(t, deposit.OnchainCost{}, deposits[0].GetOnchainCost())
+
+	deposits, err = swapStore.DepositsForSwap(ctx, lntypes.Hash{3})
+	require.NoError(t, err)
+	require.Empty(t, deposits)
+}
+
+// TestSqlStoreFailedSwapOnchainCost tests that a failed swap that published
+// its htlc timeout sweep still reports the on-chain cost of its deposits after
+// it is loaded from the store, and a failed swap without a sweep doesn't.
+func TestSqlStoreFailedSwapOnchainCost(t *testing.T) {
+	ctx := t.Context()
+	testDb := loopdb.NewTestDB(t)
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	testClock := clock.NewTestClock(time.Now())
+	swapStore := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb), testClock,
+		&chaincfg.RegressionNetParams,
+	)
+
+	knownCost := deposit.OnchainCost{
+		Amount: 1_550, Status: deposit.OnchainCostKnown,
+	}
+
+	_, clientPubKey := test.CreateKey(1)
+	_, serverPubKey := test.CreateKey(2)
+	addr, err := btcutil.DecodeAddress(P2wkhAddr, nil)
+	require.NoError(t, err)
+
+	// createFailedSwap stores a swap whose deposit is on the htlc timeout
+	// path and which then failed, with the given htlc timeout sweep.
+	createFailedSwap := func(seed byte,
+		sweepTxHash *chainhash.Hash) lntypes.Hash {
+
+		id, err := deposit.GetRandomDepositID()
+		require.NoError(t, err)
+
+		d := &deposit.Deposit{
+			ID: id,
+			OutPoint: wire.OutPoint{
+				Hash: chainhash.Hash{seed},
+			},
+			Value:                100_000,
+			TimeOutSweepPkScript: []byte{0x00, 0x14, seed},
+			OnchainCost:          knownCost,
+		}
+		require.NoError(t, depositStore.CreateDeposit(ctx, d))
+
+		swap := StaticAddressLoopIn{
+			SwapHash:                lntypes.Hash{seed},
+			SwapPreimage:            lntypes.Preimage{seed},
+			DepositOutpoints:        []string{d.OutPoint.String()},
+			Deposits:                []*deposit.Deposit{d},
+			ClientPubkey:            clientPubKey,
+			ServerPubkey:            serverPubKey,
+			HtlcTimeoutSweepAddress: addr,
+		}
+		swap.SetState(SignHtlcTx)
+		require.NoError(t, swapStore.CreateLoopIn(ctx, &swap))
+
+		d.SetState(deposit.SweepHtlcTimeout)
+		require.NoError(t, depositStore.UpdateDeposit(ctx, d))
+
+		// The latest update is the one with the latest timestamp.
+		testClock.SetTime(testClock.Now().Add(time.Second))
+
+		swap.HtlcTimeoutSweepTxHash = sweepTxHash
+		swap.SetState(Failed)
+		require.NoError(t, swapStore.UpdateLoopIn(ctx, &swap))
+
+		return swap.SwapHash
+	}
+
+	swept := createFailedSwap(1, &chainhash.Hash{9})
+	notSwept := createFailedSwap(2, nil)
+
+	swaps, err := swapStore.GetStaticAddressLoopInSwapsByStates(
+		ctx, AllStates,
+	)
+	require.NoError(t, err)
+	require.Len(t, swaps, 2)
+
+	costs := make(map[lntypes.Hash]OnchainCost, len(swaps))
+	for _, swp := range swaps {
+		deposits, err := swapStore.DepositsForSwap(ctx, swp.SwapHash)
+		require.NoError(t, err)
+
+		costs[swp.SwapHash] = SwapOnchainCost(swp, deposits)
+	}
+
+	require.Equal(t, OnchainCost{
+		Amount: 1_550, Status: OnchainCostComplete,
+	}, costs[swept])
+	require.Equal(
+		t, OnchainCost{Status: OnchainCostUnknown}, costs[notSwept],
+	)
 }

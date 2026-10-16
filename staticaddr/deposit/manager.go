@@ -101,6 +101,11 @@ type Manager struct {
 
 	// currentHeight stores the currently best known block height.
 	currentHeight atomic.Uint32
+
+	// onchainCostLookupFailing is true while the on-chain cost lookups keep
+	// failing, so that only the first failure is logged as a warning. It is
+	// only used by the on-chain cost loop.
+	onchainCostLookupFailing bool
 }
 
 // NewManager creates a new deposit manager.
@@ -165,6 +170,10 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 	// Start the deposit notifier.
 	m.pollDeposits(ctx)
+
+	// Determine the on-chain cost of new deposits in a separate loop, so
+	// that a slow wallet lookup doesn't delay reconciling deposits.
+	m.pollOnchainCosts(ctx)
 
 	// Communicate to the caller that the address manager has completed its
 	// initialization.
@@ -307,6 +316,137 @@ func (m *Manager) pollDeposits(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// pollOnchainCosts periodically determines the on-chain cost of deposits that
+// don't have one yet: new deposits, deposits found before an upgrade to a
+// version that records the cost, and deposits whose funding transaction
+// couldn't be looked up before. It runs separately from the deposit
+// reconciliation, so a deposit is retained and usable while its cost is still
+// undetermined. It starts right away, so that the deposits loaded at startup
+// don't wait for the first tick.
+func (m *Manager) pollOnchainCosts(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(PollInterval)
+		defer ticker.Stop()
+
+		m.determineOnchainCosts(ctx)
+		for {
+			select {
+			case <-ticker.C:
+				m.determineOnchainCosts(ctx)
+
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// determineOnchainCosts determines the on-chain cost of the deposits that
+// don't have one yet, with one lookup per funding transaction. Deposits funded
+// by the same transaction split its fee by value. It does nothing while lnd
+// isn't synced to the chain, since lnd might not know a wallet transaction yet,
+// and stops at the first funding transaction it can't look up, since lnd might
+// be unavailable and every further lookup would wait for its timeout. The
+// deposits it didn't determine are tried again at the next call.
+func (m *Manager) determineOnchainCosts(ctx context.Context) {
+	m.mu.Lock()
+	deposits := make([]*Deposit, 0, len(m.deposits))
+	for _, d := range m.deposits {
+		deposits = append(deposits, d)
+	}
+	m.mu.Unlock()
+
+	// Check the costs without holding m.mu, since a deposit's lock can be
+	// held for a while, for example during a state transition.
+	var pending []*Deposit
+	for _, d := range deposits {
+		if d.GetOnchainCost().Status == OnchainCostUndetermined {
+			pending = append(pending, d)
+		}
+	}
+
+	if len(pending) == 0 || m.cfg.LightningClient == nil {
+		return
+	}
+
+	info, err := m.cfg.LightningClient.GetInfo(ctx)
+	if err != nil {
+		log.Debugf("Unable to get lnd info, determining the on-chain "+
+			"cost of %d deposits later: %v", len(pending), err)
+
+		return
+	}
+	if !info.SyncedToChain {
+		log.Debugf("lnd isn't synced to the chain, determining the "+
+			"on-chain cost of %d deposits once it is", len(pending))
+
+		return
+	}
+
+	costs, lookupErr := onchainCosts(
+		ctx, m.cfg.WalletKit, m.isKnownDeposit, pending,
+	)
+
+	byID := make(map[ID]OnchainCost, len(costs))
+	for _, d := range pending {
+		if cost, ok := costs[d.OutPoint]; ok {
+			byID[d.ID] = cost
+		}
+	}
+
+	// Nothing is stored while loopd shuts down. The costs are looked up
+	// again at the next start.
+	if ctx.Err() != nil {
+		return
+	}
+
+	if len(byID) > 0 {
+		err = m.cfg.Store.SetOnchainCosts(ctx, byID)
+		if err != nil {
+			log.Warnf("Unable to store the on-chain cost of "+
+				"deposits: %v", err)
+
+			return
+		}
+
+		for _, d := range pending {
+			if cost, ok := costs[d.OutPoint]; ok {
+				d.Lock()
+				d.OnchainCost = cost
+				d.Unlock()
+			}
+		}
+	}
+
+	// A lookup that keeps failing is tried again at every call, so only
+	// the first failure is logged as a warning.
+	if lookupErr == nil {
+		m.onchainCostLookupFailing = false
+
+		return
+	}
+
+	logf := log.Warnf
+	if m.onchainCostLookupFailing {
+		logf = log.Debugf
+	}
+	m.onchainCostLookupFailing = true
+	logf("Determined the on-chain cost of %d of %d deposits, trying the "+
+		"rest again later: %v", len(byID), len(pending), lookupErr)
+}
+
+// isKnownDeposit reports whether the outpoint is a deposit the manager knows.
+// The manager keeps all deposits ever made to the static address, including
+// spent ones.
+func (m *Manager) isKnownDeposit(outpoint wire.OutPoint) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, ok := m.deposits[outpoint]
+
+	return ok
 }
 
 // EnsureDepositsFresh reconciles the cached active deposit set with lnd's

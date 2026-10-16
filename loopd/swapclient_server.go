@@ -2143,15 +2143,7 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 	for _, w := range withdrawals {
 		deposits := make([]*looprpc.Deposit, 0, len(w.Deposits))
 		for _, d := range w.Deposits {
-			deposits = append(deposits, &looprpc.Deposit{
-				Id:                 d.ID[:],
-				Outpoint:           d.OutPoint.String(),
-				Value:              int64(d.Value),
-				ConfirmationHeight: d.GetConfirmationHeight(),
-				State: toClientDepositState(
-					d.GetState(),
-				),
-			})
+			deposits = append(deposits, toClientWithdrawalDeposit(d))
 		}
 		withdrawal := &looprpc.StaticAddressWithdrawal{
 			TxId:                       w.TxID.String(),
@@ -2167,6 +2159,21 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 	return &looprpc.ListStaticAddressWithdrawalResponse{
 		Withdrawals: clientWithdrawals,
 	}, nil
+}
+
+// toClientWithdrawalDeposit converts a deposit of a withdrawal.
+func toClientWithdrawalDeposit(d *deposit.Deposit) *looprpc.Deposit {
+	onchainCost, onchainCostStatus := depositOnchainCost(d)
+
+	return &looprpc.Deposit{
+		Id:                 d.ID[:],
+		Outpoint:           d.OutPoint.String(),
+		Value:              int64(d.Value),
+		ConfirmationHeight: d.GetConfirmationHeight(),
+		State:              toClientDepositState(d.GetState()),
+		CostOnchain:        onchainCost,
+		CostOnchainStatus:  onchainCostStatus,
+	}
 }
 
 // ListStaticAddressSwaps returns a list of all swaps that are currently pending
@@ -2244,6 +2251,9 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 					int64(lndInfo.BlockHeight),
 				)
 
+				onchainCost, onchainCostStatus :=
+					depositOnchainCost(d)
+
 				pd := &looprpc.Deposit{
 					Id:                 d.ID[:],
 					State:              state,
@@ -2252,6 +2262,8 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 					ConfirmationHeight: confirmationHeight,
 					SwapHash:           d.SwapHash[:],
 					BlocksUntilExpiry:  blocksUntilExpiry,
+					CostOnchain:        onchainCost,
+					CostOnchainStatus:  onchainCostStatus,
 				}
 				protoDeposits = append(protoDeposits, pd)
 			}
@@ -2264,6 +2276,12 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			swapAmount = swp.SelectedAmount
 		}
 		costServer := staticAddressLoopInSwapServerCost(swp)
+		onchainCost := loopin.SwapOnchainCost(
+			swp, depositsBySwap[swp.SwapHash],
+		)
+		costOnchain, costOnchainStatus := toClientOnchainCost(
+			onchainCost,
+		)
 		initiationTime := staticAddressLoopInTimestamp(swp.InitiationTime)
 		lastUpdateTime := staticAddressLoopInTimestamp(swp.LastUpdateTime)
 		swap := &looprpc.StaticAddressLoopInSwap{
@@ -2276,6 +2294,8 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 			InitiationTime:               initiationTime,
 			LastUpdateTime:               lastUpdateTime,
 			CostServer:                   costServer,
+			CostOnchain:                  costOnchain,
+			CostOnchainStatus:            costOnchainStatus,
 		}
 
 		clientSwaps = append(clientSwaps, swap)
@@ -2297,10 +2317,8 @@ func staticAddressLoopInTimestamp(t time.Time) int64 {
 }
 
 // staticAddressLoopInSwapServerCost returns the paid server cost using the
-// legacy ListSwaps cost semantics. Static loop-ins currently only persist the
-// accepted quote fee, and that fee is paid once the swap invoice settles.
-// Timeout-path miner fees are not persisted, so cost_onchain and cost_offchain
-// remain zero instead of returning an estimate as an actual cost.
+// legacy ListSwaps cost semantics. Static loop-ins only persist the accepted
+// quote fee, and that fee is paid once the swap invoice settles.
 func staticAddressLoopInSwapServerCost(swp *loopin.StaticAddressLoopIn) int64 {
 	switch swp.GetState() {
 	case loopin.PaymentReceived, loopin.Succeeded,
@@ -2310,6 +2328,47 @@ func staticAddressLoopInSwapServerCost(swp *loopin.StaticAddressLoopIn) int64 {
 
 	default:
 		return 0
+	}
+}
+
+// toClientOnchainCost converts the on-chain cost of a static loop-in.
+func toClientOnchainCost(cost loopin.OnchainCost) (int64,
+	looprpc.OnchainCostStatus) {
+
+	switch cost.Status {
+	case loopin.OnchainCostPartial:
+		return int64(cost.Amount),
+			looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_PARTIAL
+
+	case loopin.OnchainCostComplete:
+		return int64(cost.Amount),
+			looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_COMPLETE
+
+	case loopin.OnchainCostPending:
+		return int64(cost.Amount),
+			looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_PENDING
+
+	default:
+		return 0, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN
+	}
+}
+
+// depositOnchainCost returns the on-chain cost of a deposit and whether it is
+// known, unknown or not determined yet.
+func depositOnchainCost(d *deposit.Deposit) (int64,
+	looprpc.OnchainCostStatus) {
+
+	cost := d.GetOnchainCost()
+	switch cost.Status {
+	case deposit.OnchainCostKnown:
+		return int64(cost.Amount),
+			looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_COMPLETE
+
+	case deposit.OnchainCostUnknown:
+		return 0, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN
+
+	default:
+		return 0, looprpc.OnchainCostStatus_ONCHAIN_COST_STATUS_PENDING
 	}
 }
 
@@ -2353,13 +2412,19 @@ func (s *swapClientServer) staticAddressLoopInSwapInfo(_ context.Context,
 		return nil, fmt.Errorf("error getting chain params")
 	}
 
-	return staticAddressLoopInSwapInfoWithChainParams(swp, chainParams)
+	// The deposits of a swap loaded from the store are the ones mapped to
+	// it.
+	return staticAddressLoopInSwapInfoWithChainParams(
+		swp, swp.Deposits, chainParams,
+	)
 }
 
 // staticAddressLoopInSwapInfoWithChainParams converts one static-address
 // loop-in into swap info, including its reconstructed V2 P2WSH HTLC address.
+// The on-chain cost is the cost of the given deposits, which must be the ones
+// mapped to the swap.
 func staticAddressLoopInSwapInfoWithChainParams(
-	swp *loopin.StaticAddressLoopIn,
+	swp *loopin.StaticAddressLoopIn, deposits []*deposit.Deposit,
 	chainParams *chaincfg.Params) (*loop.SwapInfo, error) {
 
 	htlcAddress, err := staticAddressLoopInHtlcAddress(swp, chainParams)
@@ -2386,15 +2451,21 @@ func staticAddressLoopInSwapInfoWithChainParams(
 		lastUpdate = swp.InitiationTime
 	}
 
+	onchainCost, _ := toClientOnchainCost(
+		loopin.SwapOnchainCost(swp, deposits),
+	)
+
 	return &loop.SwapInfo{
 		SwapStateData: loopdb.SwapStateData{
-			// Mirror ListStaticAddressSwaps by reporting only the persisted
-			// client-visible server cost. On-chain and off-chain costs stay
-			// zero until static loop-ins persist real fee data.
+			// Mirror ListStaticAddressSwaps by reporting the
+			// client-visible costs. An unknown on-chain cost is
+			// reported as zero, a partial or pending one as its
+			// known part, and off-chain costs stay zero.
 			Cost: loopdb.SwapCost{
 				Server: btcutil.Amount(
 					staticAddressLoopInSwapServerCost(swp),
 				),
+				Onchain: btcutil.Amount(onchainCost),
 			},
 		},
 		SwapContract: loopdb.SwapContract{
@@ -2717,6 +2788,7 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 
 		hash := d.Hash
 		outpoint := wire.NewOutPoint(&hash, d.Index).String()
+		onchainCost, onchainCostStatus := depositOnchainCost(d)
 		deposit := &looprpc.Deposit{
 			Id: d.ID[:],
 			State: toClientDepositState(
@@ -2726,6 +2798,8 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 			Value:              int64(d.Value),
 			ConfirmationHeight: d.GetConfirmationHeight(),
 			SwapHash:           swapHash,
+			CostOnchain:        onchainCost,
+			CostOnchainStatus:  onchainCostStatus,
 		}
 
 		clientDeposits = append(clientDeposits, deposit)

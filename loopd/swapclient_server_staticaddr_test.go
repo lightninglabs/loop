@@ -92,6 +92,13 @@ func (s *staticAddrDepositStore) AllDeposits(context.Context) (
 	return s.allDeposits, nil
 }
 
+// SetOnchainCosts implements deposit.Store for static address server tests.
+func (s *staticAddrDepositStore) SetOnchainCosts(context.Context,
+	map[deposit.ID]deposit.OnchainCost) error {
+
+	return nil
+}
+
 type staticAddrTestAddressManager struct{}
 
 func (s *staticAddrTestAddressManager) GetStaticAddressParameters(

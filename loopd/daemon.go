@@ -716,11 +716,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 		return err
 	}
-	statusUpdater := &staticLoopInStatusUpdater{
-		statusChan:  statusChan,
-		mainCtx:     d.mainCtx,
-		chainParams: d.lnd.ChainParams,
-	}
+	statusUpdater := newStaticLoopInStatusUpdater(
+		statusChan, d.mainCtx, d.lnd.ChainParams,
+		staticAddressLoopInStore,
+	)
 
 	staticLoopInManager, err = loopin.NewManager(&loopin.Config{
 		Server:                               staticAddressClient,

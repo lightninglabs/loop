@@ -20,6 +20,8 @@ type Deposit struct {
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
 	SwapHash              []byte
+	OnchainCost           int64
+	OnchainCostKnown      sql.NullBool
 }
 
 type DepositUpdate struct {

@@ -201,6 +201,13 @@ func (s *mockStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	return args.Get(0).([]*Deposit), args.Error(1)
 }
 
+// SetOnchainCosts does nothing.
+func (s *mockStore) SetOnchainCosts(context.Context,
+	map[ID]OnchainCost) error {
+
+	return nil
+}
+
 type MockChainNotifier struct {
 	mock.Mock
 }
@@ -292,6 +299,23 @@ func TestManager(t *testing.T) {
 	case <-time.After(defaultTimeout):
 		t.Fatal("manager timed out starting")
 	}
+
+	// The manager determines the on-chain cost of the recovered deposit
+	// right away. The wallet doesn't have its funding transaction, so the
+	// cost is unknown.
+	require.Eventually(t, func() bool {
+		testContext.manager.mu.Lock()
+		defer testContext.manager.mu.Unlock()
+
+		for _, d := range testContext.manager.deposits {
+			cost := d.GetOnchainCost()
+			if cost.Status != OnchainCostUnknown {
+				return false
+			}
+		}
+
+		return len(testContext.manager.deposits) == 1
+	}, defaultTimeout, 10*time.Millisecond)
 
 	// Notify about the last block before the expiry.
 	testContext.blockChan <- int32(
