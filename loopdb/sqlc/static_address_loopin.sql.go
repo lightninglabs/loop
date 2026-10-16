@@ -424,7 +424,7 @@ func (q *Queries) InsertStaticAddressLoopIn(ctx context.Context, arg InsertStati
 	return err
 }
 
-const insertStaticAddressMetaUpdate = `-- name: InsertStaticAddressMetaUpdate :exec
+const insertStaticAddressMetaUpdate = `-- name: InsertStaticAddressMetaUpdate :one
 INSERT INTO static_address_swap_updates (
     swap_hash,
     update_state,
@@ -434,6 +434,7 @@ INSERT INTO static_address_swap_updates (
      $2,
      $3
  )
+RETURNING id
 `
 
 type InsertStaticAddressMetaUpdateParams struct {
@@ -442,9 +443,11 @@ type InsertStaticAddressMetaUpdateParams struct {
 	UpdateTimestamp time.Time
 }
 
-func (q *Queries) InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) error {
-	_, err := q.db.ExecContext(ctx, insertStaticAddressMetaUpdate, arg.SwapHash, arg.UpdateState, arg.UpdateTimestamp)
-	return err
+func (q *Queries) InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, insertStaticAddressMetaUpdate, arg.SwapHash, arg.UpdateState, arg.UpdateTimestamp)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
 }
 
 const isStored = `-- name: IsStored :one

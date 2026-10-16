@@ -865,6 +865,8 @@ func TestLatestLoopInUpdateIsLastInserted(t *testing.T) {
 	}
 	loopIn.SetState(SignHtlcTx)
 	require.NoError(t, swapStore.CreateLoopIn(ctx, loopIn))
+	createdID := loopIn.LastUpdateID
+	require.Positive(t, createdID)
 
 	// An update written before the upgrade in local time two hours east of
 	// UTC has a timestamp two hours later than the updates after it.
@@ -881,6 +883,9 @@ func TestLatestLoopInUpdateIsLastInserted(t *testing.T) {
 	loopIn.SetState(Succeeded)
 	require.NoError(t, swapStore.UpdateLoopIn(ctx, loopIn))
 
+	// The swap's update ids increase, unlike its update times.
+	require.Greater(t, loopIn.LastUpdateID, createdID+1)
+
 	pending, err := swapStore.GetStaticAddressLoopInSwapsByStates(
 		ctx, PendingStates,
 	)
@@ -893,11 +898,13 @@ func TestLatestLoopInUpdateIsLastInserted(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, final, 1)
 	require.Equal(t, Succeeded, final[0].GetState())
+	require.Equal(t, loopIn.LastUpdateID, final[0].LastUpdateID)
 
 	loaded, err := swapStore.GetLoopInByHash(ctx, loopIn.SwapHash)
 	require.NoError(t, err)
 	require.Equal(t, Succeeded, loaded.GetState())
 	require.True(t, now.Add(time.Minute).Equal(loaded.LastUpdateTime))
+	require.Equal(t, loopIn.LastUpdateID, loaded.LastUpdateID)
 }
 
 // TestSqlStoreTimesOutsideUTC tests that the times the store writes read back

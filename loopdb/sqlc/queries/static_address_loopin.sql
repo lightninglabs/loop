@@ -49,7 +49,7 @@ WHERE
         AND $2 = 'accepted'
     );
 
--- name: InsertStaticAddressMetaUpdate :exec
+-- name: InsertStaticAddressMetaUpdate :one
 INSERT INTO static_address_swap_updates (
     swap_hash,
     update_state,
@@ -58,7 +58,8 @@ INSERT INTO static_address_swap_updates (
      $1,
      $2,
      $3
- );
+ )
+RETURNING id;
 
 -- name: GetStaticAddressLoopInSwap :one
 SELECT

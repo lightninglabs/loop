@@ -160,7 +160,11 @@ func TestDepositSwapHashMigration(t *testing.T) {
 				return err
 			}
 
-			return q.InsertStaticAddressMetaUpdate(ctxb, updateArgs)
+			_, err = q.InsertStaticAddressMetaUpdate(
+				ctxb, updateArgs,
+			)
+
+			return err
 		},
 	)
 	require.NoError(t, err)
