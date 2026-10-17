@@ -2122,8 +2122,10 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	}, nil
 }
 
-// ListStaticAddressWithdrawals returns a list of all finalized withdrawal
-// transactions.
+// ListStaticAddressWithdrawals returns a list of all static address
+// withdrawals, including pending withdrawals. Pending withdrawals expose
+// default empty or zero values for fields that are only known after
+// confirmation.
 func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 	_ *looprpc.ListStaticAddressWithdrawalRequest) (
 	*looprpc.ListStaticAddressWithdrawalResponse, error) {
@@ -2141,12 +2143,17 @@ func (s *swapClientServer) ListStaticAddressWithdrawals(ctx context.Context,
 		[]*looprpc.StaticAddressWithdrawal, 0, len(withdrawals),
 	)
 	for _, w := range withdrawals {
+		txID := ""
+		if w.TxID != nil {
+			txID = w.TxID.String()
+		}
+
 		deposits := make([]*looprpc.Deposit, 0, len(w.Deposits))
 		for _, d := range w.Deposits {
 			deposits = append(deposits, toClientWithdrawalDeposit(d))
 		}
 		withdrawal := &looprpc.StaticAddressWithdrawal{
-			TxId:                       w.TxID.String(),
+			TxId:                       txID,
 			Deposits:                   deposits,
 			TotalDepositAmountSatoshis: int64(w.TotalDepositAmount),
 			WithdrawnAmountSatoshis:    int64(w.WithdrawnAmount),
