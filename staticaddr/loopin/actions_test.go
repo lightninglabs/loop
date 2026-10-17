@@ -1086,6 +1086,7 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 		LndClient:           mockLnd.Client,
 		ChainParams:         mockLnd.ChainParams,
 		NotificationManager: notificationMgr,
+		Store:               &mockStore{},
 	}
 
 	f, err := NewFSM(ctx, loopIn, cfg, false)
@@ -2919,6 +2920,7 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 		InvoicesClient: invoicesClient,
 		LndClient:      mockLnd.Client,
 		ChainParams:    mockLnd.ChainParams,
+		Store:          &mockStore{},
 	}
 
 	f, err := NewFSM(ctx, loopIn, cfg, true)

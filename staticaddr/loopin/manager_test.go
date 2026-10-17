@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1395,6 +1396,29 @@ func (s *mockStore) GetLoopInByHash(_ context.Context,
 	}
 	return li, nil
 }
+
+// BatchMapDepositsToSwapHashes maps the deposits to the given swaps, moving
+// them from the swaps they were mapped to before, like the SQL store.
+func (s *mockStore) BatchMapDepositsToSwapHashes(_ context.Context,
+	depositsToHashes map[deposit.ID]lntypes.Hash) error {
+
+	if s.mapIDs == nil {
+		s.mapIDs = make(map[lntypes.Hash][]deposit.ID)
+	}
+	for id, swapHash := range depositsToHashes {
+		for hash, ids := range s.mapIDs {
+			s.mapIDs[hash] = slices.DeleteFunc(
+				ids, func(other deposit.ID) bool {
+					return other == id
+				},
+			)
+		}
+		s.mapIDs[swapHash] = append(s.mapIDs[swapHash], id)
+	}
+
+	return nil
+}
+
 func (s *mockStore) SwapHashesForDepositIDs(_ context.Context,
 	depositIDs []deposit.ID) (map[lntypes.Hash][]deposit.ID, error) {
 

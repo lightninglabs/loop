@@ -80,6 +80,11 @@
   first-confirmation heights while lnd is catching up, preventing premature
   expiry decisions from mismatched wallet and block-notification heights.
 
+* A static address loop-in whose deposits were given back after its payment
+  deadline, and then selected by another swap, now maps them back to itself
+  when its htlc confirms after all and it sweeps the htlc timeout path.
+  Before, the deposits stayed mapped to the other swap.
+
 * Rapid reservation funding confirmations no longer cause initialization to
   time out while waiting for an intermediate client state.
 
