@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 
@@ -238,6 +239,11 @@ func (m *Manager) OpenChannel(ctx context.Context,
 			"cannot be set at the same time")
 	}
 
+	// The conversion to sat/kvB below must fit its signed amount type.
+	if req.SatPerVbyte > math.MaxInt64/1000 {
+		return nil, fmt.Errorf("fee rate is too high")
+	}
+
 	// Validate PSBT-incompatible flags early, before locking deposits.
 	// We accept MinConfs=0 here because that's the proto default for unset
 	// values and normalize to defaultUtxoMinConf later.
@@ -328,6 +334,10 @@ func (m *Manager) OpenChannel(ctx context.Context,
 					"deposits: %w", err)
 			}
 		}
+	}
+
+	if len(deposits) == 0 {
+		return nil, ErrOpeningChannelUnavailableDeposits
 	}
 
 	for _, d := range deposits {
