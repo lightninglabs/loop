@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/require"
@@ -62,6 +63,20 @@ func newOnchainCostManager(t *testing.T, store *SqlStore, getter *fakeTxGetter,
 	addrParams := newOnchainCostAddress(t, store)
 	addressManager := new(mockAddressManager)
 	addressManager.On("GetParameters", testStaticPkScript).Return(addrParams)
+	addressManager.On("GetParameters", testOtherPkScript).Return(nil)
+
+	otherParams := *addrParams
+	otherParams.ID = 0
+	otherParams.PkScript = testStaticPkScript2
+	otherParams.KeyLocator.Index++
+	addressStore := address.NewSqlStore(store.baseDB)
+	require.NoError(t, addressStore.CreateStaticAddress(t.Context(), &otherParams))
+	otherID, err := addressStore.GetStaticAddressID(
+		t.Context(), otherParams.PkScript,
+	)
+	require.NoError(t, err)
+	otherParams.ID = otherID
+	addressManager.On("GetParameters", testStaticPkScript2).Return(&otherParams)
 
 	return NewManager(&ManagerConfig{
 		LightningClient: lightningClient,
@@ -221,6 +236,30 @@ func TestDetermineOnchainCosts(t *testing.T) {
 			require.Equal(t, knownCost(500), earlier.GetOnchainCost())
 		})
 	}
+}
+
+// TestDetermineOnchainCostsIncrementalDiscovery checks that a retained deposit
+// is charged its final share before a sibling to another address is retained.
+func TestDetermineOnchainCostsIncrementalDiscovery(t *testing.T) {
+	tx := fundingTx(1, otherOut(500_000), staticOut(100_000),
+		staticOut2(100_000))
+	getter := newFakeTxGetter(walletTx(tx, 1_001, true))
+	store := newOnchainCostStore(t)
+	m := newOnchainCostManager(t, store, getter,
+		syncedTestLightningClient(100))
+
+	first, err := m.createNewDeposit(t.Context(), utxoOf(tx, 1), 0)
+	require.NoError(t, err)
+	m.determineOnchainCosts(t.Context())
+	require.Equal(t, knownCost(501), storedCost(t, store, first))
+
+	second, err := m.createNewDeposit(t.Context(), utxoOf(tx, 2), 0)
+	require.NoError(t, err)
+	m.determineOnchainCosts(t.Context())
+	require.Equal(t, knownCost(501), storedCost(t, store, first))
+	require.Equal(t, knownCost(500), storedCost(t, store, second))
+	require.Equal(t, btcutil.Amount(1_001),
+		first.GetOnchainCost().Amount+second.GetOnchainCost().Amount)
 }
 
 // TestDetermineOnchainCostsOneLookupPerTx tests that the deposits of one
