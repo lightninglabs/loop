@@ -41,4 +41,20 @@
 // contract's HTLC output and apply the Taproot Assets v0.8.5 proof activation
 // rules. Commitment proofs alone show where an asset is anchored, not that
 // this contract's HTLC controls it.
+//
+// VerifyProofFile checks the running tapd and requires the shared on-chain
+// swap version floor, including when re-verifying an existing contract.
+// Pure contract and claim/refund witness construction stay available for
+// recovery with verified proofs. Callers must gate new swap offers and funding
+// outside this kit, and recovery must still construct transfers compliant with
+// the network activation rules. This package supplies no recovery state
+// machine.
+//
+// Consuming main Go modules must select the bounded TLV decoder themselves:
+// replace github.com/lightningnetwork/lnd/tlv with
+// github.com/lightninglabs/taproot-assets/third_party/lnd/tlv at
+// v0.0.0-20261016193543-734ce74dd1e8, or use
+// github.com/lightningnetwork/lnd/tlv v1.4.1 with a compatible newer stack.
+// Replacements in dependencies do not propagate to consumers. The tapd
+// runtime check does not validate the local proof decoder.
 package htlc

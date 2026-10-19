@@ -33,6 +33,8 @@ import (
 // AddressProofClient is the narrow tapd boundary needed to create deposit
 // addresses and export their proofs.
 type AddressProofClient interface {
+	policy.TapdInfoClient
+
 	NewAddr(context.Context, *taprpc.NewAddrRequest,
 		...grpc.CallOption) (*taprpc.Addr, error)
 	ExportProof(context.Context, *taprpc.ExportProofRequest,
@@ -42,6 +44,8 @@ type AddressProofClient interface {
 // ProofVerifier is the narrow tapd boundary needed to verify a complete proof
 // file against tapd's chain backend and asset transition verifier.
 type ProofVerifier interface {
+	policy.TapdInfoClient
+
 	VerifyProof(context.Context, *taprpc.ProofFile,
 		...grpc.CallOption) (*taprpc.VerifyProofResponse, error)
 }
@@ -265,6 +269,7 @@ func (d *Kit) encodedTimeoutPathSibling() ([]byte, error) {
 // does the HTLC funding template; legacy proofs remain accepted when spending.
 // Trusted Genesis and GroupKey metadata must be supplied to NewKit. The RPC
 // response is validated against the contract and returned as an owned copy.
+// The connected tapd must satisfy the shared on-chain swap version floor.
 func (d *Kit) NewAddr(ctx context.Context, client AddressProofClient,
 	amount uint64) (*taprpc.Addr, error) {
 
@@ -284,6 +289,10 @@ func (d *Kit) NewAddr(ctx context.Context, client AddressProofClient,
 	}
 	tapScriptKey, _, _, _, err := htlc.CreateOpTrueLeaf()
 	if err != nil {
+		return nil, err
+	}
+
+	if err := policy.RequireOnchainSwapTapd(ctx, client); err != nil {
 		return nil, err
 	}
 
@@ -312,6 +321,7 @@ func (d *Kit) NewAddr(ctx context.Context, client AddressProofClient,
 // Asset and address versions are pinned rather than relying on RPC defaults.
 // Trusted Genesis and GroupKey metadata must be supplied to NewKit. Both the
 // encoded address and expanded RPC fields are validated before returning.
+// The connected tapd must satisfy the shared on-chain swap version floor.
 func (d *Kit) NewHtlcAddr(ctx context.Context, client AddressProofClient,
 	amount uint64, swapHash lntypes.Hash, csvExpiry uint32) (
 	*taprpc.Addr, *htlc.SwapKit, error) {
@@ -344,6 +354,10 @@ func (d *Kit) NewHtlcAddr(ctx context.Context, client AddressProofClient,
 	}
 	tapScriptKey, _, _, _, err := htlc.CreateOpTrueLeaf()
 	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := policy.RequireOnchainSwapTapd(ctx, client); err != nil {
 		return nil, nil, err
 	}
 
@@ -600,7 +614,10 @@ func (d *Kit) AnchorRootFromProofCommitment(depositProof *proof.Proof,
 // verify the proof file. It binds the terminal proof to the expected deposit
 // outpoint and amount, requires it to describe the complete anchor commitment,
 // and returns the complete anchor Taproot Merkle root. The caller must still
-// enforce confirmation depth and check that the outpoint is unspent.
+// enforce confirmation depth and check that the outpoint is unspent. Even
+// when re-verifying an existing swap, untrusted history acceptance requires a
+// tapd that satisfies the shared version floor. Local refund signing remains
+// available with a previously verified proof.
 func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 	proofFile *taprpc.ProofFile, expectedOutpoint *wire.OutPoint,
 	expectedAmount uint64) ([]byte, error) {
@@ -625,6 +642,10 @@ func (d *Kit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 	if err := policy.CheckProofFileSize(rawProof); err != nil {
 		return nil, fmt.Errorf("invalid deposit proof file: %w", err)
 	}
+	if err := policy.RequireOnchainSwapTapd(ctx, verifier); err != nil {
+		return nil, err
+	}
+
 	proofFileCopy := &taprpc.ProofFile{
 		RawProofFile: bytes.Clone(rawProof),
 		GenesisPoint: proofFile.GenesisPoint,

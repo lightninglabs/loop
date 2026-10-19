@@ -733,6 +733,8 @@ func (s *SwapKit) validateProof(assetProof *proof.Proof) ([]byte, error) {
 // ProofVerifier is the narrow tapd boundary needed to verify a complete proof
 // file against tapd's chain backend and asset transition verifier.
 type ProofVerifier interface {
+	policy.TapdInfoClient
+
 	VerifyProof(context.Context, *taprpc.ProofFile,
 		...grpc.CallOption) (*taprpc.VerifyProofResponse, error)
 }
@@ -745,7 +747,10 @@ var _ ProofVerifier = (taprpc.TaprootAssetsClient)(nil)
 // for every proof, then asks tapd to fully verify the file. The terminal proof
 // must be anchored at the expected outpoint and is bound to this contract by
 // ValidateProof before it is returned. The caller must still enforce
-// confirmation depth and check that the outpoint is unspent.
+// confirmation depth and check that the outpoint is unspent. Even when
+// re-verifying an existing swap, untrusted history acceptance requires a tapd
+// that satisfies the shared version floor. Local claim/refund signing remains
+// available with a previously verified proof.
 func (s *SwapKit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 	proofFile *taprpc.ProofFile, expectedOutpoint *wire.OutPoint) (
 	*proof.Proof, error) {
@@ -766,6 +771,10 @@ func (s *SwapKit) VerifyProofFile(ctx context.Context, verifier ProofVerifier,
 	rawProof := proofFile.RawProofFile
 	if err := policy.CheckProofFileSize(rawProof); err != nil {
 		return nil, fmt.Errorf("invalid HTLC proof file: %w", err)
+	}
+
+	if err := policy.RequireOnchainSwapTapd(ctx, verifier); err != nil {
+		return nil, err
 	}
 
 	// Check and verify a private copy, so the caller's buffer cannot change
