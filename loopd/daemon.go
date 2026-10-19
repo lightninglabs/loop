@@ -719,6 +719,17 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
+	// Map the looped-in deposits to the paid swap that selected them, if
+	// they are mapped to another swap.
+	err = loopin.MigrateRepairLoopedInDepositSwapHash(
+		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
+	)
+	if err != nil {
+		errorf("Looped-in deposit swap hash repair failed: %v", err)
+
+		return err
+	}
+
 	// Run the selected amount migration.
 	err = loopin.MigrateSelectedSwapAmount(
 		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
