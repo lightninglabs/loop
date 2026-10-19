@@ -68,6 +68,11 @@
   listed under those loop-ins and the first loop-in's on-chain cost was
   missing. loopd also repairs existing deposits at startup.
 
+* A looped-in static address deposit that an earlier, failed loop-in had
+  selected is now linked to the loop-in that spent it. It stayed linked
+  to the failed loop-in, so the loop-in that spent it listed no deposits
+  and reported an unknown on-chain cost.
+
 #### Maintenance
 
 * Update the OpenTelemetry Go SDK from v1.45.0 to v1.47.0 in Loop and
