@@ -398,7 +398,10 @@ func (m *Manager) determineOnchainCosts(ctx context.Context) {
 	}
 
 	costs, lookupErr := onchainCosts(
-		ctx, m.cfg.WalletKit, m.isKnownDeposit, pending,
+		ctx, m.cfg.WalletKit, m.isKnownDeposit,
+		func(pkScript []byte) bool {
+			return m.cfg.AddressManager.GetParameters(pkScript) != nil
+		}, pending,
 	)
 
 	byID := make(map[ID]OnchainCost, len(costs))
