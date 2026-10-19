@@ -92,7 +92,9 @@ func newTransferProof(t *testing.T, fixture *witnessFixture) *proof.Proof {
 
 // localProofVerifier runs tapd's proof-file verification path with only chain
 // lookups mocked; commitment and asset VM verification remain real.
-type localProofVerifier struct{}
+type localProofVerifier struct {
+	supportedTapdClient
+}
 
 // VerifyProof verifies a decoded file with the upstream proof verifier.
 func (localProofVerifier) VerifyProof(ctx context.Context,

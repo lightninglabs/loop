@@ -13,6 +13,16 @@
 
 #### Breaking Changes
 
+* Shared asset kit RPC interfaces now require `GetInfo` to check the running
+  tapd before address creation and full-history proof acceptance. Custom RPC
+  adapters must forward this method; integrations using other APIs can call
+  `assets.RequireOnchainSwapTapd` before offering or funding a new swap.
+
+* `SwapKit.CreateHtlcVpkt` now returns a non-interactive funding template that
+  matches V1 HTLC addresses for exact-value and change sends. Integrations
+  using the original interactive template must explicitly call
+  `CreateInteractiveHtlcVpkt` and validate the actual anchor proof.
+
 * Shared deposit kits now require trusted asset genesis metadata, and the group
   key for grouped assets, when creating or validating addresses. Proof-only
   operations continue to accept kits constructed with just the asset ID.
@@ -31,21 +41,44 @@
   `AnchorRootFromProofCommitment` for previously verified proofs, or
   `VerifyProofFile` to verify a complete history and bind the deposit contract.
 
-* `SwapKit.CreateHtlcVpkt` now returns a non-interactive funding template that
-  matches V1 HTLC addresses for exact-value and change sends. Integrations
-  using the original interactive template must explicitly call
-  `CreateInteractiveHtlcVpkt` and validate the actual anchor proof.
-
-* Shared asset HTLC witness builders now require complete, caller-approved
-  virtual transfers. Construct transfers with `sweep.NewTransfer` to snapshot
-  the approved Bitcoin output values, scripts and order before signing.
-
 #### Bug Fixes
 
-* Shared Taproot Asset sweep packets now preserve the destination address
-  version and use the required non-interactive split-root layout. Every input's
-  group key must match the destination address, so the recipient's Bitcoin
-  script matches the address.
+* Select Taproot Assets' bounded TLV decoder in the consuming modules so a
+  malformed asset proof returns an error before allocating from attacker-supplied
+  TLV lengths.
+
+* Shared asset sweep signing now requires Bitcoin locktimes and input sequences
+  to enforce asset timelocks, preventing anchors from confirming before their
+  asset transitions are valid while preserving existing signatures.
+
+* Shared asset HTLC proof acceptance now binds the proof to the contract's
+  HTLC output. `SwapKit.ValidateProof` checks the anchor's internal key,
+  tapscript sibling and output script, and `GetPkScriptFromProof` now rejects
+  proofs anchored anywhere else, so a funder cannot pass off an output it
+  controls alone as the HTLC.
+
+* Shared asset HTLCs can now be accepted from a complete proof file with
+  `SwapKit.VerifyProofFile`, which rejects histories without genesis
+  provenance, bounds the nesting depth and decoded size of additional inputs,
+  and has tapd verify the file. HTLC proof acceptance also enforces the
+  Taproot Assets v0.8.5 proof activation rules, rejecting transfers anchored
+  from the activation height without the proofs those rules require.
+
+* Shared-kit address creation and complete HTLC/deposit proof acceptance now
+  check the running tapd and require v0.8.6 or later. The floor covers v0.8.5's
+  proof activation and spender commitments plus v0.8.6's invalid-internal-key
+  proof verification fix. Historical funding confirmed before activation is
+  still accepted by an upgraded verifier. Local claim/refund witness builders
+  remain available, but applications must construct compliant new transfers
+  during recovery; this change does not implement a recovery-only swap manager.
+  Applications must also enforce the floor before offering or funding swaps
+  through APIs outside the kit. Ordinary asset payments keep their existing
+  behavior; asset-channel exits still require the tapd channel migration.
+
+* Shared asset sweep signing now rejects splits whose root asset is not the
+  root locator committed in the split tree, as tapd checks before publishing.
+  The kit could otherwise sign a sweep whose proofs Taproot Assets v0.8.5
+  nodes reject.
 
 * Shared asset sweeps validate asset conservation and Bitcoin output commitments,
   including change, passive assets, and the STXO and spender leaves required by
@@ -75,6 +108,14 @@
   commitment and proof versions in one policy definition. Unknown input proof
   semantics are rejected before commitment reconstruction or verification.
 
+* Shared Taproot Asset sweep packets now preserve the destination address
+  version and use the required non-interactive split-root layout. Every input's
+  group key must match the destination address, so the recipient's Bitcoin
+  script matches the address.
+
+* Shared asset HTLC helpers and funding templates now return independent NUMS
+  keys so caller mutations cannot change later contracts.
+
 * Shared deposit and HTLC addresses are now checked against their complete
   contracts, with output keys derived from trusted asset metadata. RPC responses
   must agree with their encoded addresses; shared validators also accept peer
@@ -83,41 +124,6 @@
 * Deposit proof acceptance and refund signing now enforce the expected group
   key when trusted asset metadata is supplied. Proof-only kits without that
   metadata remain supported.
-
-* Shared asset sweep signing now requires Bitcoin locktimes and input sequences
-  to enforce asset timelocks, preventing anchors from confirming before their
-  asset transitions are valid while preserving existing signatures.
-
-* Shared asset HTLC proof acceptance now binds the proof to the contract's
-  HTLC output. `SwapKit.ValidateProof` checks the anchor's internal key,
-  tapscript sibling and output script, and `GetPkScriptFromProof` now rejects
-  proofs anchored anywhere else, so a funder cannot pass off an output it
-  controls alone as the HTLC.
-
-* Shared asset HTLCs can now be accepted from a complete proof file with
-  `SwapKit.VerifyProofFile`, which rejects histories without genesis
-  provenance, bounds the nesting depth and decoded size of additional inputs,
-  and has tapd verify the file. HTLC proof acceptance also enforces the
-  Taproot Assets v0.8.5 proof activation rules, rejecting transfers anchored
-  from the activation height without the proofs those rules require.
-
-* Shared asset sweep signing now rejects splits whose root asset is not the
-  root locator committed in the split tree, as tapd checks before publishing.
-  The kit could otherwise sign a sweep whose proofs Taproot Assets v0.8.5
-  nodes reject.
-
-* Shared asset sweeps validate asset conservation and Bitcoin output commitments,
-  including change, passive assets, and the STXO and spender leaves required by
-  Taproot Assets v0.8.5, before signing. Fresh inclusion and exclusion proofs
-  check the complete Bitcoin transaction, rejecting extra outputs that would
-  invalidate asset proofs.
-
-* Shared asset HTLC helpers and funding templates now return independent NUMS
-  keys so caller mutations cannot change later contracts.
-
-* Select Taproot Assets' bounded TLV decoder in the consuming modules so a
-  malformed asset proof returns an error before allocating from attacker-supplied
-  TLV lengths.
 
 #### Maintenance
 

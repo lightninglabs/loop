@@ -308,6 +308,19 @@ type fileVerifier struct {
 	response *taprpc.VerifyProofResponse
 	err      error
 	calls    int
+	version  string
+}
+
+// GetInfo reports the proof verifier's configured backend version.
+func (v *fileVerifier) GetInfo(context.Context, *taprpc.GetInfoRequest,
+	...grpc.CallOption) (*taprpc.GetInfoResponse, error) {
+
+	version := v.version
+	if version == "" {
+		version = "0.8.6-alpha"
+	}
+
+	return &taprpc.GetInfoResponse{Version: version}, nil
 }
 
 // VerifyProof records the request and returns the configured response.
@@ -322,6 +335,13 @@ func (v *fileVerifier) VerifyProof(context.Context, *taprpc.ProofFile,
 // tapdVerifier runs tapd's proof file verification with only chain lookups
 // mocked; commitment and asset VM verification remain real.
 type tapdVerifier struct{}
+
+// GetInfo reports a supported backend for real proof-verification fixtures.
+func (tapdVerifier) GetInfo(context.Context, *taprpc.GetInfoRequest,
+	...grpc.CallOption) (*taprpc.GetInfoResponse, error) {
+
+	return &taprpc.GetInfoResponse{Version: "0.8.6-alpha"}, nil
+}
 
 // VerifyProof verifies the decoded file with the upstream proof verifier.
 func (tapdVerifier) VerifyProof(ctx context.Context, req *taprpc.ProofFile,
@@ -566,4 +586,37 @@ func TestVerifyProofFile(t *testing.T) {
 	_, err = f.kit.VerifyProofFile(t.Context(), verifier, file, nil)
 	require.ErrorContains(t, err, "expected HTLC outpoint is required")
 	require.Zero(t, verifier.calls)
+}
+
+// TestVerifyProofFileTapdVersion checks that an older backend cannot accept
+// untrusted proof histories, while a supported verifier accepts the same file.
+func TestVerifyProofFileTapdVersion(t *testing.T) {
+	f := newWitnessFixture(t, SuccessSequence)
+	issuance := htlcIssuanceProof(t, f)
+	outpoint := issuance.OutPoint()
+	history := encodeHtlcProofFile(t, *issuance)
+	for _, version := range []string{"0.8.5-alpha", "0.8.6-alpha"} {
+		t.Run(version, func(t *testing.T) {
+			verifier := &fileVerifier{
+				version: version,
+				response: &taprpc.VerifyProofResponse{
+					Valid: true,
+				},
+			}
+			accepted, err := f.kit.VerifyProofFile(
+				t.Context(), verifier, history, &outpoint,
+			)
+			if version == "0.8.5-alpha" {
+				require.ErrorIs(
+					t, err, policy.ErrTapdVersionUnsupported,
+				)
+				require.Nil(t, accepted)
+				require.Zero(t, verifier.calls)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, outpoint, accepted.OutPoint())
+				require.Equal(t, 1, verifier.calls)
+			}
+		})
+	}
 }

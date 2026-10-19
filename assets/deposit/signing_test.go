@@ -81,7 +81,7 @@ func TestTimeoutPreservesFeeSignature(t *testing.T) {
 }
 
 type versionAddressClient struct {
-	AddressProofClient
+	supportedTapdClient
 
 	request *taprpc.NewAddrRequest
 	genesis asset.Genesis

@@ -252,6 +252,8 @@ type localSigner struct {
 }
 
 type proofVerifierMock struct {
+	supportedTapdClient
+
 	response *taprpc.VerifyProofResponse
 	err      error
 	calls    int

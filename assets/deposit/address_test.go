@@ -103,7 +103,7 @@ func marshalTestAddr(a *address.Tap) (*taprpc.Addr, error) {
 }
 
 type addressClient struct {
-	AddressProofClient
+	supportedTapdClient
 
 	genesis  asset.Genesis
 	groupKey *btcec.PublicKey

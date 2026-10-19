@@ -86,6 +86,8 @@ func TestNewKitRejectsCrossPartyAliases(t *testing.T) {
 // mutatingAddressClient retains and modifies request IDs to exercise the
 // ownership boundary between a kit and its RPC client.
 type mutatingAddressClient struct {
+	supportedTapdClient
+
 	ids     [][]byte
 	genesis asset.Genesis
 }

@@ -12,4 +12,19 @@
 // genesis metadata and the expected group key, so output keys can be derived
 // independently of an RPC response. Supplied group metadata also constrains
 // proof acceptance and refunds. Proof-only operations need no such metadata.
+//
+// NewAddr, NewHtlcAddr and VerifyProofFile check the running tapd against the
+// shared on-chain swap version floor. Full-history acceptance during recovery
+// also needs a compliant verifier. Local refund signing stays available with
+// verified proofs, but the caller must construct compliant new transfers and
+// manage recovery. New swap offers and funding outside this kit need the same
+// version check before committing funds.
+//
+// Consuming main Go modules must select the bounded TLV decoder themselves:
+// replace github.com/lightningnetwork/lnd/tlv with
+// github.com/lightninglabs/taproot-assets/third_party/lnd/tlv at
+// v0.0.0-20261016193543-734ce74dd1e8, or use
+// github.com/lightningnetwork/lnd/tlv v1.4.1 with a compatible newer stack.
+// Replacements in dependencies do not propagate to consumers. The tapd
+// runtime check does not validate the local proof decoder.
 package deposit
