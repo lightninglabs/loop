@@ -428,3 +428,109 @@ func TestRepairHtlcTimeoutDepositSwapHashWalletError(t *testing.T) {
 	require.Equal(t, swept, c.owner(reclaimed))
 	require.True(t, c.migrationDone(htlcTimeoutRepairMigrationID))
 }
+
+// TestRepairLoopedInDepositSwapHash tests that the repair maps each looped-in
+// deposit to the paid swap that selected it, and leaves all other deposits as
+// they are.
+func TestRepairLoopedInDepositSwapHash(t *testing.T) {
+	c := newRepairTestContext(t)
+
+	repair := func() {
+		require.NoError(t, MigrateRepairLoopedInDepositSwapHash(
+			c.ctx, c.db, c.depositStore, c.swapStore,
+		))
+	}
+
+	// A failed swap selected the deposit, and a later swap selected it
+	// again and succeeded. The deposit is mapped to the failed swap, as the
+	// deposit swap hash migration did.
+	reused := c.newDeposit(1, deposit.LoopedIn)
+	succeeded := c.newSwap(0xb, Succeeded, false, reused)
+	failed := c.newSwap(0xa, Failed, false, reused)
+
+	// Two paid swaps selected the deposit, so it isn't clear which one
+	// spent it.
+	ambiguous := c.newDeposit(4, deposit.LoopedIn)
+	c.newSwap(0x10, Succeeded, false, ambiguous)
+	c.newSwap(0x11, PaymentReceived, false, ambiguous)
+	ambiguousOwner := c.newSwap(0x16, Failed, false, ambiguous)
+
+	// The deposit wasn't spent, so its swap hash stays.
+	unspent := c.newDeposit(5, deposit.Deposited)
+	c.newSwap(0x12, Succeeded, false, unspent)
+	unspentOwner := c.newSwap(0x13, Failed, false, unspent)
+
+	// The deposit is on the htlc timeout path, so this repair leaves it.
+	reclaimed := c.newDeposit(2, deposit.HtlcTimeoutSwept)
+	c.newSwap(0xc, Succeeded, false, reclaimed)
+	reclaimedOwner := c.newSwap(0xd, Failed, false, reclaimed)
+
+	// The deposit is already mapped to the swap that spent it.
+	correct := c.newDeposit(6, deposit.LoopedIn)
+	c.newSwap(0x14, Failed, false, correct)
+	correctOwner := c.newSwap(0x15, Succeeded, false, correct)
+
+	// Before the repair, the swap that spent the reused deposit has no
+	// deposits, so its cost is unknown.
+	require.Equal(t, failed, c.owner(reused))
+	require.Equal(t, repairTestUnknownCost, c.onchainCost(succeeded))
+	require.Equal(t, repairTestUnknownCost, c.onchainCost(failed))
+
+	repair()
+
+	require.Equal(t, succeeded, c.owner(reused))
+	require.Equal(t, ambiguousOwner, c.owner(ambiguous))
+	require.Equal(t, unspentOwner, c.owner(unspent))
+	require.Equal(t, reclaimedOwner, c.owner(reclaimed))
+	require.Equal(t, correctOwner, c.owner(correct))
+
+	require.Equal(t, repairTestKnownCost, c.onchainCost(succeeded))
+	require.Equal(t, repairTestUnknownCost, c.onchainCost(failed))
+
+	// The repair runs only once, and separately from the htlc timeout
+	// repair.
+	require.True(t, c.migrationDone(loopedInRepairMigrationID))
+	require.False(t, c.migrationDone(htlcTimeoutRepairMigrationID))
+
+	c.remap(reused, failed)
+	repair()
+	require.Equal(t, failed, c.owner(reused))
+}
+
+// TestRepairLoopedInDepositSwapHashAfterMigration runs the deposit swap hash
+// migration on deposits without a swap hash, like a client upgrading from
+// before it, and then the repair.
+func TestRepairLoopedInDepositSwapHashAfterMigration(t *testing.T) {
+	c := newRepairTestContext(t)
+
+	// A failed swap selected each deposit first, then a paid swap
+	// selected it again.
+	reused := c.newDeposit(1, deposit.LoopedIn)
+	failed := c.newSwap(0xa, Failed, false, reused)
+	succeeded := c.newSwap(0xb, Succeeded, false, reused)
+
+	reusedTwo := c.newDeposit(2, deposit.LoopedIn)
+	failedTwo := c.newSwap(0xc, Failed, false, reusedTwo)
+	transitioning := c.newSwap(
+		0xd, SucceededTransitioningFailed, false, reusedTwo,
+	)
+
+	c.unmap(reused)
+	c.unmap(reusedTwo)
+
+	// The migration maps each deposit to the first swap that selected it.
+	require.NoError(t, MigrateDepositSwapHash(
+		c.ctx, c.db, c.depositStore, c.swapStore,
+	))
+	require.Equal(t, failed, c.owner(reused))
+	require.Equal(t, failedTwo, c.owner(reusedTwo))
+	require.Equal(t, repairTestUnknownCost, c.onchainCost(succeeded))
+
+	require.NoError(t, MigrateRepairLoopedInDepositSwapHash(
+		c.ctx, c.db, c.depositStore, c.swapStore,
+	))
+	require.Equal(t, succeeded, c.owner(reused))
+	require.Equal(t, transitioning, c.owner(reusedTwo))
+	require.Equal(t, repairTestKnownCost, c.onchainCost(succeeded))
+	require.Equal(t, repairTestKnownCost, c.onchainCost(transitioning))
+}
