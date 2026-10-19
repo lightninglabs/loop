@@ -63,6 +63,15 @@ var htlcTimeoutDepositStates = []fsm.StateType{
 	deposit.SweepHtlcTimeout, deposit.HtlcTimeoutSwept,
 }
 
+// onOwnHtlcTimeoutPath returns true if the swap wasn't paid and is on its own
+// htlc timeout path, or failed after it published its own htlc timeout sweep.
+func onOwnHtlcTimeoutPath(swp *StaticAddressLoopIn) bool {
+	state := swp.GetState()
+
+	return slices.Contains(htlcTimeoutStates, state) ||
+		(state == Failed && swp.HtlcTimeoutSweepTxHash != nil)
+}
+
 // SwapOnchainCost returns the on-chain cost of a static loop-in: the sum of
 // the on-chain costs of the deposits it spent. The given deposits are the ones
 // mapped to the swap. Each deposit is mapped to the last swap that used it, so
@@ -81,10 +90,8 @@ var htlcTimeoutDepositStates = []fsm.StateType{
 func SwapOnchainCost(swp *StaticAddressLoopIn,
 	deposits []*deposit.Deposit) OnchainCost {
 
-	state := swp.GetState()
-	paid := slices.Contains(paidStates, state)
-	ownHtlcTimeout := slices.Contains(htlcTimeoutStates, state) ||
-		(state == Failed && swp.HtlcTimeoutSweepTxHash != nil)
+	paid := slices.Contains(paidStates, swp.GetState())
+	ownHtlcTimeout := onOwnHtlcTimeoutPath(swp)
 
 	if !paid && !ownHtlcTimeout {
 		return OnchainCost{Status: OnchainCostUnknown}
