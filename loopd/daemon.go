@@ -707,6 +707,18 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		return err
 	}
 
+	// Map the deposits on the htlc timeout path to the swap whose htlc tx
+	// spent them, if they are mapped to another swap.
+	err = loopin.MigrateRepairHtlcTimeoutDepositSwapHash(
+		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
+		d.lnd.Client,
+	)
+	if err != nil {
+		errorf("Deposit swap hash repair failed: %v", err)
+
+		return err
+	}
+
 	// Run the selected amount migration.
 	err = loopin.MigrateSelectedSwapAmount(
 		d.mainCtx, swapDb, depositStore, staticAddressLoopInStore,
