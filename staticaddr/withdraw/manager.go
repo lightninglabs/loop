@@ -627,7 +627,7 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 			"input proofs: %w", err)
 	}
 
-	_, changeAmount, err := CalculateWithdrawalTxValues(
+	withdrawalAmount, changeAmount, err := CalculateWithdrawalTxValues(
 		deposits, btcutil.Amount(selectedWithdrawalAmount), feeRate,
 		withdrawalAddress, commitmentType,
 	)
@@ -638,7 +638,7 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 
 	var changeParams *address.AddressParameters
 	if changeAmount > 0 {
-		changeParams, err = m.cfg.AddressManager.NewChangeAddress(ctx)
+		changeParams, err = m.withdrawalChangeAddress(ctx, deposits)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to create static "+
 				"address change output: %w", err)
@@ -646,9 +646,8 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	}
 
 	withdrawalTx, unsignedPsbt, err := m.createWithdrawalTx(
-		outpoints, deposits, prevOuts,
-		btcutil.Amount(selectedWithdrawalAmount), withdrawalAddress,
-		feeRate, commitmentType, changeParams,
+		outpoints, prevOuts, withdrawalAmount, changeAmount,
+		withdrawalAddress, changeParams,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -707,6 +706,39 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	return finalizedTx, unsignedPsbt, nil
 }
 
+// withdrawalChangeAddress reuses the change address of a pending withdrawal
+// when its fee is bumped. The persisted transaction also preserves this
+// association across restarts, including legacy root-address change.
+func (m *Manager) withdrawalChangeAddress(ctx context.Context,
+	deposits []*deposit.Deposit) (*address.AddressParameters, error) {
+
+	d := deposits[0]
+	d.Lock()
+	var previousTx *wire.MsgTx
+	if d.IsInStateNoLock(deposit.Withdrawing) {
+		previousTx = d.FinalizedWithdrawalTx
+	}
+	d.Unlock()
+
+	if previousTx != nil {
+		if len(previousTx.TxOut) == 0 {
+			return nil, errors.New("previous withdrawal tx has no outputs")
+		}
+		changePkScript, err := withdrawalChangePkScript(
+			previousTx, previousTx.TxOut[0].PkScript,
+			m.cfg.AddressManager,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if changePkScript != nil {
+			return m.cfg.AddressManager.GetParameters(changePkScript), nil
+		}
+	}
+
+	return m.cfg.AddressManager.NewChangeAddress(ctx)
+}
+
 func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 	tx *wire.MsgTx) (bool, error) {
 
@@ -752,14 +784,25 @@ func withdrawalChangePkScript(tx *wire.MsgTx, withdrawalPkScript []byte,
 	}
 
 	var changePkScript []byte
-	for _, txOut := range tx.TxOut {
-		if bytes.Equal(txOut.PkScript, withdrawalPkScript) {
+	for i, txOut := range tx.TxOut {
+		params := addressManager.GetParameters(txOut.PkScript)
+		if params == nil {
+			continue
+		}
+		legacy := int32(params.KeyLocator.Family) ==
+			swap.StaticSingleAddressKeyFamily
+		if !legacy && int32(params.KeyLocator.Family) !=
+			swap.StaticAddressChangeKeyFamily {
+
 			continue
 		}
 
-		params := addressManager.GetParameters(txOut.PkScript)
-		if params == nil || int32(params.KeyLocator.Family) !=
-			swap.StaticAddressChangeKeyFamily {
+		// Legacy withdrawals append root-address change after the
+		// destination. Both outputs may pay the root, so retain the
+		// second output in that case instead of excluding it as a
+		// withdrawal destination.
+		if bytes.Equal(txOut.PkScript, withdrawalPkScript) &&
+			(!legacy || len(tx.TxOut) != 2 || i != 1) {
 
 			continue
 		}
@@ -1011,11 +1054,10 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 }
 
 func (m *Manager) createWithdrawalTx(
-	outpoints []wire.OutPoint, deposits []*deposit.Deposit,
+	outpoints []wire.OutPoint,
 	prevOuts map[wire.OutPoint]*wire.TxOut,
-	selectedWithdrawalAmount btcutil.Amount, withdrawAddr btcutil.Address,
-	feeRate chainfee.SatPerKWeight,
-	commitmentType lnrpc.CommitmentType,
+	withdrawalAmount, changeAmount btcutil.Amount,
+	withdrawAddr btcutil.Address,
 	changeParams *address.AddressParameters) (*wire.MsgTx, []byte, error) {
 
 	// First Create the tx.
@@ -1027,15 +1069,6 @@ func (m *Manager) createWithdrawalTx(
 		msgTx.AddTxIn(&wire.TxIn{
 			PreviousOutPoint: outpoint,
 		})
-	}
-
-	withdrawalAmount, changeAmount, err := CalculateWithdrawalTxValues(
-		deposits, selectedWithdrawalAmount, feeRate,
-		withdrawAddr, commitmentType,
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error calculating funding tx "+
-			"values: %w", err)
 	}
 
 	// For the user's convenience, we check that the change amount is lower

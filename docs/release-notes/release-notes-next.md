@@ -33,6 +33,10 @@
 
 #### Bug Fixes
 
+* Preserve legacy root-address change accounting for static withdrawals that
+  confirm after upgrading to multi-address support, including withdrawals whose
+  destination is the root address.
+
 * Static Address funding fees are split across all static-address outputs,
   including deposits to different addresses not yet discovered by loopd.
 
