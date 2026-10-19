@@ -18,6 +18,10 @@ const (
 	// htlcTimeoutRepairMigrationID is the identifier for the migration
 	// that repairs the swap hashes of deposits on the htlc timeout path.
 	htlcTimeoutRepairMigrationID = "deposit_swap_hash_repair_htlc_timeout"
+
+	// loopedInRepairMigrationID is the identifier for the migration that
+	// repairs the swap hashes of looped-in deposits.
+	loopedInRepairMigrationID = "deposit_swap_hash_repair_looped_in"
 )
 
 // WalletTxLister lists the transactions of the client wallet.
@@ -137,6 +141,80 @@ func MigrateRepairHtlcTimeoutDepositSwapHash(ctx context.Context,
 
 	return applyDepositSwapHashRepair(
 		ctx, db, swapStore, htlcTimeoutRepairMigrationID,
+		depositsToSwapHashes,
+	)
+}
+
+// MigrateRepairLoopedInDepositSwapHash maps each looped-in deposit to the paid
+// swap that selected it. A deposit is left as it is if no single paid swap
+// selected it.
+func MigrateRepairLoopedInDepositSwapHash(ctx context.Context,
+	db loopdb.SwapStore, depositStore *deposit.SqlStore,
+	swapStore *SqlStore) error {
+
+	done, err := db.HasMigration(ctx, loopedInRepairMigrationID)
+	if err != nil {
+		return fmt.Errorf("unable to check migration status: %w", err)
+	}
+	if done {
+		return nil
+	}
+
+	log.Infof("Repairing the swap hashes of looped-in deposits")
+
+	swapsForOutpoint, err := swapsBySelectedOutpoint(ctx, swapStore)
+	if err != nil {
+		return err
+	}
+
+	deposits, err := depositStore.AllDeposits(ctx)
+	if err != nil {
+		return err
+	}
+
+	depositsToSwapHashes := make(map[deposit.ID]lntypes.Hash)
+	for _, d := range deposits {
+		if !d.IsInState(deposit.LoopedIn) {
+			continue
+		}
+
+		// Find the paid swaps that selected the deposit.
+		var spenders []lntypes.Hash
+		for _, swap := range swapsForOutpoint[d.OutPoint] {
+			if !slices.Contains(paidStates, swap.GetState()) {
+				continue
+			}
+
+			// The same swap can be returned twice if two of its
+			// updates have the same time, so count each swap once.
+			if !slices.Contains(spenders, swap.SwapHash) {
+				spenders = append(spenders, swap.SwapHash)
+			}
+		}
+
+		if len(spenders) > 1 {
+			log.Warnf("Unable to tell which of the swaps %v spent "+
+				"deposit %v, leaving it mapped to swap %v",
+				spenders, d.OutPoint, d.SwapHash)
+		}
+		if len(spenders) != 1 {
+			continue
+		}
+
+		// Exactly one swap spent the deposit.
+		spender := spenders[0]
+		if d.SwapHash != nil && *d.SwapHash == spender {
+			continue
+		}
+
+		log.Infof("Mapping deposit %v to swap %v, which spent it, "+
+			"instead of swap %v", d.OutPoint, spender, d.SwapHash)
+
+		depositsToSwapHashes[d.ID] = spender
+	}
+
+	return applyDepositSwapHashRepair(
+		ctx, db, swapStore, loopedInRepairMigrationID,
 		depositsToSwapHashes,
 	)
 }
