@@ -33,6 +33,9 @@
 
 #### Bug Fixes
 
+* Static Address funding fees are split across all static-address outputs,
+  including deposits to different addresses not yet discovered by loopd.
+
 * Static Address funding timeouts, cancellations, and ambiguous wallet RPC or
   transport errors report an unknown funding outcome and identify the address,
   advising users to inspect lnd wallet transactions before retrying.
