@@ -119,19 +119,22 @@ func (s *SqlStore) UpdateWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit, tx *wire.MsgTx, confirmationHeight uint32,
 	changePkScript []byte) error {
 
-	// Populate the optional change amount without assuming a fixed output
-	// count or order, because a confirmed RBF replacement may differ from
-	// the locally constructed transaction.
+	// Match the confirmed change by its script, since an earlier signed fee
+	// variant can confirm instead of the most recently constructed transaction.
+	// Legacy withdrawals can pay both outputs to the root. In that case,
+	// their fixed order identifies the second output as change.
+	sameScriptOutputs := len(tx.TxOut) == 2 &&
+		bytes.Equal(tx.TxOut[0].PkScript, tx.TxOut[1].PkScript)
 	withdrawnAmount, changeAmount := int64(0), int64(0)
-	for _, txOut := range tx.TxOut {
+	for i, txOut := range tx.TxOut {
 		if len(changePkScript) > 0 &&
-			bytes.Equal(changePkScript, txOut.PkScript) {
+			bytes.Equal(changePkScript, txOut.PkScript) &&
+			(!sameScriptOutputs || i == 1) {
 
 			changeAmount += txOut.Value
-			continue
+		} else {
+			withdrawnAmount += txOut.Value
 		}
-
-		withdrawnAmount += txOut.Value
 	}
 
 	updateArgs := sqlc.UpdateWithdrawalParams{
