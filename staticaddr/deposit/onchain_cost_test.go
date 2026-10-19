@@ -1,6 +1,7 @@
 package deposit
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -114,6 +115,12 @@ func knownDeposits(txs ...*wire.MsgTx) func(wire.OutPoint) bool {
 
 		return ok
 	}
+}
+
+// isTestStaticAddress recognizes owned scripts without needing deposit rows.
+func isTestStaticAddress(pkScript []byte) bool {
+	return bytes.Equal(pkScript, testStaticPkScript) ||
+		bytes.Equal(pkScript, testStaticPkScript2)
 }
 
 // fakeTxGetter is a wallet transaction getter for tests. It returns the given
@@ -381,7 +388,7 @@ func TestOnchainCosts(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			costs, err := onchainCosts(
-				t.Context(), getter, isDeposit,
+				t.Context(), getter, isDeposit, isTestStaticAddress,
 				[]*Deposit{tc.deposit},
 			)
 			require.NoError(t, err)
@@ -426,7 +433,7 @@ func TestOnchainCostsSiblings(t *testing.T) {
 			// Both deposits at once: one lookup of the funding
 			// transaction.
 			both, err := onchainCosts(
-				t.Context(), getter, isDeposit,
+				t.Context(), getter, isDeposit, isTestStaticAddress,
 				[]*Deposit{first, second},
 			)
 			require.NoError(t, err)
@@ -438,7 +445,7 @@ func TestOnchainCostsSiblings(t *testing.T) {
 
 			// One at a time gives the same shares.
 			one, err := onchainCosts(
-				t.Context(), getter, isDeposit,
+				t.Context(), getter, isDeposit, isTestStaticAddress,
 				[]*Deposit{second},
 			)
 			require.NoError(t, err)
@@ -456,10 +463,65 @@ func TestOnchainCostsSiblings(t *testing.T) {
 	costs, err := onchainCosts(
 		t.Context(), getter, func(outpoint wire.OutPoint) bool {
 			return outpoint == first.OutPoint
-		}, []*Deposit{first},
+		}, isTestStaticAddress, []*Deposit{first},
 	)
 	require.NoError(t, err)
 	require.Equal(t, knownCost(501), costs[first.OutPoint])
+}
+
+// TestOnchainCostsIncrementalDiscovery checks that fee shares stay correct
+// when deposits to different owned scripts are retained in separate passes.
+func TestOnchainCostsIncrementalDiscovery(t *testing.T) {
+	tests := []struct {
+		name   string
+		values [2]int64
+		fee    btcutil.Amount
+		shares [2]btcutil.Amount
+	}{
+		{
+			name: "equal values", values: [2]int64{100_000, 100_000},
+			fee: 1_000, shares: [2]btcutil.Amount{500, 500},
+		},
+		{
+			name: "unequal values", values: [2]int64{300_000, 100_000},
+			fee: 1_500, shares: [2]btcutil.Amount{1_125, 375},
+		},
+		{
+			name: "remainder", values: [2]int64{100_000, 100_000},
+			fee: 1_001, shares: [2]btcutil.Amount{501, 500},
+		},
+	}
+	for _, test := range tests {
+		for _, order := range [][2]int{{0, 1}, {1, 0}} {
+			t.Run(fmt.Sprintf("%s/order_%d_%d", test.name, order[0],
+				order[1]), func(t *testing.T) {
+				// Ordinary wallet change at output zero must neither
+				// share the deposit fee nor receive its remainder.
+				tx := fundingTx(0, otherOut(500_000),
+					staticOut(test.values[0]),
+					staticOut2(test.values[1]))
+				deposits := [2]*Deposit{depositOf(tx, 1), depositOf(tx, 2)}
+				getter := newFakeTxGetter(walletTx(tx, test.fee, true))
+				known := make(map[wire.OutPoint]bool)
+				isDeposit := func(outpoint wire.OutPoint) bool {
+					return known[outpoint]
+				}
+				var total btcutil.Amount
+				for _, index := range order {
+					current := deposits[index]
+					known[current.OutPoint] = true
+					costs, err := onchainCosts(t.Context(), getter,
+						isDeposit, isTestStaticAddress,
+						[]*Deposit{current})
+					require.NoError(t, err)
+					require.Equal(t, knownCost(test.shares[index]),
+						costs[current.OutPoint])
+					total += costs[current.OutPoint].Amount
+				}
+				require.Equal(t, test.fee, total)
+			})
+		}
+	}
 }
 
 // TestOnchainCostsChange tests that a deposit created as change by a
@@ -515,7 +577,7 @@ func TestOnchainCostsChange(t *testing.T) {
 
 			costs, err := onchainCosts(
 				t.Context(), getter,
-				knownDeposits(funding, tc.spend),
+				knownDeposits(funding, tc.spend), isTestStaticAddress,
 				[]*Deposit{change},
 			)
 			require.NoError(t, err)
@@ -543,7 +605,7 @@ func TestOnchainCostsLookupError(t *testing.T) {
 	isDeposit := knownDeposits(txExternal, txFailing, txWallet)
 
 	costs, err := onchainCosts(
-		t.Context(), getter, isDeposit,
+		t.Context(), getter, isDeposit, isTestStaticAddress,
 		[]*Deposit{external, failing, wallet},
 	)
 	require.ErrorContains(t, err, txFailing.TxHash().String())
@@ -557,7 +619,8 @@ func TestOnchainCostsLookupError(t *testing.T) {
 	delete(getter.errs, txFailing.TxHash())
 	getter.txs[txFailing.TxHash()] = walletTx(txFailing, 400, true)
 	costs, err = onchainCosts(
-		t.Context(), getter, isDeposit, []*Deposit{failing, wallet},
+		t.Context(), getter, isDeposit, isTestStaticAddress,
+		[]*Deposit{failing, wallet},
 	)
 	require.NoError(t, err)
 	require.Equal(t, map[wire.OutPoint]OnchainCost{
@@ -587,6 +650,7 @@ func TestOnchainCostsShutdown(t *testing.T) {
 
 	costs, err := onchainCosts(
 		ctx, getter, knownDeposits(txWallet, txHanging, txLater),
+		isTestStaticAddress,
 		[]*Deposit{wallet, hanging, later},
 	)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
