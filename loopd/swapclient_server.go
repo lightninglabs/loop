@@ -33,6 +33,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
+	"github.com/lightninglabs/loop/staticaddr/loopin/assetmanager"
 	"github.com/lightninglabs/loop/staticaddr/openchannel"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
@@ -103,6 +104,7 @@ type swapClientServer struct {
 	staticLoopInManager  *loopin.Manager
 	openChannelManager   *openchannel.Manager
 	assetClient          *assets.TapdClient
+	assetLoopInManager   *assetmanager.Manager
 	swaps                map[lntypes.Hash]loop.SwapInfo
 	subscribers          map[int]chan<- any
 	statusChan           chan loop.SwapInfo

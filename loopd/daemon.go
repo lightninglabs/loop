@@ -93,6 +93,7 @@ type Daemon struct {
 	lnd           *lndclient.GrpcLndServices
 	assetClient   *assets.TapdClient
 	clientCleanup func()
+	assetCleanup  func()
 
 	wg       sync.WaitGroup
 	quit     chan struct{}
@@ -388,6 +389,9 @@ func (d *Daemon) startWebServers() error {
 // this method fails with an error then no goroutine was started yet and no
 // cleanup is necessary. If it succeeds, then goroutines have been spawned.
 func (d *Daemon) initialize(withMacaroonService bool) error {
+	if _, _, err := assetRuntimeConfig(d.cfg); err != nil {
+		return err
+	}
 	if d.cfg.EnableExperimental {
 		loopdb.EnableExperimentalProtocol()
 	}
@@ -794,6 +798,21 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		swapClient, staticLoopInManager, d.cfg.EnableExperimental,
 	)
 
+	assetManager, err := d.newAssetManager(
+		d.mainCtx, swapClient, staticAddressManager, depositManager,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize asset loop-in: %w", err)
+	}
+
+	assetInitialized := false
+	defer func() {
+		if !assetInitialized && d.assetCleanup != nil {
+			d.assetCleanup()
+			d.assetCleanup = nil
+		}
+	}()
+
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
 		config:               d.cfg,
@@ -814,6 +833,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticLoopInManager:  staticLoopInManager,
 		openChannelManager:   openChannelManager,
 		assetClient:          d.assetClient,
+		assetLoopInManager:   assetManager,
 		stopDaemon:           d.Stop,
 	}
 
@@ -1065,6 +1085,15 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 	}
 
+	if assetManager != nil {
+		d.wg.Go(func() {
+			err := assetManager.Run(d.mainCtx)
+			if shouldReportManagerErr(err) {
+				d.internalErrChan <- err
+			}
+		})
+	}
+
 	loop.Resume(
 		d.mainCtx, notificationManager, swapClient.Store,
 		d.impl.Conn, d.lnd, clock.NewDefaultClock(),
@@ -1102,6 +1131,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		d.ErrChan <- runtimeErr
 	}()
 
+	assetInitialized = true
 	return nil
 }
 
@@ -1162,6 +1192,9 @@ func (d *Daemon) stop() {
 
 	// Everything should be shutting down now, wait for completion.
 	d.wg.Wait()
+	if d.assetCleanup != nil {
+		d.assetCleanup()
+	}
 }
 
 // allowCORS wraps the given http.Handler with a function that adds the

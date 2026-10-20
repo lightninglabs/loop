@@ -84,3 +84,14 @@ Before finishing any change intended for a pull request, add a concise entry
 under the appropriate section (`New Features`, `Breaking Changes`, `Bug Fixes`,
 or `Maintenance`). For a change that does not warrant a release note, ensure the
 pull request uses the `no-changelog` label instead. This is enforced by CI.
+
+### Asset static loop-in ownership
+
+`staticaddr/loopin/assetmanager` owns normal client admission, durable pre-offer
+requests, asset inventory and startup recovery. `loopd` and `looprpc` expose it;
+`cmd/loop` supplies the `static asset` commands. Read its README before changing
+this flow. The deposit manager's shared exclusion protects asset anchors from
+Bitcoin-only selection and sweeping. Preserve that exclusion before starting
+Bitcoin deposit recovery. SDK transaction and wallet-signing state belongs to
+the separate `swapkit/tapsdk` runtime; only primitive bridge types may enter the
+client's legacy dependency graph.

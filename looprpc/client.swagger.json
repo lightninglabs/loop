@@ -901,6 +901,153 @@
         ]
       }
     },
+    "/v1/staticaddr/assets/deposit": {
+      "post": {
+        "summary": "loop: `static asset deposit`\nCreateAssetDeposit durably queues funding using registered static keys.",
+        "operationId": "SwapClient_CreateAssetDeposit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcAssetRequestStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "CreateAssetDepositRequest commits wallet-owned assets to registered static\nkeys. Reuse request_id after an ambiguous response; quantities are native.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcCreateAssetDepositRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/assets/deposits": {
+      "get": {
+        "summary": "loop: `static asset deposits`\nListAssetDeposits lists native deposits and their reservation owners.",
+        "operationId": "SwapClient_ListAssetDeposits",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListAssetDepositsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/assets/loopin": {
+      "post": {
+        "summary": "loop: `static asset in`\nAssetStaticLoopIn reserves one whole asset deposit for a same-group payout.",
+        "operationId": "SwapClient_AssetStaticLoopIn",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcAssetRequestStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "AssetStaticLoopInRequest currently accepts one whole isolated asset deposit.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcAssetStaticLoopInRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/assets/refund": {
+      "post": {
+        "summary": "loop: `static asset refund`\nRefundAssetDeposit queues the original CSV recovery of an expired,\nunreserved native asset deposit.",
+        "operationId": "SwapClient_RefundAssetDeposit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcAssetRequestStatus"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/looprpcRefundAssetDepositRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
+    "/v1/staticaddr/assets/swaps": {
+      "get": {
+        "summary": "loop: `static asset swaps`\nListAssetStaticLoopIns reports durable request and controller progress.",
+        "operationId": "SwapClient_ListAssetStaticLoopIns",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/looprpcListAssetStaticLoopInsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SwapClient"
+        ]
+      }
+    },
     "/v1/staticaddr/deposits": {
       "get": {
         "summary": "loop:`listdeposits`\nListStaticAddressDeposits returns a list of filtered static address\ndeposits.",
@@ -1177,6 +1324,37 @@
       "description": "- `unknown`: Unknown address type\n- `p2tr`: Pay to taproot pubkey (`TAPROOT_PUBKEY` = 1)",
       "title": "`AddressType` has to be one of:"
     },
+    "looprpcAssetDeposit": {
+      "type": "object",
+      "properties": {
+        "outpoint": {
+          "type": "string"
+        },
+        "group_key": {
+          "type": "string",
+          "format": "byte"
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "confirmation_height": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "request_id": {
+          "type": "string",
+          "format": "byte"
+        },
+        "consumed": {
+          "type": "boolean"
+        },
+        "refund_height": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "looprpcAssetLoopOutInfo": {
       "type": "object",
       "properties": {
@@ -1220,6 +1398,29 @@
         }
       }
     },
+    "looprpcAssetRequestStatus": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "format": "byte"
+        },
+        "payment_hash": {
+          "type": "string",
+          "format": "byte"
+        },
+        "state": {
+          "type": "string"
+        },
+        "deposit_request": {
+          "type": "boolean"
+        },
+        "refund_request": {
+          "type": "boolean"
+        }
+      },
+      "description": "AssetRequestStatus deliberately excludes private invoices, signer material,\npreimages, and raw recovery bundles."
+    },
     "looprpcAssetRfqInfo": {
       "type": "object",
       "properties": {
@@ -1256,6 +1457,36 @@
           "description": "The name of the asset to swap."
         }
       }
+    },
+    "looprpcAssetStaticLoopInRequest": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "format": "byte"
+        },
+        "group_key": {
+          "type": "string",
+          "format": "byte"
+        },
+        "outpoint": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Exact native Lightning payout. The entire deposit is spent; its excess\nover this amount must equal the server fee and fit max_asset_fee."
+        },
+        "max_asset_debit": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "max_asset_fee": {
+          "type": "string",
+          "format": "uint64"
+        }
+      },
+      "description": "AssetStaticLoopInRequest currently accepts one whole isolated asset deposit."
     },
     "looprpcAutoReason": {
       "type": "string",
@@ -1323,6 +1554,24 @@
         }
       },
       "description": "CooperativeSweep selects a cooperative MuSig2 key-path spend."
+    },
+    "looprpcCreateAssetDepositRequest": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "format": "byte"
+        },
+        "group_key": {
+          "type": "string",
+          "format": "byte"
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64"
+        }
+      },
+      "description": "CreateAssetDepositRequest commits wallet-owned assets to registered static\nkeys. Reuse request_id after an ambiguous response; quantities are native."
     },
     "looprpcDeposit": {
       "type": "object",
@@ -1922,6 +2171,30 @@
       ],
       "default": "UNKNOWN"
     },
+    "looprpcListAssetDepositsResponse": {
+      "type": "object",
+      "properties": {
+        "deposits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/looprpcAssetDeposit"
+          }
+        }
+      }
+    },
+    "looprpcListAssetStaticLoopInsResponse": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/looprpcAssetRequestStatus"
+          }
+        }
+      }
+    },
     "looprpcListInstantOutsResponse": {
       "type": "object",
       "properties": {
@@ -2376,6 +2649,15 @@
     "looprpcPublishSucceeded": {
       "type": "object",
       "description": "PublishSucceeded is returned by SweepHtlc if publishing was requested in\nSweepHtlcRequest and it succeeded."
+    },
+    "looprpcRefundAssetDepositRequest": {
+      "type": "object",
+      "properties": {
+        "outpoint": {
+          "type": "string",
+          "description": "Canonical txid:index of the original asset deposit."
+        }
+      }
     },
     "looprpcRouteHint": {
       "type": "object",

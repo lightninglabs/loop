@@ -219,6 +219,37 @@ service SwapClient {
     */
     rpc StaticOpenChannel (StaticOpenChannelRequest)
         returns (StaticOpenChannelResponse);
+
+    /* loop: `static asset refund`
+    RefundAssetDeposit queues the original CSV recovery of an expired,
+    unreserved native asset deposit.
+    */
+    rpc RefundAssetDeposit (RefundAssetDepositRequest)
+        returns (AssetRequestStatus);
+
+    /* loop: `static asset deposit`
+    CreateAssetDeposit durably queues funding using registered static keys.
+    */
+    rpc CreateAssetDeposit (CreateAssetDepositRequest)
+        returns (AssetRequestStatus);
+
+    /* loop: `static asset deposits`
+    ListAssetDeposits lists native deposits and their reservation owners.
+    */
+    rpc ListAssetDeposits (ListAssetDepositsRequest)
+        returns (ListAssetDepositsResponse);
+
+    /* loop: `static asset in`
+    AssetStaticLoopIn reserves one whole asset deposit for a same-group payout.
+    */
+    rpc AssetStaticLoopIn (AssetStaticLoopInRequest)
+        returns (AssetRequestStatus);
+
+    /* loop: `static asset swaps`
+    ListAssetStaticLoopIns reports durable request and controller progress.
+    */
+    rpc ListAssetStaticLoopIns (ListAssetStaticLoopInsRequest)
+        returns (ListAssetStaticLoopInsResponse);
 }
 
 message StaticOpenChannelRequest {
@@ -2646,4 +2677,63 @@ message CooperativeSweep {
     // Stateful mode obtains this value from the stored swap invoice. Stateless
     // mode requires it here.
     bytes payment_address = 1;
+}
+
+// CreateAssetDepositRequest commits wallet-owned assets to registered static
+// keys. Reuse request_id after an ambiguous response; quantities are native.
+message CreateAssetDepositRequest {
+    bytes request_id = 1;
+    bytes group_key = 2;
+    uint64 amount = 3;
+}
+
+message ListAssetDepositsRequest {
+}
+
+message AssetDeposit {
+    string outpoint = 1;
+    bytes group_key = 2;
+    uint64 amount = 3;
+    uint32 confirmation_height = 4;
+    bytes request_id = 5;
+    bool consumed = 6;
+    uint32 refund_height = 7;
+}
+
+message ListAssetDepositsResponse {
+    repeated AssetDeposit deposits = 1;
+}
+
+// AssetStaticLoopInRequest currently accepts one whole isolated asset deposit.
+message AssetStaticLoopInRequest {
+    bytes request_id = 1;
+    bytes group_key = 2;
+    string outpoint = 3;
+    // Exact native Lightning payout. The entire deposit is spent; its excess
+    // over this amount must equal the server fee and fit max_asset_fee.
+    uint64 amount = 4;
+    uint64 max_asset_debit = 5;
+    uint64 max_asset_fee = 6;
+}
+
+// AssetRequestStatus deliberately excludes private invoices, signer material,
+// preimages, and raw recovery bundles.
+message AssetRequestStatus {
+    bytes request_id = 1;
+    bytes payment_hash = 2;
+    string state = 3;
+    bool deposit_request = 4;
+    bool refund_request = 5;
+}
+
+message ListAssetStaticLoopInsRequest {
+}
+
+message ListAssetStaticLoopInsResponse {
+    repeated AssetRequestStatus requests = 1;
+}
+
+message RefundAssetDepositRequest {
+    // Canonical txid:index of the original asset deposit.
+    string outpoint = 1;
 }

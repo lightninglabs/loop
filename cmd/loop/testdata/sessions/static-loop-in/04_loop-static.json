@@ -25,6 +25,7 @@
           "\n",
           "COMMANDS:\n",
           "   new, n           Create a new static loop in address.\n",
+          "   asset            Fund and swap native asset static deposits\n",
           "   listunspent, l   List unspent static address outputs.\n",
           "   listdeposits     Displays static address deposits. A filter can be applied to only show deposits in a specific state.\n",
           "   listwithdrawals  Display a summary of past withdrawals.\n",

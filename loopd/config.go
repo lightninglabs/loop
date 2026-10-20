@@ -200,6 +200,10 @@ type Config struct {
 
 	Server *loopServerConfig `group:"server" namespace:"server"`
 
+	AssetRuntimeSocket    string `long:"assetruntimesocket" description:"Absolute Unix socket for the asset transaction runtime"`
+	AssetRuntimeTokenFile string `long:"assetruntimetoken" description:"Private runtime authentication token file"`
+	AssetPeer             string `long:"assetpeer" description:"Compressed public key of the asset Lightning channel peer"`
+
 	Tapd *assets.TapdConfig `group:"tapd" namespace:"tapd"`
 
 	View viewParameters `command:"view" alias:"v" description:"View all swaps in the database. This command can only be executed when loopd is not running."`

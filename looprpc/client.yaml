@@ -71,3 +71,17 @@ http:
       body: "*"
     - selector: looprpc.SwapClient.StopDaemon
       post: "/v1/daemon/stop"
+
+    - selector: looprpc.SwapClient.CreateAssetDeposit
+      post: "/v1/staticaddr/assets/deposit"
+      body: "*"
+    - selector: looprpc.SwapClient.ListAssetDeposits
+      get: "/v1/staticaddr/assets/deposits"
+    - selector: looprpc.SwapClient.AssetStaticLoopIn
+      post: "/v1/staticaddr/assets/loopin"
+      body: "*"
+    - selector: looprpc.SwapClient.ListAssetStaticLoopIns
+      get: "/v1/staticaddr/assets/swaps"
+    - selector: looprpc.SwapClient.RefundAssetDeposit
+      post: "/v1/staticaddr/assets/refund"
+      body: "*"
