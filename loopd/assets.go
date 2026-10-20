@@ -14,9 +14,8 @@ import (
 	"github.com/lightninglabs/loop/assets/assetln"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
-	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
-	"github.com/lightninglabs/loop/staticaddr/loopin/assetmanager"
 	"github.com/lightninglabs/loop/swapkit/bridge"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
@@ -81,10 +80,10 @@ func (c assetAuthConn) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	return c.services.ClientConn.NewStream(ctx, desc, method, opts...)
 }
 
-// newAssetManager restores inventory exclusion before Bitcoin deposit recovery.
-func (d *Daemon) newAssetManager(ctx context.Context, client *loop.Client,
-	addresses *address.Manager, deposits *deposit.Manager) (
-	*assetmanager.Manager, error) {
+// newAssetConfig imports legacy recovery records into the normal SQL store.
+func (d *Daemon) newAssetConfig(ctx context.Context, client *loop.Client,
+	addresses *address.Manager, deposits *deposit.Manager,
+	store *loopin.SqlStore) (*loopin.AssetConfig, error) {
 
 	peer, enabled, err := assetRuntimeConfig(d.cfg)
 	if err != nil || !enabled {
@@ -113,33 +112,18 @@ func (d *Daemon) newAssetManager(ctx context.Context, client *loop.Client,
 	if err != nil {
 		return nil, err
 	}
-	inventory, err := assetmanager.OpenStore(filepath.Join(
-		d.cfg.DataDir, "asset-inventory.db",
-	))
-	if err != nil {
-		return nil, err
-	}
-	journal, err := assetexec.OpenBoltStore(filepath.Join(
-		d.cfg.DataDir, "asset-loop-in.db",
-	))
-	if err != nil {
-		_ = inventory.Close()
-		return nil, err
-	}
-	cleanup := func() {
+	if err := store.ImportLegacyAssetJournals(ctx,
+		filepath.Join(d.cfg.DataDir, "asset-inventory.db"),
+		filepath.Join(d.cfg.DataDir, "asset-loop-in.db"),
+	); err != nil {
 		runtime.Close()
-		if err := journal.Close(); err != nil {
-			errorf("Closing asset swap journal: %v", err)
-		}
-		if err := inventory.Close(); err != nil {
-			errorf("Closing asset inventory: %v", err)
-		}
+		return nil, err
 	}
 	auth := assetAuthConn{services: &d.lnd.LndServices}
 	var node [33]byte
 	copy(node[:], d.lnd.NodePubkey[:])
-	manager, err := assetmanager.New(assetmanager.Config{
-		Runtime: runtime, Store: inventory, Journal: journal,
+	cfg := &loopin.AssetConfig{
+		Runtime: runtime, Store: store,
 		Address: addresses, Deposits: deposits,
 		Server: assetclient.NewServerClient(client.Conn),
 		Receiver: &assetln.Receiver{
@@ -153,14 +137,7 @@ func (d *Daemon) newAssetManager(ctx context.Context, client *loop.Client,
 		OnError: func(err error) {
 			warnf("Asset recovery operation pending: %v", err)
 		},
-	})
-	if err == nil {
-		err = manager.Initialize(ctx)
 	}
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-	d.assetCleanup = cleanup
-	return manager, nil
+	d.assetCleanup = runtime.Close
+	return cfg, nil
 }

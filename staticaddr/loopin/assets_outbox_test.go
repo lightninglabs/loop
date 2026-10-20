@@ -1,4 +1,4 @@
-package assetmanager
+package loopin
 
 import (
 	"context"
@@ -32,7 +32,7 @@ func (stalledReportServer) ReportAssetLoopInRefund(ctx context.Context,
 	return nil, ctx.Err()
 }
 
-type refundedJournal struct{ assetexec.Store }
+type refundedJournal struct{ AssetStore }
 
 func (refundedJournal) Get(
 	context.Context,
@@ -60,11 +60,11 @@ func TestOptionalReportsKeepRecoveryBudget(t *testing.T) {
 				5*time.Second,
 			)
 			defer cancel()
-			manager := &Manager{cfg: Config{
-				Server:  stalledReportServer{},
-				Journal: refundedJournal{},
+			manager := &Manager{assetCfg: &AssetConfig{
+				Server: stalledReportServer{},
+				Store:  refundedJournal{},
 			}}
-			job := &Job{
+			job := &AssetJob{
 				Offer:    &assetexec.Offer{},
 				Canceled: canceled,
 			}

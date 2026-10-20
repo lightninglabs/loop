@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -26,7 +25,6 @@ type testActions struct {
 	onPrepared        func()
 	pushErr           error
 	settleErr         error
-	releaseErr        error
 	settled           bool
 	preimage          [32]byte
 	preimageFound     bool
@@ -42,7 +40,6 @@ type testActions struct {
 	settles           int
 	signs             int
 	cancels           int
-	releases          int
 	lookupPreimageErr error
 	blockPreimage     bool
 	preimageLookups   int
@@ -60,17 +57,6 @@ func (a *testActions) CurrentHeight(context.Context) (uint32, error) {
 }
 
 func (a *testActions) ValidateOffer(context.Context, Offer) error { return nil }
-
-func (a *testActions) ReserveDeposits(ctx context.Context, o Offer) error {
-	require.NotEmpty(a.t, a.record(ctx, o).InvoiceIntent)
-	return nil
-}
-
-func (a *testActions) ReleaseDeposits(ctx context.Context, o Offer) error {
-	require.True(a.t, a.record(ctx, o).State.Terminal())
-	a.releases++
-	return a.releaseErr
-}
 
 func (a *testActions) CreateInvoice(ctx context.Context, o Offer,
 	intent []byte) (Invoice, error) {
@@ -95,7 +81,8 @@ func (a *testActions) LookupInvoice(context.Context, Offer) (Invoice, error) {
 func (a *testActions) VerifyFinalizeFallback(context.Context, Offer,
 	[]byte) (Fallback, error) {
 
-	return Fallback{[]byte("full-sdk-package"), []byte("claim-sigs")}, nil
+	return Fallback{Bundle: []byte("full-sdk-package"),
+		ClaimSignatures: []byte("claim-sigs")}, nil
 }
 
 func (a *testActions) Prepared(context.Context, Offer) ([]byte, error) {
@@ -188,8 +175,7 @@ func (a *testActions) CancelInvoice(ctx context.Context, o Offer) error {
 
 type fixture struct {
 	t        *testing.T
-	path     string
-	store    *BoltStore
+	store    *memoryStore
 	c        *Controller
 	a        *testActions
 	offer    Offer
@@ -198,7 +184,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{t: t, path: filepath.Join(t.TempDir(), "client.db")}
+	f := &fixture{t: t}
 	f.preimage[0] = 7
 	_, group := btcec.PrivKeyFromBytes([]byte{9})
 	var key [33]byte
@@ -220,21 +206,16 @@ func newFixture(t *testing.T) *fixture {
 			Contract:        []byte("approved-contract"),
 		},
 	}
-	var err error
-	f.store, err = OpenBoltStore(f.path)
-	require.NoError(t, err)
+	f.store = newMemoryStore()
 	f.a = &testActions{t: t, store: f.store, preimage: f.preimage}
 	f.c = NewController(f.store, f.a, nil)
-	t.Cleanup(func() { require.NoError(t, f.store.Close()) })
 	return f
 }
 
 func (f *fixture) reopen() {
 	f.t.Helper()
-	require.NoError(f.t, f.store.Close())
-	var err error
-	f.store, err = OpenBoltStore(f.path)
-	require.NoError(f.t, err)
+	// Rebuild the controller from independently decoded checkpoints.
+	// SQL filesystem restart is exercised by the integration store tests.
 	f.a.store = f.store
 	f.c = NewController(f.store, f.a, nil)
 }
@@ -294,15 +275,15 @@ func TestRecoveryPreservesEveryExposureBoundary(t *testing.T) {
 	require.ErrorIs(t, err, ErrConflict)
 	require.ErrorIs(t, f.c.Cancel(ctx, f.offer.Hash), ErrState)
 	require.ErrorIs(t, f.c.Recover(ctx, f.offer.Hash), ErrPending)
-	require.Zero(t, f.a.releases)
+	require.Zero(t, f.store.releases)
 	f.a.claim = []byte("confirmed-claim-with-spendable-asset-proofs")
-	f.a.releaseErr = errUnavailable
+	f.store.releaseErr = errUnavailable
 	require.ErrorIs(t, f.c.Recover(ctx, f.offer.Hash), errUnavailable)
 	f.reopen()
 	active, err := f.store.ListActive(ctx)
 	require.NoError(t, err)
 	require.Len(t, active, 1)
-	f.a.releaseErr = nil
+	f.store.releaseErr = nil
 	require.NoError(t, f.c.Recover(ctx, f.offer.Hash))
 	active, err = f.store.ListActive(ctx)
 	require.NoError(t, err)
@@ -344,14 +325,14 @@ func TestRefundRequiresConfirmedAssetProofs(t *testing.T) {
 	require.ErrorIs(t, f.c.ExposeClaim(ctx, f.offer.Hash), ErrState)
 	require.ErrorIs(t, f.c.Recover(ctx, f.offer.Hash), ErrPending)
 	require.Zero(t, f.a.cancels)
-	require.Zero(t, f.a.releases)
+	require.Zero(t, f.store.releases)
 	f.a.refund = []byte("confirmed-refund-with-spendable-proofs")
 	require.NoError(t, f.c.Recover(ctx, f.offer.Hash))
 	r, err := f.c.Status(ctx, f.offer.Hash)
 	require.NoError(t, err)
 	require.Equal(t, HtlcTimeoutSwept, r.State)
 	require.Equal(t, 1, f.a.cancels)
-	require.Equal(t, 1, f.a.releases)
+	require.Equal(t, 1, f.store.releases)
 }
 
 func TestExecutionWinsWhileRefundIsPending(t *testing.T) {
@@ -518,7 +499,7 @@ func TestKnownPreimageCannotCancelSettledPayout(t *testing.T) {
 	f.a.settled = true
 	require.ErrorIs(t, f.c.Cancel(ctx, f.offer.Hash), ErrState)
 	require.Zero(t, f.a.cancels)
-	require.Zero(t, f.a.releases)
+	require.Zero(t, f.store.releases)
 	r, err := f.c.Status(ctx, f.offer.Hash)
 	require.NoError(t, err)
 	require.Equal(t, PaymentReceived, r.State)
@@ -536,7 +517,7 @@ func TestSettlementWinsCancellationRace(t *testing.T) {
 	f.a.refund = []byte("confirmed refund with spendable assets")
 	f.a.cancelErr = errors.New("cannot cancel settled invoice")
 	require.ErrorIs(t, f.c.Cancel(ctx, f.offer.Hash), f.a.cancelErr)
-	require.Zero(t, f.a.releases)
+	require.Zero(t, f.store.releases)
 	r, err := f.c.Status(ctx, f.offer.Hash)
 	require.NoError(t, err)
 	require.Equal(t, SweepHtlcTimeout, r.State)
@@ -559,7 +540,7 @@ func TestRefundMustRemainConfirmedBeforeCancel(t *testing.T) {
 	f.a.refund, f.a.cancelErr = nil, nil
 	require.ErrorIs(t, f.c.Recover(ctx, f.offer.Hash), ErrPending)
 	require.Equal(t, 1, f.a.cancels)
-	require.Zero(t, f.a.releases)
+	require.Zero(t, f.store.releases)
 	r, err := f.c.Status(ctx, f.offer.Hash)
 	require.NoError(t, err)
 	require.NotEmpty(t, r.RefundEvidence)
@@ -569,7 +550,7 @@ func TestRefundMustRemainConfirmedBeforeCancel(t *testing.T) {
 	f.a.refund = []byte("refund confirmed in a replacement block")
 	require.NoError(t, f.c.Recover(ctx, f.offer.Hash))
 	require.Equal(t, 2, f.a.cancels)
-	require.Equal(t, 1, f.a.releases)
+	require.Equal(t, 1, f.store.releases)
 	f.reopen()
 	r, err = f.c.Status(ctx, f.offer.Hash)
 	require.NoError(t, err)
@@ -629,7 +610,7 @@ func TestExposureRetryCannotGrantAuthorityAfterPayoutChanges(t *testing.T) {
 				expected,
 			)
 			require.Zero(t, f.a.pushes)
-			require.Zero(t, f.a.releases)
+			require.Zero(t, f.store.releases)
 			r, err := f.c.Status(ctx, f.offer.Hash)
 			require.NoError(t, err)
 			require.True(t, r.SignaturesExposed)
@@ -673,7 +654,7 @@ func TestRecoveryDrivesRefundAfterDeadlineWhileServerOffline(t *testing.T) {
 			)
 			require.Equal(t, 1, f.a.refundCalls)
 			require.Zero(t, f.a.cancels)
-			require.Zero(t, f.a.releases)
+			require.Zero(t, f.store.releases)
 			r, err := f.c.Status(ctx, f.offer.Hash)
 			require.NoError(t, err)
 			require.True(t, r.CancellationRequested)
@@ -688,7 +669,7 @@ func TestRecoveryDrivesRefundAfterDeadlineWhileServerOffline(t *testing.T) {
 			require.NoError(t, f.c.Recover(ctx, f.offer.Hash))
 			require.Equal(t, 2, f.a.refundCalls)
 			require.Equal(t, 1, f.a.cancels)
-			require.Equal(t, 1, f.a.releases)
+			require.Equal(t, 1, f.store.releases)
 		})
 	}
 }
@@ -726,7 +707,7 @@ func TestRefundRecoveryRequiresAuthoritativeUnsettledInvoice(t *testing.T) {
 			require.Error(t, f.c.Recover(ctx, f.offer.Hash))
 			require.Zero(t, f.a.refundCalls)
 			require.Zero(t, f.a.cancels)
-			require.Zero(t, f.a.releases)
+			require.Zero(t, f.store.releases)
 			r, err := f.c.Status(ctx, f.offer.Hash)
 			require.NoError(t, err)
 			require.False(t, r.HasPreimage)

@@ -1,4 +1,4 @@
-package assetmanager
+package loopin
 
 import (
 	"context"
@@ -7,14 +7,18 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
 	"github.com/lightninglabs/loop/swapkit/bridge"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -34,11 +38,11 @@ func testDeposit(t *testing.T) bridge.Deposit {
 	}
 }
 
-func testSwap(d bridge.Deposit, id byte) *Job {
+func testSwap(d bridge.Deposit, id byte) *AssetJob {
 	requestID := [32]byte{id}
-	return &Job{
+	return &AssetJob{
 		ID: requestID, ServerRequest: []byte("exact original request"),
-		Swap: &SwapRequest{
+		Swap: &AssetSwapRequest{
 			RequestID: requestID, GroupKey: d.GroupKey,
 			Outpoint: d.Outpoint,
 			Amount:   d.Amount,
@@ -48,19 +52,22 @@ func testSwap(d bridge.Deposit, id byte) *Job {
 }
 
 func TestOversizedProofDoesNotReserveDeposit(t *testing.T) {
-	store, err := OpenStore(filepath.Join(t.TempDir(), "inventory.db"))
+	store, err := openAssetTestStore(filepath.Join(t.TempDir(), "inventory.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	d := testDeposit(t)
 	d.Proof = make([]byte, bridge.PublicRPCMaxBytes)
-	require.NoError(t, store.addDeposit(d))
-	manager := &Manager{cfg: Config{Store: store}}
-	require.ErrorIs(t, manager.Start(t.Context(), *testSwap(d, 1).Swap),
-		assetexec.ErrInvalid)
-	jobs, err := store.Jobs(t.Context())
+	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
+	manager := &Manager{assetCfg: &AssetConfig{Store: store}}
+	require.ErrorIs(
+		t,
+		manager.StartAssetLoopIn(t.Context(), *testSwap(d, 1).Swap),
+		assetexec.ErrInvalid,
+	)
+	jobs, err := store.AssetJobs(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, jobs)
-	entries, err := store.Inventory(t.Context())
+	entries, err := store.AssetInventory(t.Context())
 	require.NoError(t, err)
 	require.Zero(t, entries[0].RequestID)
 	require.Zero(t, entries[0].Hash)
@@ -82,34 +89,34 @@ func TestWholeDepositAllowsBoundedNativeFee(t *testing.T) {
 		{"debit below payout", 990, 10, 989, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			store, err := OpenStore(
+			store, err := openAssetTestStore(
 				filepath.Join(t.TempDir(), "inventory.db"),
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, store.Close()) })
 			d := testDeposit(t)
-			require.NoError(t, store.addDeposit(d))
+			require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 			request := *testSwap(d, 1).Swap
 			request.Amount, request.MaxFee = test.payout, test.fee
 			request.MaxDebit = test.debit
-			manager := &Manager{cfg: Config{Store: store}}
-			err = manager.Start(t.Context(), request)
+			manager := &Manager{assetCfg: &AssetConfig{Store: store}}
+			err = manager.StartAssetLoopIn(t.Context(), request)
 			if !test.valid {
 				require.ErrorIs(t, err, assetexec.ErrInvalid)
 				job := testSwap(d, 1)
 				job.Swap = &request
 				require.ErrorIs(
 					t,
-					store.PutJob(t.Context(), job),
+					store.PutAssetJob(t.Context(), job),
 					assetexec.ErrConflict,
 				)
-				entries, err := store.Inventory(t.Context())
+				entries, err := store.AssetInventory(t.Context())
 				require.NoError(t, err)
 				require.Zero(t, entries[0].RequestID)
 				return
 			}
 			require.NoError(t, err)
-			job, err := store.getJob(t.Context(), request.RequestID)
+			job, err := store.GetAssetJob(t.Context(), request.RequestID)
 			require.NoError(t, err)
 			var rpc swapserverrpc.CreateAssetLoopInRequest
 			require.NoError(
@@ -127,15 +134,15 @@ func TestWholeDepositAllowsBoundedNativeFee(t *testing.T) {
 
 func TestReservationSurvivesRestartAndCompetingRequests(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "inventory.db")
-	store, err := OpenStore(path)
+	store, err := openAssetTestStore(path)
 	require.NoError(t, err)
 	d := testDeposit(t)
-	require.NoError(t, store.addDeposit(d))
+	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	first, second := testSwap(d, 1), testSwap(d, 2)
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
-	for _, job := range []*Job{first, second} {
-		wg.Go(func() { results <- store.PutJob(t.Context(), job) })
+	for _, job := range []*AssetJob{first, second} {
+		wg.Go(func() { results <- store.PutAssetJob(t.Context(), job) })
 	}
 	wg.Wait()
 	close(results)
@@ -153,13 +160,13 @@ func TestReservationSurvivesRestartAndCompetingRequests(t *testing.T) {
 	require.Equal(t, 1, succeeded)
 	require.Equal(t, 1, conflicted)
 	require.NoError(t, store.Close())
-	store, err = OpenStore(path)
+	store, err = openAssetTestStore(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	jobs, err := store.Jobs(t.Context())
+	jobs, err := store.AssetJobs(t.Context())
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
-	inventory, err := store.Inventory(t.Context())
+	inventory, err := store.AssetInventory(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, jobs[0].ID, inventory[0].RequestID)
 	require.Equal(
@@ -172,48 +179,77 @@ func TestReservationSurvivesRestartAndCompetingRequests(t *testing.T) {
 	// caller has acquired a refreshed proof since its original invocation.
 	retry := jobs[0]
 	retry.ServerRequest = []byte("different refreshed proof")
-	require.NoError(t, store.PutJob(t.Context(), &retry))
-	stored, err := store.getJob(t.Context(), retry.ID)
+	require.NoError(t, store.PutAssetJob(t.Context(), &retry))
+	stored, err := store.GetAssetJob(t.Context(), retry.ID)
 	require.NoError(t, err)
 	require.Equal(t, jobs[0].ServerRequest, stored.ServerRequest)
 	retry.Swap.Amount--
 	require.ErrorIs(
 		t,
-		store.PutJob(t.Context(), &retry),
+		store.PutAssetJob(t.Context(), &retry),
 		assetexec.ErrConflict,
 	)
 }
 
-func TestFailedOfferCanReserveAgainButConsumedAnchorCannot(t *testing.T) {
-	store, err := OpenStore(filepath.Join(t.TempDir(), "inventory.db"))
+func TestAssetReleaseCommitsWithRecoveryRecord(t *testing.T) {
+	store, err := openAssetTestStore(filepath.Join(t.TempDir(), "loop.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	d := testDeposit(t)
-	require.NoError(t, store.addDeposit(d))
-	first := testSwap(d, 1)
-	require.NoError(t, store.PutJob(t.Context(), first))
-	offer := assetexec.Offer{
-		Hash: [32]byte{11}, Terms: assetexec.Terms{
-			RequestID:        first.ID,
-			DepositOutpoints: []string{d.Outpoint},
+	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
+	job := testSwap(d, 1)
+	require.NoError(t, store.PutAssetJob(t.Context(), job))
+	r := assetRecord(d, job.ID)
+	job.Offer = &r.Offer
+	job.Intent = r.InvoiceIntent
+	require.NoError(t, store.UpdateAssetJob(t.Context(), job))
+	require.NoError(t, store.Create(t.Context(), r))
+	r.CancellationRequested = true
+	r.State = assetexec.Failed
+	r.Revision++
+	require.NoError(t, store.Update(t.Context(), r, 0))
+	// A terminal record alone does not release a legacy reservation. Its
+	// cleanup checkpoint and ownership advance together.
+	require.ErrorIs(
+		t,
+		store.PutAssetJob(t.Context(), testSwap(d, 2)),
+		assetexec.ErrConflict,
+	)
+	r.DepositsReleased = true
+	r.Revision++
+	require.NoError(t, store.Update(t.Context(), r, 1))
+	require.NoError(t, store.PutAssetJob(t.Context(), testSwap(d, 2)))
+	entries, err := store.AssetInventory(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, [32]byte{2}, entries[0].RequestID)
+}
+
+func assetRecord(d bridge.Deposit, id [32]byte) *assetexec.Record {
+	return &assetexec.Record{
+		State:         assetexec.InitHtlcTx,
+		DepositState:  "Deposited",
+		InvoiceIntent: []byte("intent"),
+		Offer: assetexec.Offer{
+			Hash: [32]byte{8},
+			Terms: assetexec.Terms{
+				Version:          1,
+				RequestID:        id,
+				RequestDigest:    [32]byte{3},
+				Owner:            [32]byte{4},
+				GroupKey:         d.GroupKey,
+				DepositOutpoints: []string{d.Outpoint},
+				DepositAmount:    d.Amount,
+				PayoutAmount:     d.Amount,
+				MaxDebit:         d.Amount,
+				RefundHeight:     100,
+				MinPayoutExpiry:  121,
+				RecoveryDelta:    10,
+				ExecutionDelta:   10,
+				OfferExpiry:      time.Now().Add(time.Hour),
+				Contract:         d.Contract,
+			},
 		},
 	}
-	require.NoError(t, store.bind(t.Context(), offer, false, false))
-	require.NoError(t, store.bind(t.Context(), offer, true, false))
-	second := testSwap(d, 2)
-	require.NoError(t, store.PutJob(t.Context(), second))
-	// Replay the old controller's cleanup after a new request took the
-	// inventory lock; its durable receipt must not release the new owner.
-	require.NoError(t, store.bind(t.Context(), offer, true, false))
-	entries, err := store.Inventory(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, second.ID, entries[0].RequestID)
-	offer.Hash = [32]byte{22}
-	offer.Terms.RequestID = second.ID
-	require.NoError(t, store.bind(t.Context(), offer, false, false))
-	require.NoError(t, store.bind(t.Context(), offer, true, true))
-	require.ErrorIs(t, store.PutJob(t.Context(), testSwap(d, 3)),
-		assetexec.ErrConflict)
 }
 
 type runtimeFunc func(context.Context, bridge.Method, any, any) error
@@ -226,17 +262,17 @@ func (f runtimeFunc) Call(ctx context.Context, method bridge.Method,
 
 func TestDepositLostResponseReplaysPersistedFundingIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "inventory.db")
-	store, err := OpenStore(path)
+	store, err := openAssetTestStore(path)
 	require.NoError(t, err)
 	d := testDeposit(t)
-	job := &Job{
+	job := &AssetJob{
 		ID: [32]byte{7}, Deposit: &bridge.CreateDepositRequest{
 			RequestID: [32]byte{
 				7,
 			}, GroupKey: d.GroupKey, Amount: d.Amount,
 		},
 	}
-	require.NoError(t, store.PutJob(t.Context(), job))
+	require.NoError(t, store.PutAssetJob(t.Context(), job))
 	var calls int
 	var original []byte
 	runtime := runtimeFunc(func(_ context.Context, method bridge.Method,
@@ -254,35 +290,35 @@ func TestDepositLostResponseReplaysPersistedFundingIdentity(t *testing.T) {
 		*(output.(*bridge.Deposit)) = d
 		return nil
 	})
-	manager := &Manager{cfg: Config{
+	manager := &Manager{assetCfg: &AssetConfig{
 		Store: store, Runtime: runtime, Deposits: &deposit.Manager{},
 	}}
-	require.Error(t, manager.resume(t.Context(), job))
+	require.Error(t, manager.resumeAsset(t.Context(), job))
 	require.NoError(t, store.Close())
-	store, err = OpenStore(path)
+	store, err = openAssetTestStore(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	manager.cfg.Store = store
-	job, err = store.getJob(t.Context(), job.ID)
+	manager.assetCfg.Store = store
+	job, err = store.GetAssetJob(t.Context(), job.ID)
 	require.NoError(t, err)
 	require.False(t, job.Complete)
-	require.NoError(t, manager.resume(t.Context(), job))
+	require.NoError(t, manager.resumeAsset(t.Context(), job))
 	require.True(t, job.Complete)
-	inventory, err := store.Inventory(t.Context())
+	inventory, err := store.AssetInventory(t.Context())
 	require.NoError(t, err)
 	require.Len(t, inventory, 1)
 	require.Equal(t, d.Outpoint, inventory[0].Deposit.Outpoint)
 }
 
 func TestOriginalRefundCannotRacePendingOffer(t *testing.T) {
-	store, err := OpenStore(filepath.Join(t.TempDir(), "inventory.db"))
+	store, err := openAssetTestStore(filepath.Join(t.TempDir(), "inventory.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	d := testDeposit(t)
 	d.RefundHeight = 100
-	require.NoError(t, store.addDeposit(d))
+	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	var height uint32 = 99
-	manager := &Manager{cfg: Config{
+	manager := &Manager{assetCfg: &AssetConfig{
 		Store: store, Runtime: runtimeFunc(func(_ context.Context,
 			method bridge.Method, _, output any) error {
 
@@ -291,15 +327,15 @@ func TestOriginalRefundCannotRacePendingOffer(t *testing.T) {
 			return nil
 		}),
 	}}
-	_, err = manager.RefundDeposit(t.Context(), d.Outpoint)
+	_, err = manager.RefundAssetDeposit(t.Context(), d.Outpoint)
 	require.ErrorIs(t, err, assetexec.ErrPending)
 	pending := testSwap(d, 1)
-	require.NoError(t, store.PutJob(t.Context(), pending))
+	require.NoError(t, store.PutAssetJob(t.Context(), pending))
 	height = 100
 	require.NoError(t, manager.expireDeposits(t.Context()))
-	_, err = manager.RefundDeposit(t.Context(), d.Outpoint)
+	_, err = manager.RefundAssetDeposit(t.Context(), d.Outpoint)
 	require.ErrorIs(t, err, assetexec.ErrConflict)
-	jobs, err := store.Jobs(t.Context())
+	jobs, err := store.AssetJobs(t.Context())
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
 	require.Nil(t, jobs[0].Refund)
@@ -307,13 +343,13 @@ func TestOriginalRefundCannotRacePendingOffer(t *testing.T) {
 
 func TestOriginalRefundPersistsUntilConfirmedProof(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "inventory.db")
-	store, err := OpenStore(path)
+	store, err := openAssetTestStore(path)
 	require.NoError(t, err)
 	d := testDeposit(t)
 	d.RefundHeight = 100
-	require.NoError(t, store.addDeposit(d))
+	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	confirmed := false
-	manager := &Manager{cfg: Config{
+	manager := &Manager{assetCfg: &AssetConfig{
 		Store: store, Runtime: runtimeFunc(func(_ context.Context,
 			method bridge.Method, input, output any) error {
 
@@ -337,57 +373,52 @@ func TestOriginalRefundPersistsUntilConfirmedProof(t *testing.T) {
 		}),
 	}}
 	require.NoError(t, manager.expireDeposits(t.Context()))
-	jobs, err := store.Jobs(t.Context())
+	jobs, err := store.AssetJobs(t.Context())
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
-	require.ErrorIs(t, manager.resume(t.Context(), &jobs[0]),
+	require.ErrorIs(t, manager.resumeAsset(t.Context(), &jobs[0]),
 		bridge.ErrPending)
-	require.ErrorIs(t, store.PutJob(t.Context(), testSwap(d, 1)),
+	require.ErrorIs(t, store.PutAssetJob(t.Context(), testSwap(d, 1)),
 		assetexec.ErrConflict)
 	require.NoError(t, store.Close())
-	store, err = OpenStore(path)
+	store, err = openAssetTestStore(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	manager.cfg.Store = store
-	jobs, err = store.Jobs(t.Context())
+	manager.assetCfg.Store = store
+	jobs, err = store.AssetJobs(t.Context())
 	require.NoError(t, err)
 	confirmed = true
-	require.NoError(t, manager.resume(t.Context(), &jobs[0]))
+	require.NoError(t, manager.resumeAsset(t.Context(), &jobs[0]))
 	require.True(t, jobs[0].Complete)
 	require.NotEmpty(t, jobs[0].RefundProof)
-	inventory, err := store.Inventory(t.Context())
+	inventory, err := store.AssetInventory(t.Context())
 	require.NoError(t, err)
 	require.True(t, inventory[0].Consumed)
 	require.Equal(t, [32]byte{}, inventory[0].RequestID)
-	id, err := manager.RefundDeposit(t.Context(), d.Outpoint)
+	id, err := manager.RefundAssetDeposit(t.Context(), d.Outpoint)
 	require.NoError(t, err)
 	require.Equal(t, jobs[0].ID, id)
 }
 
 func TestExpiredOfferBeforeControllerCreationReleasesSafely(t *testing.T) {
 	dir := t.TempDir()
-	store, err := OpenStore(filepath.Join(dir, "inventory.db"))
+	store, err := openAssetTestStore(filepath.Join(dir, "inventory.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	journal, err := assetexec.OpenBoltStore(
-		filepath.Join(dir, "journal.db"),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, journal.Close()) })
 	d := testDeposit(t)
-	require.NoError(t, store.addDeposit(d))
+	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	job := testSwap(d, 1)
-	require.NoError(t, store.PutJob(t.Context(), job))
+	require.NoError(t, store.PutAssetJob(t.Context(), job))
 	job.Offer = &assetexec.Offer{Hash: [32]byte{9}}
-	require.NoError(t, store.updateJob(t.Context(), job))
-	manager := &Manager{cfg: Config{Store: store, Journal: journal}}
-	require.NoError(t, manager.resume(t.Context(), job))
+	require.NoError(t, store.UpdateAssetJob(t.Context(), job))
+	manager := &Manager{assetCfg: &AssetConfig{Store: store}}
+	require.NoError(t, manager.resumeAsset(t.Context(), job))
 	require.True(t, job.Canceled)
-	inventory, err := store.Inventory(t.Context())
+	inventory, err := store.AssetInventory(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, [32]byte{}, inventory[0].RequestID)
 	require.False(t, inventory[0].Consumed)
-	require.NoError(t, store.PutJob(t.Context(), testSwap(d, 2)))
+	require.NoError(t, store.PutAssetJob(t.Context(), testSwap(d, 2)))
 }
 
 type lostOfferServer struct {
@@ -407,20 +438,15 @@ func (s *lostOfferServer) CreateAssetLoopIn(_ context.Context,
 func TestLostOfferResponseRefundsOnlyAfterOriginalMaturity(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "inventory.db")
-	store, err := OpenStore(path)
+	store, err := openAssetTestStore(path)
 	require.NoError(t, err)
-	journal, err := assetexec.OpenBoltStore(
-		filepath.Join(dir, "journal.db"),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, journal.Close()) })
 	d := testDeposit(t)
 	d.RefundHeight = 100
-	require.NoError(t, store.addDeposit(d))
+	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	var height uint32 = 99
 	server := &lostOfferServer{}
-	manager := &Manager{cfg: Config{
-		Store: store, Journal: journal, Owner: [32]byte{3},
+	manager := &Manager{assetCfg: &AssetConfig{
+		Store: store, Owner: [32]byte{3},
 		FetchL402: func(context.Context) error { return nil },
 		Runtime: runtimeFunc(
 			func(_ context.Context, method bridge.Method,
@@ -431,37 +457,37 @@ func TestLostOfferResponseRefundsOnlyAfterOriginalMaturity(t *testing.T) {
 				return nil
 			},
 		),
-	}, Session: &assetclient.Session{Adapter: &assetclient.Adapter{
+	}, assetSession: &assetclient.Session{Adapter: &assetclient.Adapter{
 		Server: server,
 	}}}
 	request := *testSwap(d, 1).Swap
-	require.NoError(t, manager.Start(t.Context(), request))
-	job, err := store.getJob(t.Context(), request.RequestID)
+	require.NoError(t, manager.StartAssetLoopIn(t.Context(), request))
+	job, err := store.GetAssetJob(t.Context(), request.RequestID)
 	require.NoError(t, err)
-	require.Error(t, manager.resume(t.Context(), job))
+	require.Error(t, manager.resumeAsset(t.Context(), job))
 	require.Equal(t, 1, server.calls)
 	require.Nil(t, job.Offer)
-	_, err = manager.RefundDeposit(t.Context(), d.Outpoint)
+	_, err = manager.RefundAssetDeposit(t.Context(), d.Outpoint)
 	require.ErrorIs(t, err, assetexec.ErrPending)
 	require.NoError(t, store.Close())
-	store, err = OpenStore(path)
+	store, err = openAssetTestStore(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	manager.cfg.Store = store
-	job, err = store.getJob(t.Context(), request.RequestID)
+	manager.assetCfg.Store = store
+	job, err = store.GetAssetJob(t.Context(), request.RequestID)
 	require.NoError(t, err)
 	height = 100
-	require.NoError(t, manager.resume(t.Context(), job))
+	require.NoError(t, manager.resumeAsset(t.Context(), job))
 	require.True(t, job.Canceled)
 	require.Equal(t, 1, server.calls, "never recreate a canceled offer")
 	require.NoError(t, manager.expireDeposits(t.Context()))
-	jobs, err := store.Jobs(t.Context())
+	jobs, err := store.AssetJobs(t.Context())
 	require.NoError(t, err)
 	require.Len(t, jobs, 2)
 }
 
 type activeJournal struct {
-	assetexec.Store
+	AssetStore
 
 	record *assetexec.Record
 }
@@ -473,16 +499,16 @@ func (s activeJournal) ListActive(context.Context) (
 }
 
 func TestUnknownOfferCannotReleaseExposedJournal(t *testing.T) {
-	store, err := OpenStore(filepath.Join(t.TempDir(), "inventory.db"))
+	store, err := openAssetTestStore(filepath.Join(t.TempDir(), "inventory.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	d := testDeposit(t)
 	d.RefundHeight = 100
-	require.NoError(t, store.addDeposit(d))
+	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	job := testSwap(d, 1)
-	require.NoError(t, store.PutJob(t.Context(), job))
-	manager := &Manager{cfg: Config{
-		Store: store, Journal: activeJournal{record: &assetexec.Record{
+	require.NoError(t, store.PutAssetJob(t.Context(), job))
+	manager := &Manager{assetCfg: &AssetConfig{
+		Store: activeJournal{AssetStore: store, record: &assetexec.Record{
 			SignaturesExposed: true, Offer: assetexec.Offer{
 				Terms: assetexec.Terms{RequestID: job.ID},
 			},
@@ -496,8 +522,35 @@ func TestUnknownOfferCannotReleaseExposedJournal(t *testing.T) {
 	}}
 	_, err = manager.cancelExpiredUnknownOffer(t.Context(), job)
 	require.ErrorIs(t, err, assetexec.ErrState)
-	inventory, err := store.Inventory(t.Context())
+	inventory, err := store.AssetInventory(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, job.ID, inventory[0].RequestID)
 	require.False(t, job.Canceled)
 }
+
+// assetTestStore opens the same migrated SQLite store used by loopd, including
+// synchronous full fsync and foreign-key checks.
+type assetTestStore struct {
+	*SqlStore
+
+	db *loopdb.SqliteSwapStore
+}
+
+func openAssetTestStore(path string) (*assetTestStore, error) {
+	db, err := loopdb.NewSqliteStore(
+		&loopdb.SqliteConfig{DatabaseFileName: path},
+		&chaincfg.RegressionNetParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &assetTestStore{
+		SqlStore: NewSqlStore(
+			loopdb.NewTypedStore[Querier](db),
+			clock.NewDefaultClock(),
+			&chaincfg.RegressionNetParams,
+		),
+		db: db,
+	}, nil
+}
+func (s *assetTestStore) Close() error { return s.db.Close() }

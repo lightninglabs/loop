@@ -1,4 +1,4 @@
-package assetclient
+package assetclient_test
 
 import (
 	"bytes"
@@ -273,12 +273,6 @@ func (*sessionActions) CurrentHeight(context.Context) (uint32, error) {
 func (*sessionActions) ValidateOffer(context.Context, assetexec.Offer) error {
 	return nil
 }
-func (*sessionActions) ReserveDeposits(context.Context, assetexec.Offer) error {
-	return nil
-}
-func (*sessionActions) ReleaseDeposits(context.Context, assetexec.Offer) error {
-	return nil
-}
 func (a *sessionActions) CancelInvoice(context.Context, assetexec.Offer) error {
 	a.cancels++
 	return nil
@@ -371,7 +365,7 @@ func TestAdapterSettlementUsesPersistedAcceptedCircuit(t *testing.T) {
 func TestSessionRecoveryCancelsExpiredUnexposedOffer(t *testing.T) {
 	_, _, offer := offerFixture(t)
 	offer.Terms.OfferExpiry = time.Now().Add(-time.Minute)
-	store, err := assetexec.OpenBoltStore(
+	store, err := openAssetClientStore(
 		filepath.Join(t.TempDir(), "client.db"),
 	)
 	require.NoError(t, err)
@@ -450,7 +444,7 @@ func testSessionRecoveryResumesLostResponses(t *testing.T, lostPhase string) {
 	t.Helper()
 	_, _, offer := offerFixture(t)
 	path := filepath.Join(t.TempDir(), "client.db")
-	store, err := assetexec.OpenBoltStore(path)
+	store, err := openAssetClientStore(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	actions := &sessionActions{}
@@ -522,7 +516,7 @@ func testSessionRecoveryResumesLostResponses(t *testing.T, lostPhase string) {
 	)
 	require.Zero(t, actions.pushes)
 	require.NoError(t, store.Close())
-	store, err = assetexec.OpenBoltStore(path)
+	store, err = openAssetClientStore(path)
 	require.NoError(t, err)
 	adapter.Store = store
 	session.Controller = assetexec.NewController(

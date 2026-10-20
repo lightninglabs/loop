@@ -57,8 +57,8 @@ func (c *Controller) lock(ctx context.Context, hash [32]byte) (func(), error) {
 	}
 }
 
-// Start journals the immutable offer and invoice intent before reserving the
-// deposits. Retrying the identical request resumes an interrupted reservation.
+// Start atomically binds the immutable offer, invoice intent and reservation.
+// Retrying the identical request resumes its persisted deposit lifecycle.
 func (c *Controller) Start(ctx context.Context, offer Offer,
 	intent []byte) error {
 
@@ -105,11 +105,6 @@ func (c *Controller) Start(ctx context.Context, offer Offer,
 func (c *Controller) reserve(ctx context.Context, r *Record) error {
 	if r.Reserved {
 		return nil
-	}
-	if err := c.actions.ReserveDeposits(
-		ctx, cloneOffer(r.Offer),
-	); err != nil {
-		return err
 	}
 	if err := transitionDeposit(
 		r, depositflow.OnLoopInInitiated,
@@ -521,10 +516,7 @@ func (c *Controller) Cancel(ctx context.Context, hash [32]byte) error {
 	if err := transition(r, event); err != nil {
 		return err
 	}
-	if err := c.save(ctx, r); err != nil {
-		return err
-	}
-	return c.release(ctx, r)
+	return c.save(ctx, r)
 }
 
 // Recover resumes durable work after restart or an ambiguous RPC response.
@@ -660,26 +652,20 @@ func (c *Controller) confirmClaim(ctx context.Context, hash [32]byte) error {
 	if err := transition(r, flow.OnSucceeded); err != nil {
 		return err
 	}
-	if err := c.save(ctx, r); err != nil {
-		return err
-	}
-	return c.release(ctx, r)
+	return c.save(ctx, r)
 }
 
 func (c *Controller) release(ctx context.Context, r *Record) error {
 	if r.DepositsReleased {
 		return nil
 	}
-	if err := c.actions.ReleaseDeposits(
-		ctx, cloneOffer(r.Offer),
-	); err != nil {
-		return err
-	}
 	r.DepositsReleased = true
 	return c.save(ctx, r)
 }
 
 func (c *Controller) save(ctx context.Context, r *Record) error {
+	// Terminal proof and reservation release share one durable checkpoint.
+	r.DepositsReleased = r.State.Terminal()
 	previous := r.Revision
 	r.Revision++
 	return c.store.Update(ctx, r, previous)
@@ -698,6 +684,7 @@ func validateOffer(offer Offer) error {
 		t.RequestDigest == ([32]byte{}) ||
 		t.Owner == ([32]byte{}) || t.GroupKey == ([33]byte{}) ||
 		len(t.DepositOutpoints) == 0 || len(t.Contract) == 0 ||
+		len(t.Admission) != 0 ||
 		t.PayoutAmount == 0 || t.MaxDebit < t.PayoutAmount ||
 		t.RefundHeight == 0 || t.RecoveryDelta == 0 ||
 		t.ExecutionDelta == 0 || t.OfferExpiry.IsZero() ||

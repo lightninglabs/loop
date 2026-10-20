@@ -1,8 +1,10 @@
 # Normal client asset deposits and loop-ins
 
-`loopd` starts this manager when tapd and the asset transaction runtime are
-configured. It uses the existing static address registration, shared deposit
-exclusion, asset payment adapter, durable controller and session worker. The
+`loopd` configures the existing static Loop In manager with an asset driver
+when tapd and the transaction runtime are enabled. The same manager owns
+admission and recovery; the normal SQL store holds deposit metadata and swap
+progress. Static address registration, deposit exclusion and transition
+policies are shared with Bitcoin. The
 separate `loopassetd` process owns SDK transaction construction, proofs and
 wallet signing. Only versioned primitive data crosses its authenticated Unix
 socket; both processes use the same LND and tapd identity.
@@ -87,23 +89,31 @@ and refund-report operations retain the additional recovery boundaries.
 
 ## Recovery and shared ownership
 
-`asset-inventory.db` stores deposits, pending creation requests and their
-reservations. `asset-loop-in.db` stores controller progress. Both are private
-Bolt databases under the normal network-specific Loop data directory. Keep
-these files and the runtime state directory together with the LND/tapd wallet
-state. The runtime retains signing sessions and transaction/proof intent; the
-client never recreates private keys or nonces during recovery.
+The normal Loop SQL database stores asset metadata on `deposits` and one
+`static_address_asset_requests` row per request. That row holds the immutable
+request, recovered offer and execution checkpoints. Native quantities remain
+in asset metadata; the deposit's ordinary amount is the Bitcoin anchor value.
+Bitcoin queries exclude asset rows, including consumed anchors.
 
-On startup, inventory entries are registered with the existing deposit
-manager before it recovers Bitcoin deposits. Registration, Bitcoin deposit
-creation and selection share the manager mutex. Asset anchors remain excluded
-from Bitcoin-only sweeping and withdrawal even after their asset swap or
-refund finishes. A conflicting previously stored Bitcoin deposit stops startup.
-Inventory release saves a receipt keyed by swap hash, request ID and outpoint.
-If a crash interrupts controller cleanup, that receipt lets the old controller
-finish without releasing a newer request's reservation.
+Earlier draft `asset-inventory.db` and `asset-loop-in.db` files are imported
+read-only in one SQL transaction before recovery. The migration marker prevents
+replaying stale copies. Keep the originals until the upgrade is verified.
+Back up the normal Loop database, runtime state and LND/tapd wallet together.
+The runtime retains signing sessions and transaction/proof intent; recovery
+never substitutes new keys or nonces.
 
-The client worker resumes pending funding/offer requests and existing sessions.
+On startup, the shared deposit manager restores asset exclusions before
+recovering Bitcoin deposits. Registration, Bitcoin deposit creation and
+selection share its mutex. A conflicting stored Bitcoin deposit stops startup.
+The SQL transaction that records terminal cleanup also releases the matching
+reservation and records its deposit state. There is no separate release-receipt
+journal. A failed transaction leaves both progress and ownership unchanged.
+
+The normal Loop In manager resumes pending funding/offer requests and active
+sessions in bounded batches alongside Bitcoin notifications. Active execution
+recovery runs independently of pending offer requests; a stalled offer cannot
+block an existing swap's recovery. Shutdown cancels and joins both before
+closing the shared database or runtime connection.
 The shared Loop In and deposit transition policies govern those sessions. Once
 claim signatures may have escaped, only local settled payout plus confirmed
 claim proof, or a confirmed spendable refund proof, can release the reservation.

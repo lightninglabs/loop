@@ -1,4 +1,4 @@
-package assetclient
+package assetclient_test
 
 import (
 	"context"

@@ -49,15 +49,40 @@ the SDK adapter about 300. The rest was not a contract kit:
 | --- | --- | --- |
 | Contract kit | Bitcoin deposit/HTLC scripts, control blocks and witnesses. | Keep a small shared implementation. Existing Bitcoin helpers and asset contracts now use the same leaf serializers. |
 | SDK adapter | Convert contract outputs and signing plans into generic SDK requests. | Keep thin; generic asset construction belongs in the SDK. |
-| Runtime, about 2,900 lines | Asset inventory, fallback/claim/refund construction, proof import/reconstruction, chain discovery and transaction journal. | Necessary operations, but too many responsibilities and duplicated lifecycle ownership in one package. |
-| Wallet signer, about 900 lines | Wallet key authorization and durable MuSig/signature recovery. | Preserve nonce/transaction bindings and restart guarantees; do not replace with ephemeral sessions. |
+| Runtime, about 2,800 lines | Asset inventory, fallback/claim/refund construction, proof import/reconstruction, chain discovery and transaction journal. | Transaction construction and proof recovery remain separate from the normal Loop In manager. |
+| Wallet signer, about 880 lines | Wallet key authorization and durable MuSig/signature recovery. | Preserve nonce/transaction bindings and restart guarantees; do not replace with ephemeral sessions. |
 | Bridge and daemon, about 1,100 lines | Authenticated process transport, configuration and SDK hosting. | Compatibility cost, not a requirement of asset swaps. Remove when dependencies can coexist. |
 
-The first refactoring removes duplicate contract/VM tests from the SDK adapter
-and keeps them in the core kit. It also shares unilateral spend planning and
-the commit/persist/sign/persist sequence between original refunds and HTLC
-recovery. These changes remove duplication; they do not resolve the larger
-lifecycle design problem.
+The adapter uses SDK virtual transactions, commitments, asset witnesses,
+Bitcoin witness construction and package integrity validation. Shared Loop
+helpers build the contract leaves. Runtime recovery now shares observed-spend
+proof reconstruction and verification across original CSV and HTLC outcomes.
+
+Two substantial pieces still have no upstream equivalent. The SDK signer is a
+callback, not a durable LND/MuSig signer. Its confirmed-path helper also rejects
+historical v0 bases with transitions. Removing the local implementations today
+would lose signing recovery or support for existing v0 assets.
+
+## Shared managers and stores
+
+The client no longer has an `assetmanager` or independent session worker. Its
+existing `loopin.Manager` schedules asset request and execution recovery beside
+Bitcoin notifications. The normal `loopin.SqlStore` holds asset metadata on
+`deposits`; a single request row contains pre-offer and execution state.
+Terminal cleanup, deposit history and reservation release commit atomically.
+The two draft Bolt journals are imported read-only, once, before recovery.
+
+The server's existing Loop In manager owns readiness, recovery and shutdown for
+both protocols. Its existing Postgres store implements the asset store interface
+and shares deposit locking with Bitcoin. Typed asset payloads remain separate
+from required Bitcoin contract columns; the independent SQL store facade and
+service worker are removed.
+
+The small asset execution controller remains necessary: the legacy FSM's
+entry notification cannot fail closed on a persistence error. Both protocols
+share transition policies, while asset actions keep durable writes before
+invoice creation, signature exposure and preimage release. A failed write must
+never authorize one of those effects.
 
 ## Why a separate process exists today
 
@@ -77,11 +102,10 @@ merely because the first integration used it.
 
 ## Remaining architecture priorities
 
-1. **Shared lifecycle and persistence.** Extend the normal deposit and Loop In
-   records with asset metadata and driver hooks, then remove parallel inventory
-   and execution journals. First give the shared FSM a fallible durable barrier
-   before external effects; its existing notification hook cannot substitute
-   for the current fail-closed writes. Keep all lost-response and restart tests.
+1. **Shared durable FSM runner.** Managers and stores are now shared. To merge
+   the remaining execution dispatch, give the common FSM a fallible durable
+   barrier before external effects and prove its crash semantics for both
+   protocols. Its current notification hook cannot replace fail-closed writes.
 2. **In-process SDK driver.** Align the dependency graphs, remove the JSON
    bridge and extra daemon, and use the normal daemon configuration/lifecycle.
    Track this independently from changes to contract authority.

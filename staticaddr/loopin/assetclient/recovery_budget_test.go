@@ -1,4 +1,4 @@
-package assetclient
+package assetclient_test
 
 import (
 	"context"
@@ -75,7 +75,7 @@ func (i *cancelInvoices) CancelInvoice(ctx context.Context,
 
 func TestBlockedPeerCannotStarveChainLookupOrRefund(t *testing.T) {
 	_, _, offer := offerFixture(t)
-	store, err := assetexec.OpenBoltStore(
+	store, err := openAssetClientStore(
 		filepath.Join(t.TempDir(), "client.db"),
 	)
 	require.NoError(t, err)

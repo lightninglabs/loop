@@ -6,10 +6,10 @@ package assetexec
 import (
 	"context"
 	"errors"
-	"time"
 
 	depositflow "github.com/lightninglabs/loop/staticaddr/deposit/flow"
 	"github.com/lightninglabs/loop/staticaddr/loopin/flow"
+	"github.com/lightninglabs/loop/swapkit/bridge"
 )
 
 var (
@@ -35,39 +35,12 @@ const (
 	Failed                  = flow.Failed
 )
 
-// Terms is the immutable public agreement. GroupKey is canonical compressed.
-// Contract binds every asset packet, proof, anchor script, key, amount, and
-// recovery fee tier.
-// The transaction adapter verifies that complete specification at admission.
-//
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
-type Terms struct {
-	Version          uint32    `json:"Version"`
-	RequestID        [32]byte  `json:"RequestID"`
-	RequestDigest    [32]byte  `json:"RequestDigest"`
-	Owner            [32]byte  `json:"Owner"`
-	GroupKey         [33]byte  `json:"GroupKey"`
-	DepositOutpoints []string  `json:"DepositOutpoints"`
-	DepositAmount    uint64    `json:"DepositAmount"`
-	PayoutAmount     uint64    `json:"PayoutAmount"`
-	AssetFee         uint64    `json:"AssetFee"`
-	ChangeAmount     uint64    `json:"ChangeAmount"`
-	MaxDebit         uint64    `json:"MaxDebit"`
-	RefundHeight     uint32    `json:"RefundHeight"`
-	MinPayoutExpiry  uint32    `json:"MinPayoutExpiry"`
-	RecoveryDelta    uint32    `json:"RecoveryDelta"`
-	ExecutionDelta   uint32    `json:"ExecutionDelta"`
-	OfferExpiry      time.Time `json:"OfferExpiry"`
-	Contract         []byte    `json:"Contract"`
-}
+// Terms is the shared public agreement. Client offers reject Admission, which
+// is private server recovery data; it is omitted from normal client encoding.
+type Terms = bridge.Terms
 
 // Offer contains the server's hash commitment, never its execution preimage.
-//
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
-type Offer struct {
-	Hash  [32]byte `json:"Hash"`
-	Terms Terms    `json:"Terms"`
-}
+type Offer = bridge.Offer
 
 // Invoice contains the exact HOLD invoice and durable receiver RFQ binding.
 //
@@ -77,15 +50,8 @@ type Invoice struct {
 	PaymentPlan    []byte `json:"PaymentPlan"`
 }
 
-// Fallback is the independently verified and fully signed SDK recovery bundle.
-// ClaimSignatures may authorize only a preimage-revealing HTLC fallback, never
-// an unconditional cooperative spend of the deposits.
-//
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
-type Fallback struct {
-	Bundle          []byte `json:"Bundle"`
-	ClaimSignatures []byte `json:"ClaimSignatures"`
-}
+// Fallback is independently verified, publishable SDK recovery material.
+type Fallback = bridge.Fallback
 
 // Record contains private client recovery material. Do not expose it in RPCs.
 // InvoiceIntent and CooperativeRequest never contain private signing nonces.
@@ -117,8 +83,9 @@ type Record struct {
 }
 
 // Store persists independent record copies with atomic revision checks and
-// deposit exclusion. Update receives the previous revision. Terminal records
-// remain recoverable until the existing deposit manager confirms release.
+// deposit exclusion. Create atomically binds the reserved admission. Update
+// receives the previous revision and commits terminal release atomically with
+// DepositsReleased; no external release callback may precede that commit.
 type Store interface {
 	Create(context.Context, *Record) error
 	Get(context.Context, [32]byte) (*Record, error)
@@ -128,8 +95,7 @@ type Store interface {
 
 // Actions connects the controller to the authenticated server, SDK and local
 // assetln.Receiver. All effects must be idempotent by hash and immutable input.
-// Reserve/Release must use the existing deposit manager's shared locks and
-// enforce hash ownership. VerifyFinalizeFallback verifies every asset proof,
+// VerifyFinalizeFallback verifies every asset proof,
 // transaction, output, fee tier and signature, then returns a publishable
 // bundle. It must retain private nonces in its signer, never in Record.
 // Prepared must call Receiver.Prepared locally, not trust server IN_FLIGHT.
@@ -141,8 +107,6 @@ type Store interface {
 type Actions interface {
 	CurrentHeight(context.Context) (uint32, error)
 	ValidateOffer(context.Context, Offer) error
-	ReserveDeposits(context.Context, Offer) error
-	ReleaseDeposits(context.Context, Offer) error
 	CreateInvoice(context.Context, Offer, []byte) (Invoice, error)
 	LookupInvoice(context.Context, Offer) (Invoice, error)
 	VerifyFinalizeFallback(context.Context, Offer, []byte) (Fallback, error)

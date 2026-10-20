@@ -29,13 +29,11 @@ before exposure returns to `Deposited`. Generic errors and expiry cannot
 release a protected claim or invoke a Bitcoin-only sweep. Older journals
 infer their deposit state from the existing evidence rather than losing locks.
 
-`OpenBoltStore` supplies a synchronously flushed private journal, atomic
-revision checks, an exclusive process lock, and a deposit index. The existing
-deposit manager must also reserve these deposits through `Actions`, using the
-same ownership checks as Bitcoin swaps and withdrawals. A journal does not
-substitute for those cross-operation locks. Terminal records remain in
-`ListActive` until shared deposit cleanup completes, so restart retries cleanup
-without releasing a different swap's reservation.
+The existing `loopin.SqlStore` implements this package's `Store` interface.
+Revision checks and deposit state updates use the same SQL transaction as
+execution checkpoints. Terminal cleanup atomically releases only the matching
+request and outpoint; no second journal or receipt bucket is required.
+Terminal records stay active until that transaction completes.
 
 Persisted JSON field names are part of the recovery format. Explicit tags
 preserve the original exported names, including their capitalization. Renaming
@@ -86,8 +84,8 @@ chain witness lookup.
 
 The journal contains payment preimages and signed recovery material and must
 be protected and backed up like the client wallet. Private MuSig2 nonces stay
-in the signing adapter. The controller and Bolt journal provide the durable
-execution kernel. The normal `loopd` assembly uses `assetmanager` and the
+in the signing adapter. The controller and normal Loop SQL store provide durable execution.
+The normal `loopd` assembly uses its existing Loop In manager and the
 separate authenticated `swapkit/tapsdk` runtime for transaction and wallet
 signing operations. The regtest integration harness also exercises these
 boundaries with SDK transactions and local asset Lightning nodes.
@@ -100,21 +98,17 @@ response to the deterministic request digest, the exact selected outpoint set,
 the original contract bytes, native fee/debit limits, and the full compressed
 group key including parity.
 
-`Session.Run` provides background recovery for an embedding daemon. Close its
-`Initialized` barrier only after the authenticated local RPC clients, signer,
-asset deposit ownership manager and transaction driver are ready. The worker
-scans the durable active journal immediately, retries incomplete swaps with
-bounded concurrency and independent action deadlines, and waits for all
-in-flight work during shutdown. Cancel and await the worker before closing
-its journal or dependencies. Every action must honor context cancellation.
+`Session.RecoverActive` performs one bounded recovery batch with independent
+action deadlines. The existing Loop In manager schedules these batches beside
+pending request recovery and Bitcoin notifications. It cancels and joins all
+asset work before shutdown closes the shared store or runtime connection.
+Every action must honor context cancellation.
 
-The normal `loopd` assembly registers this worker through
-[`assetmanager`](../assetmanager/README.md). It restores asset proof inventory
-and shared Bitcoin deposit exclusion before starting recovery, persists
-creation identities before RPC calls, and exposes the `loop static asset`
-commands. The separate runtime retains SDK transaction and wallet signing
-state across process restarts. The manager also recovers original CSV deposits
-that never reached a swap controller.
+The normal [`loopd` assembly](../assets.md) restores asset proof inventory and
+shared Bitcoin deposit exclusion before starting recovery. Creation identities
+are persisted before RPC calls. The separate runtime retains transaction and
+wallet signing state across process restarts. The same manager also recovers
+original CSV deposits that never reached a swap controller.
 
 See the [asset Loop In transitions](../asset-fsm.md) and
 [asset deposit transitions](../../deposit/asset-fsm.md) for the shared graphs.

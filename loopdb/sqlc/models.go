@@ -22,6 +22,9 @@ type Deposit struct {
 	SwapHash              []byte
 	OnchainCost           int64
 	OnchainCostKnown      sql.NullBool
+	AssetData             []byte
+	AssetRequestID        []byte
+	AssetConsumed         bool
 }
 
 type DepositUpdate struct {
@@ -136,6 +139,14 @@ type StaticAddress struct {
 	Pkscript         []byte
 	ProtocolVersion  int32
 	InitiationHeight int32
+}
+
+type StaticAddressAssetRequest struct {
+	RequestID  []byte
+	JobData    []byte
+	SwapHash   []byte
+	RecordData []byte
+	Revision   int64
 }
 
 type StaticAddressSwap struct {

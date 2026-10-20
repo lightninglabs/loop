@@ -6,7 +6,6 @@ import (
 
 	depositflow "github.com/lightninglabs/loop/staticaddr/deposit/flow"
 	"github.com/stretchr/testify/require"
-	"go.etcd.io/bbolt"
 )
 
 func depositState(t *testing.T, f *fixture, want depositflow.State) {
@@ -27,12 +26,12 @@ func TestSharedDepositLifecycleRefund(t *testing.T) {
 	f.reopen()
 	require.ErrorIs(t, f.c.Cancel(ctx, f.offer.Hash), ErrPending)
 	depositState(t, f, depositflow.SweepHtlcTimeout)
-	require.Zero(t, f.a.releases)
+	require.Zero(t, f.store.releases)
 	f.reopen()
 	f.a.refund = []byte("confirmed-refund-proof")
 	require.NoError(t, f.c.Cancel(ctx, f.offer.Hash))
 	depositState(t, f, depositflow.HtlcTimeoutSwept)
-	require.Equal(t, 1, f.a.releases)
+	require.Equal(t, 1, f.store.releases)
 }
 
 func TestSharedDepositLifecycleClaimWins(t *testing.T) {
@@ -55,7 +54,7 @@ func TestSharedDepositLifecycleUnexposedCancel(t *testing.T) {
 	f.ready()
 	require.NoError(t, f.c.Cancel(t.Context(), f.offer.Hash))
 	depositState(t, f, depositflow.Deposited)
-	require.Equal(t, 1, f.a.releases)
+	require.Equal(t, 1, f.store.releases)
 }
 
 func TestOldJournalRecoversProtectedDepositState(t *testing.T) {
@@ -64,21 +63,12 @@ func TestOldJournalRecoversProtectedDepositState(t *testing.T) {
 	require.NoError(t, f.c.ExposeClaim(t.Context(), f.offer.Hash))
 	// Remove only the new field to emulate a journal from the previous
 	// version; persisted exposure evidence must still retain ownership.
-	err := f.store.db.Update(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket(recordBucket)
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(bucket.Get(f.offer.Hash[:]),
-			&fields); err != nil {
-			return err
-		}
-		delete(fields, "DepositState")
-		raw, err := json.Marshal(fields)
-		if err != nil {
-			return err
-		}
-		return bucket.Put(f.offer.Hash[:], raw)
-	})
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(f.store.records[f.offer.Hash], &fields))
+	delete(fields, "DepositState")
+	raw, err := json.Marshal(fields)
 	require.NoError(t, err)
+	f.store.records[f.offer.Hash] = raw
 	f.reopen()
 	depositState(t, f, depositflow.AssetClaimExposed)
 	r, err := f.store.Get(t.Context(), f.offer.Hash)
@@ -88,4 +78,22 @@ func TestOldJournalRecoversProtectedDepositState(t *testing.T) {
 	require.ErrorIs(t, f.store.Update(
 		t.Context(), r, r.Revision-1,
 	), ErrInvalid)
+}
+
+func TestSharedWireTypesKeepClientAdmissionPrivate(t *testing.T) {
+	f := newFixture(t)
+	raw, err := json.Marshal(f.offer)
+	require.NoError(t, err)
+	var envelope map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(raw, &envelope))
+	require.Len(t, envelope, 2)
+	var terms map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(envelope["Terms"], &terms))
+	require.NotContains(t, terms, "Admission")
+	require.Contains(t, terms, "GroupKey")
+	f.offer.Terms.Admission = []byte("private server proof")
+	require.ErrorIs(t, f.c.Start(t.Context(), f.offer, []byte("intent")), ErrInvalid)
+	active, err := f.store.ListActive(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, active)
 }

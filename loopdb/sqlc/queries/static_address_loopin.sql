@@ -126,7 +126,7 @@ UPDATE
 SET
     swap_hash = $2
 WHERE
-    deposit_id = $1;
+    deposit_id = $1 AND asset_data IS NULL;
 
 -- name: SwapHashForDepositID :one
 SELECT
@@ -134,7 +134,7 @@ SELECT
 FROM
     deposits
 WHERE
-    deposit_id = $1;
+    deposit_id = $1 AND asset_data IS NULL;
 
 -- name: DepositIDsForSwapHash :many
 SELECT
@@ -142,7 +142,7 @@ SELECT
 FROM
     deposits
 WHERE
-    swap_hash = $1;
+    swap_hash = $1 AND asset_data IS NULL;
 
 -- name: DepositsForSwapHash :many
 SELECT
@@ -160,6 +160,6 @@ FROM
         LIMIT 1
     )
 WHERE
-    d.swap_hash = $1;
+    d.swap_hash = $1 AND d.asset_data IS NULL;
 
 

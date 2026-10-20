@@ -21,8 +21,8 @@ stateDiagram-v2
 
 RPC errors preserve the durable state. After exposure, neither an elapsed
 refund height nor server unavailability permits releasing deposits. Terminal
-cleanup retries until the shared deposit manager confirms ownership-scoped
-release. Cooperative signatures require a fresh local settlement check.
+cleanup commits its execution checkpoint, deposit history and ownership-scoped
+release in one transaction in the normal SQL store. Cooperative signatures require a fresh local settlement check.
 
 Both graphs are implemented in `loopin/flow`, selected by protocol. The Bitcoin
 FSM binds its existing actions to `BitcoinV0`; the durable asset controller
@@ -31,3 +31,9 @@ validation. The asset journal also advances the shared `deposit/flow` lifecycle
 atomically with exposure and confirmed outcome evidence. See
 [the deposit FSM](../deposit/asset-fsm.md). The write-ahead journal remains the effect
 authorization boundary; an in-memory transition alone cannot expose signatures.
+
+The existing `loopin.Manager` schedules both Bitcoin recovery and bounded asset
+batches. Asset metadata lives on normal deposit rows; one SQL request row owns
+the pre-offer request and subsequent execution record. The controller supplies
+the fallible persistence barrier before external effects; the legacy FSM entry
+notification cannot authorize an asset signature when storage fails.

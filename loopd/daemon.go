@@ -725,7 +725,31 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticAddressLoopInStore,
 	)
 
+	assetConfig, err := d.newAssetConfig(
+		d.mainCtx, swapClient, staticAddressManager, depositManager,
+		staticAddressLoopInStore,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize asset loop-in: %w", err)
+	}
+
+	assetInitialized := false
+	var staticLoopInDone chan struct{}
+	defer func() {
+		if !assetInitialized && d.assetCleanup != nil {
+			// Startup can fail after managers have started. Join the
+			// asset recovery batch before closing its runtime client.
+			d.mainCtxCancel()
+			if staticLoopInDone != nil {
+				<-staticLoopInDone
+			}
+			d.assetCleanup()
+			d.assetCleanup = nil
+		}
+	}()
+
 	staticLoopInManager, err = loopin.NewManager(&loopin.Config{
+		Assets:                               assetConfig,
 		Server:                               staticAddressClient,
 		QuoteGetter:                          swapClient.Server,
 		LndClient:                            d.lnd.Client,
@@ -747,6 +771,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}, blockHeight)
 	if err != nil {
 		return fmt.Errorf("unable to create loop-in manager: %w", err)
+	}
+
+	if err := staticLoopInManager.InitializeAssets(d.mainCtx); err != nil {
+		return fmt.Errorf("initialize asset deposits: %w", err)
 	}
 
 	var (
@@ -798,21 +826,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		swapClient, staticLoopInManager, d.cfg.EnableExperimental,
 	)
 
-	assetManager, err := d.newAssetManager(
-		d.mainCtx, swapClient, staticAddressManager, depositManager,
-	)
-	if err != nil {
-		return fmt.Errorf("initialize asset loop-in: %w", err)
-	}
-
-	assetInitialized := false
-	defer func() {
-		if !assetInitialized && d.assetCleanup != nil {
-			d.assetCleanup()
-			d.assetCleanup = nil
-		}
-	}()
-
 	// Now finally fully initialize the swap client RPC server instance.
 	d.swapClientServer = swapClientServer{
 		config:               d.cfg,
@@ -833,7 +846,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticLoopInManager:  staticLoopInManager,
 		openChannelManager:   openChannelManager,
 		assetClient:          d.assetClient,
-		assetLoopInManager:   assetManager,
 		stopDaemon:           d.Stop,
 	}
 
@@ -1060,10 +1072,12 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// Start the static address loop-in manager.
 	if staticLoopInManager != nil {
 		initChan := make(chan struct{})
+		staticLoopInDone = make(chan struct{})
 		d.wg.Go(func() {
 			infof("Starting static address loop-in manager...")
 			defer infof("Static address loop-in manager stopped")
 			err := staticLoopInManager.Run(d.mainCtx, initChan)
+			close(staticLoopInDone)
 			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
@@ -1083,15 +1097,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		case <-initChan:
 			cancel()
 		}
-	}
-
-	if assetManager != nil {
-		d.wg.Go(func() {
-			err := assetManager.Run(d.mainCtx)
-			if shouldReportManagerErr(err) {
-				d.internalErrChan <- err
-			}
-		})
 	}
 
 	loop.Resume(

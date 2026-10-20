@@ -8,7 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/loop/staticaddr/loopin/assetmanager"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -48,7 +48,7 @@ func (s *swapClientServer) CreateAssetDeposit(ctx context.Context,
 	request *looprpc.CreateAssetDepositRequest) (
 	*looprpc.AssetRequestStatus, error) {
 
-	if s.assetLoopInManager == nil {
+	if !s.staticLoopInManager.AssetsEnabled() {
 		return nil, assetOperationError(nil)
 	}
 	id, group, err := assetRequestIdentity(
@@ -57,7 +57,7 @@ func (s *swapClientServer) CreateAssetDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	err = s.assetLoopInManager.CreateDeposit(
+	err = s.staticLoopInManager.CreateAssetDeposit(
 		ctx, id, group, request.GetAmount(),
 	)
 	if err != nil {
@@ -85,10 +85,10 @@ func (s *swapClientServer) listAssetDeposits(ctx context.Context,
 		}
 	}
 
-	if s.assetLoopInManager == nil {
+	if !s.staticLoopInManager.AssetsEnabled() {
 		return nil, assetOperationError(nil)
 	}
-	entries, err := s.assetLoopInManager.Inventory(ctx)
+	entries, err := s.staticLoopInManager.AssetInventory(ctx)
 	if err != nil {
 		return nil, assetOperationError(err)
 	}
@@ -117,7 +117,7 @@ func (s *swapClientServer) listAssetDeposits(ctx context.Context,
 // assetLoopInRequest validates the asset variant before admission. Bitcoin
 // options cannot silently change meaning when native units are selected.
 func assetLoopInRequest(request *looprpc.StaticAddressLoopInRequest) (
-	assetmanager.SwapRequest, error) {
+	loopin.AssetSwapRequest, error) {
 
 	params := request.GetAssetParams()
 	if params == nil || len(request.GetOutpoints()) != 0 ||
@@ -127,7 +127,7 @@ func assetLoopInRequest(request *looprpc.StaticAddressLoopInRequest) (
 		request.GetPrivate() || request.GetPaymentTimeoutSeconds() != 0 ||
 		request.GetFast() {
 
-		return assetmanager.SwapRequest{}, status.Error(
+		return loopin.AssetSwapRequest{}, status.Error(
 			codes.InvalidArgument, "invalid asset request options",
 		)
 	}
@@ -135,21 +135,21 @@ func assetLoopInRequest(request *looprpc.StaticAddressLoopInRequest) (
 		params.GetRequestId(), params.GetGroupKey(),
 	)
 	if err != nil {
-		return assetmanager.SwapRequest{}, err
+		return loopin.AssetSwapRequest{}, err
 	}
 	outpoint := params.Outpoint
 	point, err := wire.NewOutPointFromString(outpoint)
 	if err != nil || point.String() != outpoint {
-		return assetmanager.SwapRequest{}, status.Error(
+		return loopin.AssetSwapRequest{}, status.Error(
 			codes.InvalidArgument, "invalid asset deposit outpoint",
 		)
 	}
 	if params.Amount == 0 || params.MaxAssetDebit < params.Amount {
-		return assetmanager.SwapRequest{}, status.Error(
+		return loopin.AssetSwapRequest{}, status.Error(
 			codes.InvalidArgument, "invalid native asset amounts",
 		)
 	}
-	return assetmanager.SwapRequest{
+	return loopin.AssetSwapRequest{
 		RequestID: id, GroupKey: group, Outpoint: outpoint,
 		Amount: params.Amount, MaxDebit: params.MaxAssetDebit,
 		MaxFee: params.MaxAssetFee,
@@ -166,10 +166,10 @@ func (s *swapClientServer) assetStaticLoopIn(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if s.assetLoopInManager == nil {
+	if !s.staticLoopInManager.AssetsEnabled() {
 		return nil, assetOperationError(nil)
 	}
-	if err := s.assetLoopInManager.Start(ctx, intent); err != nil {
+	if err := s.staticLoopInManager.StartAssetLoopIn(ctx, intent); err != nil {
 		return nil, assetOperationError(err)
 	}
 	return &looprpc.StaticAddressLoopInResponse{
@@ -183,10 +183,10 @@ func (s *swapClientServer) assetStaticLoopIn(ctx context.Context,
 func (s *swapClientServer) listAssetStaticLoopIns(ctx context.Context) (
 	*looprpc.ListStaticAddressSwapsResponse, error) {
 
-	if s.assetLoopInManager == nil {
+	if !s.staticLoopInManager.AssetsEnabled() {
 		return nil, assetOperationError(nil)
 	}
-	jobs, err := s.assetLoopInManager.Jobs(ctx)
+	jobs, err := s.staticLoopInManager.AssetJobs(ctx)
 	if err != nil {
 		return nil, assetOperationError(err)
 	}
@@ -205,8 +205,7 @@ func (s *swapClientServer) listAssetStaticLoopIns(ctx context.Context) (
 		}
 		if job.Offer != nil {
 			entry.PaymentHash = job.Offer.Hash[:]
-			controller := s.assetLoopInManager.Session.Controller
-			record, err := controller.Status(
+			record, err := s.staticLoopInManager.AssetStatus(
 				ctx,
 				job.Offer.Hash,
 			)
@@ -229,10 +228,10 @@ func (s *swapClientServer) RefundAssetDeposit(ctx context.Context,
 	request *looprpc.RefundAssetDepositRequest) (
 	*looprpc.AssetRequestStatus, error) {
 
-	if s.assetLoopInManager == nil {
+	if !s.staticLoopInManager.AssetsEnabled() {
 		return nil, assetOperationError(nil)
 	}
-	id, err := s.assetLoopInManager.RefundDeposit(
+	id, err := s.staticLoopInManager.RefundAssetDeposit(
 		ctx,
 		request.GetOutpoint(),
 	)

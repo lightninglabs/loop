@@ -11,7 +11,9 @@ the runtime dependency boundary, and the remaining consolidation priorities.
 ## What is implemented
 
 - Normal `loop static asset` commands and `loopd` startup/recovery integration.
-- Shared deposit and Loop In transition graphs with asset-specific guards.
+- Existing deposit/Loop In managers and SQL stores, shared transition graphs,
+  and asset-specific guards. One client request row holds admission and
+  execution state; cleanup and deposit release commit atomically.
 - Loop-owned deposit/HTLC contracts, an SDK adapter, and the `loopassetd`
   wallet signer/proof runtime. Asset leaves use `OP_TRUE`; spending authority
   remains in the Bitcoin deposit and HTLC scripts.
@@ -65,7 +67,7 @@ go test ./staticaddr/... ./assets/assetln ./loopd ./cmd/loop
 ```
 
 See the [asset state mapping](../staticaddr/loopin/asset-fsm.md),
-[client manager](../staticaddr/loopin/assetmanager/README.md),
+[client flow](../staticaddr/loopin/assets.md),
 [execution controller](../staticaddr/loopin/assetexec/README.md), and
 [runtime](../swapkit/tapsdk/cmd/loopassetd/README.md) for ownership and restart
 requirements. Keep this document updated as each release blocker is closed.

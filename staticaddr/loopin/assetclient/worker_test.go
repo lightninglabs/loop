@@ -1,4 +1,4 @@
-package assetclient
+package assetclient_test
 
 import (
 	"context"
@@ -19,7 +19,6 @@ type workerActions struct {
 	sessionActions
 
 	creates atomic.Int32
-	onPush  func()
 }
 
 func (a *workerActions) CreateInvoice(context.Context, assetexec.Offer,
@@ -35,9 +34,6 @@ func (a *workerActions) CreateInvoice(context.Context, assetexec.Offer,
 func (a *workerActions) PushSignatures(context.Context, assetexec.Offer,
 	[]byte) error {
 
-	if a.onPush != nil {
-		a.onPush()
-	}
 	return nil
 }
 
@@ -55,10 +51,10 @@ func (s *workerServer) PrepareAssetLoopIn(ctx context.Context,
 	return &swapserverrpc.AssetLoopInStatus{}, s.prepare(ctx, r)
 }
 
-func TestSessionWorkerResumesReopenedJournalAndRetries(t *testing.T) {
+func TestRecoveryBatchResumesReopenedSQLAndRetries(t *testing.T) {
 	_, _, offer := offerFixture(t)
 	path := filepath.Join(t.TempDir(), "client.db")
-	store, err := assetexec.OpenBoltStore(path)
+	store, err := openAssetClientStore(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	actions := &workerActions{}
@@ -71,13 +67,10 @@ func TestSessionWorkerResumesReopenedJournalAndRetries(t *testing.T) {
 	_, err = controller.PrepareInvoice(t.Context(), offer.Hash)
 	require.NoError(t, err)
 	require.NoError(t, store.Close())
-	store, err = assetexec.OpenBoltStore(path)
+	store, err = openAssetClientStore(path)
 	require.NoError(t, err)
 	controller = assetexec.NewController(store, actions, nil)
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	actions.onPush = cancel
 	var calls atomic.Int32
 	server := &workerServer{prepare: func(_ context.Context,
 		r *swapserverrpc.PrepareAssetLoopInRequest) error {
@@ -99,30 +92,19 @@ func TestSessionWorkerResumesReopenedJournalAndRetries(t *testing.T) {
 			Store: store, Actions: actions, Server: server,
 		},
 	}
-	initialized := make(chan struct{})
 	failures := make(chan error, 2)
-	result := make(chan error, 1)
-	go func() {
-		result <- session.Run(ctx, WorkerConfig{
-			Initialized: initialized, Interval: time.Millisecond,
-			ActionTimeout: time.Second, Concurrency: 1,
-			OnError: func(_ [32]byte, err error) {
-				failures <- err
-			},
-		})
-	}()
-	// A daemon must finish signer and deposit-manager initialization before
-	// a recovered record can send even its first peer request.
-	require.Never(t, func() bool { return calls.Load() > 0 },
-		20*time.Millisecond, time.Millisecond)
-	close(initialized)
-	select {
-	case err := <-result:
-		require.ErrorIs(t, err, context.Canceled)
-	case <-time.After(5 * time.Second):
-		t.Fatal("worker did not finish after cancellation")
-	}
+	onError := func(_ [32]byte, err error) { failures <- err }
+	// A transient peer error is retained for the owning manager's next
+	// batch. The reopened invoice and request bytes remain authoritative.
+	require.NoError(t, session.RecoverActive(
+		t.Context(), time.Second, 1, onError,
+	))
 	require.ErrorIs(t, <-failures, errLost)
+	require.EqualValues(t, 1, calls.Load())
+	require.NoError(t, session.RecoverActive(
+		t.Context(), time.Second, 1, onError,
+	))
+	require.Empty(t, failures)
 	require.EqualValues(t, 2, calls.Load())
 	require.EqualValues(t, 1, actions.creates.Load())
 	record, err := store.Get(t.Context(), offer.Hash)
@@ -131,9 +113,9 @@ func TestSessionWorkerResumesReopenedJournalAndRetries(t *testing.T) {
 	require.Equal(t, []byte("signed-sdk-bundle"), record.Fallback.Bundle)
 }
 
-func TestSessionWorkerBoundsConcurrentActions(t *testing.T) {
+func TestRecoveryBatchBoundsConcurrentActions(t *testing.T) {
 	_, _, offer := offerFixture(t)
-	store, err := assetexec.OpenBoltStore(
+	store, err := openAssetClientStore(
 		filepath.Join(t.TempDir(), "client.db"),
 	)
 	require.NoError(t, err)
@@ -147,6 +129,7 @@ func TestSessionWorkerBoundsConcurrentActions(t *testing.T) {
 	for i := range 4 {
 		candidate := offer
 		candidate.Hash[0] = byte(i + 1)
+		candidate.Terms.RequestID[0] = byte(i + 1)
 		candidate.Terms.DepositOutpoints = []string{
 			offer.Terms.DepositOutpoints[0][:64] + ":" +
 				strconv.Itoa(i),
@@ -179,20 +162,10 @@ func TestSessionWorkerBoundsConcurrentActions(t *testing.T) {
 			Store: store, Actions: actions, Server: server,
 		},
 	}
-	initialized := make(chan struct{})
-	close(initialized)
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
 	failures := make(chan error, 4)
-	err = session.Run(ctx, WorkerConfig{
-		Initialized: initialized, Interval: time.Hour,
-		ActionTimeout: 100 * time.Millisecond, Concurrency: 2,
-		OnReady: cancel,
-		OnError: func(_ [32]byte, err error) {
-			failures <- err
-		},
-	})
-	require.ErrorIs(t, err, context.Canceled)
+	err = session.RecoverActive(t.Context(), 100*time.Millisecond, 2,
+		func(_ [32]byte, err error) { failures <- err })
+	require.NoError(t, err)
 	require.EqualValues(t, 2, maximum.Load())
 	require.Zero(t, active.Load())
 	require.Len(t, failures, 4)
@@ -214,29 +187,75 @@ func (s *failingScanStore) ListActive(context.Context) (
 	return nil, errLost
 }
 
-func TestSessionWorkerLifecycle(t *testing.T) {
+func TestRecoveryBatchLifecycle(t *testing.T) {
 	store := &failingScanStore{}
 	session := &Session{
 		Controller: assetexec.NewController(store, nil, nil),
 		Adapter:    &Adapter{Store: store},
 	}
-	initialized := make(chan struct{})
-	cfg := WorkerConfig{
-		Initialized: initialized, Interval: time.Hour,
-		ActionTimeout: time.Second, Concurrency: 1,
-	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	require.ErrorIs(t, session.Run(ctx, cfg), context.Canceled)
+	require.ErrorIs(t, session.RecoverActive(ctx, time.Second, 1, nil),
+		context.Canceled)
 	require.Zero(t, store.calls.Load())
-	close(initialized)
 	// Storage failures stop recovery rather than pretending that no active
-	// swaps exist. The same session can be restarted once its store works.
-	require.ErrorIs(t, session.Run(t.Context(), cfg), errLost)
-	require.EqualValues(t, 1, store.calls.Load())
-	session.running.Store(true)
-	require.ErrorIs(t, session.Run(t.Context(), cfg), assetexec.ErrState)
-	session.running.Store(false)
-	cfg.Concurrency = 0
-	require.ErrorIs(t, session.Run(t.Context(), cfg), assetexec.ErrInvalid)
+	// swaps exist. A later batch can try the same session again.
+	for range 2 {
+		require.ErrorIs(t, session.RecoverActive(
+			t.Context(), time.Second, 1, nil,
+		), errLost)
+	}
+	require.EqualValues(t, 2, store.calls.Load())
+	require.ErrorIs(t, session.RecoverActive(
+		t.Context(), time.Second, 0, nil,
+	), assetexec.ErrInvalid)
+}
+
+// TestRecoveryBatchRejectsOverlap holds an actual peer action open. A second
+// owner must not enter recovery for the same durable session concurrently.
+func TestRecoveryBatchRejectsOverlap(t *testing.T) {
+	_, _, offer := offerFixture(t)
+	store, err := openAssetClientStore(filepath.Join(t.TempDir(), "client.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	actions := &workerActions{}
+	controller := assetexec.NewController(store, actions, nil)
+	intent, err := json.Marshal(InvoiceIntent{
+		RecoveryRequest: []byte("fixed-request"),
+	})
+	require.NoError(t, err)
+	require.NoError(t, controller.Start(t.Context(), offer, intent))
+	started := make(chan struct{})
+	server := &workerServer{prepare: func(ctx context.Context,
+		_ *swapserverrpc.PrepareAssetLoopInRequest) error {
+
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	session := &Session{
+		Controller: controller,
+		Adapter:    &Adapter{Store: store, Actions: actions, Server: server},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() {
+		finished <- session.RecoverActive(ctx, time.Minute, 1, nil)
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("recovery did not reach peer action")
+	}
+	require.ErrorIs(t, session.RecoverActive(
+		t.Context(), time.Second, 1, nil,
+	), assetexec.ErrState)
+	cancel()
+	select {
+	case err := <-finished:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled recovery did not join its action")
+	}
 }

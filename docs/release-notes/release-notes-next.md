@@ -2,23 +2,15 @@
 
 #### New Features
 
-* Asset static loop-ins and their listings use the existing static-address
-  RPCs with explicit native asset fields and durable request IDs.
+* Add experimental same-group asset deposits and Loop In through `loopd`,
+  `loop static asset`, and typed fields on existing static-address RPCs.
+  The normal deposit/Loop In managers and SQL stores own admission and
+  recovery. Server-controlled execution requires locally verified asset
+  payments; reservations remain protected until confirmed proof resolution.
 
-* Wire native asset deposits and static loop-ins into normal `loopd` and
-  `loop static asset` commands, with durable request identities, shared
-  Bitcoin deposit exclusion, startup recovery, and original CSV refunds.
-  The separate authenticated transaction runtime retains wallet signing
-  and proof state across process restarts.
-
-* Add a durable client execution controller for server-preimage asset static
-  loop-ins, with recovery bundles persisted before signatures, independent
-  local payout checks, and confirmed asset-proof gates for deposit release.
-  Bitcoin and asset flows share protocol-selected Loop In and deposit FSM
-  transition policies, with explicit protection after claim exposure.
-
-* Add Loop-owned `swapkit` contracts and a separate `swapkit/tapsdk` adapter
-  using the generic Tap SDK builder for asset deposits and HTLCs.
+* Add Loop-owned deposit/HTLC contracts and a Tap SDK transaction runtime
+  with durable wallet signing, proof recovery and original CSV refunds.
+  The separate authenticated process preserves signing state across restarts.
 
 #### Breaking Changes
 

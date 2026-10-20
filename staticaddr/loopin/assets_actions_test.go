@@ -1,4 +1,4 @@
-package assetmanager
+package loopin
 
 import (
 	"context"
@@ -113,7 +113,7 @@ func testClaimHint(t *testing.T, scenario string) {
 			return unverified, proofFailure
 		}
 	}}
-	actions := &runtimeActions{manager: &Manager{cfg: Config{
+	actions := &runtimeActions{manager: &Manager{assetCfg: &AssetConfig{
 		Server: server, Runtime: runtime,
 	}}}
 	proof, err := actions.InspectClaim(ctx, offer, fallback)

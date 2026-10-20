@@ -139,7 +139,7 @@ If you want to build release files yourself, follow
 
 The normal client supports asset deposit funding, same-group native payouts,
 and recovery through `loop static asset`. See the
-[asset client manager guide](staticaddr/loopin/assetmanager/README.md) for
+[asset deposit and loop-in guide](staticaddr/loopin/assets.md) for
 configuration, commands, persistent state and the initial one-deposit limit.
 The transaction runtime builds from the separate `swapkit/tapsdk` module.
 

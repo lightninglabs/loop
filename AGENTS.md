@@ -87,11 +87,12 @@ pull request uses the `no-changelog` label instead. This is enforced by CI.
 
 ### Asset static loop-in ownership
 
-`staticaddr/loopin/assetmanager` owns normal client admission, durable pre-offer
-requests, asset inventory and startup recovery. `loopd` and `looprpc` expose it;
-`cmd/loop` supplies the `static asset` commands. Read its README before changing
-this flow. The deposit manager's shared exclusion protects asset anchors from
-Bitcoin-only selection and sweeping. Preserve that exclusion before starting
-Bitcoin deposit recovery. SDK transaction and wallet-signing state belongs to
-the separate `swapkit/tapsdk` runtime; only primitive bridge types may enter the
-client's legacy dependency graph.
+`staticaddr/loopin.Manager` owns Bitcoin and asset admission and recovery.
+Its existing `SqlStore` stores asset metadata on deposit rows and combines
+pending requests with execution checkpoints. Read `staticaddr/loopin/assets.md`
+before changing this flow. `loopd` and `looprpc` expose it; `cmd/loop` supplies
+`static asset` commands. Restore the deposit manager's asset exclusion before
+Bitcoin recovery. Execution checkpoints and ownership release must commit
+atomically; native quantities must never enter satoshi fields. SDK transaction
+and wallet-signing state belongs to the separate `swapkit/tapsdk` runtime;
+only primitive bridge types may enter the client's legacy dependency graph.

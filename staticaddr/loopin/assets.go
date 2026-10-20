@@ -1,15 +1,11 @@
-// Package assetmanager assembles the normal client's durable asset inventory,
-// request creation, shared deposit exclusion, and existing session recovery.
-package assetmanager
+package loopin
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -24,16 +20,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Runtime is the authenticated local, versioned SDK process boundary.
-type Runtime interface {
+// AssetRuntime is the authenticated local, versioned SDK process boundary.
+type AssetRuntime interface {
 	Call(context.Context, bridge.Method, any, any) error
 }
 
-// Config contains concrete node, journal and shared inventory dependencies.
-type Config struct {
-	Runtime    Runtime
-	Store      *Store
-	Journal    assetexec.Store
+// AssetConfig contains concrete node, journal and shared inventory dependencies.
+type AssetConfig struct {
+	Runtime    AssetRuntime
+	Store      AssetStore
 	Address    *address.Manager
 	Deposits   *deposit.Manager
 	Server     assetclient.Server
@@ -46,62 +41,69 @@ type Config struct {
 	OnError    func(error)
 }
 
-// Manager coordinates immutable requests before offers and existing sessions
-// after offers. Its worker must stop before either journal is closed.
-type Manager struct {
-	cfg       Config
-	Session   *assetclient.Session
-	requestMu sync.Mutex
-}
-
-// New assembles the production client actions without any in-memory signer.
-func New(cfg Config) (*Manager, error) {
-	if cfg.Runtime == nil || cfg.Store == nil || cfg.Journal == nil ||
-		cfg.Address == nil || cfg.Deposits == nil ||
-		cfg.Server == nil ||
-		cfg.Receiver == nil || cfg.Owner == ([32]byte{}) ||
-		cfg.Peer == ([33]byte{}) || cfg.FetchL402 == nil {
-
-		return nil, assetexec.ErrInvalid
+// initAssetSession binds the asset protocol driver to the ordinary loop-in
+// manager. All request and execution records use its existing SQL database.
+func (m *Manager) initAssetSession() error {
+	cfg := m.cfg.Assets
+	if cfg == nil {
+		return nil
 	}
-	m := &Manager{cfg: cfg}
+	if cfg.Runtime == nil || cfg.Store == nil || cfg.Address == nil ||
+		cfg.Deposits == nil || cfg.Server == nil || cfg.Receiver == nil ||
+		cfg.Owner == ([32]byte{}) || cfg.Peer == ([33]byte{}) ||
+		cfg.FetchL402 == nil {
+
+		return assetexec.ErrInvalid
+	}
+	m.assetCfg = cfg
 	actions := &runtimeActions{manager: m}
 	adapter := &assetclient.Adapter{
-		Actions:         actions,
-		Receiver:        cfg.Receiver,
-		Server:          cfg.Server,
-		Store:           cfg.Journal,
-		Height:          actions.CurrentHeight,
+		Actions: actions, Receiver: cfg.Receiver, Server: cfg.Server,
+		Store: cfg.Store, Height: actions.CurrentHeight,
 		HoldExpiryDelta: 20,
 	}
-	controller := assetexec.NewController(cfg.Journal, adapter, time.Now)
-	m.Session = &assetclient.Session{
-		Controller: controller,
+	m.assetSession = &assetclient.Session{
+		Controller: assetexec.NewController(cfg.Store, adapter, time.Now),
 		Adapter:    adapter,
 	}
-	return m, nil
+	return nil
 }
 
-// Initialize verifies the local runtime identity and restores asset exclusions
+// AssetsEnabled reports whether this manager has a configured asset driver.
+func (m *Manager) AssetsEnabled() bool {
+	return m != nil && m.assetCfg != nil
+}
+
+// AssetStatus returns the persisted execution record used by normal status RPCs.
+func (m *Manager) AssetStatus(ctx context.Context, hash [32]byte) (
+	*assetexec.Record, error) {
+
+	return m.assetCfg.Store.Get(ctx, hash)
+}
+
+// InitializeAssets verifies the local runtime identity and restores asset exclusions
 // before the Bitcoin deposit manager or public client RPC is started.
-func (m *Manager) Initialize(ctx context.Context) error {
+func (m *Manager) InitializeAssets(ctx context.Context) error {
+	if !m.AssetsEnabled() {
+		return nil
+	}
 	var ready bridge.Ready
-	if err := m.cfg.Runtime.Call(
+	if err := m.assetCfg.Runtime.Call(
 		ctx, bridge.CheckReady, struct{}{}, &ready,
 	); err != nil {
 		return err
 	}
-	if ready.Network != m.cfg.Network ||
-		ready.LndPubkey != m.cfg.NodePubkey {
+	if ready.Network != m.assetCfg.Network ||
+		ready.LndPubkey != m.assetCfg.NodePubkey {
 
 		return assetexec.ErrInvalid
 	}
-	entries, err := m.cfg.Store.Inventory(ctx)
+	entries, err := m.assetCfg.Store.AssetInventory(ctx)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		if err = m.cfg.Deposits.RegisterAssetDeposit(
+		if err = m.assetCfg.Deposits.RegisterAssetDeposit(
 			ctx, entry.Deposit.Outpoint,
 			func() error { return nil },
 		); err != nil {
@@ -113,7 +115,7 @@ func (m *Manager) Initialize(ctx context.Context) error {
 
 func (m *Manager) syncInventory(ctx context.Context) error {
 	var deposits []bridge.Deposit
-	if err := m.cfg.Runtime.Call(
+	if err := m.assetCfg.Runtime.Call(
 		ctx, bridge.Inventory, bridge.InventoryRequest{}, &deposits,
 	); err != nil {
 		return err
@@ -136,24 +138,24 @@ func (m *Manager) registerDeposit(ctx context.Context, d bridge.Deposit) error {
 	if _, err := btcec.ParsePubKey(d.GroupKey[:]); err != nil {
 		return assetexec.ErrInvalid
 	}
-	return m.cfg.Deposits.RegisterAssetDeposit(
+	return m.assetCfg.Deposits.RegisterAssetDeposit(
 		ctx, d.Outpoint, func() error {
-			return m.cfg.Store.addDeposit(d)
+			return m.assetCfg.Store.AddAssetDeposit(ctx, d)
 		},
 	)
 }
 
-// CreateDeposit persists a funding request before the runtime can publish it.
-func (m *Manager) CreateDeposit(ctx context.Context, id [32]byte,
+// CreateAssetDeposit persists a funding request before the runtime can publish it.
+func (m *Manager) CreateAssetDeposit(ctx context.Context, id [32]byte,
 	group [33]byte, amount uint64) error {
 
 	if id == ([32]byte{}) || amount == 0 {
 		return assetexec.ErrInvalid
 	}
-	if _, _, err := m.cfg.Address.NewAddress(ctx); err != nil {
+	if _, _, err := m.assetCfg.Address.NewAddress(ctx); err != nil {
 		return err
 	}
-	params, err := m.cfg.Address.GetStaticAddressParameters(ctx)
+	params, err := m.assetCfg.Address.GetStaticAddressParameters(ctx)
 	if err != nil {
 		return err
 	}
@@ -167,12 +169,12 @@ func (m *Manager) CreateDeposit(ctx context.Context, id [32]byte,
 	}
 	copy(req.ClientKey[:], params.ClientPubkey.SerializeCompressed())
 	copy(req.ServerKey[:], params.ServerPubkey.SerializeCompressed())
-	return m.cfg.Store.PutJob(ctx, &Job{ID: id, Deposit: req})
+	return m.assetCfg.Store.PutAssetJob(ctx, &AssetJob{ID: id, Deposit: req})
 }
 
-// Start records exact deposit selection and request bytes before networking.
+// StartAssetLoopIn records exact deposit selection and request bytes before networking.
 // The first production version requires one whole isolated asset anchor.
-func (m *Manager) Start(ctx context.Context, request SwapRequest) error {
+func (m *Manager) StartAssetLoopIn(ctx context.Context, request AssetSwapRequest) error {
 	if request.RequestID == ([32]byte{}) || request.Amount == 0 ||
 		request.MaxDebit < request.Amount {
 
@@ -182,7 +184,7 @@ func (m *Manager) Start(ctx context.Context, request SwapRequest) error {
 	if err != nil || point.String() != request.Outpoint {
 		return assetexec.ErrInvalid
 	}
-	entries, err := m.cfg.Store.Inventory(ctx)
+	entries, err := m.assetCfg.Store.AssetInventory(ctx)
 	if err != nil {
 		return err
 	}
@@ -197,7 +199,7 @@ func (m *Manager) Start(ctx context.Context, request SwapRequest) error {
 	if input == nil {
 		return assetexec.ErrNotFound
 	}
-	if !validSwapAmount(input.Amount, request) ||
+	if !validAssetSwapAmount(input.Amount, request) ||
 		input.GroupKey != request.GroupKey ||
 		input.ConfirmationHeight == 0 {
 
@@ -223,38 +225,38 @@ func (m *Manager) Start(ctx context.Context, request SwapRequest) error {
 	if err != nil {
 		return err
 	}
-	return m.cfg.Store.PutJob(ctx, &Job{
+	return m.assetCfg.Store.PutAssetJob(ctx, &AssetJob{
 		ID: request.RequestID, Swap: &request, ServerRequest: raw,
 	})
 }
 
-// Jobs returns request identities and their persisted progress for client RPC.
-func (m *Manager) Jobs(ctx context.Context) ([]Job, error) {
-	return m.cfg.Store.Jobs(ctx)
+// AssetJobs returns request identities and their persisted progress for client RPC.
+func (m *Manager) AssetJobs(ctx context.Context) ([]AssetJob, error) {
+	return m.assetCfg.Store.AssetJobs(ctx)
 }
 
-// Inventory returns native deposit metadata and reservation ownership.
-func (m *Manager) Inventory(ctx context.Context) ([]InventoryEntry, error) {
-	return m.cfg.Store.Inventory(ctx)
+// AssetInventory returns native deposit metadata and reservation ownership.
+func (m *Manager) AssetInventory(ctx context.Context) ([]AssetInventoryEntry, error) {
+	return m.assetCfg.Store.AssetInventory(ctx)
 }
 
-func (m *Manager) resume(ctx context.Context, j *Job) error {
+func (m *Manager) resumeAsset(ctx context.Context, j *AssetJob) error {
 	if j.Complete || j.Canceled {
 		return m.reportRefund(ctx, j)
 	}
 	if j.Refund != nil {
 		var proof []byte
-		err := m.cfg.Runtime.Call(
+		err := m.assetCfg.Runtime.Call(
 			ctx, bridge.RefundDeposit, *j.Refund, &proof,
 		)
 		if err != nil {
 			return err
 		}
-		return m.cfg.Store.finishRefund(ctx, j, proof)
+		return m.assetCfg.Store.FinishAssetRefund(ctx, j, proof)
 	}
 	if j.Deposit != nil {
 		var result bridge.Deposit
-		if err := m.cfg.Runtime.Call(
+		if err := m.assetCfg.Runtime.Call(
 			ctx, bridge.CreateDeposit, *j.Deposit, &result,
 		); err != nil {
 			return err
@@ -268,14 +270,14 @@ func (m *Manager) resume(ctx context.Context, j *Job) error {
 			return err
 		}
 		j.Complete = true
-		return m.cfg.Store.updateJob(ctx, j)
+		return m.assetCfg.Store.UpdateAssetJob(ctx, j)
 	}
 	if j.Offer == nil {
 		canceled, err := m.cancelExpiredUnknownOffer(ctx, j)
 		if err != nil || canceled {
 			return err
 		}
-		if err := m.cfg.FetchL402(ctx); err != nil {
+		if err := m.assetCfg.FetchL402(ctx); err != nil {
 			return err
 		}
 		var request swapserverrpc.CreateAssetLoopInRequest
@@ -284,24 +286,24 @@ func (m *Manager) resume(ctx context.Context, j *Job) error {
 		); err != nil {
 			return err
 		}
-		offer, err := m.Session.Adapter.RequestOffer(
-			ctx, m.cfg.Owner, &request,
+		offer, err := m.assetSession.Adapter.RequestOffer(
+			ctx, m.assetCfg.Owner, &request,
 		)
 		if err != nil {
 			return err
 		}
 		j.Offer = &offer
-		if err = m.cfg.Store.updateJob(ctx, j); err != nil {
+		if err = m.assetCfg.Store.UpdateAssetJob(ctx, j); err != nil {
 			return err
 		}
 	}
 	if !time.Now().Before(j.Offer.Terms.OfferExpiry) {
-		_, err := m.cfg.Journal.Get(ctx, j.Offer.Hash)
+		_, err := m.assetCfg.Store.Get(ctx, j.Offer.Hash)
 		if errors.Is(err, assetexec.ErrNotFound) {
 			if err := m.verifyUnstarted(ctx, j); err != nil {
 				return err
 			}
-			return m.cfg.Store.cancelUnstarted(ctx, j)
+			return m.assetCfg.Store.CancelUnstartedAssetJob(ctx, j)
 		}
 		if err != nil {
 			return err
@@ -309,113 +311,79 @@ func (m *Manager) resume(ctx context.Context, j *Job) error {
 	}
 	if len(j.Intent) == 0 {
 		var recovery []byte
-		operation, err := operation(*j.Offer)
-		if err != nil {
-			return err
-		}
-		if err = m.cfg.Runtime.Call(
+		operation := bridge.Operation{Offer: *j.Offer}
+		if err := m.assetCfg.Runtime.Call(
 			ctx, bridge.PrepareRecovery, operation, &recovery,
 		); err != nil {
 			return err
 		}
-		j.Intent, err = json.Marshal(assetclient.InvoiceIntent{
-			Peer: m.cfg.Peer[:], RecoveryRequest: recovery,
+		intent, err := json.Marshal(assetclient.InvoiceIntent{
+			Peer: m.assetCfg.Peer[:], RecoveryRequest: recovery,
 		})
 		if err != nil {
 			return err
 		}
-		if err = m.cfg.Store.updateJob(ctx, j); err != nil {
+		j.Intent = intent
+		if err = m.assetCfg.Store.UpdateAssetJob(ctx, j); err != nil {
 			return err
 		}
 	}
 	// A completed controller may outlive a lost final request-journal
 	// update.
-	record, err := m.cfg.Journal.Get(ctx, j.Offer.Hash)
+	record, err := m.assetCfg.Store.Get(ctx, j.Offer.Hash)
 	if err != nil && !errors.Is(err, assetexec.ErrNotFound) {
 		return err
 	}
 	if record == nil || !record.State.Terminal() {
-		if err = m.Session.Controller.Start(
+		if err = m.assetSession.Controller.Start(
 			ctx, *j.Offer, j.Intent,
 		); err != nil {
 			return err
 		}
 	}
 	j.Complete = true
-	return m.cfg.Store.updateJob(ctx, j)
+	return m.assetCfg.Store.UpdateAssetJob(ctx, j)
 }
 
-// Run recovers pending creation requests and existing swaps until shutdown.
-func (m *Manager) Run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	initialized := make(chan struct{})
-	close(initialized)
-	result := make(chan error, 1)
-	go func() {
-		result <- m.Session.Run(ctx, assetclient.WorkerConfig{
-			Initialized: initialized, Interval: time.Second,
-			ActionTimeout: 30 * time.Second,
-			Concurrency:   4,
-			OnError: func(_ [32]byte, err error) {
-				m.report(err)
-			},
-		})
-	}()
-	defer func() { cancel(); <-result }()
-	for {
-		refreshCtx, stop := context.WithTimeout(ctx, 30*time.Second)
-		m.report(m.syncInventory(refreshCtx))
-		m.report(m.expireDeposits(refreshCtx))
-		stop()
-		jobs, err := m.cfg.Store.Jobs(ctx)
-		if err != nil {
+func (m *Manager) recoverAssetRequests(ctx context.Context) error {
+	refreshCtx, stop := context.WithTimeout(ctx, 30*time.Second)
+	m.report(m.syncInventory(refreshCtx))
+	m.report(m.expireDeposits(refreshCtx))
+	stop()
+	jobs, err := m.assetCfg.Store.AssetJobs(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range jobs {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		for i := range jobs {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			actionCtx, stop := context.WithTimeout(
-				ctx,
-				30*time.Second,
-			)
-			m.requestMu.Lock()
-			err = m.resume(actionCtx, &jobs[i])
-			m.requestMu.Unlock()
-			stop()
-			m.report(err)
-		}
-		timer := time.NewTimer(time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case err := <-result:
-			timer.Stop()
-			result <- err
-			return fmt.Errorf("asset recovery worker: %w", err)
-		case <-timer.C:
-		}
+		actionCtx, stop := context.WithTimeout(ctx, 30*time.Second)
+		m.assetRequestMu.Lock()
+		err = m.resumeAsset(actionCtx, &jobs[i])
+		m.assetRequestMu.Unlock()
+		stop()
+		m.report(err)
 	}
+	return nil
 }
 
 func (m *Manager) report(err error) {
-	if err != nil && !pending(err) && m.cfg.OnError != nil {
-		m.cfg.OnError(err)
+	if err != nil && !pendingAsset(err) && m.assetCfg.OnError != nil {
+		m.assetCfg.OnError(err)
 	}
 }
 
 // reportRefund retries proof delivery after the client has independently
 // recovered. Server availability never delays local cancellation or release.
-func (m *Manager) reportRefund(ctx context.Context, job *Job) error {
+func (m *Manager) reportRefund(ctx context.Context, job *AssetJob) error {
 	if job.Offer == nil {
 		return nil
 	}
 	if job.Canceled {
 		return m.reportCancellation(ctx, job)
 	}
-	record, err := m.cfg.Journal.Get(ctx, job.Offer.Hash)
+	record, err := m.assetCfg.Store.Get(ctx, job.Offer.Hash)
 	if err == nil && record.State == assetexec.Failed {
 		return m.reportCancellation(ctx, job)
 	}
@@ -430,7 +398,7 @@ func (m *Manager) reportRefund(ctx context.Context, job *Job) error {
 	}
 	peerCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	_, err = m.cfg.Server.ReportAssetLoopInRefund(peerCtx,
+	_, err = m.assetCfg.Server.ReportAssetLoopInRefund(peerCtx,
 		&swapserverrpc.ReportAssetLoopInRefundRequest{
 			PaymentHash: job.Offer.Hash[:],
 			Proof:       record.RefundEvidence,
@@ -439,13 +407,13 @@ func (m *Manager) reportRefund(ctx context.Context, job *Job) error {
 		return err
 	}
 	job.RefundReported = true
-	return m.cfg.Store.updateJob(ctx, job)
+	return m.assetCfg.Store.UpdateAssetJob(ctx, job)
 }
 
-// RefundDeposit reserves an expired original deposit before its CSV refund.
+// RefundAssetDeposit reserves an expired original deposit before its CSV refund.
 // Pending offer requests and active swaps retain ownership until their own
 // controller has proved cancellation or a confirmed resolution.
-func (m *Manager) RefundDeposit(ctx context.Context, outpoint string) (
+func (m *Manager) RefundAssetDeposit(ctx context.Context, outpoint string) (
 	[32]byte, error) {
 
 	point, err := wire.NewOutPointFromString(outpoint)
@@ -453,7 +421,7 @@ func (m *Manager) RefundDeposit(ctx context.Context, outpoint string) (
 		return [32]byte{}, assetexec.ErrInvalid
 	}
 	id := sha256.Sum256([]byte("Loop asset deposit refund v1:" + outpoint))
-	if prior, err := m.cfg.Store.getJob(ctx, id); err == nil {
+	if prior, err := m.assetCfg.Store.GetAssetJob(ctx, id); err == nil {
 		if prior.Refund == nil || prior.Refund.Outpoint != outpoint {
 			return id, assetexec.ErrConflict
 		}
@@ -462,12 +430,12 @@ func (m *Manager) RefundDeposit(ctx context.Context, outpoint string) (
 		return id, err
 	}
 	var height uint32
-	if err := m.cfg.Runtime.Call(
+	if err := m.assetCfg.Runtime.Call(
 		ctx, bridge.Height, struct{}{}, &height,
 	); err != nil {
 		return id, err
 	}
-	entries, err := m.cfg.Store.Inventory(ctx)
+	entries, err := m.assetCfg.Store.AssetInventory(ctx)
 	if err != nil {
 		return id, err
 	}
@@ -480,7 +448,7 @@ func (m *Manager) RefundDeposit(ctx context.Context, outpoint string) (
 
 			return id, assetexec.ErrPending
 		}
-		return id, m.cfg.Store.PutJob(ctx, &Job{
+		return id, m.assetCfg.Store.PutAssetJob(ctx, &AssetJob{
 			ID: id,
 			Refund: &bridge.RefundDepositRequest{
 				Outpoint: outpoint,
@@ -491,12 +459,12 @@ func (m *Manager) RefundDeposit(ctx context.Context, outpoint string) (
 }
 
 func (m *Manager) expireDeposits(ctx context.Context) error {
-	entries, err := m.cfg.Store.Inventory(ctx)
+	entries, err := m.assetCfg.Store.AssetInventory(ctx)
 	if err != nil {
 		return err
 	}
 	var height uint32
-	if err := m.cfg.Runtime.Call(
+	if err := m.assetCfg.Runtime.Call(
 		ctx, bridge.Height, struct{}{}, &height,
 	); err != nil {
 		return err
@@ -508,7 +476,7 @@ func (m *Manager) expireDeposits(ctx context.Context) error {
 
 			continue
 		}
-		_, err := m.RefundDeposit(ctx, entry.Deposit.Outpoint)
+		_, err := m.RefundAssetDeposit(ctx, entry.Deposit.Outpoint)
 		if err != nil && !errors.Is(err, assetexec.ErrConflict) {
 			return err
 		}
@@ -516,13 +484,13 @@ func (m *Manager) expireDeposits(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) reportCancellation(ctx context.Context, job *Job) error {
+func (m *Manager) reportCancellation(ctx context.Context, job *AssetJob) error {
 	if job.CancellationReported {
 		return nil
 	}
 	peerCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	_, err := m.cfg.Server.CancelAssetLoopIn(
+	_, err := m.assetCfg.Server.CancelAssetLoopIn(
 		peerCtx,
 		&swapserverrpc.AssetLoopInReference{
 			PaymentHash: job.Offer.Hash[:],
@@ -532,7 +500,7 @@ func (m *Manager) reportCancellation(ctx context.Context, job *Job) error {
 		return err
 	}
 	job.CancellationReported = true
-	return m.cfg.Store.updateJob(ctx, job)
+	return m.assetCfg.Store.UpdateAssetJob(ctx, job)
 }
 
 // cancelExpiredUnknownOffer handles an offer response lost before its local
@@ -540,10 +508,10 @@ func (m *Manager) reportCancellation(ctx context.Context, job *Job) error {
 // controller call, so this request cannot have exposed claim authority. Keep
 // its reservation until the original CSV maturity and verify no active client
 // record contradicts that ordering before allowing the original refund.
-func (m *Manager) cancelExpiredUnknownOffer(ctx context.Context, job *Job) (
+func (m *Manager) cancelExpiredUnknownOffer(ctx context.Context, job *AssetJob) (
 	bool, error) {
 
-	entries, err := m.cfg.Store.Inventory(ctx)
+	entries, err := m.assetCfg.Store.AssetInventory(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -558,7 +526,7 @@ func (m *Manager) cancelExpiredUnknownOffer(ctx context.Context, job *Job) (
 		return false, nil
 	}
 	var height uint32
-	if err := m.cfg.Runtime.Call(
+	if err := m.assetCfg.Runtime.Call(
 		ctx, bridge.Height, struct{}{}, &height,
 	); err != nil {
 		return false, err
@@ -569,11 +537,11 @@ func (m *Manager) cancelExpiredUnknownOffer(ctx context.Context, job *Job) (
 	if err := m.verifyUnstarted(ctx, job); err != nil {
 		return false, err
 	}
-	return true, m.cfg.Store.cancelUnstarted(ctx, job)
+	return true, m.assetCfg.Store.CancelUnstartedAssetJob(ctx, job)
 }
 
-func (m *Manager) verifyUnstarted(ctx context.Context, job *Job) error {
-	records, err := m.cfg.Journal.ListActive(ctx)
+func (m *Manager) verifyUnstarted(ctx context.Context, job *AssetJob) error {
+	records, err := m.assetCfg.Store.ListActive(ctx)
 	if err != nil {
 		return err
 	}
@@ -588,4 +556,11 @@ func (m *Manager) verifyUnstarted(ctx context.Context, job *Job) error {
 		}
 	}
 	return nil
+}
+
+// pendingAsset identifies expected retry boundaries without logging them as
+// operational failures.
+func pendingAsset(err error) bool {
+	return errors.Is(err, assetexec.ErrPending) ||
+		errors.Is(err, bridge.ErrPending)
 }

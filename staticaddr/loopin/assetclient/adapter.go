@@ -25,8 +25,6 @@ import (
 // production chain driver never embeds unimplemented payment callbacks.
 type ClientChainActions interface {
 	ValidateOffer(context.Context, assetexec.Offer) error
-	ReserveDeposits(context.Context, assetexec.Offer) error
-	ReleaseDeposits(context.Context, assetexec.Offer) error
 	VerifyFinalizeFallback(context.Context, assetexec.Offer,
 		[]byte) (assetexec.Fallback, error)
 	LookupPreimage(context.Context, assetexec.Offer) ([32]byte, bool, error)
