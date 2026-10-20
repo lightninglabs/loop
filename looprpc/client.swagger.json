@@ -1302,6 +1302,10 @@
           "type": "string",
           "format": "byte"
         },
+        "outpoint": {
+          "type": "string",
+          "description": "Canonical txid:index. Keep this inside the asset variant so a daemon\nthat ignores unknown fields receives no Bitcoin deposit selection."
+        },
         "amount": {
           "type": "string",
           "format": "uint64",
@@ -1676,10 +1680,6 @@
         "commit_hash": {
           "type": "string",
           "description": "The Git commit hash the Loop binary build was based on. If the build had\nuncommited changes, this field will contain the most recent commit hash,\nsuffixed by \"-dirty\"."
-        },
-        "asset_static_loop_in": {
-          "type": "boolean",
-          "description": "The daemon supports and has enabled asset parameters on the existing\nstatic-address RPCs. Clients must check this before sending them: older\ndaemons ignore unknown protobuf fields and must not run a Bitcoin swap."
         }
       }
     },
@@ -2152,6 +2152,10 @@
             "$ref": "#/definitions/looprpcAssetDeposit"
           },
           "description": "Native asset quantities, returned only when assets_only is set."
+        },
+        "assets_only": {
+          "type": "boolean",
+          "description": "Acknowledges the requested asset variant, including an empty listing.\nClients must reject a response without this flag for assets_only."
         }
       }
     },
@@ -2173,6 +2177,10 @@
             "$ref": "#/definitions/looprpcAssetRequestStatus"
           },
           "description": "Includes requests still awaiting a server offer after a lost response."
+        },
+        "assets_only": {
+          "type": "boolean",
+          "description": "Acknowledges the requested asset variant, including an empty listing.\nClients must reject a response without this flag for assets_only."
         }
       }
     },
@@ -2700,7 +2708,7 @@
         },
         "asset_params": {
           "$ref": "#/definitions/looprpcAssetLoopInParams",
-          "description": "Select a same-group asset payout using exactly one outpoint. Native\nquantities belong here; all Bitcoin-only options must remain unset.\nThe request is journaled before contacting the server and returns an\nasset_request immediately. Retry the same request_id after ambiguity."
+          "description": "Select a same-group asset payout using one asset_params.outpoint. All\nBitcoin fields, including outpoints and amount, must remain unset so\nolder daemons cannot interpret the request as a valid Bitcoin swap.\nThe request is journaled before contacting the server and returns an\nasset_request immediately. Retry the same request_id after ambiguity."
         }
       }
     },

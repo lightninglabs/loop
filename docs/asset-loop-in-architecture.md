@@ -12,14 +12,18 @@ The public API now extends the existing methods with typed asset fields:
 
 | Existing method | Asset variant |
 | --- | --- |
-| `StaticAddressLoopIn` | `asset_params` contains the durable request ID, group and native amounts. Satoshi fields keep their original meaning. |
+| `StaticAddressLoopIn` | `asset_params` contains the durable request ID, group, outpoint and native amounts. Satoshi fields keep their original meaning. |
 | `ListStaticAddressDeposits` | `assets_only` selects native deposit records. |
 | `ListStaticAddressSwaps` | `assets_only` selects durable asset requests and session status. |
 | `ServerStaticAddressLoopIn` | `ASSET_V1` plus typed asset parameters requests the server-owned payment hash. |
 | `PushStaticAddressHtlcSigs` | `ASSET_V1` plus the typed asset commitment submits client signatures. |
 
 Mixed Bitcoin and asset options are rejected. The CLI checks the daemon's
-`GetInfo.asset_static_loop_in` capability before using the shared methods.
+asset acknowledgement on each shared method's response. Asset outpoints stay
+inside `asset_params`, leaving the Bitcoin selection empty. An older daemon
+that ignores these fields rejects creation before starting a Bitcoin swap;
+list responses without `assets_only` are rejected. Each operation uses its
+existing macaroon permissions.
 The server protocol version and empty Bitcoin fields make old servers reject
 asset requests. Inner asset request bytes remain unchanged, preserving durable
 request digests and retries.

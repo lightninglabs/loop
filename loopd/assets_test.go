@@ -82,8 +82,8 @@ func TestStaticAddressAssetParams(t *testing.T) {
 	_, public := btcec.PrivKeyFromBytes([]byte{1})
 	id := [32]byte{1}
 	request := &looprpc.StaticAddressLoopInRequest{
-		Outpoints: []string{strings.Repeat("ab", 32) + ":0"},
 		AssetParams: &looprpc.AssetLoopInParams{
+			Outpoint:  strings.Repeat("ab", 32) + ":0",
 			RequestId: id[:], GroupKey: public.SerializeCompressed(),
 			Amount: 1 << 63, MaxAssetDebit: 1<<63 + 1,
 			MaxAssetFee: 2,
@@ -92,7 +92,7 @@ func TestStaticAddressAssetParams(t *testing.T) {
 	intent, err := assetLoopInRequest(request)
 	require.NoError(t, err)
 	require.Equal(t, id, intent.RequestID)
-	require.Equal(t, request.Outpoints[0], intent.Outpoint)
+	require.Equal(t, request.AssetParams.Outpoint, intent.Outpoint)
 	require.Equal(t, request.AssetParams.Amount, intent.Amount)
 	require.Equal(t, request.AssetParams.MaxAssetDebit, intent.MaxDebit)
 	require.Equal(t, request.AssetParams.MaxAssetFee, intent.MaxFee)
@@ -130,13 +130,15 @@ func TestStaticAddressAssetParams(t *testing.T) {
 			r.Fast = true
 		}},
 		{"no outpoint", func(r *looprpc.StaticAddressLoopInRequest) {
-			r.Outpoints = nil
+			r.AssetParams.Outpoint = ""
 		}},
-		{"multiple outpoints", func(r *looprpc.StaticAddressLoopInRequest) {
-			r.Outpoints = append(r.Outpoints, r.Outpoints[0])
+		{"Bitcoin outpoint", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Outpoints = []string{r.AssetParams.Outpoint}
 		}},
 		{"noncanonical outpoint", func(r *looprpc.StaticAddressLoopInRequest) {
-			r.Outpoints[0] = strings.ToUpper(r.Outpoints[0])
+			r.AssetParams.Outpoint = strings.ToUpper(
+				r.AssetParams.Outpoint,
+			)
 		}},
 		{"request identity", func(r *looprpc.StaticAddressLoopInRequest) {
 			r.AssetParams.RequestId = make([]byte, 32)
@@ -172,8 +174,8 @@ func TestStaticAddressAssetRPCRouting(t *testing.T) {
 	id := [32]byte{1}
 	_, err := server.StaticAddressLoopIn(t.Context(),
 		&looprpc.StaticAddressLoopInRequest{
-			Outpoints: []string{strings.Repeat("ab", 32) + ":0"},
 			AssetParams: &looprpc.AssetLoopInParams{
+				Outpoint:  strings.Repeat("ab", 32) + ":0",
 				RequestId: id[:],
 				GroupKey:  public.SerializeCompressed(),
 				Amount:    1000, MaxAssetDebit: 1000,

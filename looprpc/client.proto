@@ -1226,11 +1226,6 @@ message GetInfoResponse {
     suffixed by "-dirty".
      */
     string commit_hash = 9;
-
-    // The daemon supports and has enabled asset parameters on the existing
-    // static-address RPCs. Clients must check this before sending them: older
-    // daemons ignore unknown protobuf fields and must not run a Bitcoin swap.
-    bool asset_static_loop_in = 10;
 }
 
 message GetLiquidityParamsRequest {
@@ -1943,6 +1938,10 @@ message ListStaticAddressDepositsResponse {
 
     // Native asset quantities, returned only when assets_only is set.
     repeated AssetDeposit asset_deposits = 2;
+
+    // Acknowledges the requested asset variant, including an empty listing.
+    // Clients must reject a response without this flag for assets_only.
+    bool assets_only = 3;
 }
 
 message ListStaticAddressWithdrawalRequest {
@@ -1969,6 +1968,10 @@ message ListStaticAddressSwapsResponse {
 
     // Includes requests still awaiting a server offer after a lost response.
     repeated AssetRequestStatus asset_requests = 2;
+
+    // Acknowledges the requested asset variant, including an empty listing.
+    // Clients must reject a response without this flag for assets_only.
+    bool assets_only = 3;
 }
 
 message StaticAddressSummaryRequest {
@@ -2447,8 +2450,9 @@ message StaticAddressLoopInRequest {
     // If set, request the server to use fast publication behavior.
     bool fast = 10;
 
-    // Select a same-group asset payout using exactly one outpoint. Native
-    // quantities belong here; all Bitcoin-only options must remain unset.
+    // Select a same-group asset payout using one asset_params.outpoint. All
+    // Bitcoin fields, including outpoints and amount, must remain unset so
+    // older daemons cannot interpret the request as a valid Bitcoin swap.
     // The request is journaled before contacting the server and returns an
     // asset_request immediately. Retry the same request_id after ambiguity.
     AssetLoopInParams asset_params = 11;
@@ -2711,6 +2715,9 @@ message AssetDeposit {
 message AssetLoopInParams {
     bytes request_id = 1;
     bytes group_key = 2;
+    // Canonical txid:index. Keep this inside the asset variant so a daemon
+    // that ignores unknown fields receives no Bitcoin deposit selection.
+    string outpoint = 3;
     // Exact native Lightning payout. The entire deposit is spent; its excess
     // over this amount must equal the server fee and fit max_asset_fee.
     uint64 amount = 4;

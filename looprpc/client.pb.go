@@ -3420,13 +3420,9 @@ type GetInfoResponse struct {
 	// The Git commit hash the Loop binary build was based on. If the build had
 	// uncommited changes, this field will contain the most recent commit hash,
 	// suffixed by "-dirty".
-	CommitHash string `protobuf:"bytes,9,opt,name=commit_hash,json=commitHash,proto3" json:"commit_hash,omitempty"`
-	// The daemon supports and has enabled asset parameters on the existing
-	// static-address RPCs. Clients must check this before sending them: older
-	// daemons ignore unknown protobuf fields and must not run a Bitcoin swap.
-	AssetStaticLoopIn bool `protobuf:"varint,10,opt,name=asset_static_loop_in,json=assetStaticLoopIn,proto3" json:"asset_static_loop_in,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	CommitHash    string `protobuf:"bytes,9,opt,name=commit_hash,json=commitHash,proto3" json:"commit_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetInfoResponse) Reset() {
@@ -3520,13 +3516,6 @@ func (x *GetInfoResponse) GetCommitHash() string {
 		return x.CommitHash
 	}
 	return ""
-}
-
-func (x *GetInfoResponse) GetAssetStaticLoopIn() bool {
-	if x != nil {
-		return x.AssetStaticLoopIn
-	}
-	return false
 }
 
 type GetLiquidityParamsRequest struct {
@@ -5501,6 +5490,9 @@ type ListStaticAddressDepositsResponse struct {
 	FilteredDeposits []*Deposit `protobuf:"bytes,1,rep,name=filtered_deposits,json=filteredDeposits,proto3" json:"filtered_deposits,omitempty"`
 	// Native asset quantities, returned only when assets_only is set.
 	AssetDeposits []*AssetDeposit `protobuf:"bytes,2,rep,name=asset_deposits,json=assetDeposits,proto3" json:"asset_deposits,omitempty"`
+	// Acknowledges the requested asset variant, including an empty listing.
+	// Clients must reject a response without this flag for assets_only.
+	AssetsOnly    bool `protobuf:"varint,3,opt,name=assets_only,json=assetsOnly,proto3" json:"assets_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5547,6 +5539,13 @@ func (x *ListStaticAddressDepositsResponse) GetAssetDeposits() []*AssetDeposit {
 		return x.AssetDeposits
 	}
 	return nil
+}
+
+func (x *ListStaticAddressDepositsResponse) GetAssetsOnly() bool {
+	if x != nil {
+		return x.AssetsOnly
+	}
+	return false
 }
 
 type ListStaticAddressWithdrawalRequest struct {
@@ -5682,6 +5681,9 @@ type ListStaticAddressSwapsResponse struct {
 	Swaps []*StaticAddressLoopInSwap `protobuf:"bytes,1,rep,name=swaps,proto3" json:"swaps,omitempty"`
 	// Includes requests still awaiting a server offer after a lost response.
 	AssetRequests []*AssetRequestStatus `protobuf:"bytes,2,rep,name=asset_requests,json=assetRequests,proto3" json:"asset_requests,omitempty"`
+	// Acknowledges the requested asset variant, including an empty listing.
+	// Clients must reject a response without this flag for assets_only.
+	AssetsOnly    bool `protobuf:"varint,3,opt,name=assets_only,json=assetsOnly,proto3" json:"assets_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5728,6 +5730,13 @@ func (x *ListStaticAddressSwapsResponse) GetAssetRequests() []*AssetRequestStatu
 		return x.AssetRequests
 	}
 	return nil
+}
+
+func (x *ListStaticAddressSwapsResponse) GetAssetsOnly() bool {
+	if x != nil {
+		return x.AssetsOnly
+	}
+	return false
 }
 
 type StaticAddressSummaryRequest struct {
@@ -6321,8 +6330,9 @@ type StaticAddressLoopInRequest struct {
 	Amount int64 `protobuf:"varint,9,opt,name=amount,proto3" json:"amount,omitempty"`
 	// If set, request the server to use fast publication behavior.
 	Fast bool `protobuf:"varint,10,opt,name=fast,proto3" json:"fast,omitempty"`
-	// Select a same-group asset payout using exactly one outpoint. Native
-	// quantities belong here; all Bitcoin-only options must remain unset.
+	// Select a same-group asset payout using one asset_params.outpoint. All
+	// Bitcoin fields, including outpoints and amount, must remain unset so
+	// older daemons cannot interpret the request as a valid Bitcoin swap.
 	// The request is journaled before contacting the server and returns an
 	// asset_request immediately. Retry the same request_id after ambiguity.
 	AssetParams   *AssetLoopInParams `protobuf:"bytes,11,opt,name=asset_params,json=assetParams,proto3" json:"asset_params,omitempty"`
@@ -7241,6 +7251,9 @@ type AssetLoopInParams struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId []byte                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	GroupKey  []byte                 `protobuf:"bytes,2,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
+	// Canonical txid:index. Keep this inside the asset variant so a daemon
+	// that ignores unknown fields receives no Bitcoin deposit selection.
+	Outpoint string `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
 	// Exact native Lightning payout. The entire deposit is spent; its excess
 	// over this amount must equal the server fee and fit max_asset_fee.
 	Amount        uint64 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
@@ -7292,6 +7305,13 @@ func (x *AssetLoopInParams) GetGroupKey() []byte {
 		return x.GroupKey
 	}
 	return nil
+}
+
+func (x *AssetLoopInParams) GetOutpoint() string {
+	if x != nil {
+		return x.Outpoint
+	}
+	return ""
 }
 
 func (x *AssetLoopInParams) GetAmount() uint64 {
@@ -7634,7 +7654,7 @@ const file_client_proto_rawDesc = "" +
 	"fail_count\x18\x03 \x01(\x04R\tfailCount\x12&\n" +
 	"\x0fsum_pending_amt\x18\x04 \x01(\x03R\rsumPendingAmt\x12*\n" +
 	"\x11sum_succeeded_amt\x18\x05 \x01(\x03R\x0fsumSucceededAmt\"\x10\n" +
-	"\x0eGetInfoRequest\"\x92\x03\n" +
+	"\x0eGetInfoRequest\"\xe1\x02\n" +
 	"\x0fGetInfoResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x1d\n" +
@@ -7647,9 +7667,7 @@ const file_client_proto_rawDesc = "" +
 	"\x0eloop_out_stats\x18\a \x01(\v2\x12.looprpc.LoopStatsR\floopOutStats\x126\n" +
 	"\rloop_in_stats\x18\b \x01(\v2\x12.looprpc.LoopStatsR\vloopInStats\x12\x1f\n" +
 	"\vcommit_hash\x18\t \x01(\tR\n" +
-	"commitHash\x12/\n" +
-	"\x14asset_static_loop_in\x18\n" +
-	" \x01(\bR\x11assetStaticLoopIn\"\x1b\n" +
+	"commitHash\"\x1b\n" +
 	"\x19GetLiquidityParamsRequest\"\x8b\f\n" +
 	"\x13LiquidityParameters\x12,\n" +
 	"\x05rules\x18\x01 \x03(\v2\x16.looprpc.LiquidityRuleR\x05rules\x12\x17\n" +
@@ -7782,19 +7800,23 @@ const file_client_proto_rawDesc = "" +
 	"\fstate_filter\x18\x01 \x01(\x0e2\x15.looprpc.DepositStateR\vstateFilter\x12\x1c\n" +
 	"\toutpoints\x18\x02 \x03(\tR\toutpoints\x12\x1f\n" +
 	"\vassets_only\x18\x03 \x01(\bR\n" +
-	"assetsOnly\"\xa0\x01\n" +
+	"assetsOnly\"\xc1\x01\n" +
 	"!ListStaticAddressDepositsResponse\x12=\n" +
 	"\x11filtered_deposits\x18\x01 \x03(\v2\x10.looprpc.DepositR\x10filteredDeposits\x12<\n" +
-	"\x0easset_deposits\x18\x02 \x03(\v2\x15.looprpc.AssetDepositR\rassetDeposits\"$\n" +
+	"\x0easset_deposits\x18\x02 \x03(\v2\x15.looprpc.AssetDepositR\rassetDeposits\x12\x1f\n" +
+	"\vassets_only\x18\x03 \x01(\bR\n" +
+	"assetsOnly\"$\n" +
 	"\"ListStaticAddressWithdrawalRequest\"i\n" +
 	"#ListStaticAddressWithdrawalResponse\x12B\n" +
 	"\vwithdrawals\x18\x01 \x03(\v2 .looprpc.StaticAddressWithdrawalR\vwithdrawals\"@\n" +
 	"\x1dListStaticAddressSwapsRequest\x12\x1f\n" +
 	"\vassets_only\x18\x01 \x01(\bR\n" +
-	"assetsOnly\"\x9c\x01\n" +
+	"assetsOnly\"\xbd\x01\n" +
 	"\x1eListStaticAddressSwapsResponse\x126\n" +
 	"\x05swaps\x18\x01 \x03(\v2 .looprpc.StaticAddressLoopInSwapR\x05swaps\x12B\n" +
-	"\x0easset_requests\x18\x02 \x03(\v2\x1b.looprpc.AssetRequestStatusR\rassetRequests\"\x1d\n" +
+	"\x0easset_requests\x18\x02 \x03(\v2\x1b.looprpc.AssetRequestStatusR\rassetRequests\x12\x1f\n" +
+	"\vassets_only\x18\x03 \x01(\bR\n" +
+	"assetsOnly\"\x1d\n" +
 	"\x1bStaticAddressSummaryRequest\"\xca\x04\n" +
 	"\x1cStaticAddressSummaryResponse\x12%\n" +
 	"\x0estatic_address\x18\x01 \x01(\tR\rstaticAddress\x124\n" +
@@ -7918,11 +7940,12 @@ const file_client_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x05 \x01(\fR\trequestId\x12\x1a\n" +
 	"\bconsumed\x18\x06 \x01(\bR\bconsumed\x12#\n" +
-	"\rrefund_height\x18\a \x01(\rR\frefundHeight\"\xb3\x01\n" +
+	"\rrefund_height\x18\a \x01(\rR\frefundHeight\"\xcf\x01\n" +
 	"\x11AssetLoopInParams\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\fR\trequestId\x12\x1b\n" +
-	"\tgroup_key\x18\x02 \x01(\fR\bgroupKey\x12\x16\n" +
+	"\tgroup_key\x18\x02 \x01(\fR\bgroupKey\x12\x1a\n" +
+	"\boutpoint\x18\x03 \x01(\tR\boutpoint\x12\x16\n" +
 	"\x06amount\x18\x04 \x01(\x04R\x06amount\x12&\n" +
 	"\x0fmax_asset_debit\x18\x05 \x01(\x04R\rmaxAssetDebit\x12\"\n" +
 	"\rmax_asset_fee\x18\x06 \x01(\x04R\vmaxAssetFee\"\xbc\x01\n" +

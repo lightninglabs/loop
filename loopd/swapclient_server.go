@@ -1575,16 +1575,15 @@ func (s *swapClientServer) GetInfo(ctx context.Context,
 	}
 
 	return &looprpc.GetInfoResponse{
-		Version:           loop.Version(),
-		CommitHash:        commitHash,
-		Network:           s.config.Network,
-		RpcListen:         s.config.RPCListen,
-		RestListen:        s.config.RESTListen,
-		MacaroonPath:      s.config.MacaroonPath,
-		TlsCertPath:       s.config.TLSCertPath,
-		LoopOutStats:      loopOutStats,
-		LoopInStats:       loopInStats,
-		AssetStaticLoopIn: s.assetLoopInManager != nil,
+		Version:      loop.Version(),
+		CommitHash:   commitHash,
+		Network:      s.config.Network,
+		RpcListen:    s.config.RPCListen,
+		RestListen:   s.config.RESTListen,
+		MacaroonPath: s.config.MacaroonPath,
+		TlsCertPath:  s.config.TLSCertPath,
+		LoopOutStats: loopOutStats,
+		LoopInStats:  loopInStats,
 	}, nil
 }
 

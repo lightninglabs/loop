@@ -92,7 +92,7 @@ func (s *swapClientServer) listAssetDeposits(ctx context.Context,
 	if err != nil {
 		return nil, assetOperationError(err)
 	}
-	result := &looprpc.ListStaticAddressDepositsResponse{}
+	result := &looprpc.ListStaticAddressDepositsResponse{AssetsOnly: true}
 	for _, entry := range entries {
 		if len(request.Outpoints) > 0 && !slices.Contains(
 			request.Outpoints, entry.Deposit.Outpoint,
@@ -119,7 +119,7 @@ func assetLoopInRequest(request *looprpc.StaticAddressLoopInRequest) (
 	assetmanager.SwapRequest, error) {
 
 	params := request.GetAssetParams()
-	if params == nil || len(request.GetOutpoints()) != 1 ||
+	if params == nil || len(request.GetOutpoints()) != 0 ||
 		request.GetAmount() != 0 || request.GetMaxSwapFeeSatoshis() != 0 ||
 		len(request.GetLastHop()) != 0 || request.GetLabel() != "" ||
 		request.GetInitiator() != "" || len(request.GetRouteHints()) != 0 ||
@@ -136,7 +136,7 @@ func assetLoopInRequest(request *looprpc.StaticAddressLoopInRequest) (
 	if err != nil {
 		return assetmanager.SwapRequest{}, err
 	}
-	outpoint := request.Outpoints[0]
+	outpoint := params.Outpoint
 	point, err := wire.NewOutPointFromString(outpoint)
 	if err != nil || point.String() != outpoint {
 		return assetmanager.SwapRequest{}, status.Error(
@@ -189,7 +189,7 @@ func (s *swapClientServer) listAssetStaticLoopIns(ctx context.Context) (
 	if err != nil {
 		return nil, assetOperationError(err)
 	}
-	result := &looprpc.ListStaticAddressSwapsResponse{}
+	result := &looprpc.ListStaticAddressSwapsResponse{AssetsOnly: true}
 	for _, job := range jobs {
 		entry := &looprpc.AssetRequestStatus{
 			RequestId: job.ID[:], State: "queued",

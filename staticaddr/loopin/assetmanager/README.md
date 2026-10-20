@@ -51,10 +51,12 @@ These commands reuse `StaticAddressLoopIn`, `ListStaticAddressDeposits` and
 `assets_only` on either list request. The response carries `asset_request`,
 `asset_deposits` or `asset_requests`; Bitcoin amount fields remain in satoshis
 and are not reused for assets. Requests without these fields keep the existing
-Bitcoin behavior. Clients must first check `GetInfo.asset_static_loop_in`;
-the CLI refuses these variants when an older or disabled daemon omits the
-capability, preventing protobuf unknown-field handling from selecting Bitcoin.
-An asset loop-in rejects Bitcoin-only options, including
+Bitcoin behavior. The asset outpoint stays inside `asset_params`; every
+Bitcoin request field remains empty. Older daemons that ignore this variant
+reject the missing Bitcoin selection before starting a swap. The CLI requires
+`asset_request` in creation responses and an `assets_only` acknowledgement in
+list responses, including empty lists. Each operation uses its own macaroon
+permissions without an unrelated capability request. An asset loop-in rejects Bitcoin-only options, including
 satoshi amounts and fees, instead of ignoring them. `CreateAssetDeposit` and
 `RefundAssetDeposit` remain separate operations because they fund a custom
 asset anchor and recover its original CSV script.

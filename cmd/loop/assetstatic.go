@@ -141,20 +141,21 @@ func createAssetDeposit(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// requireAssetStaticLoopIn prevents unknown fields from being interpreted as
-// a Bitcoin request by an older daemon.
-func requireAssetStaticLoopIn(ctx context.Context,
-	client looprpc.SwapClientClient) error {
+// assetLoopInRPC sends no Bitcoin deposit selection. Older daemons reject
+// the empty Bitcoin request when they ignore the unknown asset parameters.
+func assetLoopInRPC(ctx context.Context, client looprpc.SwapClientClient,
+	params *looprpc.AssetLoopInParams) (
+	*looprpc.StaticAddressLoopInResponse, error) {
 
-	info, err := client.GetInfo(ctx, &looprpc.GetInfoRequest{})
+	response, err := client.StaticAddressLoopIn(ctx,
+		&looprpc.StaticAddressLoopInRequest{AssetParams: params})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if !info.GetAssetStaticLoopIn() {
-		return fmt.Errorf("daemon does not support or has disabled " +
-			"asset static loop-ins")
+	if response.GetAssetRequest() == nil {
+		return nil, fmt.Errorf("daemon did not accept the asset protocol")
 	}
-	return nil
+	return response, nil
 }
 
 func assetStaticLoopIn(ctx context.Context, cmd *cli.Command) error {
@@ -176,19 +177,11 @@ func assetStaticLoopIn(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer cleanup()
-	if err := requireAssetStaticLoopIn(ctx, client); err != nil {
-		return err
-	}
-
-	response, err := client.StaticAddressLoopIn(ctx,
-		&looprpc.StaticAddressLoopInRequest{
-			Outpoints: []string{outpoint},
-			AssetParams: &looprpc.AssetLoopInParams{
-				RequestId: id, GroupKey: group,
-				Amount:        cmd.Uint64("amount"),
-				MaxAssetDebit: maxDebit,
-				MaxAssetFee:   cmd.Uint64("max_asset_fee"),
-			},
+	response, err := assetLoopInRPC(ctx, client,
+		&looprpc.AssetLoopInParams{
+			RequestId: id, GroupKey: group, Outpoint: outpoint,
+			Amount: cmd.Uint64("amount"), MaxAssetDebit: maxDebit,
+			MaxAssetFee: cmd.Uint64("max_asset_fee"),
 		})
 	if err != nil {
 		return err
@@ -203,15 +196,14 @@ func listAssetDeposits(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer cleanup()
-	if err := requireAssetStaticLoopIn(ctx, client); err != nil {
-		return err
-	}
-
 	response, err := client.ListStaticAddressDeposits(
 		ctx, &looprpc.ListStaticAddressDepositsRequest{AssetsOnly: true},
 	)
 	if err != nil {
 		return err
+	}
+	if !response.GetAssetsOnly() {
+		return fmt.Errorf("daemon did not accept the asset protocol")
 	}
 	printRespJSON(response)
 	return nil
@@ -223,15 +215,14 @@ func listAssetSwaps(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer cleanup()
-	if err := requireAssetStaticLoopIn(ctx, client); err != nil {
-		return err
-	}
-
 	response, err := client.ListStaticAddressSwaps(
 		ctx, &looprpc.ListStaticAddressSwapsRequest{AssetsOnly: true},
 	)
 	if err != nil {
 		return err
+	}
+	if !response.GetAssetsOnly() {
+		return fmt.Errorf("daemon did not accept the asset protocol")
 	}
 	printRespJSON(response)
 	return nil
