@@ -21,6 +21,7 @@ runs:
         go mod edit -replace=github.com/lightninglabs/loop=../
         go mod edit -replace=github.com/lightninglabs/loop/looprpc=../looprpc
         go mod edit -replace=github.com/lightninglabs/loop/swapserverrpc=../swapserverrpc
+        go mod edit -replace=github.com/lightninglabs/loop/swapkit=../swapkit
         go mod tidy
       shell: bash
 
