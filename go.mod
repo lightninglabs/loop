@@ -21,6 +21,7 @@ require (
 	github.com/lightninglabs/aperture v0.4.0
 	github.com/lightninglabs/lndclient v0.21.0-2
 	github.com/lightninglabs/loop/looprpc v1.0.7
+	github.com/lightninglabs/loop/swapkit v0.0.0
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
 	github.com/lightninglabs/taproot-assets v0.8.1
 	github.com/lightninglabs/taproot-assets/taprpc v1.2.0
@@ -238,3 +239,5 @@ go 1.25.12
 // vulnerable legacy pgx v4/pgproto3 dependency chain. Remove this replacement
 // once the required lnd version includes an sqldb release with that migration.
 replace github.com/lightningnetwork/lnd/sqldb v1.0.13 => github.com/lightningnetwork/lnd/sqldb v1.0.13-0.20260514041430-e9b422f78581
+
+replace github.com/lightninglabs/loop/swapkit => ./swapkit

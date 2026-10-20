@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/deposit/flow"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -127,9 +128,7 @@ func (d *Deposit) IsInFinalState() bool {
 // isInFinalStateNoLock returns true if the deposit is final without acquiring
 // the deposit lock.
 func (d *Deposit) isInFinalStateNoLock() bool {
-	return d.state == Expired || d.state == Withdrawn ||
-		d.state == LoopedIn || d.state == HtlcTimeoutSwept ||
-		d.state == ChannelPublished
+	return flow.IsFinal(flow.State(d.state))
 }
 
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {

@@ -88,6 +88,9 @@ type Manager struct {
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
 
+	// assetDeposits excludes proof-bearing anchors from Bitcoin-only paths.
+	assetDeposits map[wire.OutPoint]struct{}
+
 	// deposits contain all the deposits that have ever been made to the
 	// static address. This field is used to store and recover deposits. It
 	// also serves as a basis for reconciliation of newly detected deposits
@@ -256,6 +259,10 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	}
 
 	for i, d := range deposits {
+		if _, asset := m.assetDeposits[d.OutPoint]; asset {
+			return fmt.Errorf("asset anchor conflicts with " +
+				"Bitcoin deposit")
+		}
 		m.deposits[d.OutPoint] = deposits[i]
 
 		// If the current deposit is final it wasn't active when we
@@ -621,14 +628,17 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, asset := m.assetDeposits[deposit.OutPoint]; asset {
+		return nil, fmt.Errorf("asset anchor requires asset recovery")
+	}
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
 	if err != nil {
 		return nil, err
 	}
 
-	m.mu.Lock()
 	m.deposits[deposit.OutPoint] = deposit
-	m.mu.Unlock()
 
 	return deposit, nil
 }
@@ -813,6 +823,9 @@ func (m *Manager) filterNewDeposits(utxos []*lnwallet.Utxo) []*lnwallet.Utxo {
 
 	var newDeposits []*lnwallet.Utxo
 	for _, utxo := range utxos {
+		if _, asset := m.assetDeposits[utxo.OutPoint]; asset {
+			continue
+		}
 		_, ok := m.deposits[utxo.OutPoint]
 		if !ok {
 			newDeposits = append(newDeposits, utxo)
@@ -1087,6 +1100,9 @@ func (m *Manager) toActiveDeposits(outpoints *[]wire.OutPoint) ([]*FSM,
 	fsms := make([]*FSM, 0, len(*outpoints))
 	deposits := make([]*Deposit, 0, len(*outpoints))
 	for _, o := range *outpoints {
+		if _, asset := m.assetDeposits[o]; asset {
+			return nil, nil
+		}
 		sm, ok := m.activeDeposits[o]
 		if !ok {
 			return nil, nil
