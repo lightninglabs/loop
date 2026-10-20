@@ -17,7 +17,6 @@ import (
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
-	bolt "go.etcd.io/bbolt"
 )
 
 // depositContract is public immutable policy, including exact OP_TRUE data.
@@ -244,25 +243,12 @@ func (r *Runtime) createDeposit(ctx context.Context,
 func (r *Runtime) inventory(ctx context.Context,
 	request bridge.InventoryRequest) ([]bridge.Deposit, error) {
 
-	var records []depositRecord
-	err := r.db.View(func(tx *bolt.Tx) error {
-		c := tx.Bucket([]byte("runtime-v1")).Cursor()
-		prefix := []byte("deposit/")
-		for k, v := c.Seek(prefix); k != nil &&
-			bytes.HasPrefix(k, prefix); k, v = c.Next() {
-			var rec depositRecord
-			if err := json.Unmarshal(v, &rec); err != nil {
-				return err
-			}
-			records = append(records, rec)
-		}
-		return nil
-	})
+	deposits, err := records[depositRecord](r, "deposit/")
 	if err != nil {
 		return nil, err
 	}
-	result := make([]bridge.Deposit, 0, len(records))
-	for _, record := range records {
+	result := make([]bridge.Deposit, 0, len(deposits))
+	for _, record := range deposits {
 		if request.GroupKey != ([33]byte{}) &&
 			request.GroupKey != record.Request.GroupKey {
 			continue

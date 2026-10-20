@@ -424,24 +424,15 @@ func (w *testWallet) SignOutputRaw(_ context.Context,
 			})
 	}
 	hashes := txscript.NewTxSigHashes(&transaction, fetcher)
-	var signature []byte
-	var err error
-	if descriptor.SignMethod ==
-		signrpc.SignMethod_SIGN_METHOD_TAPROOT_SCRIPT_SPEND {
-
-		signature, err = txscript.RawTxInTapscriptSignature(
-			&transaction, hashes, int(descriptor.InputIndex),
-			descriptor.Output.Value,
-			descriptor.Output.PkScript,
-			txscript.NewBaseTapLeaf(descriptor.WitnessScript),
-			txscript.SigHashType(descriptor.Sighash), w.key)
-	} else {
-		signature, err = txscript.RawTxInTaprootSignature(
-			&transaction, hashes, int(descriptor.InputIndex),
-			descriptor.Output.Value,
-			descriptor.Output.PkScript, descriptor.TapTweak,
-			txscript.SigHashType(descriptor.Sighash), w.key)
-	}
+	require.Equal(w.t,
+		signrpc.SignMethod_SIGN_METHOD_TAPROOT_SCRIPT_SPEND,
+		descriptor.SignMethod)
+	signature, err := txscript.RawTxInTapscriptSignature(
+		&transaction, hashes, int(descriptor.InputIndex),
+		descriptor.Output.Value, descriptor.Output.PkScript,
+		txscript.NewBaseTapLeaf(descriptor.WitnessScript),
+		txscript.SigHashType(descriptor.Sighash), w.key,
+	)
 	require.NoError(w.t, err)
 	if w.badRaw {
 		signature[0] ^= 1
@@ -449,7 +440,7 @@ func (w *testWallet) SignOutputRaw(_ context.Context,
 	return &signrpc.SignResp{RawSigs: [][]byte{signature[:64]}}, nil
 }
 
-func TestWalletScriptAndKeyPathSigning(t *testing.T) {
+func TestWalletScriptPathSigning(t *testing.T) {
 	f := newSigningFixture(t)
 	pkg := testPackage(t, "script")
 	requests, err := pkg.SigningRequests()
@@ -461,14 +452,6 @@ func TestWalletScriptAndKeyPathSigning(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pkg.ApplyScriptPathWitness(request.ID, [][]byte{signature})
 	require.NoError(t, err)
-	signature, err = f.s.KeyPath(t.Context(), testLocator(),
-		pkg, requests.KeyPath[0].ID)
-	require.NoError(t, err)
-	_, err = pkg.ApplyKeyPathSignature(requests.KeyPath[0].ID, signature)
-	require.NoError(t, err)
-	_, err = f.s.KeyPath(t.Context(), testLocator(),
-		pkg, requests.KeyPath[1].ID)
-	require.ErrorIs(t, err, ErrBinding)
 	f.w.badRaw = true
 	_, err = f.s.ScriptPath(t.Context(), testLocator(), pkg, request.ID)
 	require.ErrorIs(t, err, ErrInvalid)

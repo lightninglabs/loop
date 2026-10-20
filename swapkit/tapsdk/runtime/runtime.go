@@ -103,6 +103,26 @@ func (r *Runtime) put(key string, value any) error {
 	})
 }
 
+// records loads one journal namespace under a single read transaction. Callers
+// may perform wallet effects only after the snapshot has released its lock.
+func records[T any](r *Runtime, prefix string) ([]T, error) {
+	var result []T
+	err := r.db.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket([]byte("runtime-v1")).Cursor()
+		for k, v := c.Seek([]byte(prefix)); k != nil &&
+			bytes.HasPrefix(k, []byte(prefix)); k, v = c.Next() {
+
+			var record T
+			if err := json.Unmarshal(v, &record); err != nil {
+				return err
+			}
+			result = append(result, record)
+		}
+		return nil
+	})
+	return result, err
+}
+
 // Call dispatches only protocol-bound operations after local authentication.
 func (r *Runtime) Call(ctx context.Context, method bridge.Method,
 	payload json.RawMessage) (any, error) {

@@ -1,16 +1,11 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"time"
 
-	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/swapkit/bridge"
-	kit "github.com/lightninglabs/loop/swapkit/tapsdk"
 	sdk "github.com/lightninglabs/tap-sdk"
-	bolt "go.etcd.io/bbolt"
 )
 
 // refundDeposit implements the original static deposit CSV path without a
@@ -35,45 +30,26 @@ func (r *Runtime) refundDeposit(ctx context.Context,
 	}
 	// Expired signing material is retained, never erased to make the
 	// anchor appear free. Every admitted fallback expires before this CSV.
-	err = r.db.View(func(tx *bolt.Tx) error {
-		c := tx.Bucket([]byte("runtime-v1")).Cursor()
-		prefix := []byte("swap/")
-		for k, v := c.Seek(prefix); k != nil &&
-			bytes.HasPrefix(k, prefix); k, v = c.Next() {
-			var swap swapRecord
-			if err := json.Unmarshal(v, &swap); err != nil {
-				return err
+	swaps, err := records[swapRecord](r, "swap/")
+	if err != nil {
+		return nil, err
+	}
+	for _, swap := range swaps {
+		terms := swap.Offer.Terms
+		for _, point := range terms.DepositOutpoints {
+			if point != request.Outpoint {
+				continue
 			}
-			terms := swap.Offer.Terms
-			for _, point := range terms.DepositOutpoints {
-				if point != request.Outpoint {
-					continue
-				}
-				deadline := uint64(terms.RefundHeight) +
-					uint64(terms.RecoveryDelta)
-				if time.Now().Before(terms.OfferExpiry) ||
-					uint64(tip) < deadline {
-					return bridge.ErrPending
-				}
+			deadline := uint64(terms.RefundHeight) +
+				uint64(terms.RecoveryDelta)
+			if time.Now().Before(terms.OfferExpiry) ||
+				uint64(tip) < deadline {
+
+				return nil, bridge.ErrPending
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
-	var c depositContract
-	if err := json.Unmarshal(d.Deposit.Contract, &c); err != nil {
-		return nil, err
-	}
-	policy, err := kit.NewDepositKit(kit.DepositKitParams{
-		ClientKey: c.ClientKey, ServerKey: c.ServerKey,
-		CSVExpiry: c.CSV,
-	})
-	if err != nil {
-		return nil, err
-	}
-	spend, err := policy.TimeoutSpend(c.Output.TaprootAssetRoot)
+	c, spend, err := originalRefundPolicy(d)
 	if err != nil {
 		return nil, err
 	}
@@ -107,26 +83,10 @@ func (r *Runtime) refundDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	end, err := r.verifyProof(ctx, raw, d.Deposit.GroupKey,
-		d.Deposit.Amount, true)
+	err = r.verifyWalletSpend(ctx, raw, c.Output, c.ClientKey, spend,
+		true, uint64(p.BlockHeight)+uint64(c.CSV))
 	if err != nil {
 		return nil, err
-	}
-	anchor, err := finalTx(d.Refund)
-	if err != nil {
-		return nil, err
-	}
-	if end.AnchorTx.TxHash() != anchor.TxHash() ||
-		len(anchor.TxIn) != 1 ||
-		anchor.TxIn[0].PreviousOutPoint != p.OutPoint() ||
-		anchor.TxIn[0].Sequence != c.CSV {
-		return nil, bridge.ErrInvalid
-	}
-	w := anchor.TxIn[0].Witness
-	if len(w) != 3 || !bytes.Equal(w[1], spend.LeafScript) ||
-		!bytes.Equal(w[2], spend.ControlBlock) ||
-		anchor.TxIn[0].Sequence&wire.SequenceLockTimeDisabled != 0 {
-		return nil, bridge.ErrInvalid
 	}
 	_, err = r.cfg.Wallet.ImportProofFile(ctx,
 		&sdk.ProofFile{RawProofFile: raw})

@@ -353,7 +353,8 @@ func TestOutcomeRequiresExactSpendAndFreshRefund(t *testing.T) {
 		}
 		for _, mutation := range []string{"valid", "wrong signer",
 			"wrong control", "other prevout", "other issuance",
-			"wrong recipient", "reorg", "spent refund"} {
+			"wrong recipient", "other group", "other amount", "reorg",
+			"spent refund"} {
 
 			if mutation == "spent refund" && !refund {
 				continue
@@ -378,6 +379,11 @@ func testOutcomeBinding(t *testing.T, refund bool, mutation string) {
 		p.AnchorTx.TxIn[0].PreviousOutPoint.Index++
 	case "other issuance":
 		s.Fallback.Package.Outputs[0].IssuanceID[0] ^= 1
+	case "other group":
+		s.Fallback.Package.Outputs[0].AssetRef =
+			sdk.AssetRefFromGroupKey(bindingPub(12))
+	case "other amount":
+		s.Fallback.Package.Outputs[0].Amount++
 	case "wrong recipient":
 		old := p
 		p = bindingProof(t, bindingGenesis(), bindingKey(9).PubKey(),

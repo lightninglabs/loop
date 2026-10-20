@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -9,7 +8,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript/v2"
-	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/swapkit/bridge"
 	sdk "github.com/lightninglabs/tap-sdk"
 )
@@ -279,15 +277,12 @@ func (r *Runtime) discoverOutcome(ctx context.Context, s *swapRecord,
 	}
 	out := s.Fallback.Package.Outputs[0]
 	point := sdkPoint(out.AnchorOutpoint)
-	block, _, err := r.findSpend(ctx, point, s.Since)
+	block, height, err := r.findSpend(ctx, point, s.Since)
 	if err != nil {
 		return nil, err
 	}
 	found := spendingTransaction(block, point)
-	if len(found.TxIn) != 1 {
-		return nil, bridge.ErrInvalid
-	}
-	if len(found.TxOut) != 1 {
+	if len(found.TxIn) != 1 || len(found.TxOut) != 1 {
 		return nil, bridge.ErrInvalid
 	}
 	policy, err := htlc(s.Offer, c)
@@ -303,54 +298,15 @@ func (r *Runtime) discoverOutcome(ctx context.Context, s *swapRecord,
 	if err != nil {
 		return nil, err
 	}
-	witness := found.TxIn[0].Witness
-	if len(witness) < 3 ||
-		!bytes.Equal(witness[len(witness)-2], spend.LeafScript) ||
-		!bytes.Equal(witness[len(witness)-1], spend.ControlBlock) {
+	if !spendsLeaf(found, out, spend) {
 		return nil, bridge.ErrPending
 	}
 	fallbackProof, err := r.publish(ctx, s.Fallback, s.Since)
 	if err != nil {
 		return nil, err
 	}
-	p, err := lastProof(fallbackProof)
-	if err != nil {
-		return nil, err
-	}
-	recipient, err := walletOutput(public, 0, 0, out.AssetRef,
-		out.Amount, found.TxOut[0].Value)
-	if err != nil {
-		return nil, err
-	}
-	anchor, err := anchorTemplate(p, recipient.Anchor.InternalKey,
-		found.TxOut[0].Value, spend)
-	if err != nil {
-		return nil, err
-	}
-	request := customRequest(assetInput(out, fallbackProof),
-		recipient, anchor, spend.SigningPlan(0))
-	pkg, err := r.commit(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	packet, err := decodePSBT(pkg.AnchorPsbt)
-	if err != nil {
-		return nil, err
-	}
-	if packet.UnsignedTx.TxHash() != found.TxHash() {
-		return nil, bridge.ErrInvalid
-	}
-	requests, err := pkg.SigningRequests()
-	if err != nil || len(requests.ScriptPath) != 1 {
-		return nil, bridge.ErrInvalid
-	}
-	final, err := pkg.ApplyScriptPathWitness(requests.ScriptPath[0].ID,
-		witness[:len(witness)-2])
-	if err != nil {
-		return nil, err
-	}
-	raw, err := r.publish(ctx, transaction{Package: pkg,
-		Final: final.AnchorPsbt}, s.Since)
+	raw, err := r.rebuildObservedSpend(ctx, out, fallbackProof, public,
+		spend, found, block, height)
 	if err != nil {
 		return nil, err
 	}
@@ -377,11 +333,6 @@ func (r *Runtime) verifyOutcomePolicy(ctx context.Context, s *swapRecord,
 	if err != nil {
 		return err
 	}
-	p, err := r.verifyProof(ctx, raw, s.Offer.Terms.GroupKey,
-		s.Offer.Terms.DepositAmount, requireUnspent)
-	if err != nil {
-		return err
-	}
 	var c depositContract
 	if err := json.Unmarshal(d.Deposit.Contract, &c); err != nil {
 		return err
@@ -390,24 +341,14 @@ func (r *Runtime) verifyOutcomePolicy(ctx context.Context, s *swapRecord,
 		return bridge.ErrPending
 	}
 	prior := s.Fallback.Package.Outputs[0]
-	if sdk.AssetID(p.Asset.ID()) != prior.IssuanceID {
+	if prior.AssetRef != sdk.AssetRefFromGroupKey(s.Offer.Terms.GroupKey) ||
+		prior.Amount != s.Offer.Terms.DepositAmount {
+
 		return bridge.ErrInvalid
 	}
 	pub := c.ServerKey
 	if refund {
 		pub = c.ClientKey
-	}
-	expected, err := walletOutput(
-		pub, 0, 0, prior.AssetRef, prior.Amount, 330,
-	)
-	if err != nil {
-		return err
-	}
-	recipientKey := p.InclusionProof.InternalKey.SerializeCompressed()
-	if !bytes.Equal(p.Asset.ScriptKey.PubKey.SerializeCompressed(),
-		expected.Script.External.ScriptKey.PubKey[:]) ||
-		!bytes.Equal(recipientKey, pub[:]) {
-		return bridge.ErrInvalid
 	}
 	policy, err := htlc(s.Offer, c)
 	if err != nil {
@@ -420,37 +361,9 @@ func (r *Runtime) verifyOutcomePolicy(ctx context.Context, s *swapRecord,
 	if err != nil {
 		return err
 	}
-	block, err := r.cfg.Chain.Block(ctx, p.BlockHeight)
-	if err != nil {
-		return err
-	}
-	for _, tx := range block.Transactions {
-		if tx.TxHash() != p.AnchorTx.TxHash() {
-			continue
-		}
-		if len(tx.TxIn) != 1 || tx.TxIn[0].PreviousOutPoint !=
-			sdkPoint(prior.AnchorOutpoint) {
-			return bridge.ErrInvalid
-		}
-		w := tx.TxIn[0].Witness
-		if len(w) < 3 || !bytes.Equal(w[len(w)-2], spend.LeafScript) ||
-			!bytes.Equal(w[len(w)-1], spend.ControlBlock) {
-			return bridge.ErrInvalid
-		}
-		prev := wire.NewTxOut(prior.AnchorValueSat, spend.PkScript)
-		fetch := txscript.NewCannedPrevOutputFetcher(
-			prev.PkScript, prev.Value,
-		)
-		hashes := txscript.NewTxSigHashes(tx, fetch)
-		engine, err := txscript.NewEngine(prev.PkScript, tx, 0,
-			txscript.StandardVerifyFlags, nil, hashes,
-			prev.Value, fetch)
-		if err != nil {
-			return err
-		}
-		return engine.Execute()
-	}
-	return bridge.ErrInvalid
+	err = r.verifyWalletSpend(ctx, raw, prior, pub, spend,
+		requireUnspent, 0)
+	return err
 }
 
 func (r *Runtime) lookupPreimage(ctx context.Context,

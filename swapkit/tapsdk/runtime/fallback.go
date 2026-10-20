@@ -11,7 +11,6 @@ import (
 	kit "github.com/lightninglabs/loop/swapkit/tapsdk"
 	"github.com/lightninglabs/loop/swapkit/tapsdk/walletsigner"
 	sdk "github.com/lightninglabs/tap-sdk"
-	bolt "go.etcd.io/bbolt"
 )
 
 type recoveryRequest struct {
@@ -62,30 +61,16 @@ func (r *Runtime) save(s *swapRecord) error {
 }
 
 func (r *Runtime) localDeposit(point string) (*depositRecord, error) {
-	var found *depositRecord
-	err := r.db.View(func(tx *bolt.Tx) error {
-		c := tx.Bucket([]byte("runtime-v1")).Cursor()
-		prefix := []byte("deposit/")
-		for k, raw := c.Seek(prefix); k != nil &&
-			bytes.HasPrefix(k, prefix); k, raw = c.Next() {
-			var record depositRecord
-			if err := json.Unmarshal(raw, &record); err != nil {
-				return err
-			}
-			if record.Deposit.Outpoint == point {
-				found = &record
-				break
-			}
-		}
-		return nil
-	})
+	deposits, err := records[depositRecord](r, "deposit/")
 	if err != nil {
 		return nil, err
 	}
-	if found == nil {
-		return nil, bridge.ErrInvalid
+	for _, record := range deposits {
+		if record.Deposit.Outpoint == point {
+			return &record, nil
+		}
 	}
-	return found, nil
+	return nil, bridge.ErrInvalid
 }
 
 func (r *Runtime) offerDeposit(ctx context.Context,

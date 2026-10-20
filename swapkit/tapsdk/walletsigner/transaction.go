@@ -14,10 +14,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 )
 
-const (
-	scriptMethod = signrpc.SignMethod_SIGN_METHOD_TAPROOT_SCRIPT_SPEND
-	bip86Method  = signrpc.SignMethod_SIGN_METHOD_TAPROOT_KEY_SPEND_BIP0086
-)
+const scriptMethod = signrpc.SignMethod_SIGN_METHOD_TAPROOT_SCRIPT_SPEND
 
 // ScriptPath signs one validated SDK leaf with an authenticated wallet key.
 // The caller authorizes the package and assembles its preimage/timeout witness;
@@ -55,45 +52,6 @@ func (s *Signer) ScriptPath(ctx context.Context, key keychain.KeyLocator,
 				SignMethod:    scriptMethod,
 				WitnessScript: bytes.Clone(request.LeafScript),
 				Sighash:       request.SighashType,
-			})
-	}
-	return nil, ErrBinding
-}
-
-// KeyPath signs a single-key Taproot request using its wallet locator.
-func (s *Signer) KeyPath(ctx context.Context, key keychain.KeyLocator,
-	pkg *sdk.CustomAnchorTransferPackage, requestID sdk.Hash) (
-	[]byte, error) {
-
-	if pkg == nil || key.Family < 0 || key.Index > math.MaxInt32 {
-		return nil, ErrInvalid
-	}
-	requests, err := pkg.SigningRequests()
-	if err != nil {
-		return nil, err
-	}
-	public, err := s.deriveKey(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	for _, request := range requests.KeyPath {
-		if request.ID != requestID {
-			continue
-		}
-		if !bytes.Equal(request.Signer[:], public[1:]) {
-			return nil, ErrBinding
-		}
-		method := signrpc.SignMethod_SIGN_METHOD_TAPROOT_KEY_SPEND
-		if len(request.TaprootMerkleRoot) == 0 {
-			method = bip86Method
-		}
-		return s.signOutput(ctx, key, public, pkg, request.InputIndex,
-			request.Sighash, &signrpc.SignDescriptor{
-				SignMethod: method,
-				Sighash:    request.SighashType,
-				TapTweak: bytes.Clone(
-					request.TaprootMerkleRoot,
-				),
 			})
 	}
 	return nil, ErrBinding
@@ -163,13 +121,6 @@ func (s *Signer) signOutput(ctx context.Context, key keychain.KeyLocator,
 	verificationKey, err := schnorr.ParsePubKey(public[1:])
 	if err != nil {
 		return nil, err
-	}
-	if descriptor.SignMethod !=
-		scriptMethod {
-
-		verificationKey = txscript.ComputeTaprootOutputKey(
-			verificationKey, descriptor.TapTweak,
-		)
 	}
 	if !signature.Verify(sighash[:], verificationKey) {
 		return nil, ErrInvalid

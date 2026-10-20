@@ -53,8 +53,8 @@ older backup while its wallet key remains active: erasing a peer binding can
 allow nonce reuse against a different message or aggregate nonce. It contains
 neither wallet private keys nor public API methods to export secret nonces.
 
-`ScriptPath` and `KeyPath` sign only SDK-derived requests using an explicitly
-selected wallet locator, then verify the returned Schnorr signature.
+`ScriptPath` signs SDK-derived recovery requests using an explicitly selected
+wallet locator, then verifies the returned Schnorr signature.
 `AnchorSigner` adapts wallet `SignPsbt`/`FinalizePsbt` for SDK-managed Bitcoin
 inputs. The transaction driver must still verify the final SDK package and
 persist publication intent; these helpers do not authorize a spend themselves.

@@ -129,6 +129,24 @@ the SDK lifecycle against
 tapd, including cooperative deposit spending and unilateral HTLC settlement.
 It does not exercise a Loop client/server Lightning swap or pricing policy.
 
+## Runtime responsibilities
+
+The SDK already builds virtual transactions and commitments, checks proofs and
+sealed transfer packages, assembles Bitcoin witnesses, and publishes transfers.
+The local runtime supplies Loop's contract and recipient checks, durable wallet
+effects, current-chain and mempool checks, and recovery when a peer disappears.
+Original deposit refunds and HTLC outcomes share one observed-spend proof
+reconstructor and one recipient/Bitcoin-policy verifier. The wallet signer keeps
+nonce bindings across process restarts; the SDK supplies signing requests and
+signature verification, but does not persist LND signing sessions.
+
+The remaining confirmed-proof assembler is a compatibility boundary:
+`AssetProofPath.ConfirmProofFile` requires v1 assets when the path has transition
+steps, whereas deposits may carry a historical v0 base. Loop retains that
+assembler and verifies the completed lineage through tapd. Replacing it must
+preserve the v0 regression test and the current-chain checks; importing a proof
+alone does not establish current confirmation or unspentness.
+
 ## Development setup
 
 The adapter is a separate Go module. Until SDK PRs
