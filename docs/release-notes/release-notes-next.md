@@ -31,4 +31,6 @@
 
 #### Maintenance
 
+* `utils.MuSig2Sign` now takes the signers' raw 32-byte private keys and derives their public keys itself, instead of separate private and public key slices. Out-of-range keys are reduced modulo the secp256k1 group order, while keys that reduce to zero and calls with fewer than two signers are rejected. Go callers of this exported helper need to be updated.
+
 #### Contributors (Alphabetical Order)
