@@ -386,6 +386,7 @@ func TestLocalAcceptanceIsRequired(t *testing.T) {
 
 type failingStore struct {
 	Store
+
 	fail func(*Record) bool
 }
 
@@ -783,6 +784,7 @@ func TestExpiredUnexposedRecoveryNeverQueriesPreimage(t *testing.T) {
 
 type delayedExposureStore struct {
 	Store
+
 	afterWrite func()
 }
 

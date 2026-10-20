@@ -21,13 +21,15 @@ var (
 )
 
 // SwapRequest fixes user-approved native quantities before any server call.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type SwapRequest struct {
-	RequestID [32]byte
-	GroupKey  [33]byte
-	Outpoint  string
-	Amount    uint64 // Exact native Lightning payout.
-	MaxDebit  uint64
-	MaxFee    uint64
+	RequestID [32]byte `json:"RequestID"`
+	GroupKey  [33]byte `json:"GroupKey"`
+	Outpoint  string   `json:"Outpoint"`
+	Amount    uint64   `json:"Amount"` // Exact native Lightning payout.
+	MaxDebit  uint64   `json:"MaxDebit"`
+	MaxFee    uint64   `json:"MaxFee"`
 }
 
 // validSwapAmount spends the complete deposit without a change output. Its
@@ -39,28 +41,32 @@ func validSwapAmount(depositAmount uint64, request SwapRequest) bool {
 }
 
 // Job persists creation identity before a possibly ambiguous remote effect.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Job struct {
-	ID                   [32]byte
-	Deposit              *bridge.CreateDepositRequest
-	Swap                 *SwapRequest
-	Refund               *bridge.RefundDepositRequest
-	RefundProof          []byte
-	Offer                *assetexec.Offer
-	Intent               []byte
-	ServerRequest        []byte
-	Complete             bool
-	Canceled             bool
-	RefundReported       bool
-	CancellationReported bool
+	ID                   [32]byte                     `json:"ID"`
+	Deposit              *bridge.CreateDepositRequest `json:"Deposit"`
+	Swap                 *SwapRequest                 `json:"Swap"`
+	Refund               *bridge.RefundDepositRequest `json:"Refund"`
+	RefundProof          []byte                       `json:"RefundProof"`
+	Offer                *assetexec.Offer             `json:"Offer"`
+	Intent               []byte                       `json:"Intent"`
+	ServerRequest        []byte                       `json:"ServerRequest"`
+	Complete             bool                         `json:"Complete"`
+	Canceled             bool                         `json:"Canceled"`
+	RefundReported       bool                         `json:"RefundReported"`
+	CancellationReported bool                         `json:"CancellationReported"`
 }
 
 // InventoryEntry binds one isolated asset anchor to a single active request.
 // Consumed anchors remain excluded from every Bitcoin-only spending path.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type InventoryEntry struct {
-	Deposit   bridge.Deposit
-	RequestID [32]byte
-	Hash      [32]byte
-	Consumed  bool
+	Deposit   bridge.Deposit `json:"Deposit"`
+	RequestID [32]byte       `json:"RequestID"`
+	Hash      [32]byte       `json:"Hash"`
+	Consumed  bool           `json:"Consumed"`
 }
 
 // Store journals requests and inventory reservations in atomic transactions.
@@ -138,12 +144,13 @@ func (s *Store) PutJob(ctx context.Context, j *Job) error {
 			g, _ := json.Marshal(j.Refund)
 			if !bytes.Equal(a, c) || !bytes.Equal(d, e) ||
 				!bytes.Equal(f, g) {
+
 				return assetexec.ErrConflict
 			}
 			return nil
 		}
 		if j.Swap != nil || j.Refund != nil {
-			point := ""
+			var point string
 			if j.Swap != nil {
 				point = j.Swap.Outpoint
 			} else {
@@ -166,6 +173,7 @@ func (s *Store) PutJob(ctx context.Context, j *Job) error {
 					!validSwapAmount(
 						entry.Deposit.Amount, *j.Swap,
 					)) {
+
 				return assetexec.ErrConflict
 			}
 			entry.RequestID = j.ID
@@ -271,6 +279,7 @@ func (s *Store) addDeposit(d bridge.Deposit) error {
 					entry.Deposit.Contract,
 					d.Contract,
 				) {
+
 				return assetexec.ErrConflict
 			}
 		}
@@ -285,6 +294,7 @@ func (s *Store) addDeposit(d bridge.Deposit) error {
 
 func (s *Store) bind(ctx context.Context, o assetexec.Offer, release bool,
 	consumed bool) error {
+
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -320,6 +330,7 @@ func (s *Store) bind(ctx context.Context, o assetexec.Offer, release bool,
 		}
 		if e.RequestID != o.Terms.RequestID ||
 			(e.Hash != ([32]byte{}) && e.Hash != o.Hash) {
+
 			return assetexec.ErrConflict
 		}
 		if release {

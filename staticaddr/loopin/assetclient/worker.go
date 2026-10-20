@@ -85,9 +85,7 @@ func (s *Session) recoverBatch(ctx context.Context, cfg WorkerConfig,
 	jobs := make(chan [32]byte)
 	var workers sync.WaitGroup
 	for range min(cfg.Concurrency, len(records)) {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			for hash := range jobs {
 				if ctx.Err() != nil {
 					return
@@ -101,7 +99,7 @@ func (s *Session) recoverBatch(ctx context.Context, cfg WorkerConfig,
 					cfg.OnError(hash, err)
 				}
 			}
-		}()
+		})
 	}
 
 dispatch:

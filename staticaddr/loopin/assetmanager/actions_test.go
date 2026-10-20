@@ -14,8 +14,11 @@ import (
 	"google.golang.org/grpc"
 )
 
+const validHint = "valid"
+
 type claimHintServer struct {
 	assetclient.Server
+
 	get func(context.Context) (*swapserverrpc.AssetLoopInStatus, error)
 }
 
@@ -45,7 +48,7 @@ func (r claimHintRuntime) Call(ctx context.Context, method bridge.Method,
 // suppress independent recovery or consume its remaining action deadline.
 func TestClaimHintsCannotVetoChainDiscovery(t *testing.T) {
 	for _, scenario := range []string{
-		"valid", "invalid", "stale", "empty", "verification stalled",
+		validHint, "invalid", "stale", "empty", "verification stalled",
 		"server stalled", "missing", "unclaimed", "chain failure",
 	} {
 		t.Run(scenario, func(t *testing.T) {
@@ -98,7 +101,7 @@ func testClaimHint(t *testing.T, scenario string) {
 			t, []byte("untrusted peer proof"), request.Evidence,
 		)
 		switch scenario {
-		case "valid":
+		case validHint:
 			return []byte("strictly verified peer proof"), nil
 		case "empty":
 			return nil, nil
@@ -121,14 +124,14 @@ func testClaimHint(t *testing.T, scenario string) {
 	} else {
 		require.NoError(t, err)
 		want := "independent confirmed chain proof"
-		if scenario == "valid" {
+		if scenario == validHint {
 			want = "strictly verified peer proof"
 		}
 		require.Equal(t, []byte(want), proof)
 	}
 	wantCalls := 2
 	switch scenario {
-	case "valid", "server stalled", "missing", "unclaimed":
+	case validHint, "server stalled", "missing", "unclaimed":
 		wantCalls = 1
 	}
 	require.Equal(t, wantCalls, calls)

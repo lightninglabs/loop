@@ -14,6 +14,7 @@ import (
 
 type staticRPCConnection struct {
 	grpc.ClientConnInterface
+
 	invoke func(string, any, any) error
 }
 

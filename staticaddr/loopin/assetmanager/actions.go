@@ -74,6 +74,7 @@ func (a *runtimeActions) ReleaseDeposits(ctx context.Context,
 
 func (a *runtimeActions) VerifyFinalizeFallback(ctx context.Context,
 	o assetexec.Offer, bundle []byte) (assetexec.Fallback, error) {
+
 	req, err := operation(o)
 	if err != nil {
 		return assetexec.Fallback{}, err
@@ -115,6 +116,7 @@ func (a *runtimeActions) LookupPreimage(ctx context.Context,
 
 func (a *runtimeActions) SignCooperative(ctx context.Context, o assetexec.Offer,
 	request []byte) ([]byte, error) {
+
 	req, err := operation(o)
 	if err != nil {
 		return nil, err
@@ -132,6 +134,7 @@ func (a *runtimeActions) SignCooperative(ctx context.Context, o assetexec.Offer,
 
 func (a *runtimeActions) InspectClaim(ctx context.Context, o assetexec.Offer,
 	fallback assetexec.Fallback) ([]byte, error) {
+
 	req, err := operation(o)
 	if err != nil {
 		return nil, err
@@ -181,6 +184,7 @@ func claimHintContext(ctx context.Context) (context.Context,
 
 func (a *runtimeActions) RecoverRefund(ctx context.Context, o assetexec.Offer,
 	fallback assetexec.Fallback) ([]byte, error) {
+
 	req, err := operation(o)
 	if err != nil {
 		return nil, err

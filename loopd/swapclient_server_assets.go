@@ -97,6 +97,7 @@ func (s *swapClientServer) listAssetDeposits(ctx context.Context,
 		if len(request.Outpoints) > 0 && !slices.Contains(
 			request.Outpoints, entry.Deposit.Outpoint,
 		) {
+
 			continue
 		}
 		result.AssetDeposits = append(result.AssetDeposits,

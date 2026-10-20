@@ -69,7 +69,6 @@ func TestOldJournalRecoversProtectedDepositState(t *testing.T) {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(bucket.Get(f.offer.Hash[:]),
 			&fields); err != nil {
-
 			return err
 		}
 		delete(fields, "DepositState")

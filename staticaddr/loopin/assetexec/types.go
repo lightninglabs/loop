@@ -39,71 +39,81 @@ const (
 // Contract binds every asset packet, proof, anchor script, key, amount, and
 // recovery fee tier.
 // The transaction adapter verifies that complete specification at admission.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Terms struct {
-	Version          uint32
-	RequestID        [32]byte
-	RequestDigest    [32]byte
-	Owner            [32]byte
-	GroupKey         [33]byte
-	DepositOutpoints []string
-	DepositAmount    uint64
-	PayoutAmount     uint64
-	AssetFee         uint64
-	ChangeAmount     uint64
-	MaxDebit         uint64
-	RefundHeight     uint32
-	MinPayoutExpiry  uint32
-	RecoveryDelta    uint32
-	ExecutionDelta   uint32
-	OfferExpiry      time.Time
-	Contract         []byte
+	Version          uint32    `json:"Version"`
+	RequestID        [32]byte  `json:"RequestID"`
+	RequestDigest    [32]byte  `json:"RequestDigest"`
+	Owner            [32]byte  `json:"Owner"`
+	GroupKey         [33]byte  `json:"GroupKey"`
+	DepositOutpoints []string  `json:"DepositOutpoints"`
+	DepositAmount    uint64    `json:"DepositAmount"`
+	PayoutAmount     uint64    `json:"PayoutAmount"`
+	AssetFee         uint64    `json:"AssetFee"`
+	ChangeAmount     uint64    `json:"ChangeAmount"`
+	MaxDebit         uint64    `json:"MaxDebit"`
+	RefundHeight     uint32    `json:"RefundHeight"`
+	MinPayoutExpiry  uint32    `json:"MinPayoutExpiry"`
+	RecoveryDelta    uint32    `json:"RecoveryDelta"`
+	ExecutionDelta   uint32    `json:"ExecutionDelta"`
+	OfferExpiry      time.Time `json:"OfferExpiry"`
+	Contract         []byte    `json:"Contract"`
 }
 
 // Offer contains the server's hash commitment, never its execution preimage.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Offer struct {
-	Hash  [32]byte
-	Terms Terms
+	Hash  [32]byte `json:"Hash"`
+	Terms Terms    `json:"Terms"`
 }
 
 // Invoice contains the exact HOLD invoice and durable receiver RFQ binding.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Invoice struct {
-	PaymentRequest string
-	PaymentPlan    []byte
+	PaymentRequest string `json:"PaymentRequest"`
+	PaymentPlan    []byte `json:"PaymentPlan"`
 }
 
 // Fallback is the independently verified and fully signed SDK recovery bundle.
 // ClaimSignatures may authorize only a preimage-revealing HTLC fallback, never
 // an unconditional cooperative spend of the deposits.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Fallback struct {
-	Bundle          []byte
-	ClaimSignatures []byte
+	Bundle          []byte `json:"Bundle"`
+	ClaimSignatures []byte `json:"ClaimSignatures"`
 }
 
 // Record contains private client recovery material. Do not expose it in RPCs.
 // InvoiceIntent and CooperativeRequest never contain private signing nonces.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Record struct {
-	Revision int64
-	State    State
+	Revision int64 `json:"Revision"`
+	State    State `json:"State"`
 	// DepositState applies the shared deposit FSM to every selected input.
 	// It commits atomically with exposure and confirmed outcome evidence.
-	DepositState          depositflow.State
-	Offer                 Offer
-	InvoiceIntent         []byte
-	Reserved              bool
-	DepositsReleased      bool
-	InvoiceCreating       bool
-	Invoice               Invoice
-	ServerFallback        []byte
-	Fallback              Fallback
-	AcceptedEvidence      []byte
-	SignaturesExposed     bool
-	Preimage              [32]byte
-	HasPreimage           bool
-	CooperativeRequest    []byte
-	CooperativeSignature  []byte
-	CancellationRequested bool
-	RefundEvidence        []byte
-	ClaimEvidence         []byte
+	DepositState          depositflow.State `json:"DepositState"`
+	Offer                 Offer             `json:"Offer"`
+	InvoiceIntent         []byte            `json:"InvoiceIntent"`
+	Reserved              bool              `json:"Reserved"`
+	DepositsReleased      bool              `json:"DepositsReleased"`
+	InvoiceCreating       bool              `json:"InvoiceCreating"`
+	Invoice               Invoice           `json:"Invoice"`
+	ServerFallback        []byte            `json:"ServerFallback"`
+	Fallback              Fallback          `json:"Fallback"`
+	AcceptedEvidence      []byte            `json:"AcceptedEvidence"`
+	SignaturesExposed     bool              `json:"SignaturesExposed"`
+	Preimage              [32]byte          `json:"Preimage"`
+	HasPreimage           bool              `json:"HasPreimage"`
+	CooperativeRequest    []byte            `json:"CooperativeRequest"`
+	CooperativeSignature  []byte            `json:"CooperativeSignature"`
+	CancellationRequested bool              `json:"CancellationRequested"`
+	RefundEvidence        []byte            `json:"RefundEvidence"`
+	ClaimEvidence         []byte            `json:"ClaimEvidence"`
 }
 
 // Store persists independent record copies with atomic revision checks and

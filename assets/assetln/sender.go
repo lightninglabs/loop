@@ -34,13 +34,15 @@ func (s *Sender) now() time.Time {
 
 // PaymentPlan is persisted before Send. The same hash and quote are used after
 // restart; a timed-out RPC must be resolved by Track, never by a fresh payment.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type PaymentPlan struct {
-	Terms        Terms
-	Invoice      string
-	Quote        *rfqrpc.PeerAcceptedSellQuote
-	FeeLimitMSat int64
-	InvoiceMSat  int64
-	Peer         []byte
+	Terms        Terms                         `json:"Terms"`
+	Invoice      string                        `json:"Invoice"`
+	Quote        *rfqrpc.PeerAcceptedSellQuote `json:"Quote"`
+	FeeLimitMSat int64                         `json:"FeeLimitMSat"`
+	InvoiceMSat  int64                         `json:"InvoiceMSat"`
+	Peer         []byte                        `json:"Peer"`
 }
 
 // Quote negotiates only after deposit risk acceptance. A native-unit rate cap
@@ -70,10 +72,7 @@ func (s *Sender) Quote(ctx context.Context, terms Terms, invoice string,
 	// product is strictly below MaxDebit+1 still respects the native cap.
 	const scale = 11
 	ceiling := assetRateCeiling(terms.MaxDebit, maxMSat, scale)
-	seconds := terms.Deadline - now.Unix()
-	if seconds > 60 {
-		seconds = 60
-	}
+	seconds := min(terms.Deadline-now.Unix(), 60)
 	policy := rfqrpc.ExecutionPolicy_EXECUTION_POLICY_FOK
 	response, err := s.RFQ.AddAssetSellOrder(ctx,
 		&rfqrpc.AddAssetSellOrderRequest{
@@ -185,6 +184,7 @@ func (s *Sender) Debit(ctx context.Context, plan *PaymentPlan,
 	for _, attempt := range payment.Htlcs {
 		if attempt == nil ||
 			attempt.Status == lnrpc.HTLCAttempt_FAILED {
+
 			continue
 		}
 		if live != nil || attempt.Route == nil ||
@@ -212,6 +212,7 @@ func (s *Sender) Debit(ctx context.Context, plan *PaymentPlan,
 	for _, channel := range channels.Channels {
 		if channel == nil ||
 			channel.ChanId != live.Route.Hops[0].ChanId {
+
 			continue
 		}
 		amount, rfq, err := nativeAmount(

@@ -23,7 +23,6 @@ func TestServerAuthDeadlineWhilePeerStalls(t *testing.T) {
 		for _, nextStream := range []bool{false, true} {
 			t.Run(fmt.Sprintf("stream=%t/queued-stream=%t",
 				firstStream, nextStream), func(t *testing.T) {
-
 				testServerAuthBlocked(
 					t, firstStream, nextStream,
 				)

@@ -29,6 +29,7 @@ var errLost = errors.New("lost RPC response")
 
 type testServer struct {
 	Server
+
 	create func(*swapserverrpc.CreateAssetLoopInRequest) (
 		*swapserverrpc.AssetLoopInStatus, error)
 	prepare  func(*swapserverrpc.PrepareAssetLoopInRequest) error
@@ -178,6 +179,7 @@ func TestRequestOfferBindsExactSelectionAndContract(t *testing.T) {
 
 type testLightning struct {
 	lnrpc.LightningClient
+
 	invoice   *lnrpc.Invoice
 	decoded   *lnrpc.PayReq
 	lookupErr error
@@ -197,6 +199,7 @@ func (l *testLightning) DecodePayReq(context.Context, *lnrpc.PayReqString,
 
 type testAssets struct {
 	tapchannelrpc.TaprootAssetChannelsClient
+
 	add func(*tapchannelrpc.AddInvoiceRequest) error
 }
 
@@ -259,6 +262,7 @@ func TestAdapterRecoversLostInvoiceCreationWithoutNewQuote(t *testing.T) {
 
 type sessionActions struct {
 	assetexec.Actions
+
 	creates, pushes, cancels int
 }
 
@@ -318,6 +322,7 @@ func TestSessionRecoveryResumesLostHandshakeResponses(t *testing.T) {
 
 type snapshotStore struct {
 	assetexec.Store
+
 	record *assetexec.Record
 }
 
@@ -454,6 +459,7 @@ func testSessionRecoveryResumesLostResponses(t *testing.T, lostPhase string) {
 		prepare: func(
 			req *swapserverrpc.PrepareAssetLoopInRequest,
 		) error {
+
 			prepareCalls++
 			require.Equal(
 				t,
@@ -472,6 +478,7 @@ func testSessionRecoveryResumesLostResponses(t *testing.T, lostPhase string) {
 			)
 			if lostPhase == "prepare" &&
 				prepareCalls == 1 {
+
 				return errLost
 			}
 			return nil
@@ -480,6 +487,7 @@ func testSessionRecoveryResumesLostResponses(t *testing.T, lostPhase string) {
 			fallbackCalls++
 			if lostPhase == "fallback" &&
 				fallbackCalls == 1 {
+
 				return nil, errLost
 			}
 			return []byte("server-fallback"), nil

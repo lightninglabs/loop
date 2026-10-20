@@ -38,6 +38,7 @@ func (refundedJournal) Get(
 	context.Context,
 	[32]byte,
 ) (*assetexec.Record, error) {
+
 	return &assetexec.Record{
 		State:          assetexec.HtlcTimeoutSwept,
 		RefundEvidence: []byte("confirmed spendable refund"),

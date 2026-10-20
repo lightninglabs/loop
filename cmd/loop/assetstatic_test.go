@@ -30,6 +30,7 @@ func TestCanonicalAssetIdentifier(t *testing.T) {
 
 type assetPermissionClient struct {
 	looprpc.SwapClientClient
+
 	request  *looprpc.StaticAddressLoopInRequest
 	response *looprpc.StaticAddressLoopInResponse
 	err      error
@@ -108,6 +109,7 @@ func TestRecordedAssetDefaults(t *testing.T) {
 
 type assetListConnection struct {
 	daemonConn
+
 	t      *testing.T
 	method string
 	legacy bool
@@ -138,6 +140,7 @@ func (c *assetListConnection) Invoke(_ context.Context, method string,
 
 type assetListTransport struct {
 	grpcTransport
+
 	conn daemonConn
 }
 

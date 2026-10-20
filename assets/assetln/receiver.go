@@ -34,10 +34,12 @@ func (r *Receiver) now() time.Time {
 }
 
 // HoldInvoice is the invoice and its immutable receiver-side RFQ binding.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type HoldInvoice struct {
-	PaymentRequest string
-	Quote          *rfqrpc.PeerAcceptedBuyQuote
-	FinalCLTV      uint64
+	PaymentRequest string                       `json:"PaymentRequest"`
+	Quote          *rfqrpc.PeerAcceptedBuyQuote `json:"Quote"`
+	FinalCLTV      uint64                       `json:"FinalCLTV"`
 }
 
 // Create creates an asset HOLD invoice using the server's payment hash. A
@@ -201,6 +203,7 @@ func (r *Receiver) Settled(ctx context.Context, terms Terms,
 	for _, htlc := range invoice.Htlcs {
 		if htlc == nil ||
 			htlc.State == lnrpc.InvoiceHTLCState_CANCELED {
+
 			continue
 		}
 		if htlc.State != lnrpc.InvoiceHTLCState_SETTLED ||
@@ -253,6 +256,7 @@ func (r *Receiver) Settle(ctx context.Context, hash, preimage [32]byte) error {
 	if lookupErr == nil && invoice != nil &&
 		bytes.Equal(invoice.RHash, hash[:]) &&
 		invoice.State == lnrpc.Invoice_SETTLED {
+
 		return nil
 	}
 	return err

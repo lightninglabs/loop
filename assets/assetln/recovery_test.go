@@ -56,13 +56,13 @@ func TestQuoteAllowsRoundedInvoiceWithoutIncreasingNativeCap(t *testing.T) {
 
 			require.Equal(t, terms.GroupKey[:],
 				req.AssetSpecifier.GetGroupKey())
-			cap, ok := new(big.Int).SetString(
+			rateCap, ok := new(big.Int).SetString(
 				req.AssetRateLimit.Coefficient, 10,
 			)
 			require.True(t, ok)
 			rate := new(big.Int).Mul(big.NewInt(5_820_600),
 				big.NewInt(100_000_000_000))
-			require.GreaterOrEqual(t, cap.Cmp(rate), 0)
+			require.GreaterOrEqual(t, rateCap.Cmp(rate), 0)
 			return quote
 		}},
 	}
@@ -75,6 +75,7 @@ func TestQuoteAllowsRoundedInvoiceWithoutIncreasingNativeCap(t *testing.T) {
 
 type invoiceLightning struct {
 	lnrpc.LightningClient
+
 	invoice   *lnrpc.Invoice
 	lookupErr error
 	decoded   *lnrpc.PayReq
@@ -101,6 +102,7 @@ func (m *invoiceLightning) ListChannels(context.Context,
 
 type settleInvoices struct {
 	invoicesrpc.InvoicesClient
+
 	err error
 }
 

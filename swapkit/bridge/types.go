@@ -49,138 +49,176 @@ var (
 
 // Terms matches the durable coordinator's public terms. Admission is private
 // server recovery data containing authenticated registration and input proofs.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Terms struct {
-	Version          uint32
-	RequestID        [32]byte
-	RequestDigest    [32]byte
-	Owner            [32]byte
-	GroupKey         [33]byte
-	DepositOutpoints []string
-	DepositAmount    uint64
-	PayoutAmount     uint64
-	AssetFee         uint64
-	ChangeAmount     uint64
-	MaxDebit         uint64
-	RefundHeight     uint32
-	MinPayoutExpiry  uint32
-	RecoveryDelta    uint32
-	ExecutionDelta   uint32
-	OfferExpiry      time.Time
-	Contract         []byte
-	Admission        []byte `json:",omitempty"`
+	Version          uint32    `json:"Version"`
+	RequestID        [32]byte  `json:"RequestID"`
+	RequestDigest    [32]byte  `json:"RequestDigest"`
+	Owner            [32]byte  `json:"Owner"`
+	GroupKey         [33]byte  `json:"GroupKey"`
+	DepositOutpoints []string  `json:"DepositOutpoints"`
+	DepositAmount    uint64    `json:"DepositAmount"`
+	PayoutAmount     uint64    `json:"PayoutAmount"`
+	AssetFee         uint64    `json:"AssetFee"`
+	ChangeAmount     uint64    `json:"ChangeAmount"`
+	MaxDebit         uint64    `json:"MaxDebit"`
+	RefundHeight     uint32    `json:"RefundHeight"`
+	MinPayoutExpiry  uint32    `json:"MinPayoutExpiry"`
+	RecoveryDelta    uint32    `json:"RecoveryDelta"`
+	ExecutionDelta   uint32    `json:"ExecutionDelta"`
+	OfferExpiry      time.Time `json:"OfferExpiry"`
+	Contract         []byte    `json:"Contract"`
+	Admission        []byte    `json:",omitempty"`
 }
 
 // Offer commits to the server payment hash and exact native asset terms.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Offer struct {
-	Hash  [32]byte
-	Terms Terms
+	Hash  [32]byte `json:"Hash"`
+	Terms Terms    `json:"Terms"`
 }
 
 // Registration is loaded from the authenticated owner's static address row.
 // The runtime must bind every deposit policy to these exact keys and CSV.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Registration struct {
-	Owner     [32]byte
-	ClientKey [33]byte
-	ServerKey [33]byte
-	CSV       uint32
-	KeyFamily int32
-	KeyIndex  uint32
+	Owner     [32]byte `json:"Owner"`
+	ClientKey [33]byte `json:"ClientKey"`
+	ServerKey [33]byte `json:"ServerKey"`
+	CSV       uint32   `json:"CSV"`
+	KeyFamily int32    `json:"KeyFamily"`
+	KeyIndex  uint32   `json:"KeyIndex"`
 }
 
 // Deposit preserves the proof and contract needed after process restart.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Deposit struct {
-	Outpoint           string
-	GroupKey           [33]byte
-	Amount             uint64
-	Proof              []byte
-	Contract           []byte
-	ConfirmationHeight uint32
-	RefundHeight       uint32
-	ValueSat           uint64
+	Outpoint           string   `json:"Outpoint"`
+	GroupKey           [33]byte `json:"GroupKey"`
+	Amount             uint64   `json:"Amount"`
+	Proof              []byte   `json:"Proof"`
+	Contract           []byte   `json:"Contract"`
+	ConfirmationHeight uint32   `json:"ConfirmationHeight"`
+	RefundHeight       uint32   `json:"RefundHeight"`
+	ValueSat           uint64   `json:"ValueSat"`
 }
 
 // Admission binds client-supplied proofs to server-authenticated registration
 // and server policy before the execution journal reserves any deposit.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Admission struct {
-	Registration     Registration
-	RequestID        [32]byte
-	GroupKey         [33]byte
-	Deposits         []Deposit
-	Contract         []byte
-	RefundHeight     uint32
-	MinConfirmations uint32
+	Registration     Registration `json:"Registration"`
+	RequestID        [32]byte     `json:"RequestID"`
+	GroupKey         [33]byte     `json:"GroupKey"`
+	Deposits         []Deposit    `json:"Deposits"`
+	Contract         []byte       `json:"Contract"`
+	RefundHeight     uint32       `json:"RefundHeight"`
+	MinConfirmations uint32       `json:"MinConfirmations"`
 }
 
 // AdmissionResult contains the native total verified from all input proofs.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type AdmissionResult struct {
-	DepositAmount uint64
+	DepositAmount uint64 `json:"DepositAmount"`
 }
 
 // Ready identifies the authenticated local node pair and network.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Ready struct {
-	Network   string
-	LndPubkey [33]byte
+	Network   string   `json:"Network"`
+	LndPubkey [33]byte `json:"LndPubkey"`
 }
 
 // Preparation binds the invoice and transaction recovery request.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Preparation struct {
-	Invoice         string
-	PaymentPlan     []byte
-	RecoveryRequest []byte
+	Invoice         string `json:"Invoice"`
+	PaymentPlan     []byte `json:"PaymentPlan"`
+	RecoveryRequest []byte `json:"RecoveryRequest"`
 }
 
 // Bundle and Claim use the SDK runtime's versioned serialized transaction data.
-type Bundle struct{ Data []byte }
-type Claim struct{ Data []byte }
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
+type Bundle struct {
+	Data []byte `json:"Data"`
+}
+
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
+type Claim struct {
+	Data []byte `json:"Data"`
+}
 
 // Resolution requires confirmed spends and valid spendable asset proofs.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Resolution struct {
-	Claimed  bool
-	Refunded bool
-	Evidence []byte
+	Claimed  bool   `json:"Claimed"`
+	Refunded bool   `json:"Refunded"`
+	Evidence []byte `json:"Evidence"`
 }
 
 // Operation carries the fixed inputs to an offer-scoped runtime operation.
 // Each method consumes only its documented fields and must reject mutation of
 // previously persisted signing, transaction or proof intent for this hash.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Operation struct {
-	Offer       Offer
-	Preparation Preparation
-	Bundle      Bundle
-	Claim       Claim
-	Signatures  []byte
-	Preimage    [32]byte
-	Request     []byte
-	Fallback    Fallback
-	Evidence    []byte
+	Offer       Offer       `json:"Offer"`
+	Preparation Preparation `json:"Preparation"`
+	Bundle      Bundle      `json:"Bundle"`
+	Claim       Claim       `json:"Claim"`
+	Signatures  []byte      `json:"Signatures"`
+	Preimage    [32]byte    `json:"Preimage"`
+	Request     []byte      `json:"Request"`
+	Fallback    Fallback    `json:"Fallback"`
+	Evidence    []byte      `json:"Evidence"`
 }
 
 // Fallback is the client's verified publishable recovery material.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Fallback struct {
-	Bundle          []byte
-	ClaimSignatures []byte
+	Bundle          []byte `json:"Bundle"`
+	ClaimSignatures []byte `json:"ClaimSignatures"`
 }
 
 // PreimageResult distinguishes a verified chain disclosure from no disclosure.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type PreimageResult struct {
-	Preimage [32]byte
-	Found    bool
+	Preimage [32]byte `json:"Preimage"`
+	Found    bool     `json:"Found"`
 }
 
 // CreateDepositRequest binds idempotent deposit funding to wallet key locators.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type CreateDepositRequest struct {
-	RequestID [32]byte
-	GroupKey  [33]byte
-	Amount    uint64
-	ClientKey [33]byte
-	ServerKey [33]byte
-	CSV       uint32
-	KeyFamily int32
-	KeyIndex  uint32
+	RequestID [32]byte `json:"RequestID"`
+	GroupKey  [33]byte `json:"GroupKey"`
+	Amount    uint64   `json:"Amount"`
+	ClientKey [33]byte `json:"ClientKey"`
+	ServerKey [33]byte `json:"ServerKey"`
+	CSV       uint32   `json:"CSV"`
+	KeyFamily int32    `json:"KeyFamily"`
+	KeyIndex  uint32   `json:"KeyIndex"`
 }
 
 // InventoryRequest selects confirmed deposits of one native asset group.
-type InventoryRequest struct{ GroupKey [33]byte }
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
+type InventoryRequest struct {
+	GroupKey [33]byte `json:"GroupKey"`
+}
 
 // Backend implements authenticated local transaction operations. Calls must
 // honor context cancellation and persist intent before irreversible effects.
@@ -205,7 +243,11 @@ func Decode(raw []byte, target any) error {
 
 // RefundDepositRequest selects a wallet-owned mature static asset deposit.
 // The runtime must reject deposits reserved by an active signing operation.
-type RefundDepositRequest struct{ Outpoint string }
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
+type RefundDepositRequest struct {
+	Outpoint string `json:"Outpoint"`
+}
 
 // PublicRPCMaxBytes bounds complete external protobuf requests and responses.
 // The local bridge has a separate, larger JSON envelope budget; it does not

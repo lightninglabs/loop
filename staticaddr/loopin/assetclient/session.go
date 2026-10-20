@@ -36,6 +36,7 @@ func (a *Adapter) RequestOffer(
 		request.ProtocolVersion != 1 ||
 		len(request.RequestId) != 32 ||
 		bytes.Equal(request.RequestId, make([]byte, 32)) {
+
 		return assetexec.Offer{}, assetexec.ErrInvalid
 	}
 	selected, err := depositOutpoints(request.Deposits)
@@ -106,7 +107,6 @@ func (s *Session) Prepare(ctx context.Context, hash [32]byte) error {
 	}
 	if err := s.Controller.ReceiveFallback(ctx, hash,
 		fallback.GetRecoveryBundle()); err != nil {
-
 		return err
 	}
 	return s.Controller.ExposeClaim(ctx, hash)

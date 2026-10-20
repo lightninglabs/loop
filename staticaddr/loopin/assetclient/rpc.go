@@ -24,6 +24,7 @@ type Server interface {
 
 type serverClient struct {
 	swapserverrpc.AssetLoopInServerClient
+
 	static swapserverrpc.StaticAddressServerClient
 }
 

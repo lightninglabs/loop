@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -60,6 +61,7 @@ func New(cfg Config) (*Manager, error) {
 		cfg.Server == nil ||
 		cfg.Receiver == nil || cfg.Owner == ([32]byte{}) ||
 		cfg.Peer == ([33]byte{}) || cfg.FetchL402 == nil {
+
 		return nil, assetexec.ErrInvalid
 	}
 	m := &Manager{cfg: cfg}
@@ -91,6 +93,7 @@ func (m *Manager) Initialize(ctx context.Context) error {
 	}
 	if ready.Network != m.cfg.Network ||
 		ready.LndPubkey != m.cfg.NodePubkey {
+
 		return assetexec.ErrInvalid
 	}
 	entries, err := m.cfg.Store.Inventory(ctx)
@@ -172,6 +175,7 @@ func (m *Manager) CreateDeposit(ctx context.Context, id [32]byte,
 func (m *Manager) Start(ctx context.Context, request SwapRequest) error {
 	if request.RequestID == ([32]byte{}) || request.Amount == 0 ||
 		request.MaxDebit < request.Amount {
+
 		return assetexec.ErrInvalid
 	}
 	point, err := wire.NewOutPointFromString(request.Outpoint)
@@ -196,6 +200,7 @@ func (m *Manager) Start(ctx context.Context, request SwapRequest) error {
 	if !validSwapAmount(input.Amount, request) ||
 		input.GroupKey != request.GroupKey ||
 		input.ConfirmationHeight == 0 {
+
 		return assetexec.ErrInvalid
 	}
 	rpcRequest := &swapserverrpc.CreateAssetLoopInRequest{
@@ -505,7 +510,6 @@ func (m *Manager) expireDeposits(ctx context.Context) error {
 		}
 		_, err := m.RefundDeposit(ctx, entry.Deposit.Outpoint)
 		if err != nil && !errors.Is(err, assetexec.ErrConflict) {
-
 			return err
 		}
 	}
@@ -577,10 +581,10 @@ func (m *Manager) verifyUnstarted(ctx context.Context, job *Job) error {
 		if record == nil || record.Offer.Terms.RequestID == job.ID {
 			return assetexec.ErrState
 		}
-		for _, point := range record.Offer.Terms.DepositOutpoints {
-			if point == job.Swap.Outpoint {
-				return assetexec.ErrState
-			}
+		if slices.Contains(record.Offer.Terms.DepositOutpoints,
+			job.Swap.Outpoint) {
+
+			return assetexec.ErrState
 		}
 	}
 	return nil

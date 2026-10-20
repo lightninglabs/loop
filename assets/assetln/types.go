@@ -21,15 +21,17 @@ import (
 var ErrEvidence = errors.New("asset payment evidence is not sufficient")
 
 // Terms binds a held payout to its on-chain claim and native-unit limits.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Terms struct {
-	Hash            [32]byte
-	GroupKey        [33]byte
-	Amount          uint64
-	MaxDebit        uint64
-	RefundHeight    uint32
-	RecoveryBlocks  uint32
-	HoldExpiryDelta uint32
-	Deadline        int64
+	Hash            [32]byte `json:"Hash"`
+	GroupKey        [33]byte `json:"GroupKey"`
+	Amount          uint64   `json:"Amount"`
+	MaxDebit        uint64   `json:"MaxDebit"`
+	RefundHeight    uint32   `json:"RefundHeight"`
+	RecoveryBlocks  uint32   `json:"RecoveryBlocks"`
+	HoldExpiryDelta uint32   `json:"HoldExpiryDelta"`
+	Deadline        int64    `json:"Deadline"`
 }
 
 // Validate checks immutable terms before any quote or payment is created.
@@ -37,6 +39,7 @@ func (t Terms) Validate(now time.Time) error {
 	key, err := btcec.ParsePubKey(t.GroupKey[:])
 	if err != nil ||
 		!bytes.Equal(key.SerializeCompressed(), t.GroupKey[:]) {
+
 		return fmt.Errorf("invalid canonical group key")
 	}
 	if t.Hash == ([32]byte{}) || t.Amount == 0 || t.MaxDebit < t.Amount ||
@@ -55,14 +58,16 @@ func (t Terms) Validate(now time.Time) error {
 
 // Evidence identifies one accepted, locally committed asset HTLC. The first
 // protocol version deliberately excludes multipart and AMP payments.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Evidence struct {
-	Hash         [32]byte
-	GroupKey     [33]byte
-	Amount       uint64
-	ChannelID    uint64
-	HTLCIndex    uint64
-	ExpiryHeight uint32
-	RFQID        [32]byte
+	Hash         [32]byte `json:"Hash"`
+	GroupKey     [33]byte `json:"GroupKey"`
+	Amount       uint64   `json:"Amount"`
+	ChannelID    uint64   `json:"ChannelID"`
+	HTLCIndex    uint64   `json:"HTLCIndex"`
+	ExpiryHeight uint32   `json:"ExpiryHeight"`
+	RFQID        [32]byte `json:"RFQID"`
 }
 
 // channelData and htlcData mirror tapd's RPC JSON contract. Keeping these
@@ -158,6 +163,7 @@ func Accepted(terms Terms, invoice *lnrpc.Invoice,
 	for _, htlc := range invoice.Htlcs {
 		if htlc == nil ||
 			htlc.State == lnrpc.InvoiceHTLCState_CANCELED {
+
 			continue
 		}
 		if accepted != nil || htlc.Amp != nil ||

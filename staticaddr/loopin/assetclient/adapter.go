@@ -49,6 +49,7 @@ type Actions = ClientChainActions
 // refunds, and the existing deposit manager's reservation lifecycle.
 type Adapter struct {
 	Actions
+
 	Receiver        *assetln.Receiver
 	Server          Server
 	Store           assetexec.Store
@@ -62,11 +63,13 @@ func (a *Adapter) CurrentHeight(ctx context.Context) (uint32, error) {
 }
 
 // InvoiceIntent fixes the receiver's asset-channel peer before invoice RPCs.
+//
+//nolint:tagliatelle // Preserve the existing recovery and wire format.
 type InvoiceIntent struct {
-	Peer []byte
+	Peer []byte `json:"Peer"`
 	// RecoveryRequest fixes fallback templates and public nonces before
 	// any request is sent. Private nonces remain in the durable signer.
-	RecoveryRequest []byte
+	RecoveryRequest []byte `json:"RecoveryRequest"`
 }
 
 // PaymentTerms translates the immutable client agreement to native units.
@@ -258,6 +261,7 @@ func OfferFromRPC(owner [32]byte, response *swapserverrpc.AssetLoopInStatus) (
 	rpc := response.Offer
 	if len(rpc.PaymentHash) != 32 || len(rpc.GroupKey) != 33 ||
 		len(rpc.RequestId) != 32 || len(rpc.RequestDigest) != 32 {
+
 		return assetexec.Offer{}, assetexec.ErrInvalid
 	}
 	var offer assetexec.Offer

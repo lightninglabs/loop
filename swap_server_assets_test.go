@@ -21,6 +21,7 @@ import (
 type proofSizeServer struct {
 	swapserverrpc.UnimplementedAssetLoopInServerServer
 	swapserverrpc.UnimplementedStaticAddressServerServer
+
 	calls atomic.Int32
 }
 
@@ -49,7 +50,7 @@ func (s *proofSizeServer) GetAssetLoopIn(context.Context,
 // connection with proofs above gRPC's default limit and both rejection bounds.
 func TestSwapServerProofMessageLimits(t *testing.T) {
 	// Keep the socket below the platform's Unix socket path length limit.
-	dir, err := os.MkdirTemp("", "loop-rpc-")
+	dir, err := os.MkdirTemp("", "loop-rpc-") //nolint:usetesting
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
 	socket := filepath.Join(dir, "rpc.sock")

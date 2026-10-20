@@ -71,6 +71,7 @@ func (c *Controller) Start(ctx context.Context, offer Offer,
 	if err == nil {
 		if !same(r.Offer, offer) ||
 			!bytes.Equal(r.InvoiceIntent, intent) {
+
 			return ErrConflict
 		}
 		if r.State.Terminal() || r.CancellationRequested {
@@ -212,6 +213,7 @@ func (c *Controller) ReceiveFallback(ctx context.Context, hash [32]byte,
 	}
 	if r.State != SignHtlcTx || r.CancellationRequested ||
 		len(bundle) == 0 {
+
 		return ErrState
 	}
 	fallback, err := c.actions.VerifyFinalizeFallback(
@@ -688,6 +690,7 @@ func validateOffer(offer Offer) error {
 	key, err := btcec.ParsePubKey(t.GroupKey[:])
 	if err != nil ||
 		!bytes.Equal(key.SerializeCompressed(), t.GroupKey[:]) {
+
 		return ErrInvalid
 	}
 	if offer.Hash == ([32]byte{}) || t.Version != 1 ||

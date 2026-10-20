@@ -92,7 +92,9 @@ func TestAccepted(t *testing.T) {
 				),
 			)
 			d.Balances[0].Amount--
-			i.Htlcs[0].CustomChannelData, _ = json.Marshal(d)
+			var err error
+			i.Htlcs[0].CustomChannelData, err = json.Marshal(d)
+			require.NoError(t, err)
 		}},
 		{"fake tranche", func(i *lnrpc.Invoice, _ []*lnrpc.Channel) {
 			var d htlcData
@@ -106,7 +108,9 @@ func TestAccepted(t *testing.T) {
 			d.Balances[0].AssetID = hex.EncodeToString(
 				make([]byte, 32),
 			)
-			i.Htlcs[0].CustomChannelData, _ = json.Marshal(d)
+			var err error
+			i.Htlcs[0].CustomChannelData, err = json.Marshal(d)
+			require.NoError(t, err)
 		}},
 		{"overflow", func(i *lnrpc.Invoice, _ []*lnrpc.Channel) {
 			var d htlcData
@@ -119,7 +123,9 @@ func TestAccepted(t *testing.T) {
 			)
 			d.Balances[0].Amount = math.MaxUint64
 			d.Balances = append(d.Balances, d.Balances[0])
-			i.Htlcs[0].CustomChannelData, _ = json.Marshal(d)
+			var err error
+			i.Htlcs[0].CustomChannelData, err = json.Marshal(d)
+			require.NoError(t, err)
 		}},
 	}
 	terms := testTerms()
@@ -140,6 +146,7 @@ func TestAccepted(t *testing.T) {
 
 type mockLightning struct {
 	lnrpc.LightningClient
+
 	decoded  *lnrpc.PayReq
 	channels []*lnrpc.Channel
 }
@@ -162,6 +169,7 @@ func (m *mockLightning) ListChannels(
 
 type mockAssets struct {
 	tapchannelrpc.TaprootAssetChannelsClient
+
 	add func(
 		*tapchannelrpc.AddInvoiceRequest,
 	) *tapchannelrpc.AddInvoiceResponse
@@ -185,6 +193,7 @@ func (m *mockAssets) SendPayment(_ context.Context,
 
 type mockRFQ struct {
 	rfqrpc.RfqClient
+
 	quote func(
 		*rfqrpc.AddAssetSellOrderRequest,
 	) *rfqrpc.PeerAcceptedSellQuote

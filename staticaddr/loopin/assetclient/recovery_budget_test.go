@@ -19,6 +19,7 @@ import (
 
 type preimageServer struct {
 	Server
+
 	get func(context.Context) (*swapserverrpc.AssetLoopInStatus, error)
 }
 
@@ -31,6 +32,7 @@ func (s *preimageServer) GetAssetLoopIn(ctx context.Context,
 
 type recoveryActions struct {
 	sessionActions
+
 	evidence []byte
 	lookup   func(context.Context) ([32]byte, bool, error)
 	refund   func(context.Context) ([]byte, error)
@@ -56,6 +58,7 @@ func (a *recoveryActions) RecoverRefund(ctx context.Context,
 
 type cancelInvoices struct {
 	invoicesrpc.InvoicesClient
+
 	calls int
 }
 

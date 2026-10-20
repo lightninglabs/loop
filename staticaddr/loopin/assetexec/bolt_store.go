@@ -85,7 +85,6 @@ func (s *BoltStore) Create(ctx context.Context, r *Record) error {
 			if err := deposits.Put(
 				[]byte(outpoint), r.Offer.Hash[:],
 			); err != nil {
-
 				return err
 			}
 		}
@@ -151,7 +150,6 @@ func (s *BoltStore) Update(ctx context.Context, r *Record,
 					if err := deposits.Delete(
 						[]byte(point),
 					); err != nil {
-
 						return err
 					}
 				}
@@ -310,10 +308,10 @@ func validateUpdate(old, next *Record) error {
 		return ErrInvalid
 	}
 	if old.State.Terminal() {
-		copy := *old
-		copy.Revision = next.Revision
-		copy.DepositsReleased = next.DepositsReleased
-		if !same(&copy, next) {
+		prior := *old
+		prior.Revision = next.Revision
+		prior.DepositsReleased = next.DepositsReleased
+		if !same(&prior, next) {
 			return ErrState
 		}
 		return nil

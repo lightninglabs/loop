@@ -17,6 +17,7 @@ import (
 
 type workerActions struct {
 	sessionActions
+
 	creates atomic.Int32
 	onPush  func()
 }
@@ -42,6 +43,7 @@ func (a *workerActions) PushSignatures(context.Context, assetexec.Offer,
 
 type workerServer struct {
 	testServer
+
 	prepare func(context.Context,
 		*swapserverrpc.PrepareAssetLoopInRequest) error
 }
@@ -164,6 +166,7 @@ func TestSessionWorkerBoundsConcurrentActions(t *testing.T) {
 			previous := maximum.Load()
 			if current <= previous ||
 				maximum.CompareAndSwap(previous, current) {
+
 				break
 			}
 		}
@@ -200,6 +203,7 @@ func TestSessionWorkerBoundsConcurrentActions(t *testing.T) {
 
 type failingScanStore struct {
 	assetexec.Store
+
 	calls atomic.Int32
 }
 

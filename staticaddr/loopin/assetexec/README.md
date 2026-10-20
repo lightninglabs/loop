@@ -37,6 +37,11 @@ substitute for those cross-operation locks. Terminal records remain in
 `ListActive` until shared deposit cleanup completes, so restart retries cleanup
 without releasing a different swap's reservation.
 
+Persisted JSON field names are part of the recovery format. Explicit tags
+preserve the original exported names, including their capitalization. Renaming
+those fields requires a migration that also preserves request and signing
+bindings; a formatting change must not rewrite journal identities.
+
 The caller persists invoice intent with `Start`, obtains the fixed invoice
 with `PrepareInvoice`, submits it through the authenticated server transport,
 and passes the server's fallback to `ReceiveFallback`. The SDK adapter must

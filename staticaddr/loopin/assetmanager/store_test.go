@@ -392,6 +392,7 @@ func TestExpiredOfferBeforeControllerCreationReleasesSafely(t *testing.T) {
 
 type lostOfferServer struct {
 	assetclient.Server
+
 	calls int
 }
 
@@ -461,6 +462,7 @@ func TestLostOfferResponseRefundsOnlyAfterOriginalMaturity(t *testing.T) {
 
 type activeJournal struct {
 	assetexec.Store
+
 	record *assetexec.Record
 }
 
