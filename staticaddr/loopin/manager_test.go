@@ -32,6 +32,23 @@ import (
 	"google.golang.org/grpc"
 )
 
+// TestInitiateLoopInRejectsMissingBitcoinSelection verifies the request an
+// older daemon sees when it ignores asset_params. Even when Bitcoin deposits
+// exist, no selection means no quote, invoice, reservation or signing.
+func TestInitiateLoopInRejectsMissingBitcoinSelection(t *testing.T) {
+	manager := &Manager{cfg: &Config{
+		DepositManager: &mockDepositManager{
+			activeDeposits: []*deposit.Deposit{
+				makeDeposit(1, 0, 100_000, 1),
+			},
+		},
+	}}
+	_, err := manager.initiateLoopIn(t.Context(),
+		&loop.StaticAddressLoopInRequest{})
+	require.ErrorContains(t, err,
+		"neither deposit outpoints nor amount provided")
+}
+
 // TestManagerRunRejectsRequestsAfterShutdown verifies that requests fail when
 // the manager exits even if the request's context is still active.
 func TestManagerRunRejectsRequestsAfterShutdown(t *testing.T) {

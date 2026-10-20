@@ -13,9 +13,10 @@ import (
 
 const allDeposits = `-- name: AllDeposits :many
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_request_id, asset_consumed
 FROM
     deposits
+WHERE asset_data IS NULL
 ORDER BY
     id ASC
 `
@@ -42,6 +43,9 @@ func (q *Queries) AllDeposits(ctx context.Context) ([]Deposit, error) {
 			&i.SwapHash,
 			&i.OnchainCost,
 			&i.OnchainCostKnown,
+			&i.AssetData,
+			&i.AssetRequestID,
+			&i.AssetConsumed,
 		); err != nil {
 			return nil, err
 		}
@@ -113,13 +117,13 @@ func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) er
 
 const depositForOutpoint = `-- name: DepositForOutpoint :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_request_id, asset_consumed
 FROM
     deposits
 WHERE
     tx_hash = $1
 AND
-    out_index = $2
+    out_index = $2 AND asset_data IS NULL
 `
 
 type DepositForOutpointParams struct {
@@ -143,17 +147,20 @@ func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpoint
 		&i.SwapHash,
 		&i.OnchainCost,
 		&i.OnchainCostKnown,
+		&i.AssetData,
+		&i.AssetRequestID,
+		&i.AssetConsumed,
 	)
 	return i, err
 }
 
 const getDeposit = `-- name: GetDeposit :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_request_id, asset_consumed
 FROM
     deposits
 WHERE
-    deposit_id = $1
+    deposit_id = $1 AND asset_data IS NULL
 `
 
 func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (Deposit, error) {
@@ -172,6 +179,9 @@ func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (Deposit, er
 		&i.SwapHash,
 		&i.OnchainCost,
 		&i.OnchainCostKnown,
+		&i.AssetData,
+		&i.AssetRequestID,
+		&i.AssetConsumed,
 	)
 	return i, err
 }
@@ -231,7 +241,7 @@ SET
 WHERE
     deposit_id = $1
 AND
-    onchain_cost_known IS NULL
+    onchain_cost_known IS NULL AND asset_data IS NULL
 `
 
 type SetDepositOnchainCostParams struct {
@@ -254,7 +264,7 @@ SET
     expiry_sweep_txid = $5,
     finalized_withdrawal_tx = $6
 WHERE
-    deposits.deposit_id = $1
+    deposits.deposit_id = $1 AND asset_data IS NULL
 `
 
 type UpdateDepositParams struct {

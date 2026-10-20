@@ -134,3 +134,14 @@ go install ./...
 
 If you want to build release files yourself, follow
 [the guide](./docs/reproducible_release.md).
+
+### Asset static loop-in development
+
+The normal client supports asset deposit funding, same-group native payouts,
+and recovery through `loop static asset`. See the
+[asset deposit and loop-in guide](staticaddr/loopin/assets.md) for
+configuration, commands, persistent state and the initial one-deposit limit.
+The transaction runtime builds from the separate `swapkit/tapsdk` module.
+
+Experimental asset Loop In development and release blockers are tracked in
+[the readiness document](docs/asset-loop-in-readiness.md).

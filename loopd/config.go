@@ -200,6 +200,14 @@ type Config struct {
 
 	Server *loopServerConfig `group:"server" namespace:"server"`
 
+	AssetPeer            string `long:"assetpeer" description:"Compressed public key of the asset Lightning channel peer"`
+	AssetBitcoinURL      string `long:"assetbitcoinurl" description:"Bitcoin RPC URL for asset UTXO and mempool checks"`
+	AssetBitcoinUser     string `long:"assetbitcoinuser" description:"Bitcoin RPC user for asset UTXO checks"`
+	AssetBitcoinPassword string `long:"assetbitcoinpassword" description:"Bitcoin RPC password for asset UTXO checks"`
+	AssetBitcoinTLS      string `long:"assetbitcointls" description:"Optional Bitcoin RPC TLS certificate"`
+	AssetFeeSat          uint64 `long:"assetfeesat" description:"Anchor transaction fee in satoshis" default:"1000"`
+	AssetMaxFeeSat       uint64 `long:"assetmaxfeesat" description:"Maximum asset anchor funding fee" default:"2000"`
+
 	Tapd *assets.TapdConfig `group:"tapd" namespace:"tapd"`
 
 	View viewParameters `command:"view" alias:"v" description:"View all swaps in the database. This command can only be executed when loopd is not running."`

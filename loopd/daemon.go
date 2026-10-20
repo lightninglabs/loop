@@ -93,6 +93,7 @@ type Daemon struct {
 	lnd           *lndclient.GrpcLndServices
 	assetClient   *assets.TapdClient
 	clientCleanup func()
+	assetCleanup  func()
 
 	wg       sync.WaitGroup
 	quit     chan struct{}
@@ -388,6 +389,9 @@ func (d *Daemon) startWebServers() error {
 // this method fails with an error then no goroutine was started yet and no
 // cleanup is necessary. If it succeeds, then goroutines have been spawned.
 func (d *Daemon) initialize(withMacaroonService bool) error {
+	if _, _, err := assetLoopInConfig(d.cfg); err != nil {
+		return err
+	}
 	if d.cfg.EnableExperimental {
 		loopdb.EnableExperimentalProtocol()
 	}
@@ -721,7 +725,31 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		staticAddressLoopInStore,
 	)
 
+	assetConfig, err := d.newAssetConfig(
+		swapClient, staticAddressManager, depositManager,
+		staticAddressLoopInStore,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize asset loop-in: %w", err)
+	}
+
+	assetInitialized := false
+	var staticLoopInDone chan struct{}
+	defer func() {
+		if !assetInitialized && d.assetCleanup != nil {
+			// Startup can fail after managers have started. Join the
+			// asset recovery batch before closing its runtime client.
+			d.mainCtxCancel()
+			if staticLoopInDone != nil {
+				<-staticLoopInDone
+			}
+			d.assetCleanup()
+			d.assetCleanup = nil
+		}
+	}()
+
 	staticLoopInManager, err = loopin.NewManager(&loopin.Config{
+		Assets:                               assetConfig,
 		Server:                               staticAddressClient,
 		QuoteGetter:                          swapClient.Server,
 		LndClient:                            d.lnd.Client,
@@ -743,6 +771,10 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	}, blockHeight)
 	if err != nil {
 		return fmt.Errorf("unable to create loop-in manager: %w", err)
+	}
+
+	if err := staticLoopInManager.InitializeAssets(d.mainCtx); err != nil {
+		return fmt.Errorf("initialize asset deposits: %w", err)
 	}
 
 	var (
@@ -1040,10 +1072,12 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	// Start the static address loop-in manager.
 	if staticLoopInManager != nil {
 		initChan := make(chan struct{})
+		staticLoopInDone = make(chan struct{})
 		d.wg.Go(func() {
 			infof("Starting static address loop-in manager...")
 			defer infof("Static address loop-in manager stopped")
 			err := staticLoopInManager.Run(d.mainCtx, initChan)
+			close(staticLoopInDone)
 			if shouldReportManagerErr(err) {
 				d.internalErrChan <- err
 			}
@@ -1102,6 +1136,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		d.ErrChan <- runtimeErr
 	}()
 
+	assetInitialized = true
 	return nil
 }
 
@@ -1162,6 +1197,9 @@ func (d *Daemon) stop() {
 
 	// Everything should be shutting down now, wait for completion.
 	d.wg.Wait()
+	if d.assetCleanup != nil {
+		d.assetCleanup()
+	}
 }
 
 // allowCORS wraps the given http.Handler with a function that adds the

@@ -17,7 +17,7 @@ SELECT
 FROM
     deposits
 WHERE
-    swap_hash = $1
+    swap_hash = $1 AND asset_data IS NULL
 `
 
 func (q *Queries) DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([][]byte, error) {
@@ -45,7 +45,7 @@ func (q *Queries) DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([
 
 const depositsForSwapHash = `-- name: DepositsForSwapHash :many
 SELECT
-    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.onchain_cost, d.onchain_cost_known,
+    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.onchain_cost, d.onchain_cost_known, d.asset_data, d.asset_request_id, d.asset_consumed,
     u.update_state,
     u.update_timestamp
 FROM
@@ -59,7 +59,7 @@ FROM
         LIMIT 1
     )
 WHERE
-    d.swap_hash = $1
+    d.swap_hash = $1 AND d.asset_data IS NULL
 `
 
 type DepositsForSwapHashRow struct {
@@ -75,6 +75,9 @@ type DepositsForSwapHashRow struct {
 	SwapHash              []byte
 	OnchainCost           int64
 	OnchainCostKnown      sql.NullBool
+	AssetData             []byte
+	AssetRequestID        []byte
+	AssetConsumed         bool
 	UpdateState           sql.NullString
 	UpdateTimestamp       sql.NullTime
 }
@@ -101,6 +104,9 @@ func (q *Queries) DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]D
 			&i.SwapHash,
 			&i.OnchainCost,
 			&i.OnchainCostKnown,
+			&i.AssetData,
+			&i.AssetRequestID,
+			&i.AssetConsumed,
 			&i.UpdateState,
 			&i.UpdateTimestamp,
 		); err != nil {
@@ -464,7 +470,7 @@ UPDATE
 SET
     swap_hash = $2
 WHERE
-    deposit_id = $1
+    deposit_id = $1 AND asset_data IS NULL
 `
 
 type MapDepositToSwapParams struct {
@@ -528,7 +534,7 @@ SELECT
 FROM
     deposits
 WHERE
-    deposit_id = $1
+    deposit_id = $1 AND asset_data IS NULL
 `
 
 func (q *Queries) SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error) {

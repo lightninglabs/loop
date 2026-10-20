@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+// AssetLoopInServer exchanges same-group asset deposits for a held asset
+// Lightning payout. Only the server's executor may disclose the preimage.
+// Offer creation and signature commitment use StaticAddressServer with
+// ASSET_V1. These operations cover the additional payout and recovery phases.
+service AssetLoopInServer {
+    rpc PrepareAssetLoopIn (PrepareAssetLoopInRequest)
+        returns (AssetLoopInStatus);
+    rpc AssetLoopInFallback (AssetLoopInReference)
+        returns (AssetLoopInFallbackResponse);
+    rpc GetAssetLoopIn (AssetLoopInReference) returns (AssetLoopInStatus);
+    rpc CancelAssetLoopIn (AssetLoopInReference) returns (AssetLoopInStatus);
+    rpc ReportAssetLoopInRefund (ReportAssetLoopInRefundRequest)
+        returns (AssetLoopInStatus);
+}
+
+message AssetDepositInput {
+    // Transaction hash in Bitcoin wire byte order, exactly 32 bytes.
+    bytes txid = 1;
+    uint32 output_index = 2;
+    // Complete asset proof file, independently verified against this anchor.
+    bytes proof = 3;
+}
+
+message CreateAssetLoopInRequest {
+    // Version 1 is the single-part, same-group server-preimage protocol.
+    uint32 protocol_version = 1;
+    // Canonical compressed group key, exactly 33 bytes, including parity.
+    bytes group_key = 2;
+    repeated AssetDepositInput deposits = 3;
+    uint64 payout_amount = 4;
+    uint64 max_asset_fee = 5;
+    uint64 max_asset_debit = 6;
+    // Versioned SDK deposit contract and proof/anchor specification.
+    bytes contract = 7;
+    // Client-generated idempotency key, exactly 32 bytes. Retries recover the
+    // original offer even if its creation response was lost.
+    bytes request_id = 8;
+}
+
+message AssetLoopInReference {
+    bytes payment_hash = 1;
+
+    // Fresh public MuSig2 nonce, used only by AssetLoopInFallback.
+    bytes signing_nonce = 2;
+}
+
+message AssetLoopInOffer {
+    uint32 protocol_version = 1;
+    bytes payment_hash = 2;
+    bytes group_key = 3;
+    repeated AssetDepositInput deposits = 4;
+    uint64 deposit_amount = 5;
+    uint64 payout_amount = 6;
+    uint64 asset_fee = 7;
+    uint64 change_amount = 8;
+    uint64 max_asset_debit = 9;
+    uint32 refund_height = 10;
+    uint32 min_payout_expiry = 11;
+    uint32 recovery_delta = 12;
+    uint32 execution_delta = 13;
+    int64 offer_expiry = 14;
+    bytes contract = 15;
+    bytes request_id = 16;
+    bytes request_digest = 17;
+}
+
+message PrepareAssetLoopInRequest {
+    bytes payment_hash = 1;
+    string asset_hold_invoice = 2;
+    // Immutable SDK fallback templates. No private nonces.
+    bytes recovery_request = 3;
+}
+
+message AssetLoopInFallbackResponse {
+    // Package digest, public nonces, and server partial signature for this
+    // signing round. The client reconstructs and persists the complete
+    // fallback using its saved immutable SDK package before sharing authority.
+    bytes recovery_bundle = 1;
+}
+
+message CommitAssetLoopInRequest {
+    bytes payment_hash = 1;
+    // The client persists the complete fallback and exposure intent before
+    // sending these signatures, after verifying its local accepted payout.
+    bytes client_signatures = 2;
+}
+
+message ReportAssetLoopInRefundRequest {
+    bytes payment_hash = 1;
+    // Complete confirmed refund proof package, independently verified by the
+    // server. Reporting never releases deposits without failed payout evidence.
+    bytes proof = 2;
+}
+
+message AssetLoopInStatus {
+    AssetLoopInOffer offer = 1;
+    string state = 2;
+    string payment_state = 3;
+    bool signatures_exposed = 4;
+    // Empty until the server has durably committed execution. Repeated Get
+    // calls recover disclosure after either party loses a response/restarts.
+    bytes execution_preimage = 5;
+    // Complete proof package for independent recipient validation.
+    bytes resolution_proof = 6;
+    bool claimed = 7;
+    bool refunded = 8;
+}

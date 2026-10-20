@@ -219,6 +219,19 @@ service SwapClient {
     */
     rpc StaticOpenChannel (StaticOpenChannelRequest)
         returns (StaticOpenChannelResponse);
+
+    /* loop: `static asset refund`
+    RefundAssetDeposit queues the original CSV recovery of an expired,
+    unreserved native asset deposit.
+    */
+    rpc RefundAssetDeposit (RefundAssetDepositRequest)
+        returns (AssetRequestStatus);
+
+    /* loop: `static asset deposit`
+    CreateAssetDeposit durably queues funding using registered static keys.
+    */
+    rpc CreateAssetDeposit (CreateAssetDepositRequest)
+        returns (AssetRequestStatus);
 }
 
 message StaticOpenChannelRequest {
@@ -1911,6 +1924,10 @@ message ListStaticAddressDepositsRequest {
     Filters the list of all stored deposits by the outpoint.
     */
     repeated string outpoints = 2;
+
+    // Select native asset deposits. The default keeps the Bitcoin listing.
+    // state_filter is not supported for asset deposits.
+    bool assets_only = 3;
 }
 
 message ListStaticAddressDepositsResponse {
@@ -1918,6 +1935,13 @@ message ListStaticAddressDepositsResponse {
     A list of all deposits that match the filtered state.
     */
     repeated Deposit filtered_deposits = 1;
+
+    // Native asset quantities, returned only when assets_only is set.
+    repeated AssetDeposit asset_deposits = 2;
+
+    // Acknowledges the requested asset variant, including an empty listing.
+    // Clients must reject a response without this flag for assets_only.
+    bool assets_only = 3;
 }
 
 message ListStaticAddressWithdrawalRequest {
@@ -1931,6 +1955,9 @@ message ListStaticAddressWithdrawalResponse {
 }
 
 message ListStaticAddressSwapsRequest {
+    // Select durable asset funding, swap and refund requests. The default
+    // keeps the Bitcoin swap listing.
+    bool assets_only = 1;
 }
 
 message ListStaticAddressSwapsResponse {
@@ -1938,6 +1965,13 @@ message ListStaticAddressSwapsResponse {
     A list of all swaps known static address loop-in swaps.
     */
     repeated StaticAddressLoopInSwap swaps = 1;
+
+    // Includes requests still awaiting a server offer after a lost response.
+    repeated AssetRequestStatus asset_requests = 2;
+
+    // Acknowledges the requested asset variant, including an empty listing.
+    // Clients must reject a response without this flag for assets_only.
+    bool assets_only = 3;
 }
 
 message StaticAddressSummaryRequest {
@@ -2415,6 +2449,13 @@ message StaticAddressLoopInRequest {
 
     // If set, request the server to use fast publication behavior.
     bool fast = 10;
+
+    // Select a same-group asset payout using one asset_params.outpoint. All
+    // Bitcoin fields, including outpoints and amount, must remain unset so
+    // older daemons cannot interpret the request as a valid Bitcoin swap.
+    // The request is journaled before contacting the server and returns an
+    // asset_request immediately. Retry the same request_id after ambiguity.
+    AssetLoopInParams asset_params = 11;
 }
 
 message StaticAddressLoopInResponse {
@@ -2501,6 +2542,10 @@ message StaticAddressLoopInResponse {
     behavior.
     */
     bool fast = 15;
+
+    // Present for an asset request, which may not have a swap hash yet.
+    // The Bitcoin quantity and fee fields remain unset for these requests.
+    AssetRequestStatus asset_request = 16;
 }
 
 message AssetLoopOutRequest {
@@ -2646,4 +2691,51 @@ message CooperativeSweep {
     // Stateful mode obtains this value from the stored swap invoice. Stateless
     // mode requires it here.
     bytes payment_address = 1;
+}
+
+// CreateAssetDepositRequest commits wallet-owned assets to registered static
+// keys. Reuse request_id after an ambiguous response; quantities are native.
+message CreateAssetDepositRequest {
+    bytes request_id = 1;
+    bytes group_key = 2;
+    uint64 amount = 3;
+}
+
+message AssetDeposit {
+    string outpoint = 1;
+    bytes group_key = 2;
+    uint64 amount = 3;
+    uint32 confirmation_height = 4;
+    bytes request_id = 5;
+    bool consumed = 6;
+    uint32 refund_height = 7;
+}
+
+// AssetLoopInParams uses native units for one whole isolated asset deposit.
+message AssetLoopInParams {
+    bytes request_id = 1;
+    bytes group_key = 2;
+    // Canonical txid:index. Keep this inside the asset variant so a daemon
+    // that ignores unknown fields receives no Bitcoin deposit selection.
+    string outpoint = 3;
+    // Exact native Lightning payout. The entire deposit is spent; its excess
+    // over this amount must equal the server fee and fit max_asset_fee.
+    uint64 amount = 4;
+    uint64 max_asset_debit = 5;
+    uint64 max_asset_fee = 6;
+}
+
+// AssetRequestStatus deliberately excludes private invoices, signer material,
+// preimages, and raw recovery bundles.
+message AssetRequestStatus {
+    bytes request_id = 1;
+    bytes payment_hash = 2;
+    string state = 3;
+    bool deposit_request = 4;
+    bool refund_request = 5;
+}
+
+message RefundAssetDepositRequest {
+    // Canonical txid:index of the original asset deposit.
+    string outpoint = 1;
 }

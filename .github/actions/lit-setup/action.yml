@@ -15,12 +15,19 @@ runs:
         ref: ${{ env.LITD_ITEST_BRANCH }}
         path: lightning-terminal
 
+    - name: Prepare pinned SDK dependency
+      run: make dev-tap-sdk
+      shell: bash
+
     - name: Update go.mod to use the local Loop repository
       working-directory: ./lightning-terminal
       run: |
         go mod edit -replace=github.com/lightninglabs/loop=../
         go mod edit -replace=github.com/lightninglabs/loop/looprpc=../looprpc
         go mod edit -replace=github.com/lightninglabs/loop/swapserverrpc=../swapserverrpc
+        go mod edit -replace=github.com/lightninglabs/tap-sdk=../../tap-sdk-loop-compat
+        go mod edit -replace=github.com/lightningnetwork/lnd/tor=github.com/lightningnetwork/lnd/tor@v1.1.6
+        go mod edit -replace=github.com/lightningnetwork/lnd/sqldb@v1.0.13=github.com/lightningnetwork/lnd/sqldb@v1.0.13-0.20260514041430-e9b422f78581
         go mod tidy
       shell: bash
 

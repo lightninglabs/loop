@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -622,12 +623,9 @@ func newHTLCScriptV3(muSig2Version input.MuSig2Version, cltvExpiry int32,
 func GenTimeoutPathScript(senderHtlcKey *btcec.PublicKey, cltvExpiry int64) (
 	[]byte, error) {
 
-	builder := txscript.NewScriptBuilder()
-	builder.AddData(schnorr.SerializePubKey(senderHtlcKey))
-	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
-	builder.AddInt64(cltvExpiry)
-	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
-	return builder.Script()
+	return swapkit.CLTVTimeoutScript(
+		[32]byte(schnorr.SerializePubKey(senderHtlcKey)), cltvExpiry,
+	)
 }
 
 // GenSuccessPathScript constructs an HtlcScript for the success payment path.
@@ -640,20 +638,9 @@ func GenTimeoutPathScript(senderHtlcKey *btcec.PublicKey, cltvExpiry int64) (
 func GenSuccessPathScript(receiverHtlcKey *btcec.PublicKey,
 	swapHash lntypes.Hash) ([]byte, error) {
 
-	builder := txscript.NewScriptBuilder()
-
-	builder.AddData(schnorr.SerializePubKey(receiverHtlcKey))
-	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
-	builder.AddOp(txscript.OP_SIZE)
-	builder.AddInt64(32)
-	builder.AddOp(txscript.OP_EQUALVERIFY)
-	builder.AddOp(txscript.OP_HASH160)
-	builder.AddData(input.Ripemd160H(swapHash[:]))
-	builder.AddOp(txscript.OP_EQUALVERIFY)
-	builder.AddInt64(1)
-	builder.AddOp(txscript.OP_CHECKSEQUENCEVERIFY)
-
-	return builder.Script()
+	return swapkit.HTLCSuccessScript(
+		[32]byte(schnorr.SerializePubKey(receiverHtlcKey)), swapHash,
+	)
 }
 
 // genControlBlock constructs the control block with the depth 1 leaf of the

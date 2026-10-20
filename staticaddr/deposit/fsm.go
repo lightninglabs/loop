@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/deposit/flow"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/input"
@@ -44,50 +45,50 @@ var (
 var (
 	// Deposited signals that funds at a static address have been detected
 	// and are available to the client.
-	Deposited = fsm.StateType("Deposited")
+	Deposited = fsm.StateType(flow.Deposited)
 
 	// Withdrawing signals that the withdrawal transaction has been
 	// broadcast, awaiting sufficient confirmations.
-	Withdrawing = fsm.StateType("Withdrawing")
+	Withdrawing = fsm.StateType(flow.Withdrawing)
 
 	// Withdrawn signals that the withdrawal transaction has been confirmed.
-	Withdrawn = fsm.StateType("Withdrawn")
+	Withdrawn = fsm.StateType(flow.Withdrawn)
 
 	// OpeningChannel signals that the open channel transaction has been
 	// broadcast.
-	OpeningChannel = fsm.StateType("OpeningChannel")
+	OpeningChannel = fsm.StateType(flow.OpeningChannel)
 
 	// ChannelPublished signals that the open channel transaction has been
 	// published and that the channel should be managed from lnd from now
 	// on.
-	ChannelPublished = fsm.StateType("ChannelPublished")
+	ChannelPublished = fsm.StateType(flow.ChannelPublished)
 
 	// LoopingIn signals that the deposit is locked for a loop in swap.
-	LoopingIn = fsm.StateType("LoopingIn")
+	LoopingIn = fsm.StateType(flow.LoopingIn)
 
 	// LoopedIn signals that the loop in swap has been successfully
 	// completed. It implies that we signed the sweepless sweep tx for the
 	// server.
-	LoopedIn = fsm.StateType("LoopedIn")
+	LoopedIn = fsm.StateType(flow.LoopedIn)
 
 	// SweepHtlcTimeout signals that the htlc timeout path is in the
 	// process of being swept.
-	SweepHtlcTimeout = fsm.StateType("SweepHtlcTimeout")
+	SweepHtlcTimeout = fsm.StateType(flow.SweepHtlcTimeout)
 
 	// HtlcTimeoutSwept signals that the htlc timeout path has been swept.
-	HtlcTimeoutSwept = fsm.StateType("HtlcTimeoutSwept")
+	HtlcTimeoutSwept = fsm.StateType(flow.HtlcTimeoutSwept)
 
 	// PublishExpirySweep signals that the deposit has expired, and we are
 	// in the process of publishing the expiry sweep transaction.
-	PublishExpirySweep = fsm.StateType("PublishExpirySweep")
+	PublishExpirySweep = fsm.StateType(flow.PublishExpirySweep)
 
 	// WaitForExpirySweep signals that the expiry sweep transaction has been
 	// published, and we are waiting for it to be confirmed.
-	WaitForExpirySweep = fsm.StateType("WaitForExpirySweep")
+	WaitForExpirySweep = fsm.StateType(flow.WaitForExpirySweep)
 
 	// Expired signals that the deposit has expired and the expiry sweep
 	// transaction has been confirmed sufficiently.
-	Expired = fsm.StateType("Expired")
+	Expired = fsm.StateType(flow.Expired)
 )
 
 // Events.
@@ -95,56 +96,56 @@ var (
 	// OnStart is sent to the fsm once the deposit outpoint has been
 	// detected. It transitions the fsm into the Deposited state from where
 	// we can trigger a withdrawal, a loopin or an expiry.
-	OnStart = fsm.EventType("OnStart")
+	OnStart = fsm.EventType(flow.OnStart)
 
 	// OnWithdrawInitiated is sent to the fsm when a withdrawal has been
 	// initiated.
-	OnWithdrawInitiated = fsm.EventType("OnWithdrawInitiated")
+	OnWithdrawInitiated = fsm.EventType(flow.OnWithdrawInitiated)
 
 	// OnWithdrawn is sent to the fsm when a withdrawal has been confirmed.
-	OnWithdrawn = fsm.EventType("OnWithdrawn")
+	OnWithdrawn = fsm.EventType(flow.OnWithdrawn)
 
 	// OnOpeningChannel is sent to the fsm when a channel open has been
 	// initiated.
-	OnOpeningChannel = fsm.EventType("OnOpeningChannel")
+	OnOpeningChannel = fsm.EventType(flow.OnOpeningChannel)
 
 	// OnChannelPublished is sent to the fsm when a channel open has been
 	// published. Loop has done its work here and the channel should now be
 	// managed from lnd.
-	OnChannelPublished = fsm.EventType("OnChannelPublished")
+	OnChannelPublished = fsm.EventType(flow.OnChannelPublished)
 
 	// OnLoopInInitiated is sent to the fsm when a loop in has been
 	// initiated.
-	OnLoopInInitiated = fsm.EventType("OnLoopInInitiated")
+	OnLoopInInitiated = fsm.EventType(flow.OnLoopInInitiated)
 
 	// OnSweepingHtlcTimeout is sent to the fsm when the htlc timeout path
 	// is being swept. This indicates that the server didn't pay the swap
 	// invoice, but the htlc tx was published, from we which we need to
 	// sweep the htlc timeout path.
-	OnSweepingHtlcTimeout = fsm.EventType("OnSweepingHtlcTimeout")
+	OnSweepingHtlcTimeout = fsm.EventType(flow.OnSweepingHtlcTimeout)
 
 	// OnHtlcTimeoutSwept is sent to the fsm when the htlc timeout path has
 	// been swept.
-	OnHtlcTimeoutSwept = fsm.EventType("OnHtlcTimeoutSwept")
+	OnHtlcTimeoutSwept = fsm.EventType(flow.OnHtlcTimeoutSwept)
 
 	// OnLoopedIn is sent to the fsm when the user intents to use the
 	// deposit for a loop in swap.
-	OnLoopedIn = fsm.EventType("OnLoopedIn")
+	OnLoopedIn = fsm.EventType(flow.OnLoopedIn)
 
 	// OnExpiry is sent to the fsm when the deposit has expired.
-	OnExpiry = fsm.EventType("OnExpiry")
+	OnExpiry = fsm.EventType(flow.OnExpiry)
 
 	// OnExpiryPublished is sent to the fsm when the expiry sweep tx has
 	// been published.
-	OnExpiryPublished = fsm.EventType("OnExpiryPublished")
+	OnExpiryPublished = fsm.EventType(flow.OnExpiryPublished)
 
 	// OnExpirySwept is sent to the fsm when the expiry sweep tx has been
 	// confirmed.
-	OnExpirySwept = fsm.EventType("OnExpirySwept")
+	OnExpirySwept = fsm.EventType(flow.OnExpirySwept)
 
 	// OnRecover is sent to the fsm when it should recover from client
 	// restart.
-	OnRecover = fsm.EventType("OnRecover")
+	OnRecover = fsm.EventType(flow.OnRecover)
 )
 
 // FSM is the state machine that handles the instant out.
@@ -286,161 +287,30 @@ func (f *FSM) handleBlockNotification(ctx context.Context,
 
 // DepositStatesV0 returns the states a deposit can be in.
 func (f *FSM) DepositStatesV0() fsm.States {
-	return fsm.States{
-		fsm.EmptyState: fsm.State{
-			Transitions: fsm.Transitions{
-				OnStart: Deposited,
-			},
-			Action: fsm.NoOpAction,
-		},
-		Deposited: fsm.State{
-			Transitions: fsm.Transitions{
-				OnExpiry:            PublishExpirySweep,
-				OnWithdrawInitiated: Withdrawing,
-				OnLoopInInitiated:   LoopingIn,
-				OnOpeningChannel:    OpeningChannel,
-				// We encounter OnSweepingHtlcTimeout if the
-				// server published the htlc tx without paying
-				// us. We then need to monitor for the timeout
-				// path to open up to sweep it.
-				OnSweepingHtlcTimeout: SweepHtlcTimeout,
-				OnRecover:             Deposited,
-				fsm.OnError:           Deposited,
-			},
-			Action: fsm.NoOpAction,
-		},
-		PublishExpirySweep: fsm.State{
-			Transitions: fsm.Transitions{
-				OnRecover:         PublishExpirySweep,
-				OnExpiryPublished: WaitForExpirySweep,
-				// If the timeout sweep failed we go back to
-				// Deposited, hoping that another timeout sweep
-				// attempt will be successful. Alternatively,
-				// the client can try to coop-spend the deposit.
-				fsm.OnError: Deposited,
-			},
-			Action: f.PublishDepositExpirySweepAction,
-		},
-		WaitForExpirySweep: fsm.State{
-			Transitions: fsm.Transitions{
-				OnExpirySwept: Expired,
-				// Upon recovery, we republish the sweep tx.
-				OnRecover: PublishExpirySweep,
-				// If the timeout sweep failed we go back to
-				// Deposited, hoping that another timeout sweep
-				// attempt will be successful. Alternatively,
-				// the client can try to coop-spend the deposit.
-				fsm.OnError: Deposited,
-			},
-			Action: f.WaitForExpirySweepAction,
-		},
-		Expired: fsm.State{
-			Transitions: fsm.Transitions{
-				OnExpiry: Expired,
-			},
-			Action: f.FinalizeDepositAction,
-		},
-		Withdrawing: fsm.State{
-			Transitions: fsm.Transitions{
-				OnWithdrawn: Withdrawn,
-				// OnWithdrawInitiated is sent if a fee bump was
-				// requested and the withdrawal was republished.
-				OnWithdrawInitiated: Withdrawing,
-
-				// Upon recovery, we remain in the Withdrawing
-				// state so that the withdrawal manager can
-				// reinstate the withdrawal.
-				OnRecover: Withdrawing,
-
-				// A precondition for the Withdrawing state is
-				// that the withdrawal transaction has been
-				// broadcast. If the deposit expires while the
-				// withdrawal isn't confirmed, we can ignore the
-				// expiry.
-				OnExpiry: Withdrawing,
-
-				// If the withdrawal failed we go back to
-				// Deposited, hoping that another withdrawal
-				// attempt will be successful. Alternatively,
-				// the client can wait for the timeout sweep.
-				fsm.OnError: Deposited,
-			},
-			Action: fsm.NoOpAction,
-		},
-		LoopingIn: fsm.State{
-			Transitions: fsm.Transitions{
-				// This event is triggered when the loop in
-				// payment has been received. We consider the
-				// swap to be completed and transition to a
-				// final state.
-				OnLoopedIn: LoopedIn,
-
-				// If the deposit expires while the loop in is
-				// still pending, we publish the expiry sweep.
-				OnExpiry: PublishExpirySweep,
-
-				// If the server publishes the HTLC without
-				// paying us, we need to keep the deposit locked
-				// until the HTLC timeout path can be swept.
-				OnSweepingHtlcTimeout: SweepHtlcTimeout,
-
-				OnLoopInInitiated: LoopingIn,
-
-				OnRecover:   LoopingIn,
-				fsm.OnError: Deposited,
-			},
-			Action: fsm.NoOpAction,
-		},
-		LoopedIn: fsm.State{
-			Transitions: fsm.Transitions{
-				OnExpiry: LoopedIn,
-			},
-			Action: f.FinalizeDepositAction,
-		},
-		SweepHtlcTimeout: fsm.State{
-			Transitions: fsm.Transitions{
-				OnHtlcTimeoutSwept: HtlcTimeoutSwept,
-				OnRecover:          SweepHtlcTimeout,
-			},
-			Action: fsm.NoOpAction,
-		},
-		HtlcTimeoutSwept: fsm.State{
-			Transitions: fsm.Transitions{
-				OnExpiry: HtlcTimeoutSwept,
-			},
-			Action: f.FinalizeDepositAction,
-		},
-		Withdrawn: fsm.State{
-			Transitions: fsm.Transitions{
-				OnExpiry:    Withdrawn,
-				OnWithdrawn: Withdrawn,
-			},
-			Action: f.FinalizeDepositAction,
-		},
-		OpeningChannel: fsm.State{
-			Transitions: fsm.Transitions{
-				fsm.OnError:        Deposited,
-				OnChannelPublished: ChannelPublished,
-				OnRecover:          OpeningChannel,
-				// OnExpiry can arrive on every block once
-				// the deposit is expired. Since the channel
-				// open is still in progress we absorb the
-				// event as a self-transition.
-				OnExpiry: OpeningChannel,
-			},
-			Action: fsm.NoOpAction,
-		},
-		ChannelPublished: fsm.State{
-			Transitions: fsm.Transitions{
-				// OnExpiry can arrive on every block once
-				// the deposit is expired. Since the channel
-				// is already published we absorb the event
-				// as a self-transition.
-				OnExpiry: ChannelPublished,
-			},
-			Action: f.FinalizeDepositAction,
-		},
+	actions := map[flow.State]fsm.Action{
+		flow.PublishExpirySweep: f.PublishDepositExpirySweepAction,
+		flow.WaitForExpirySweep: f.WaitForExpirySweepAction,
+		flow.Expired:            f.FinalizeDepositAction,
+		flow.LoopedIn:           f.FinalizeDepositAction,
+		flow.HtlcTimeoutSwept:   f.FinalizeDepositAction,
+		flow.Withdrawn:          f.FinalizeDepositAction,
+		flow.ChannelPublished:   f.FinalizeDepositAction,
 	}
+	states := make(fsm.States)
+	for state, events := range flow.States(flow.Bitcoin) {
+		transitions := make(fsm.Transitions, len(events))
+		for event, next := range events {
+			transitions[fsm.EventType(event)] = fsm.StateType(next)
+		}
+		action := actions[state]
+		if action == nil {
+			action = fsm.NoOpAction
+		}
+		states[fsm.StateType(state)] = fsm.State{
+			Transitions: transitions, Action: action,
+		}
+	}
+	return states
 }
 
 // DepositEntryFunction is called after every action and updates the deposit in

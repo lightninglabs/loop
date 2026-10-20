@@ -492,6 +492,7 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 		ctx, &looprpc.ListStaticAddressSwapsRequest{},
 	)
 	require.NoError(t, err)
+	require.Empty(t, resp.AssetRequests)
 	require.Len(t, resp.Swaps, 1)
 
 	swap := resp.Swaps[0]

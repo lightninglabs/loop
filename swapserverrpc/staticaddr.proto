@@ -1,5 +1,6 @@
 syntax = "proto3";
 import "server.proto";
+import "assetloopin.proto";
 
 // We can't change this to swapserverrpc, it would be a breaking change because
 // the package name is also contained in the HTTP URIs and old clients would
@@ -14,6 +15,9 @@ option go_package = "github.com/lightninglabs/loop/swapserverrpc";
 enum StaticAddressProtocolVersion {
     // V0 is the initially released static address protocol version.
     V0 = 0;
+
+    // ASSET_V1 uses a server-owned preimage and same-group native payout.
+    ASSET_V1 = 1;
 }
 
 service StaticAddressServer {
@@ -227,6 +231,10 @@ message ServerStaticAddressLoopInRequest {
     // Optional change output metadata for fractional loop-ins that return
     // funds to a newly generated static address.
     StaticAddressChangeOutput change_output = 12;
+
+    // ASSET_V1 only. All Bitcoin fields must be unset. The immutable inner
+    // request, including request_id, is the digest and restart identity.
+    CreateAssetLoopInRequest asset_params = 13;
 }
 
 message ServerStaticAddressLoopInResponse {
@@ -247,6 +255,9 @@ message ServerStaticAddressLoopInResponse {
     // The info the server used to generate the extreme fee partial htlc tx
     // sigs.
     ServerHtlcSigningInfo extreme_fee_htlc_info = 5;
+
+    // ASSET_V1 returns the server-created hash before client invoice creation.
+    AssetLoopInStatus asset_status = 6;
 }
 
 message ServerHtlcSigningInfo {
@@ -269,6 +280,13 @@ message PushStaticAddressHtlcSigsRequest {
 
     // The nonces that the client used to generate the extreme fee htlc sigs.
     ClientHtlcSigningInfo extreme_fee_htlc_info = 4;
+
+    // Bitcoin callers omit this field and retain V0 behavior.
+    StaticAddressProtocolVersion protocol_version = 5;
+
+    // ASSET_V1 only. All Bitcoin fields must be unset. This grants conditional
+    // claim authority; only the server executor may disclose the preimage.
+    CommitAssetLoopInRequest asset_params = 6;
 }
 
 message ClientHtlcSigningInfo {
@@ -280,6 +298,8 @@ message ClientHtlcSigningInfo {
 }
 
 message PushStaticAddressHtlcSigsResponse {
+    // Present only for ASSET_V1.
+    AssetLoopInStatus asset_status = 1;
 }
 
 message PushStaticAddressSweeplessSigsRequest {

@@ -14,6 +14,12 @@ the source archive, vendored dependencies, and the built binaries packaged in
 `.tar.gz` or `.zip` format. It also creates a manifest file with `SHA-256`
 checksums for all release files.
 
+On the asset development branch, the script prepares the pinned SDK from the
+clean checkout before validating a tag or vendoring dependencies. This also
+applies to untagged builds. The checkout is kept in `tap-sdk-loop-compat` next
+to the temporary build directory; the vendored archive includes its patched
+source. Production releases still require reviewed dependency pins.
+
 For example:
 
 ```bash

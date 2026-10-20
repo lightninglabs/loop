@@ -144,6 +144,13 @@ type SwapClientClient interface {
 	// StaticOpenChannel opens a channel funded by selected static address
 	// deposits.
 	StaticOpenChannel(ctx context.Context, in *StaticOpenChannelRequest, opts ...grpc.CallOption) (*StaticOpenChannelResponse, error)
+	// loop: `static asset refund`
+	// RefundAssetDeposit queues the original CSV recovery of an expired,
+	// unreserved native asset deposit.
+	RefundAssetDeposit(ctx context.Context, in *RefundAssetDepositRequest, opts ...grpc.CallOption) (*AssetRequestStatus, error)
+	// loop: `static asset deposit`
+	// CreateAssetDeposit durably queues funding using registered static keys.
+	CreateAssetDeposit(ctx context.Context, in *CreateAssetDepositRequest, opts ...grpc.CallOption) (*AssetRequestStatus, error)
 }
 
 type swapClientClient struct {
@@ -474,6 +481,24 @@ func (c *swapClientClient) StaticOpenChannel(ctx context.Context, in *StaticOpen
 	return out, nil
 }
 
+func (c *swapClientClient) RefundAssetDeposit(ctx context.Context, in *RefundAssetDepositRequest, opts ...grpc.CallOption) (*AssetRequestStatus, error) {
+	out := new(AssetRequestStatus)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/RefundAssetDeposit", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *swapClientClient) CreateAssetDeposit(ctx context.Context, in *CreateAssetDepositRequest, opts ...grpc.CallOption) (*AssetRequestStatus, error) {
+	out := new(AssetRequestStatus)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/CreateAssetDeposit", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -604,6 +629,13 @@ type SwapClientServer interface {
 	// StaticOpenChannel opens a channel funded by selected static address
 	// deposits.
 	StaticOpenChannel(context.Context, *StaticOpenChannelRequest) (*StaticOpenChannelResponse, error)
+	// loop: `static asset refund`
+	// RefundAssetDeposit queues the original CSV recovery of an expired,
+	// unreserved native asset deposit.
+	RefundAssetDeposit(context.Context, *RefundAssetDepositRequest) (*AssetRequestStatus, error)
+	// loop: `static asset deposit`
+	// CreateAssetDeposit durably queues funding using registered static keys.
+	CreateAssetDeposit(context.Context, *CreateAssetDepositRequest) (*AssetRequestStatus, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -709,6 +741,12 @@ func (UnimplementedSwapClientServer) StaticAddressLoopIn(context.Context, *Stati
 }
 func (UnimplementedSwapClientServer) StaticOpenChannel(context.Context, *StaticOpenChannelRequest) (*StaticOpenChannelResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StaticOpenChannel not implemented")
+}
+func (UnimplementedSwapClientServer) RefundAssetDeposit(context.Context, *RefundAssetDepositRequest) (*AssetRequestStatus, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RefundAssetDeposit not implemented")
+}
+func (UnimplementedSwapClientServer) CreateAssetDeposit(context.Context, *CreateAssetDepositRequest) (*AssetRequestStatus, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateAssetDeposit not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -1320,6 +1358,42 @@ func _SwapClient_StaticOpenChannel_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_RefundAssetDeposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefundAssetDepositRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).RefundAssetDeposit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/RefundAssetDeposit",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).RefundAssetDeposit(ctx, req.(*RefundAssetDepositRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SwapClient_CreateAssetDeposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateAssetDepositRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).CreateAssetDeposit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/CreateAssetDeposit",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).CreateAssetDeposit(ctx, req.(*CreateAssetDepositRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1454,6 +1528,14 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StaticOpenChannel",
 			Handler:    _SwapClient_StaticOpenChannel_Handler,
+		},
+		{
+			MethodName: "RefundAssetDeposit",
+			Handler:    _SwapClient_RefundAssetDeposit_Handler,
+		},
+		{
+			MethodName: "CreateAssetDeposit",
+			Handler:    _SwapClient_CreateAssetDeposit_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

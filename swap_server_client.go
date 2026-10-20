@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -191,12 +192,13 @@ func newL402ClientInterceptor(lnd *lndclient.LndServices, store l402.Store,
 	fallback := l402.NewInterceptor(
 		lnd, store, callTimeout, maxCost, maxFee, allowInsecure,
 	)
+	auth := newServerAuth(fallback)
 	interceptor := &l402ClientInterceptor{
 		tokenStore:     store,
 		callTimeout:    callTimeout,
 		allowInsecure:  allowInsecure,
-		fallbackUnary:  fallback.UnaryInterceptor,
-		fallbackStream: fallback.StreamInterceptor,
+		fallbackUnary:  auth.unary,
+		fallbackStream: auth.stream,
 	}
 	interceptor.loadPaidMacaroon = interceptor.currentPaidMacaroon
 
@@ -1058,6 +1060,10 @@ func getSwapServerConn(address, proxyAddress string, skipCertCheck bool,
 
 	// Create a dial options array.
 	opts := []grpc.DialOption{
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallSendMsgSize(swapkit.PublicRPCMaxBytes),
+			grpc.MaxCallRecvMsgSize(swapkit.PublicRPCMaxBytes),
+		),
 		grpc.WithUnaryInterceptor(
 			interceptor.UnaryInterceptor,
 		),

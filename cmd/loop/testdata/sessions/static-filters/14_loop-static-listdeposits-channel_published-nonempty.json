@@ -70,6 +70,8 @@
       "data": {
         "lines": [
           "{\n",
+          "    \"asset_deposits\": [],\n",
+          "    \"assets_only\": false,\n",
           "    \"filtered_deposits\": [\n",
           "        {\n",
           "            \"blocks_until_expiry\": \"14395\",\n",

@@ -84,3 +84,18 @@ Before finishing any change intended for a pull request, add a concise entry
 under the appropriate section (`New Features`, `Breaking Changes`, `Bug Fixes`,
 or `Maintenance`). For a change that does not warrant a release note, ensure the
 pull request uses the `no-changelog` label instead. This is enforced by CI.
+
+### Asset static loop-in ownership
+
+`staticaddr/loopin.Manager` owns Bitcoin and asset admission and recovery.
+Its existing `SqlStore` stores asset metadata on deposit rows and combines
+pending requests with execution checkpoints. Read `staticaddr/loopin/assets.md`
+before changing this flow. `loopd` and `looprpc` expose it; `cmd/loop` supplies
+`static asset` commands. Restore the deposit manager's asset exclusion before
+Bitcoin recovery. Execution checkpoints and ownership release must commit
+atomically; native quantities must never enter satoshi fields. SDK transaction
+operations live in `swapkit/tapsdk` inside the normal Loop module. Use the
+existing LND signer and chain services. Never persist secret MuSig2 nonces:
+restart unfinished rounds with fresh nonces for the same unsigned package.
+The normal SQL record owns preparation and the completed fallback; tapd owns
+transfer publication and confirmed proof reconstruction.

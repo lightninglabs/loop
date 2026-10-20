@@ -198,6 +198,7 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 		context.Background(), &looprpc.ListStaticAddressDepositsRequest{},
 	)
 	require.NoError(t, err)
+	require.Empty(t, resp.AssetDeposits)
 	require.Len(t, resp.FilteredDeposits, 1)
 	require.Equal(
 		t, available.OutPoint.String(),

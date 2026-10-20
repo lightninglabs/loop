@@ -75,6 +75,7 @@
           "    \"static_loop_in\": [\n",
           "        {\n",
           "            \"amount\": \"500000\",\n",
+          "            \"asset_params\": null,\n",
           "            \"fast\": false,\n",
           "            \"initiator\": \"autoloop\",\n",
           "            \"label\": \"[reserved]: autoloop-in\",\n",

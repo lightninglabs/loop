@@ -555,6 +555,112 @@ The following flags are supported:
 |-----------------|-------------|------|:-------------:|
 | `--help` (`-h`) | show help   | bool |    `false`    |
 
+### `static asset` subcommand
+
+Fund and swap native asset static deposits.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static asset [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description | Type | Default value |
+|-----------------|-------------|------|:-------------:|
+| `--help` (`-h`) | show help   | bool |    `false`    |
+
+### `static asset refund` subcommand
+
+Refund an expired unreserved asset deposit.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static asset refund [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description | Type   | Default value |
+|-----------------|-------------|--------|:-------------:|
+| `--utxo="…"`    |             | string |
+| `--help` (`-h`) | show help   | bool   |    `false`    |
+
+### `static asset deposit` subcommand
+
+Queue an asset deposit.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static asset deposit [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name               | Description                                                                  | Type   | Default value |
+|--------------------|------------------------------------------------------------------------------|--------|:-------------:|
+| `--request_id="…"` | 32-byte lowercase hex identity; reuse this value after an ambiguous response | string |
+| `--group_key="…"`  | Compressed asset group key in lowercase hex                                  | string |
+| `--amount="…"`     | Native asset units to deposit                                                | uint   |      `0`      |
+| `--help` (`-h`)    | show help                                                                    | bool   |    `false`    |
+
+### `static asset in` subcommand
+
+Swap one whole asset deposit to Lightning.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static asset in [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name                    | Description                                                                  | Type   | Default value |
+|-------------------------|------------------------------------------------------------------------------|--------|:-------------:|
+| `--request_id="…"`      | 32-byte lowercase hex identity; reuse this value after an ambiguous response | string |
+| `--group_key="…"`       | Compressed asset group key in lowercase hex                                  | string |
+| `--amount="…"`          | Exact native Lightning payout; deposit excess is fee                         | uint   |      `0`      |
+| `--utxo="…"`            | Canonical txid:index of one whole deposit                                    | string |
+| `--max_asset_debit="…"` | Maximum native debit; defaults to amount                                     | uint   |      `0`      |
+| `--max_asset_fee="…"`   | Maximum native swap fee                                                      | uint   |      `0`      |
+| `--help` (`-h`)         | show help                                                                    | bool   |    `false`    |
+
+### `static asset deposits` subcommand
+
+List asset deposits and reservations.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static asset deposits [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description | Type | Default value |
+|-----------------|-------------|------|:-------------:|
+| `--help` (`-h`) | show help   | bool |    `false`    |
+
+### `static asset swaps` subcommand
+
+List durable asset requests and swaps.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] static asset swaps [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description | Type | Default value |
+|-----------------|-------------|------|:-------------:|
+| `--help` (`-h`) | show help   | bool |    `false`    |
+
 ### `static listunspent` subcommand (aliases: `l`)
 
 List unspent static address outputs.

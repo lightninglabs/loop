@@ -29,6 +29,7 @@ var staticAddressCommands = &cli.Command{
 	Usage:   "perform on-chain to off-chain swaps using static addresses.",
 	Commands: []*cli.Command{
 		newStaticAddressCommand,
+		staticAssetCommand,
 		listUnspentCommand,
 		listDepositsCommand,
 		listWithdrawalsCommand,
