@@ -151,15 +151,6 @@ type SwapClientClient interface {
 	// loop: `static asset deposit`
 	// CreateAssetDeposit durably queues funding using registered static keys.
 	CreateAssetDeposit(ctx context.Context, in *CreateAssetDepositRequest, opts ...grpc.CallOption) (*AssetRequestStatus, error)
-	// loop: `static asset deposits`
-	// ListAssetDeposits lists native deposits and their reservation owners.
-	ListAssetDeposits(ctx context.Context, in *ListAssetDepositsRequest, opts ...grpc.CallOption) (*ListAssetDepositsResponse, error)
-	// loop: `static asset in`
-	// AssetStaticLoopIn reserves one whole asset deposit for a same-group payout.
-	AssetStaticLoopIn(ctx context.Context, in *AssetStaticLoopInRequest, opts ...grpc.CallOption) (*AssetRequestStatus, error)
-	// loop: `static asset swaps`
-	// ListAssetStaticLoopIns reports durable request and controller progress.
-	ListAssetStaticLoopIns(ctx context.Context, in *ListAssetStaticLoopInsRequest, opts ...grpc.CallOption) (*ListAssetStaticLoopInsResponse, error)
 }
 
 type swapClientClient struct {
@@ -508,33 +499,6 @@ func (c *swapClientClient) CreateAssetDeposit(ctx context.Context, in *CreateAss
 	return out, nil
 }
 
-func (c *swapClientClient) ListAssetDeposits(ctx context.Context, in *ListAssetDepositsRequest, opts ...grpc.CallOption) (*ListAssetDepositsResponse, error) {
-	out := new(ListAssetDepositsResponse)
-	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListAssetDeposits", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *swapClientClient) AssetStaticLoopIn(ctx context.Context, in *AssetStaticLoopInRequest, opts ...grpc.CallOption) (*AssetRequestStatus, error) {
-	out := new(AssetRequestStatus)
-	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/AssetStaticLoopIn", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *swapClientClient) ListAssetStaticLoopIns(ctx context.Context, in *ListAssetStaticLoopInsRequest, opts ...grpc.CallOption) (*ListAssetStaticLoopInsResponse, error) {
-	out := new(ListAssetStaticLoopInsResponse)
-	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListAssetStaticLoopIns", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // SwapClientServer is the server API for SwapClient service.
 // All implementations must embed UnimplementedSwapClientServer
 // for forward compatibility
@@ -672,15 +636,6 @@ type SwapClientServer interface {
 	// loop: `static asset deposit`
 	// CreateAssetDeposit durably queues funding using registered static keys.
 	CreateAssetDeposit(context.Context, *CreateAssetDepositRequest) (*AssetRequestStatus, error)
-	// loop: `static asset deposits`
-	// ListAssetDeposits lists native deposits and their reservation owners.
-	ListAssetDeposits(context.Context, *ListAssetDepositsRequest) (*ListAssetDepositsResponse, error)
-	// loop: `static asset in`
-	// AssetStaticLoopIn reserves one whole asset deposit for a same-group payout.
-	AssetStaticLoopIn(context.Context, *AssetStaticLoopInRequest) (*AssetRequestStatus, error)
-	// loop: `static asset swaps`
-	// ListAssetStaticLoopIns reports durable request and controller progress.
-	ListAssetStaticLoopIns(context.Context, *ListAssetStaticLoopInsRequest) (*ListAssetStaticLoopInsResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }
 
@@ -792,15 +747,6 @@ func (UnimplementedSwapClientServer) RefundAssetDeposit(context.Context, *Refund
 }
 func (UnimplementedSwapClientServer) CreateAssetDeposit(context.Context, *CreateAssetDepositRequest) (*AssetRequestStatus, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateAssetDeposit not implemented")
-}
-func (UnimplementedSwapClientServer) ListAssetDeposits(context.Context, *ListAssetDepositsRequest) (*ListAssetDepositsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ListAssetDeposits not implemented")
-}
-func (UnimplementedSwapClientServer) AssetStaticLoopIn(context.Context, *AssetStaticLoopInRequest) (*AssetRequestStatus, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AssetStaticLoopIn not implemented")
-}
-func (UnimplementedSwapClientServer) ListAssetStaticLoopIns(context.Context, *ListAssetStaticLoopInsRequest) (*ListAssetStaticLoopInsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ListAssetStaticLoopIns not implemented")
 }
 func (UnimplementedSwapClientServer) mustEmbedUnimplementedSwapClientServer() {}
 
@@ -1448,60 +1394,6 @@ func _SwapClient_CreateAssetDeposit_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SwapClient_ListAssetDeposits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListAssetDepositsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SwapClientServer).ListAssetDeposits(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/looprpc.SwapClient/ListAssetDeposits",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SwapClientServer).ListAssetDeposits(ctx, req.(*ListAssetDepositsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _SwapClient_AssetStaticLoopIn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AssetStaticLoopInRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SwapClientServer).AssetStaticLoopIn(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/looprpc.SwapClient/AssetStaticLoopIn",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SwapClientServer).AssetStaticLoopIn(ctx, req.(*AssetStaticLoopInRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _SwapClient_ListAssetStaticLoopIns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListAssetStaticLoopInsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SwapClientServer).ListAssetStaticLoopIns(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/looprpc.SwapClient/ListAssetStaticLoopIns",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SwapClientServer).ListAssetStaticLoopIns(ctx, req.(*ListAssetStaticLoopInsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // SwapClient_ServiceDesc is the grpc.ServiceDesc for SwapClient service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1644,18 +1536,6 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateAssetDeposit",
 			Handler:    _SwapClient_CreateAssetDeposit_Handler,
-		},
-		{
-			MethodName: "ListAssetDeposits",
-			Handler:    _SwapClient_ListAssetDeposits_Handler,
-		},
-		{
-			MethodName: "AssetStaticLoopIn",
-			Handler:    _SwapClient_AssetStaticLoopIn_Handler,
-		},
-		{
-			MethodName: "ListAssetStaticLoopIns",
-			Handler:    _SwapClient_ListAssetStaticLoopIns_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

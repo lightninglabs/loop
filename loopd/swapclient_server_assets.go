@@ -3,8 +3,10 @@ package loopd
 import (
 	"bytes"
 	"context"
+	"slices"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetmanager"
 	"google.golang.org/grpc/codes"
@@ -66,10 +68,22 @@ func (s *swapClientServer) CreateAssetDeposit(ctx context.Context,
 	}, nil
 }
 
-// ListAssetDeposits reports native quantities and durable reservation owners.
-func (s *swapClientServer) ListAssetDeposits(ctx context.Context,
-	_ *looprpc.ListAssetDepositsRequest) (
-	*looprpc.ListAssetDepositsResponse, error) {
+// listAssetDeposits reports native quantities and durable reservation owners.
+func (s *swapClientServer) listAssetDeposits(ctx context.Context,
+	request *looprpc.ListStaticAddressDepositsRequest) (
+	*looprpc.ListStaticAddressDepositsResponse, error) {
+
+	if request.StateFilter != looprpc.DepositState_UNKNOWN_STATE {
+		return nil, status.Error(codes.InvalidArgument,
+			"asset deposits do not support Bitcoin state filters")
+	}
+	for _, raw := range request.Outpoints {
+		point, err := wire.NewOutPointFromString(raw)
+		if err != nil || point.String() != raw {
+			return nil, status.Error(codes.InvalidArgument,
+				"invalid asset deposit outpoint")
+		}
+	}
 
 	if s.assetLoopInManager == nil {
 		return nil, assetOperationError(nil)
@@ -78,54 +92,95 @@ func (s *swapClientServer) ListAssetDeposits(ctx context.Context,
 	if err != nil {
 		return nil, assetOperationError(err)
 	}
-	result := &looprpc.ListAssetDepositsResponse{}
+	result := &looprpc.ListStaticAddressDepositsResponse{}
 	for _, entry := range entries {
-		result.Deposits = append(result.Deposits, &looprpc.AssetDeposit{
-			Outpoint:           entry.Deposit.Outpoint,
-			GroupKey:           entry.Deposit.GroupKey[:],
-			Amount:             entry.Deposit.Amount,
-			ConfirmationHeight: entry.Deposit.ConfirmationHeight,
-			RefundHeight:       entry.Deposit.RefundHeight,
-			RequestId:          entry.RequestID[:],
-			Consumed:           entry.Consumed,
-		})
+		if len(request.Outpoints) > 0 && !slices.Contains(
+			request.Outpoints, entry.Deposit.Outpoint,
+		) {
+			continue
+		}
+		result.AssetDeposits = append(result.AssetDeposits,
+			&looprpc.AssetDeposit{
+				Outpoint:           entry.Deposit.Outpoint,
+				GroupKey:           entry.Deposit.GroupKey[:],
+				Amount:             entry.Deposit.Amount,
+				ConfirmationHeight: entry.Deposit.ConfirmationHeight,
+				RefundHeight:       entry.Deposit.RefundHeight,
+				RequestId:          entry.RequestID[:],
+				Consumed:           entry.Consumed,
+			})
 	}
 	return result, nil
 }
 
-// AssetStaticLoopIn reserves one whole isolated asset deposit and queues its
-// immutable offer request before contacting the server.
-func (s *swapClientServer) AssetStaticLoopIn(ctx context.Context,
-	request *looprpc.AssetStaticLoopInRequest) (
-	*looprpc.AssetRequestStatus, error) {
+// assetLoopInRequest validates the asset variant before admission. Bitcoin
+// options cannot silently change meaning when native units are selected.
+func assetLoopInRequest(request *looprpc.StaticAddressLoopInRequest) (
+	assetmanager.SwapRequest, error) {
 
-	if s.assetLoopInManager == nil {
-		return nil, assetOperationError(nil)
+	params := request.GetAssetParams()
+	if params == nil || len(request.GetOutpoints()) != 1 ||
+		request.GetAmount() != 0 || request.GetMaxSwapFeeSatoshis() != 0 ||
+		len(request.GetLastHop()) != 0 || request.GetLabel() != "" ||
+		request.GetInitiator() != "" || len(request.GetRouteHints()) != 0 ||
+		request.GetPrivate() || request.GetPaymentTimeoutSeconds() != 0 ||
+		request.GetFast() {
+
+		return assetmanager.SwapRequest{}, status.Error(
+			codes.InvalidArgument, "invalid asset request options",
+		)
 	}
 	id, group, err := assetRequestIdentity(
-		request.GetRequestId(), request.GetGroupKey(),
+		params.GetRequestId(), params.GetGroupKey(),
 	)
 	if err != nil {
-		return nil, err
+		return assetmanager.SwapRequest{}, err
 	}
-	err = s.assetLoopInManager.Start(ctx, assetmanager.SwapRequest{
-		RequestID: id, GroupKey: group, Outpoint: request.GetOutpoint(),
-		Amount:   request.GetAmount(),
-		MaxDebit: request.GetMaxAssetDebit(),
-		MaxFee:   request.GetMaxAssetFee(),
-	})
-	if err != nil {
-		return nil, assetOperationError(err)
+	outpoint := request.Outpoints[0]
+	point, err := wire.NewOutPointFromString(outpoint)
+	if err != nil || point.String() != outpoint {
+		return assetmanager.SwapRequest{}, status.Error(
+			codes.InvalidArgument, "invalid asset deposit outpoint",
+		)
 	}
-	return &looprpc.AssetRequestStatus{
-		RequestId: id[:], State: "queued",
+	if params.Amount == 0 || params.MaxAssetDebit < params.Amount {
+		return assetmanager.SwapRequest{}, status.Error(
+			codes.InvalidArgument, "invalid native asset amounts",
+		)
+	}
+	return assetmanager.SwapRequest{
+		RequestID: id, GroupKey: group, Outpoint: outpoint,
+		Amount: params.Amount, MaxDebit: params.MaxAssetDebit,
+		MaxFee: params.MaxAssetFee,
 	}, nil
 }
 
-// ListAssetStaticLoopIns reports creation and recovered session progress.
-func (s *swapClientServer) ListAssetStaticLoopIns(ctx context.Context,
-	_ *looprpc.ListAssetStaticLoopInsRequest) (
-	*looprpc.ListAssetStaticLoopInsResponse, error) {
+// assetStaticLoopIn queues an immutable native request through the normal
+// static loop-in RPC. The server may not have assigned its payment hash yet.
+func (s *swapClientServer) assetStaticLoopIn(ctx context.Context,
+	request *looprpc.StaticAddressLoopInRequest) (
+	*looprpc.StaticAddressLoopInResponse, error) {
+
+	intent, err := assetLoopInRequest(request)
+	if err != nil {
+		return nil, err
+	}
+	if s.assetLoopInManager == nil {
+		return nil, assetOperationError(nil)
+	}
+	if err := s.assetLoopInManager.Start(ctx, intent); err != nil {
+		return nil, assetOperationError(err)
+	}
+	return &looprpc.StaticAddressLoopInResponse{
+		AssetRequest: &looprpc.AssetRequestStatus{
+			RequestId: intent.RequestID[:], State: "queued",
+		},
+	}, nil
+}
+
+// listAssetStaticLoopIns reports creation and recovered session progress.
+func (s *swapClientServer) listAssetStaticLoopIns(ctx context.Context) (
+	*looprpc.ListStaticAddressSwapsResponse, error) {
 
 	if s.assetLoopInManager == nil {
 		return nil, assetOperationError(nil)
@@ -134,7 +189,7 @@ func (s *swapClientServer) ListAssetStaticLoopIns(ctx context.Context,
 	if err != nil {
 		return nil, assetOperationError(err)
 	}
-	result := &looprpc.ListAssetStaticLoopInsResponse{}
+	result := &looprpc.ListStaticAddressSwapsResponse{}
 	for _, job := range jobs {
 		entry := &looprpc.AssetRequestStatus{
 			RequestId: job.ID[:], State: "queued",
@@ -163,7 +218,7 @@ func (s *swapClientServer) ListAssetStaticLoopIns(ctx context.Context,
 		if job.Canceled {
 			entry.State = "canceled"
 		}
-		result.Requests = append(result.Requests, entry)
+		result.AssetRequests = append(result.AssetRequests, entry)
 	}
 	return result, nil
 }

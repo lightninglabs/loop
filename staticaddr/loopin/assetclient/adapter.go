@@ -50,7 +50,7 @@ type Actions = ClientChainActions
 type Adapter struct {
 	Actions
 	Receiver        *assetln.Receiver
-	Server          swapserverrpc.AssetLoopInServerClient
+	Server          Server
 	Store           assetexec.Store
 	Height          func(context.Context) (uint32, error)
 	HoldExpiryDelta uint32

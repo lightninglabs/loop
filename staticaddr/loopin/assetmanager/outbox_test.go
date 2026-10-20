@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/stretchr/testify/require"
@@ -12,7 +13,7 @@ import (
 )
 
 type stalledReportServer struct {
-	swapserverrpc.AssetLoopInServerClient
+	assetclient.Server
 }
 
 func (stalledReportServer) CancelAssetLoopIn(ctx context.Context,

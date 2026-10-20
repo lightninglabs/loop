@@ -783,12 +783,10 @@ const file_assetloopin_proto_rawDesc = "" +
 	"\x12execution_preimage\x18\x05 \x01(\fR\x11executionPreimage\x12)\n" +
 	"\x10resolution_proof\x18\x06 \x01(\fR\x0fresolutionProof\x12\x18\n" +
 	"\aclaimed\x18\a \x01(\bR\aclaimed\x12\x1a\n" +
-	"\brefunded\x18\b \x01(\bR\brefunded2\xea\x04\n" +
-	"\x11AssetLoopInServer\x12R\n" +
-	"\x11CreateAssetLoopIn\x12!.looprpc.CreateAssetLoopInRequest\x1a\x1a.looprpc.AssetLoopInStatus\x12T\n" +
+	"\brefunded\x18\b \x01(\bR\brefunded2\xc2\x03\n" +
+	"\x11AssetLoopInServer\x12T\n" +
 	"\x12PrepareAssetLoopIn\x12\".looprpc.PrepareAssetLoopInRequest\x1a\x1a.looprpc.AssetLoopInStatus\x12Z\n" +
-	"\x13AssetLoopInFallback\x12\x1d.looprpc.AssetLoopInReference\x1a$.looprpc.AssetLoopInFallbackResponse\x12R\n" +
-	"\x11CommitAssetLoopIn\x12!.looprpc.CommitAssetLoopInRequest\x1a\x1a.looprpc.AssetLoopInStatus\x12K\n" +
+	"\x13AssetLoopInFallback\x12\x1d.looprpc.AssetLoopInReference\x1a$.looprpc.AssetLoopInFallbackResponse\x12K\n" +
 	"\x0eGetAssetLoopIn\x12\x1d.looprpc.AssetLoopInReference\x1a\x1a.looprpc.AssetLoopInStatus\x12N\n" +
 	"\x11CancelAssetLoopIn\x12\x1d.looprpc.AssetLoopInReference\x1a\x1a.looprpc.AssetLoopInStatus\x12^\n" +
 	"\x17ReportAssetLoopInRefund\x12'.looprpc.ReportAssetLoopInRefundRequest\x1a\x1a.looprpc.AssetLoopInStatusB-Z+github.com/lightninglabs/loop/swapserverrpcb\x06proto3"
@@ -818,28 +816,24 @@ var file_assetloopin_proto_goTypes = []any{
 	(*AssetLoopInStatus)(nil),              // 8: looprpc.AssetLoopInStatus
 }
 var file_assetloopin_proto_depIdxs = []int32{
-	0,  // 0: looprpc.CreateAssetLoopInRequest.deposits:type_name -> looprpc.AssetDepositInput
-	0,  // 1: looprpc.AssetLoopInOffer.deposits:type_name -> looprpc.AssetDepositInput
-	3,  // 2: looprpc.AssetLoopInStatus.offer:type_name -> looprpc.AssetLoopInOffer
-	1,  // 3: looprpc.AssetLoopInServer.CreateAssetLoopIn:input_type -> looprpc.CreateAssetLoopInRequest
-	4,  // 4: looprpc.AssetLoopInServer.PrepareAssetLoopIn:input_type -> looprpc.PrepareAssetLoopInRequest
-	2,  // 5: looprpc.AssetLoopInServer.AssetLoopInFallback:input_type -> looprpc.AssetLoopInReference
-	6,  // 6: looprpc.AssetLoopInServer.CommitAssetLoopIn:input_type -> looprpc.CommitAssetLoopInRequest
-	2,  // 7: looprpc.AssetLoopInServer.GetAssetLoopIn:input_type -> looprpc.AssetLoopInReference
-	2,  // 8: looprpc.AssetLoopInServer.CancelAssetLoopIn:input_type -> looprpc.AssetLoopInReference
-	7,  // 9: looprpc.AssetLoopInServer.ReportAssetLoopInRefund:input_type -> looprpc.ReportAssetLoopInRefundRequest
-	8,  // 10: looprpc.AssetLoopInServer.CreateAssetLoopIn:output_type -> looprpc.AssetLoopInStatus
-	8,  // 11: looprpc.AssetLoopInServer.PrepareAssetLoopIn:output_type -> looprpc.AssetLoopInStatus
-	5,  // 12: looprpc.AssetLoopInServer.AssetLoopInFallback:output_type -> looprpc.AssetLoopInFallbackResponse
-	8,  // 13: looprpc.AssetLoopInServer.CommitAssetLoopIn:output_type -> looprpc.AssetLoopInStatus
-	8,  // 14: looprpc.AssetLoopInServer.GetAssetLoopIn:output_type -> looprpc.AssetLoopInStatus
-	8,  // 15: looprpc.AssetLoopInServer.CancelAssetLoopIn:output_type -> looprpc.AssetLoopInStatus
-	8,  // 16: looprpc.AssetLoopInServer.ReportAssetLoopInRefund:output_type -> looprpc.AssetLoopInStatus
-	10, // [10:17] is the sub-list for method output_type
-	3,  // [3:10] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	0, // 0: looprpc.CreateAssetLoopInRequest.deposits:type_name -> looprpc.AssetDepositInput
+	0, // 1: looprpc.AssetLoopInOffer.deposits:type_name -> looprpc.AssetDepositInput
+	3, // 2: looprpc.AssetLoopInStatus.offer:type_name -> looprpc.AssetLoopInOffer
+	4, // 3: looprpc.AssetLoopInServer.PrepareAssetLoopIn:input_type -> looprpc.PrepareAssetLoopInRequest
+	2, // 4: looprpc.AssetLoopInServer.AssetLoopInFallback:input_type -> looprpc.AssetLoopInReference
+	2, // 5: looprpc.AssetLoopInServer.GetAssetLoopIn:input_type -> looprpc.AssetLoopInReference
+	2, // 6: looprpc.AssetLoopInServer.CancelAssetLoopIn:input_type -> looprpc.AssetLoopInReference
+	7, // 7: looprpc.AssetLoopInServer.ReportAssetLoopInRefund:input_type -> looprpc.ReportAssetLoopInRefundRequest
+	8, // 8: looprpc.AssetLoopInServer.PrepareAssetLoopIn:output_type -> looprpc.AssetLoopInStatus
+	5, // 9: looprpc.AssetLoopInServer.AssetLoopInFallback:output_type -> looprpc.AssetLoopInFallbackResponse
+	8, // 10: looprpc.AssetLoopInServer.GetAssetLoopIn:output_type -> looprpc.AssetLoopInStatus
+	8, // 11: looprpc.AssetLoopInServer.CancelAssetLoopIn:output_type -> looprpc.AssetLoopInStatus
+	8, // 12: looprpc.AssetLoopInServer.ReportAssetLoopInRefund:output_type -> looprpc.AssetLoopInStatus
+	8, // [8:13] is the sub-list for method output_type
+	3, // [3:8] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_assetloopin_proto_init() }

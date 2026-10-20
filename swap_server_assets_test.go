@@ -20,16 +20,19 @@ import (
 
 type proofSizeServer struct {
 	swapserverrpc.UnimplementedAssetLoopInServerServer
+	swapserverrpc.UnimplementedStaticAddressServerServer
 	calls atomic.Int32
 }
 
-func (s *proofSizeServer) CreateAssetLoopIn(_ context.Context,
-	r *swapserverrpc.CreateAssetLoopInRequest) (
-	*swapserverrpc.AssetLoopInStatus, error) {
+func (s *proofSizeServer) ServerStaticAddressLoopIn(_ context.Context,
+	r *swapserverrpc.ServerStaticAddressLoopInRequest) (
+	*swapserverrpc.ServerStaticAddressLoopInResponse, error) {
 
 	s.calls.Add(1)
-	return &swapserverrpc.AssetLoopInStatus{
-		ResolutionProof: r.Contract,
+	return &swapserverrpc.ServerStaticAddressLoopInResponse{
+		AssetStatus: &swapserverrpc.AssetLoopInStatus{
+			ResolutionProof: r.AssetParams.Contract,
+		},
 	}, nil
 }
 
@@ -58,6 +61,7 @@ func TestSwapServerProofMessageLimits(t *testing.T) {
 	)
 	service := &proofSizeServer{}
 	swapserverrpc.RegisterAssetLoopInServerServer(server, service)
+	swapserverrpc.RegisterStaticAddressServerServer(server, service)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -70,19 +74,26 @@ func TestSwapServerProofMessageLimits(t *testing.T) {
 	conn, err := getSwapServerConn("unix://"+socket, "", true, "", auth)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, conn.Close()) })
-	client := swapserverrpc.NewAssetLoopInServerClient(conn)
+	client := swapserverrpc.NewStaticAddressServerClient(conn)
+	assetClient := swapserverrpc.NewAssetLoopInServerClient(conn)
 	proof := make([]byte, 8<<20)
-	response, err := client.CreateAssetLoopIn(t.Context(),
-		&swapserverrpc.CreateAssetLoopInRequest{Contract: proof})
+	response, err := client.ServerStaticAddressLoopIn(t.Context(),
+		&swapserverrpc.ServerStaticAddressLoopInRequest{
+			AssetParams: &swapserverrpc.CreateAssetLoopInRequest{
+				Contract: proof,
+			},
+		})
 	require.NoError(t, err)
-	require.Equal(t, proof, response.ResolutionProof)
-	_, err = client.CreateAssetLoopIn(t.Context(),
-		&swapserverrpc.CreateAssetLoopInRequest{
-			Contract: make([]byte, bridge.PublicRPCMaxBytes),
+	require.Equal(t, proof, response.AssetStatus.ResolutionProof)
+	_, err = client.ServerStaticAddressLoopIn(t.Context(),
+		&swapserverrpc.ServerStaticAddressLoopInRequest{
+			AssetParams: &swapserverrpc.CreateAssetLoopInRequest{
+				Contract: make([]byte, bridge.PublicRPCMaxBytes),
+			},
 		})
 	require.Equal(t, codes.ResourceExhausted, status.Code(err))
 	require.EqualValues(t, 1, service.calls.Load())
-	_, err = client.GetAssetLoopIn(t.Context(),
+	_, err = assetClient.GetAssetLoopIn(t.Context(),
 		&swapserverrpc.AssetLoopInReference{})
 	require.Equal(t, codes.ResourceExhausted, status.Code(err))
 }

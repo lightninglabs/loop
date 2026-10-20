@@ -28,7 +28,7 @@ import (
 var errLost = errors.New("lost RPC response")
 
 type testServer struct {
-	swapserverrpc.AssetLoopInServerClient
+	Server
 	create func(*swapserverrpc.CreateAssetLoopInRequest) (
 		*swapserverrpc.AssetLoopInStatus, error)
 	prepare  func(*swapserverrpc.PrepareAssetLoopInRequest) error

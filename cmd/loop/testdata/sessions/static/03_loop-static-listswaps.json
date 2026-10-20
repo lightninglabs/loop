@@ -43,6 +43,7 @@
       "data": {
         "lines": [
           "{\n",
+          "    \"asset_requests\": [],\n",
           "    \"swaps\": []\n",
           "}\n"
         ]

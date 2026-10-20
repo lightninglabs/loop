@@ -2,6 +2,9 @@
 
 #### New Features
 
+* Asset static loop-ins and their listings use the existing static-address
+  RPCs with explicit native asset fields and durable request IDs.
+
 * Wire native asset deposits and static loop-ins into normal `loopd` and
   `loop static asset` commands, with durable request identities, shared
   Bitcoin deposit exclusion, startup recovery, and original CSV refunds.

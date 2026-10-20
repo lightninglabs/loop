@@ -6,16 +6,13 @@ option go_package = "github.com/lightninglabs/loop/swapserverrpc";
 
 // AssetLoopInServer exchanges same-group asset deposits for a held asset
 // Lightning payout. Only the server's executor may disclose the preimage.
-// The existing Bitcoin static-address protocol is unchanged.
+// Offer creation and signature commitment use StaticAddressServer with
+// ASSET_V1. These operations cover the additional payout and recovery phases.
 service AssetLoopInServer {
-    rpc CreateAssetLoopIn (CreateAssetLoopInRequest)
-        returns (AssetLoopInStatus);
     rpc PrepareAssetLoopIn (PrepareAssetLoopInRequest)
         returns (AssetLoopInStatus);
     rpc AssetLoopInFallback (AssetLoopInReference)
         returns (AssetLoopInFallbackResponse);
-    rpc CommitAssetLoopIn (CommitAssetLoopInRequest)
-        returns (AssetLoopInStatus);
     rpc GetAssetLoopIn (AssetLoopInReference) returns (AssetLoopInStatus);
     rpc CancelAssetLoopIn (AssetLoopInReference) returns (AssetLoopInStatus);
     rpc ReportAssetLoopInRefund (ReportAssetLoopInRefundRequest)

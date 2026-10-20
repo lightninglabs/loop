@@ -591,7 +591,20 @@ func compareMessageWithContext(method, event string, idx int, msg any,
 			return err
 		}
 
-		return compareJSONWithContext(method, event, idx, actual, raw)
+		// An added protobuf field has its default value when absent
+		// from an older recording. Compare messages under the current
+		// schema without accepting unknown fields or changed values.
+		expected := typed.ProtoReflect().New().Interface()
+		if err := (protojson.UnmarshalOptions{}).Unmarshal(
+			raw, expected,
+		); err != nil {
+			return err
+		}
+		recorded, err := protoMarshal.Marshal(expected)
+		if err != nil {
+			return err
+		}
+		return compareJSONWithContext(method, event, idx, actual, recorded)
 
 	default:
 		actual, err := json.Marshal(typed)

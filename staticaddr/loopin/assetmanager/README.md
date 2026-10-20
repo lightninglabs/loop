@@ -46,6 +46,19 @@ loop static asset swaps
 loop static asset refund --utxo=<txid:index>
 ```
 
+These commands reuse `StaticAddressLoopIn`, `ListStaticAddressDeposits` and
+`ListStaticAddressSwaps`. Set `asset_params` on a loop-in request, and
+`assets_only` on either list request. The response carries `asset_request`,
+`asset_deposits` or `asset_requests`; Bitcoin amount fields remain in satoshis
+and are not reused for assets. Requests without these fields keep the existing
+Bitcoin behavior. Clients must first check `GetInfo.asset_static_loop_in`;
+the CLI refuses these variants when an older or disabled daemon omits the
+capability, preventing protobuf unknown-field handling from selecting Bitcoin.
+An asset loop-in rejects Bitcoin-only options, including
+satoshi amounts and fees, instead of ignoring them. `CreateAssetDeposit` and
+`RefundAssetDeposit` remain separate operations because they fund a custom
+asset anchor and recover its original CSV script.
+
 The deposit and swap commands print a random request ID before sending the RPC.
 After an interrupted response, retry the identical command with
 `--request_id=<that ID>`. Reusing an ID with different terms is rejected.
@@ -64,7 +77,11 @@ client key locator, client/server public keys and CSV delay. The runtime funds
 the asset anchor using those keys. A swap request atomically reserves that
 anchor and saves the exact server request bytes before contacting the server.
 Subsequent retries preserve the request ID, proof, offer, invoice, quote and
-recovery transactions.
+recovery transactions. On the wire, `ServerStaticAddressLoopIn` and
+`PushStaticAddressHtlcSigs` carry typed asset payloads with protocol `ASSET_V1`.
+The immutable inner offer request remains the digest and restart identity;
+Bitcoin fields stay empty. Separate prepare, fallback, status, cancellation
+and refund-report operations retain the additional recovery boundaries.
 
 ## Recovery and shared ownership
 

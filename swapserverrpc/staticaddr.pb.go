@@ -33,15 +33,19 @@ type StaticAddressProtocolVersion int32
 const (
 	// V0 is the initially released static address protocol version.
 	StaticAddressProtocolVersion_V0 StaticAddressProtocolVersion = 0
+	// ASSET_V1 uses a server-owned preimage and same-group native payout.
+	StaticAddressProtocolVersion_ASSET_V1 StaticAddressProtocolVersion = 1
 )
 
 // Enum value maps for StaticAddressProtocolVersion.
 var (
 	StaticAddressProtocolVersion_name = map[int32]string{
 		0: "V0",
+		1: "ASSET_V1",
 	}
 	StaticAddressProtocolVersion_value = map[string]int32{
-		"V0": 0,
+		"V0":       0,
+		"ASSET_V1": 1,
 	}
 )
 
@@ -716,7 +720,10 @@ type ServerStaticAddressLoopInRequest struct {
 	DepositToClientPubkeys map[string]*StaticAddressDescriptor `protobuf:"bytes,11,rep,name=deposit_to_client_pubkeys,json=depositToClientPubkeys,proto3" json:"deposit_to_client_pubkeys,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Optional change output metadata for fractional loop-ins that return
 	// funds to a newly generated static address.
-	ChangeOutput  *StaticAddressChangeOutput `protobuf:"bytes,12,opt,name=change_output,json=changeOutput,proto3" json:"change_output,omitempty"`
+	ChangeOutput *StaticAddressChangeOutput `protobuf:"bytes,12,opt,name=change_output,json=changeOutput,proto3" json:"change_output,omitempty"`
+	// ASSET_V1 only. All Bitcoin fields must be unset. The immutable inner
+	// request, including request_id, is the digest and restart identity.
+	AssetParams   *CreateAssetLoopInRequest `protobuf:"bytes,13,opt,name=asset_params,json=assetParams,proto3" json:"asset_params,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -835,6 +842,13 @@ func (x *ServerStaticAddressLoopInRequest) GetChangeOutput() *StaticAddressChang
 	return nil
 }
 
+func (x *ServerStaticAddressLoopInRequest) GetAssetParams() *CreateAssetLoopInRequest {
+	if x != nil {
+		return x.AssetParams
+	}
+	return nil
+}
+
 type ServerStaticAddressLoopInResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The server's public key for the htlc output.
@@ -850,8 +864,10 @@ type ServerStaticAddressLoopInResponse struct {
 	// The info the server used to generate the extreme fee partial htlc tx
 	// sigs.
 	ExtremeFeeHtlcInfo *ServerHtlcSigningInfo `protobuf:"bytes,5,opt,name=extreme_fee_htlc_info,json=extremeFeeHtlcInfo,proto3" json:"extreme_fee_htlc_info,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// ASSET_V1 returns the server-created hash before client invoice creation.
+	AssetStatus   *AssetLoopInStatus `protobuf:"bytes,6,opt,name=asset_status,json=assetStatus,proto3" json:"asset_status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ServerStaticAddressLoopInResponse) Reset() {
@@ -915,6 +931,13 @@ func (x *ServerStaticAddressLoopInResponse) GetHighFeeHtlcInfo() *ServerHtlcSign
 func (x *ServerStaticAddressLoopInResponse) GetExtremeFeeHtlcInfo() *ServerHtlcSigningInfo {
 	if x != nil {
 		return x.ExtremeFeeHtlcInfo
+	}
+	return nil
+}
+
+func (x *ServerStaticAddressLoopInResponse) GetAssetStatus() *AssetLoopInStatus {
+	if x != nil {
+		return x.AssetStatus
 	}
 	return nil
 }
@@ -983,8 +1006,13 @@ type PushStaticAddressHtlcSigsRequest struct {
 	HighFeeHtlcInfo *ClientHtlcSigningInfo `protobuf:"bytes,3,opt,name=high_fee_htlc_info,json=highFeeHtlcInfo,proto3" json:"high_fee_htlc_info,omitempty"`
 	// The nonces that the client used to generate the extreme fee htlc sigs.
 	ExtremeFeeHtlcInfo *ClientHtlcSigningInfo `protobuf:"bytes,4,opt,name=extreme_fee_htlc_info,json=extremeFeeHtlcInfo,proto3" json:"extreme_fee_htlc_info,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Bitcoin callers omit this field and retain V0 behavior.
+	ProtocolVersion StaticAddressProtocolVersion `protobuf:"varint,5,opt,name=protocol_version,json=protocolVersion,proto3,enum=looprpc.StaticAddressProtocolVersion" json:"protocol_version,omitempty"`
+	// ASSET_V1 only. All Bitcoin fields must be unset. This grants conditional
+	// claim authority; only the server executor may disclose the preimage.
+	AssetParams   *CommitAssetLoopInRequest `protobuf:"bytes,6,opt,name=asset_params,json=assetParams,proto3" json:"asset_params,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PushStaticAddressHtlcSigsRequest) Reset() {
@@ -1045,6 +1073,20 @@ func (x *PushStaticAddressHtlcSigsRequest) GetExtremeFeeHtlcInfo() *ClientHtlcSi
 	return nil
 }
 
+func (x *PushStaticAddressHtlcSigsRequest) GetProtocolVersion() StaticAddressProtocolVersion {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return StaticAddressProtocolVersion_V0
+}
+
+func (x *PushStaticAddressHtlcSigsRequest) GetAssetParams() *CommitAssetLoopInRequest {
+	if x != nil {
+		return x.AssetParams
+	}
+	return nil
+}
+
 type ClientHtlcSigningInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The nonces that the client used to generate the partial htlc tx sigs.
@@ -1100,7 +1142,9 @@ func (x *ClientHtlcSigningInfo) GetSigs() [][]byte {
 }
 
 type PushStaticAddressHtlcSigsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Present only for ASSET_V1.
+	AssetStatus   *AssetLoopInStatus `protobuf:"bytes,1,opt,name=asset_status,json=assetStatus,proto3" json:"asset_status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1133,6 +1177,13 @@ func (x *PushStaticAddressHtlcSigsResponse) ProtoReflect() protoreflect.Message 
 // Deprecated: Use PushStaticAddressHtlcSigsResponse.ProtoReflect.Descriptor instead.
 func (*PushStaticAddressHtlcSigsResponse) Descriptor() ([]byte, []int) {
 	return file_staticaddr_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *PushStaticAddressHtlcSigsResponse) GetAssetStatus() *AssetLoopInStatus {
+	if x != nil {
+		return x.AssetStatus
+	}
+	return nil
 }
 
 type PushStaticAddressSweeplessSigsRequest struct {
@@ -1305,7 +1356,7 @@ var File_staticaddr_proto protoreflect.FileDescriptor
 
 const file_staticaddr_proto_rawDesc = "" +
 	"\n" +
-	"\x10staticaddr.proto\x12\alooprpc\x1a\fserver.proto\"\x8a\x01\n" +
+	"\x10staticaddr.proto\x12\alooprpc\x1a\fserver.proto\x1a\x11assetloopin.proto\"\x8a\x01\n" +
 	"\x17ServerNewAddressRequest\x12P\n" +
 	"\x10protocol_version\x18\x01 \x01(\x0e2%.looprpc.StaticAddressProtocolVersionR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1350,7 +1401,7 @@ const file_staticaddr_proto_rawDesc = "" +
 	"\tpk_script\x18\x02 \x01(\fR\bpkScript\"|\n" +
 	"\x19StaticAddressChangeOutput\x12G\n" +
 	"\x0estatic_address\x18\x01 \x01(\v2 .looprpc.StaticAddressDescriptorR\rstaticAddress\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x03R\x06amount\"\xe7\x05\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\"\xad\x06\n" +
 	" ServerStaticAddressLoopInRequest\x12-\n" +
 	"\x13htlc_client_pub_key\x18\x01 \x01(\fR\x10htlcClientPubKey\x12\x1b\n" +
 	"\tswap_hash\x18\x02 \x01(\fR\bswapHash\x12+\n" +
@@ -1365,29 +1416,34 @@ const file_staticaddr_proto_rawDesc = "" +
 	"\x04fast\x18\n" +
 	" \x01(\bR\x04fast\x12\x80\x01\n" +
 	"\x19deposit_to_client_pubkeys\x18\v \x03(\v2E.looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntryR\x16depositToClientPubkeys\x12G\n" +
-	"\rchange_output\x18\f \x01(\v2\".looprpc.StaticAddressChangeOutputR\fchangeOutput\x1ak\n" +
+	"\rchange_output\x18\f \x01(\v2\".looprpc.StaticAddressChangeOutputR\fchangeOutput\x12D\n" +
+	"\fasset_params\x18\r \x01(\v2!.looprpc.CreateAssetLoopInRequestR\vassetParams\x1ak\n" +
 	"\x1bDepositToClientPubkeysEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x126\n" +
-	"\x05value\x18\x02 \x01(\v2 .looprpc.StaticAddressDescriptorR\x05value:\x028\x01\"\xe1\x02\n" +
+	"\x05value\x18\x02 \x01(\v2 .looprpc.StaticAddressDescriptorR\x05value:\x028\x01\"\xa0\x03\n" +
 	"!ServerStaticAddressLoopInResponse\x12-\n" +
 	"\x13htlc_server_pub_key\x18\x01 \x01(\fR\x10htlcServerPubKey\x12\x1f\n" +
 	"\vhtlc_expiry\x18\x02 \x01(\x05R\n" +
 	"htlcExpiry\x12L\n" +
 	"\x12standard_htlc_info\x18\x03 \x01(\v2\x1e.looprpc.ServerHtlcSigningInfoR\x10standardHtlcInfo\x12K\n" +
 	"\x12high_fee_htlc_info\x18\x04 \x01(\v2\x1e.looprpc.ServerHtlcSigningInfoR\x0fhighFeeHtlcInfo\x12Q\n" +
-	"\x15extreme_fee_htlc_info\x18\x05 \x01(\v2\x1e.looprpc.ServerHtlcSigningInfoR\x12extremeFeeHtlcInfo\"J\n" +
+	"\x15extreme_fee_htlc_info\x18\x05 \x01(\v2\x1e.looprpc.ServerHtlcSigningInfoR\x12extremeFeeHtlcInfo\x12=\n" +
+	"\fasset_status\x18\x06 \x01(\v2\x1a.looprpc.AssetLoopInStatusR\vassetStatus\"J\n" +
 	"\x15ServerHtlcSigningInfo\x12\x16\n" +
 	"\x06nonces\x18\x01 \x03(\fR\x06nonces\x12\x19\n" +
-	"\bfee_rate\x18\x02 \x01(\x04R\afeeRate\"\xad\x02\n" +
+	"\bfee_rate\x18\x02 \x01(\x04R\afeeRate\"\xc5\x03\n" +
 	" PushStaticAddressHtlcSigsRequest\x12\x1b\n" +
 	"\tswap_hash\x18\x01 \x01(\fR\bswapHash\x12L\n" +
 	"\x12standard_htlc_info\x18\x02 \x01(\v2\x1e.looprpc.ClientHtlcSigningInfoR\x10standardHtlcInfo\x12K\n" +
 	"\x12high_fee_htlc_info\x18\x03 \x01(\v2\x1e.looprpc.ClientHtlcSigningInfoR\x0fhighFeeHtlcInfo\x12Q\n" +
-	"\x15extreme_fee_htlc_info\x18\x04 \x01(\v2\x1e.looprpc.ClientHtlcSigningInfoR\x12extremeFeeHtlcInfo\"C\n" +
+	"\x15extreme_fee_htlc_info\x18\x04 \x01(\v2\x1e.looprpc.ClientHtlcSigningInfoR\x12extremeFeeHtlcInfo\x12P\n" +
+	"\x10protocol_version\x18\x05 \x01(\x0e2%.looprpc.StaticAddressProtocolVersionR\x0fprotocolVersion\x12D\n" +
+	"\fasset_params\x18\x06 \x01(\v2!.looprpc.CommitAssetLoopInRequestR\vassetParams\"C\n" +
 	"\x15ClientHtlcSigningInfo\x12\x16\n" +
 	"\x06nonces\x18\x01 \x03(\fR\x06nonces\x12\x12\n" +
-	"\x04sigs\x18\x02 \x03(\fR\x04sigs\"#\n" +
-	"!PushStaticAddressHtlcSigsResponse\"\xc6\x02\n" +
+	"\x04sigs\x18\x02 \x03(\fR\x04sigs\"b\n" +
+	"!PushStaticAddressHtlcSigsResponse\x12=\n" +
+	"\fasset_status\x18\x01 \x01(\v2\x1a.looprpc.AssetLoopInStatusR\vassetStatus\"\xc6\x02\n" +
 	"%PushStaticAddressSweeplessSigsRequest\x12\x1b\n" +
 	"\tswap_hash\x18\x01 \x01(\fR\bswapHash\x12\x12\n" +
 	"\x04txid\x18\x02 \x01(\fR\x04txid\x12b\n" +
@@ -1399,9 +1455,10 @@ const file_staticaddr_proto_rawDesc = "" +
 	"\x1aClientSweeplessSigningInfo\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x10\n" +
 	"\x03sig\x18\x02 \x01(\fR\x03sig\"(\n" +
-	"&PushStaticAddressSweeplessSigsResponse*&\n" +
+	"&PushStaticAddressSweeplessSigsResponse*4\n" +
 	"\x1cStaticAddressProtocolVersion\x12\x06\n" +
-	"\x02V0\x10\x002\xa1\x05\n" +
+	"\x02V0\x10\x00\x12\f\n" +
+	"\bASSET_V1\x10\x012\xa1\x05\n" +
 	"\x13StaticAddressServer\x12W\n" +
 	"\x10ServerNewAddress\x12 .looprpc.ServerNewAddressRequest\x1a!.looprpc.ServerNewAddressResponse\x12^\n" +
 	"\x16ServerWithdrawDeposits\x12\x1e.looprpc.ServerWithdrawRequest\x1a\x1f.looprpc.ServerWithdrawResponse\"\x03\x88\x02\x01\x12e\n" +
@@ -1445,12 +1502,15 @@ var file_staticaddr_proto_goTypes = []any{
 	(*PushStaticAddressSweeplessSigsRequest)(nil),  // 17: looprpc.PushStaticAddressSweeplessSigsRequest
 	(*ClientSweeplessSigningInfo)(nil),             // 18: looprpc.ClientSweeplessSigningInfo
 	(*PushStaticAddressSweeplessSigsResponse)(nil), // 19: looprpc.PushStaticAddressSweeplessSigsResponse
-	nil,                 // 20: looprpc.ServerPsbtWithdrawRequest.DepositToNoncesEntry
-	nil,                 // 21: looprpc.ServerPsbtWithdrawRequest.DepositToClientPubkeysEntry
-	nil,                 // 22: looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry
-	nil,                 // 23: looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntry
-	nil,                 // 24: looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry
-	(*PrevoutInfo)(nil), // 25: looprpc.PrevoutInfo
+	nil,                              // 20: looprpc.ServerPsbtWithdrawRequest.DepositToNoncesEntry
+	nil,                              // 21: looprpc.ServerPsbtWithdrawRequest.DepositToClientPubkeysEntry
+	nil,                              // 22: looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry
+	nil,                              // 23: looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntry
+	nil,                              // 24: looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry
+	(*PrevoutInfo)(nil),              // 25: looprpc.PrevoutInfo
+	(*CreateAssetLoopInRequest)(nil), // 26: looprpc.CreateAssetLoopInRequest
+	(*AssetLoopInStatus)(nil),        // 27: looprpc.AssetLoopInStatus
+	(*CommitAssetLoopInRequest)(nil), // 28: looprpc.CommitAssetLoopInRequest
 }
 var file_staticaddr_proto_depIdxs = []int32{
 	0,  // 0: looprpc.ServerNewAddressRequest.protocol_version:type_name -> looprpc.StaticAddressProtocolVersion
@@ -1463,34 +1523,39 @@ var file_staticaddr_proto_depIdxs = []int32{
 	0,  // 7: looprpc.ServerStaticAddressLoopInRequest.protocol_version:type_name -> looprpc.StaticAddressProtocolVersion
 	23, // 8: looprpc.ServerStaticAddressLoopInRequest.deposit_to_client_pubkeys:type_name -> looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntry
 	10, // 9: looprpc.ServerStaticAddressLoopInRequest.change_output:type_name -> looprpc.StaticAddressChangeOutput
-	13, // 10: looprpc.ServerStaticAddressLoopInResponse.standard_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
-	13, // 11: looprpc.ServerStaticAddressLoopInResponse.high_fee_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
-	13, // 12: looprpc.ServerStaticAddressLoopInResponse.extreme_fee_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
-	15, // 13: looprpc.PushStaticAddressHtlcSigsRequest.standard_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
-	15, // 14: looprpc.PushStaticAddressHtlcSigsRequest.high_fee_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
-	15, // 15: looprpc.PushStaticAddressHtlcSigsRequest.extreme_fee_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
-	24, // 16: looprpc.PushStaticAddressSweeplessSigsRequest.signing_info:type_name -> looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry
-	9,  // 17: looprpc.ServerPsbtWithdrawRequest.DepositToClientPubkeysEntry.value:type_name -> looprpc.StaticAddressDescriptor
-	8,  // 18: looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry.value:type_name -> looprpc.ServerPsbtWithdrawSigningInfo
-	9,  // 19: looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntry.value:type_name -> looprpc.StaticAddressDescriptor
-	18, // 20: looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry.value:type_name -> looprpc.ClientSweeplessSigningInfo
-	1,  // 21: looprpc.StaticAddressServer.ServerNewAddress:input_type -> looprpc.ServerNewAddressRequest
-	4,  // 22: looprpc.StaticAddressServer.ServerWithdrawDeposits:input_type -> looprpc.ServerWithdrawRequest
-	6,  // 23: looprpc.StaticAddressServer.ServerPsbtWithdrawDeposits:input_type -> looprpc.ServerPsbtWithdrawRequest
-	11, // 24: looprpc.StaticAddressServer.ServerStaticAddressLoopIn:input_type -> looprpc.ServerStaticAddressLoopInRequest
-	14, // 25: looprpc.StaticAddressServer.PushStaticAddressHtlcSigs:input_type -> looprpc.PushStaticAddressHtlcSigsRequest
-	17, // 26: looprpc.StaticAddressServer.PushStaticAddressSweeplessSigs:input_type -> looprpc.PushStaticAddressSweeplessSigsRequest
-	2,  // 27: looprpc.StaticAddressServer.ServerNewAddress:output_type -> looprpc.ServerNewAddressResponse
-	5,  // 28: looprpc.StaticAddressServer.ServerWithdrawDeposits:output_type -> looprpc.ServerWithdrawResponse
-	7,  // 29: looprpc.StaticAddressServer.ServerPsbtWithdrawDeposits:output_type -> looprpc.ServerPsbtWithdrawResponse
-	12, // 30: looprpc.StaticAddressServer.ServerStaticAddressLoopIn:output_type -> looprpc.ServerStaticAddressLoopInResponse
-	16, // 31: looprpc.StaticAddressServer.PushStaticAddressHtlcSigs:output_type -> looprpc.PushStaticAddressHtlcSigsResponse
-	19, // 32: looprpc.StaticAddressServer.PushStaticAddressSweeplessSigs:output_type -> looprpc.PushStaticAddressSweeplessSigsResponse
-	27, // [27:33] is the sub-list for method output_type
-	21, // [21:27] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	26, // 10: looprpc.ServerStaticAddressLoopInRequest.asset_params:type_name -> looprpc.CreateAssetLoopInRequest
+	13, // 11: looprpc.ServerStaticAddressLoopInResponse.standard_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
+	13, // 12: looprpc.ServerStaticAddressLoopInResponse.high_fee_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
+	13, // 13: looprpc.ServerStaticAddressLoopInResponse.extreme_fee_htlc_info:type_name -> looprpc.ServerHtlcSigningInfo
+	27, // 14: looprpc.ServerStaticAddressLoopInResponse.asset_status:type_name -> looprpc.AssetLoopInStatus
+	15, // 15: looprpc.PushStaticAddressHtlcSigsRequest.standard_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
+	15, // 16: looprpc.PushStaticAddressHtlcSigsRequest.high_fee_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
+	15, // 17: looprpc.PushStaticAddressHtlcSigsRequest.extreme_fee_htlc_info:type_name -> looprpc.ClientHtlcSigningInfo
+	0,  // 18: looprpc.PushStaticAddressHtlcSigsRequest.protocol_version:type_name -> looprpc.StaticAddressProtocolVersion
+	28, // 19: looprpc.PushStaticAddressHtlcSigsRequest.asset_params:type_name -> looprpc.CommitAssetLoopInRequest
+	27, // 20: looprpc.PushStaticAddressHtlcSigsResponse.asset_status:type_name -> looprpc.AssetLoopInStatus
+	24, // 21: looprpc.PushStaticAddressSweeplessSigsRequest.signing_info:type_name -> looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry
+	9,  // 22: looprpc.ServerPsbtWithdrawRequest.DepositToClientPubkeysEntry.value:type_name -> looprpc.StaticAddressDescriptor
+	8,  // 23: looprpc.ServerPsbtWithdrawResponse.SigningInfoEntry.value:type_name -> looprpc.ServerPsbtWithdrawSigningInfo
+	9,  // 24: looprpc.ServerStaticAddressLoopInRequest.DepositToClientPubkeysEntry.value:type_name -> looprpc.StaticAddressDescriptor
+	18, // 25: looprpc.PushStaticAddressSweeplessSigsRequest.SigningInfoEntry.value:type_name -> looprpc.ClientSweeplessSigningInfo
+	1,  // 26: looprpc.StaticAddressServer.ServerNewAddress:input_type -> looprpc.ServerNewAddressRequest
+	4,  // 27: looprpc.StaticAddressServer.ServerWithdrawDeposits:input_type -> looprpc.ServerWithdrawRequest
+	6,  // 28: looprpc.StaticAddressServer.ServerPsbtWithdrawDeposits:input_type -> looprpc.ServerPsbtWithdrawRequest
+	11, // 29: looprpc.StaticAddressServer.ServerStaticAddressLoopIn:input_type -> looprpc.ServerStaticAddressLoopInRequest
+	14, // 30: looprpc.StaticAddressServer.PushStaticAddressHtlcSigs:input_type -> looprpc.PushStaticAddressHtlcSigsRequest
+	17, // 31: looprpc.StaticAddressServer.PushStaticAddressSweeplessSigs:input_type -> looprpc.PushStaticAddressSweeplessSigsRequest
+	2,  // 32: looprpc.StaticAddressServer.ServerNewAddress:output_type -> looprpc.ServerNewAddressResponse
+	5,  // 33: looprpc.StaticAddressServer.ServerWithdrawDeposits:output_type -> looprpc.ServerWithdrawResponse
+	7,  // 34: looprpc.StaticAddressServer.ServerPsbtWithdrawDeposits:output_type -> looprpc.ServerPsbtWithdrawResponse
+	12, // 35: looprpc.StaticAddressServer.ServerStaticAddressLoopIn:output_type -> looprpc.ServerStaticAddressLoopInResponse
+	16, // 36: looprpc.StaticAddressServer.PushStaticAddressHtlcSigs:output_type -> looprpc.PushStaticAddressHtlcSigsResponse
+	19, // 37: looprpc.StaticAddressServer.PushStaticAddressSweeplessSigs:output_type -> looprpc.PushStaticAddressSweeplessSigsResponse
+	32, // [32:38] is the sub-list for method output_type
+	26, // [26:32] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_staticaddr_proto_init() }
@@ -1499,6 +1564,7 @@ func file_staticaddr_proto_init() {
 		return
 	}
 	file_server_proto_init()
+	file_assetloopin_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

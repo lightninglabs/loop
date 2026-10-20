@@ -215,6 +215,7 @@
         "lines": [
           "{\n",
           "    \"amount\": \"550000\",\n",
+          "    \"asset_request\": null,\n",
           "    \"change\": \"50000\",\n",
           "    \"fast\": false,\n",
           "    \"htlc_cltv\": 1138,\n",

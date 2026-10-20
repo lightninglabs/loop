@@ -1575,15 +1575,16 @@ func (s *swapClientServer) GetInfo(ctx context.Context,
 	}
 
 	return &looprpc.GetInfoResponse{
-		Version:      loop.Version(),
-		CommitHash:   commitHash,
-		Network:      s.config.Network,
-		RpcListen:    s.config.RPCListen,
-		RestListen:   s.config.RESTListen,
-		MacaroonPath: s.config.MacaroonPath,
-		TlsCertPath:  s.config.TLSCertPath,
-		LoopOutStats: loopOutStats,
-		LoopInStats:  loopInStats,
+		Version:           loop.Version(),
+		CommitHash:        commitHash,
+		Network:           s.config.Network,
+		RpcListen:         s.config.RPCListen,
+		RestListen:        s.config.RESTListen,
+		MacaroonPath:      s.config.MacaroonPath,
+		TlsCertPath:       s.config.TLSCertPath,
+		LoopOutStats:      loopOutStats,
+		LoopInStats:       loopInStats,
+		AssetStaticLoopIn: s.assetLoopInManager != nil,
 	}, nil
 }
 
@@ -2075,6 +2076,10 @@ func (s *swapClientServer) ListStaticAddressDeposits(ctx context.Context,
 	req *looprpc.ListStaticAddressDepositsRequest) (
 	*looprpc.ListStaticAddressDepositsResponse, error) {
 
+	if req.GetAssetsOnly() {
+		return s.listAssetDeposits(ctx, req)
+	}
+
 	outpoints := req.Outpoints
 	if req.StateFilter != looprpc.DepositState_UNKNOWN_STATE &&
 		len(outpoints) > 0 {
@@ -2181,8 +2186,12 @@ func toClientWithdrawalDeposit(d *deposit.Deposit) *looprpc.Deposit {
 // ListStaticAddressSwaps returns a list of all swaps that are currently pending
 // or previously succeeded.
 func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
-	_ *looprpc.ListStaticAddressSwapsRequest) (
+	req *looprpc.ListStaticAddressSwapsRequest) (
 	*looprpc.ListStaticAddressSwapsResponse, error) {
+
+	if req.GetAssetsOnly() {
+		return s.listAssetStaticLoopIns(ctx)
+	}
 
 	swaps, err := s.staticLoopInManager.GetAllSwaps(ctx)
 	if err != nil {
@@ -2603,6 +2612,10 @@ func (s *swapClientServer) GetStaticAddressSummary(ctx context.Context,
 func (s *swapClientServer) StaticAddressLoopIn(ctx context.Context,
 	in *looprpc.StaticAddressLoopInRequest) (
 	*looprpc.StaticAddressLoopInResponse, error) {
+
+	if in.GetAssetParams() != nil {
+		return s.assetStaticLoopIn(ctx, in)
+	}
 
 	infof("Static loop-in request received")
 

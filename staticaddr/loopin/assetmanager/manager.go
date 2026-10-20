@@ -35,7 +35,7 @@ type Config struct {
 	Journal    assetexec.Store
 	Address    *address.Manager
 	Deposits   *deposit.Manager
-	Server     swapserverrpc.AssetLoopInServerClient
+	Server     assetclient.Server
 	Receiver   *assetln.Receiver
 	Owner      [32]byte
 	Peer       [33]byte

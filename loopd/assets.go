@@ -14,10 +14,10 @@ import (
 	"github.com/lightninglabs/loop/assets/assetln"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetmanager"
 	"github.com/lightninglabs/loop/swapkit/bridge"
-	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"google.golang.org/grpc"
@@ -141,7 +141,7 @@ func (d *Daemon) newAssetManager(ctx context.Context, client *loop.Client,
 	manager, err := assetmanager.New(assetmanager.Config{
 		Runtime: runtime, Store: inventory, Journal: journal,
 		Address: addresses, Deposits: deposits,
-		Server: swapserverrpc.NewAssetLoopInServerClient(client.Conn),
+		Server: assetclient.NewServerClient(client.Conn),
 		Receiver: &assetln.Receiver{
 			Assets:    d.assetClient.TaprootAssetChannelsClient,
 			Lightning: lnrpc.NewLightningClient(auth),

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
 	"github.com/lightninglabs/loop/swapkit/bridge"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -14,7 +15,7 @@ import (
 )
 
 type claimHintServer struct {
-	swapserverrpc.AssetLoopInServerClient
+	assetclient.Server
 	get func(context.Context) (*swapserverrpc.AssetLoopInStatus, error)
 }
 

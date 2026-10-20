@@ -9,9 +9,12 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/loop/assets"
+	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestAssetRuntimeConfigRequiresCompleteActivation(t *testing.T) {
@@ -70,5 +73,125 @@ func TestAssetRPCFailureDoesNotRevealInternalClass(t *testing.T) {
 		err := assetOperationError(cause)
 		require.Equal(t, want, err.Error())
 		require.Equal(t, codes.Unavailable, status.Code(err))
+	}
+}
+
+// TestStaticAddressAssetParams keeps native quantities separate from Bitcoin
+// options and validates the durable identity before any manager side effect.
+func TestStaticAddressAssetParams(t *testing.T) {
+	_, public := btcec.PrivKeyFromBytes([]byte{1})
+	id := [32]byte{1}
+	request := &looprpc.StaticAddressLoopInRequest{
+		Outpoints: []string{strings.Repeat("ab", 32) + ":0"},
+		AssetParams: &looprpc.AssetLoopInParams{
+			RequestId: id[:], GroupKey: public.SerializeCompressed(),
+			Amount: 1 << 63, MaxAssetDebit: 1<<63 + 1,
+			MaxAssetFee: 2,
+		},
+	}
+	intent, err := assetLoopInRequest(request)
+	require.NoError(t, err)
+	require.Equal(t, id, intent.RequestID)
+	require.Equal(t, request.Outpoints[0], intent.Outpoint)
+	require.Equal(t, request.AssetParams.Amount, intent.Amount)
+	require.Equal(t, request.AssetParams.MaxAssetDebit, intent.MaxDebit)
+	require.Equal(t, request.AssetParams.MaxAssetFee, intent.MaxFee)
+	require.Equal(t, request.AssetParams.GroupKey, intent.GroupKey[:])
+
+	for _, test := range []struct {
+		name string
+		edit func(*looprpc.StaticAddressLoopInRequest)
+	}{
+		{"satoshi amount", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Amount = 1000
+		}},
+		{"satoshi fee", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.MaxSwapFeeSatoshis = 1
+		}},
+		{"last hop", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.LastHop = public.SerializeCompressed()
+		}},
+		{"label", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Label = "label"
+		}},
+		{"initiator", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Initiator = "caller"
+		}},
+		{"route hints", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.RouteHints = []*swapserverrpc.RouteHint{{}}
+		}},
+		{"private", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Private = true
+		}},
+		{"payment timeout", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.PaymentTimeoutSeconds = 10
+		}},
+		{"fast", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Fast = true
+		}},
+		{"no outpoint", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Outpoints = nil
+		}},
+		{"multiple outpoints", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Outpoints = append(r.Outpoints, r.Outpoints[0])
+		}},
+		{"noncanonical outpoint", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.Outpoints[0] = strings.ToUpper(r.Outpoints[0])
+		}},
+		{"request identity", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.AssetParams.RequestId = make([]byte, 32)
+		}},
+		{"group", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.AssetParams.GroupKey = public.SerializeUncompressed()
+		}},
+		{"zero amount", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.AssetParams.Amount = 0
+		}},
+		{"debit limit", func(r *looprpc.StaticAddressLoopInRequest) {
+			r.AssetParams.MaxAssetDebit = r.AssetParams.Amount - 1
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := proto.Clone(request).(*looprpc.StaticAddressLoopInRequest)
+			test.edit(invalid)
+			server := &swapClientServer{}
+			_, err := server.StaticAddressLoopIn(t.Context(), invalid)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+		})
+	}
+}
+
+// TestStaticAddressAssetRPCRouting verifies that explicit asset variants
+// dispatch before Bitcoin managers are touched, including when disabled.
+func TestStaticAddressAssetRPCRouting(t *testing.T) {
+	old := log_.Load()
+	setLogger(btclog.Disabled)
+	t.Cleanup(func() { log_.Store(old) })
+	server := &swapClientServer{}
+	_, public := btcec.PrivKeyFromBytes([]byte{1})
+	id := [32]byte{1}
+	_, err := server.StaticAddressLoopIn(t.Context(),
+		&looprpc.StaticAddressLoopInRequest{
+			Outpoints: []string{strings.Repeat("ab", 32) + ":0"},
+			AssetParams: &looprpc.AssetLoopInParams{
+				RequestId: id[:],
+				GroupKey:  public.SerializeCompressed(),
+				Amount:    1000, MaxAssetDebit: 1000,
+			},
+		})
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	_, err = server.ListStaticAddressDeposits(t.Context(),
+		&looprpc.ListStaticAddressDepositsRequest{AssetsOnly: true})
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	_, err = server.ListStaticAddressSwaps(t.Context(),
+		&looprpc.ListStaticAddressSwapsRequest{AssetsOnly: true})
+	require.Equal(t, codes.Unavailable, status.Code(err))
+
+	for _, request := range []*looprpc.ListStaticAddressDepositsRequest{
+		{AssetsOnly: true, StateFilter: looprpc.DepositState_DEPOSITED},
+		{AssetsOnly: true, Outpoints: []string{"bad-outpoint"}},
+	} {
+		_, err := server.ListStaticAddressDeposits(t.Context(), request)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	}
 }

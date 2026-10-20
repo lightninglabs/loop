@@ -18,10 +18,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AssetLoopInServerClient interface {
-	CreateAssetLoopIn(ctx context.Context, in *CreateAssetLoopInRequest, opts ...grpc.CallOption) (*AssetLoopInStatus, error)
 	PrepareAssetLoopIn(ctx context.Context, in *PrepareAssetLoopInRequest, opts ...grpc.CallOption) (*AssetLoopInStatus, error)
 	AssetLoopInFallback(ctx context.Context, in *AssetLoopInReference, opts ...grpc.CallOption) (*AssetLoopInFallbackResponse, error)
-	CommitAssetLoopIn(ctx context.Context, in *CommitAssetLoopInRequest, opts ...grpc.CallOption) (*AssetLoopInStatus, error)
 	GetAssetLoopIn(ctx context.Context, in *AssetLoopInReference, opts ...grpc.CallOption) (*AssetLoopInStatus, error)
 	CancelAssetLoopIn(ctx context.Context, in *AssetLoopInReference, opts ...grpc.CallOption) (*AssetLoopInStatus, error)
 	ReportAssetLoopInRefund(ctx context.Context, in *ReportAssetLoopInRefundRequest, opts ...grpc.CallOption) (*AssetLoopInStatus, error)
@@ -33,15 +31,6 @@ type assetLoopInServerClient struct {
 
 func NewAssetLoopInServerClient(cc grpc.ClientConnInterface) AssetLoopInServerClient {
 	return &assetLoopInServerClient{cc}
-}
-
-func (c *assetLoopInServerClient) CreateAssetLoopIn(ctx context.Context, in *CreateAssetLoopInRequest, opts ...grpc.CallOption) (*AssetLoopInStatus, error) {
-	out := new(AssetLoopInStatus)
-	err := c.cc.Invoke(ctx, "/looprpc.AssetLoopInServer/CreateAssetLoopIn", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *assetLoopInServerClient) PrepareAssetLoopIn(ctx context.Context, in *PrepareAssetLoopInRequest, opts ...grpc.CallOption) (*AssetLoopInStatus, error) {
@@ -56,15 +45,6 @@ func (c *assetLoopInServerClient) PrepareAssetLoopIn(ctx context.Context, in *Pr
 func (c *assetLoopInServerClient) AssetLoopInFallback(ctx context.Context, in *AssetLoopInReference, opts ...grpc.CallOption) (*AssetLoopInFallbackResponse, error) {
 	out := new(AssetLoopInFallbackResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.AssetLoopInServer/AssetLoopInFallback", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *assetLoopInServerClient) CommitAssetLoopIn(ctx context.Context, in *CommitAssetLoopInRequest, opts ...grpc.CallOption) (*AssetLoopInStatus, error) {
-	out := new(AssetLoopInStatus)
-	err := c.cc.Invoke(ctx, "/looprpc.AssetLoopInServer/CommitAssetLoopIn", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -102,10 +82,8 @@ func (c *assetLoopInServerClient) ReportAssetLoopInRefund(ctx context.Context, i
 // All implementations must embed UnimplementedAssetLoopInServerServer
 // for forward compatibility
 type AssetLoopInServerServer interface {
-	CreateAssetLoopIn(context.Context, *CreateAssetLoopInRequest) (*AssetLoopInStatus, error)
 	PrepareAssetLoopIn(context.Context, *PrepareAssetLoopInRequest) (*AssetLoopInStatus, error)
 	AssetLoopInFallback(context.Context, *AssetLoopInReference) (*AssetLoopInFallbackResponse, error)
-	CommitAssetLoopIn(context.Context, *CommitAssetLoopInRequest) (*AssetLoopInStatus, error)
 	GetAssetLoopIn(context.Context, *AssetLoopInReference) (*AssetLoopInStatus, error)
 	CancelAssetLoopIn(context.Context, *AssetLoopInReference) (*AssetLoopInStatus, error)
 	ReportAssetLoopInRefund(context.Context, *ReportAssetLoopInRefundRequest) (*AssetLoopInStatus, error)
@@ -116,17 +94,11 @@ type AssetLoopInServerServer interface {
 type UnimplementedAssetLoopInServerServer struct {
 }
 
-func (UnimplementedAssetLoopInServerServer) CreateAssetLoopIn(context.Context, *CreateAssetLoopInRequest) (*AssetLoopInStatus, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateAssetLoopIn not implemented")
-}
 func (UnimplementedAssetLoopInServerServer) PrepareAssetLoopIn(context.Context, *PrepareAssetLoopInRequest) (*AssetLoopInStatus, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PrepareAssetLoopIn not implemented")
 }
 func (UnimplementedAssetLoopInServerServer) AssetLoopInFallback(context.Context, *AssetLoopInReference) (*AssetLoopInFallbackResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssetLoopInFallback not implemented")
-}
-func (UnimplementedAssetLoopInServerServer) CommitAssetLoopIn(context.Context, *CommitAssetLoopInRequest) (*AssetLoopInStatus, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CommitAssetLoopIn not implemented")
 }
 func (UnimplementedAssetLoopInServerServer) GetAssetLoopIn(context.Context, *AssetLoopInReference) (*AssetLoopInStatus, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAssetLoopIn not implemented")
@@ -148,24 +120,6 @@ type UnsafeAssetLoopInServerServer interface {
 
 func RegisterAssetLoopInServerServer(s grpc.ServiceRegistrar, srv AssetLoopInServerServer) {
 	s.RegisterService(&AssetLoopInServer_ServiceDesc, srv)
-}
-
-func _AssetLoopInServer_CreateAssetLoopIn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateAssetLoopInRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AssetLoopInServerServer).CreateAssetLoopIn(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/looprpc.AssetLoopInServer/CreateAssetLoopIn",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AssetLoopInServerServer).CreateAssetLoopIn(ctx, req.(*CreateAssetLoopInRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _AssetLoopInServer_PrepareAssetLoopIn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -200,24 +154,6 @@ func _AssetLoopInServer_AssetLoopInFallback_Handler(srv interface{}, ctx context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AssetLoopInServerServer).AssetLoopInFallback(ctx, req.(*AssetLoopInReference))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AssetLoopInServer_CommitAssetLoopIn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CommitAssetLoopInRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AssetLoopInServerServer).CommitAssetLoopIn(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/looprpc.AssetLoopInServer/CommitAssetLoopIn",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AssetLoopInServerServer).CommitAssetLoopIn(ctx, req.(*CommitAssetLoopInRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -284,20 +220,12 @@ var AssetLoopInServer_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AssetLoopInServerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateAssetLoopIn",
-			Handler:    _AssetLoopInServer_CreateAssetLoopIn_Handler,
-		},
-		{
 			MethodName: "PrepareAssetLoopIn",
 			Handler:    _AssetLoopInServer_PrepareAssetLoopIn_Handler,
 		},
 		{
 			MethodName: "AssetLoopInFallback",
 			Handler:    _AssetLoopInServer_AssetLoopInFallback_Handler,
-		},
-		{
-			MethodName: "CommitAssetLoopIn",
-			Handler:    _AssetLoopInServer_CommitAssetLoopIn_Handler,
 		},
 		{
 			MethodName: "GetAssetLoopIn",

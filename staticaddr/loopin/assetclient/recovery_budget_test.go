@@ -18,7 +18,7 @@ import (
 )
 
 type preimageServer struct {
-	swapserverrpc.AssetLoopInServerClient
+	Server
 	get func(context.Context) (*swapserverrpc.AssetLoopInStatus, error)
 }
 

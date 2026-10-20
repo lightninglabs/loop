@@ -3420,9 +3420,13 @@ type GetInfoResponse struct {
 	// The Git commit hash the Loop binary build was based on. If the build had
 	// uncommited changes, this field will contain the most recent commit hash,
 	// suffixed by "-dirty".
-	CommitHash    string `protobuf:"bytes,9,opt,name=commit_hash,json=commitHash,proto3" json:"commit_hash,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CommitHash string `protobuf:"bytes,9,opt,name=commit_hash,json=commitHash,proto3" json:"commit_hash,omitempty"`
+	// The daemon supports and has enabled asset parameters on the existing
+	// static-address RPCs. Clients must check this before sending them: older
+	// daemons ignore unknown protobuf fields and must not run a Bitcoin swap.
+	AssetStaticLoopIn bool `protobuf:"varint,10,opt,name=asset_static_loop_in,json=assetStaticLoopIn,proto3" json:"asset_static_loop_in,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GetInfoResponse) Reset() {
@@ -3516,6 +3520,13 @@ func (x *GetInfoResponse) GetCommitHash() string {
 		return x.CommitHash
 	}
 	return ""
+}
+
+func (x *GetInfoResponse) GetAssetStaticLoopIn() bool {
+	if x != nil {
+		return x.AssetStaticLoopIn
+	}
+	return false
 }
 
 type GetLiquidityParamsRequest struct {
@@ -5425,7 +5436,10 @@ type ListStaticAddressDepositsRequest struct {
 	// Filters the list of all stored deposits by deposit state.
 	StateFilter DepositState `protobuf:"varint,1,opt,name=state_filter,json=stateFilter,proto3,enum=looprpc.DepositState" json:"state_filter,omitempty"`
 	// Filters the list of all stored deposits by the outpoint.
-	Outpoints     []string `protobuf:"bytes,2,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
+	Outpoints []string `protobuf:"bytes,2,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
+	// Select native asset deposits. The default keeps the Bitcoin listing.
+	// state_filter is not supported for asset deposits.
+	AssetsOnly    bool `protobuf:"varint,3,opt,name=assets_only,json=assetsOnly,proto3" json:"assets_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5474,12 +5488,21 @@ func (x *ListStaticAddressDepositsRequest) GetOutpoints() []string {
 	return nil
 }
 
+func (x *ListStaticAddressDepositsRequest) GetAssetsOnly() bool {
+	if x != nil {
+		return x.AssetsOnly
+	}
+	return false
+}
+
 type ListStaticAddressDepositsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// A list of all deposits that match the filtered state.
 	FilteredDeposits []*Deposit `protobuf:"bytes,1,rep,name=filtered_deposits,json=filteredDeposits,proto3" json:"filtered_deposits,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Native asset quantities, returned only when assets_only is set.
+	AssetDeposits []*AssetDeposit `protobuf:"bytes,2,rep,name=asset_deposits,json=assetDeposits,proto3" json:"asset_deposits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListStaticAddressDepositsResponse) Reset() {
@@ -5515,6 +5538,13 @@ func (*ListStaticAddressDepositsResponse) Descriptor() ([]byte, []int) {
 func (x *ListStaticAddressDepositsResponse) GetFilteredDeposits() []*Deposit {
 	if x != nil {
 		return x.FilteredDeposits
+	}
+	return nil
+}
+
+func (x *ListStaticAddressDepositsResponse) GetAssetDeposits() []*AssetDeposit {
+	if x != nil {
+		return x.AssetDeposits
 	}
 	return nil
 }
@@ -5601,7 +5631,10 @@ func (x *ListStaticAddressWithdrawalResponse) GetWithdrawals() []*StaticAddressW
 }
 
 type ListStaticAddressSwapsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Select durable asset funding, swap and refund requests. The default
+	// keeps the Bitcoin swap listing.
+	AssetsOnly    bool `protobuf:"varint,1,opt,name=assets_only,json=assetsOnly,proto3" json:"assets_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5636,10 +5669,19 @@ func (*ListStaticAddressSwapsRequest) Descriptor() ([]byte, []int) {
 	return file_client_proto_rawDescGZIP(), []int{66}
 }
 
+func (x *ListStaticAddressSwapsRequest) GetAssetsOnly() bool {
+	if x != nil {
+		return x.AssetsOnly
+	}
+	return false
+}
+
 type ListStaticAddressSwapsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// A list of all swaps known static address loop-in swaps.
-	Swaps         []*StaticAddressLoopInSwap `protobuf:"bytes,1,rep,name=swaps,proto3" json:"swaps,omitempty"`
+	Swaps []*StaticAddressLoopInSwap `protobuf:"bytes,1,rep,name=swaps,proto3" json:"swaps,omitempty"`
+	// Includes requests still awaiting a server offer after a lost response.
+	AssetRequests []*AssetRequestStatus `protobuf:"bytes,2,rep,name=asset_requests,json=assetRequests,proto3" json:"asset_requests,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5677,6 +5719,13 @@ func (*ListStaticAddressSwapsResponse) Descriptor() ([]byte, []int) {
 func (x *ListStaticAddressSwapsResponse) GetSwaps() []*StaticAddressLoopInSwap {
 	if x != nil {
 		return x.Swaps
+	}
+	return nil
+}
+
+func (x *ListStaticAddressSwapsResponse) GetAssetRequests() []*AssetRequestStatus {
+	if x != nil {
+		return x.AssetRequests
 	}
 	return nil
 }
@@ -6271,7 +6320,12 @@ type StaticAddressLoopInRequest struct {
 	// canceled to allow the user to safe on transaction fees.
 	Amount int64 `protobuf:"varint,9,opt,name=amount,proto3" json:"amount,omitempty"`
 	// If set, request the server to use fast publication behavior.
-	Fast          bool `protobuf:"varint,10,opt,name=fast,proto3" json:"fast,omitempty"`
+	Fast bool `protobuf:"varint,10,opt,name=fast,proto3" json:"fast,omitempty"`
+	// Select a same-group asset payout using exactly one outpoint. Native
+	// quantities belong here; all Bitcoin-only options must remain unset.
+	// The request is journaled before contacting the server and returns an
+	// asset_request immediately. Retry the same request_id after ambiguity.
+	AssetParams   *AssetLoopInParams `protobuf:"bytes,11,opt,name=asset_params,json=assetParams,proto3" json:"asset_params,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6376,6 +6430,13 @@ func (x *StaticAddressLoopInRequest) GetFast() bool {
 	return false
 }
 
+func (x *StaticAddressLoopInRequest) GetAssetParams() *AssetLoopInParams {
+	if x != nil {
+		return x.AssetParams
+	}
+	return nil
+}
+
 type StaticAddressLoopInResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The swap hash that identifies this swap.
@@ -6416,7 +6477,10 @@ type StaticAddressLoopInResponse struct {
 	Change int64 `protobuf:"varint,14,opt,name=change,proto3" json:"change,omitempty"`
 	// If set, indicates that the server was requested to use fast publication
 	// behavior.
-	Fast          bool `protobuf:"varint,15,opt,name=fast,proto3" json:"fast,omitempty"`
+	Fast bool `protobuf:"varint,15,opt,name=fast,proto3" json:"fast,omitempty"`
+	// Present for an asset request, which may not have a swap hash yet.
+	// The Bitcoin quantity and fee fields remain unset for these requests.
+	AssetRequest  *AssetRequestStatus `protobuf:"bytes,16,opt,name=asset_request,json=assetRequest,proto3" json:"asset_request,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6554,6 +6618,13 @@ func (x *StaticAddressLoopInResponse) GetFast() bool {
 		return x.Fast
 	}
 	return false
+}
+
+func (x *StaticAddressLoopInResponse) GetAssetRequest() *AssetRequestStatus {
+	if x != nil {
+		return x.AssetRequest
+	}
+	return nil
 }
 
 type AssetLoopOutRequest struct {
@@ -7073,42 +7144,6 @@ func (x *CreateAssetDepositRequest) GetAmount() uint64 {
 	return 0
 }
 
-type ListAssetDepositsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAssetDepositsRequest) Reset() {
-	*x = ListAssetDepositsRequest{}
-	mi := &file_client_proto_msgTypes[82]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAssetDepositsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAssetDepositsRequest) ProtoMessage() {}
-
-func (x *ListAssetDepositsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[82]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAssetDepositsRequest.ProtoReflect.Descriptor instead.
-func (*ListAssetDepositsRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{82}
-}
-
 type AssetDeposit struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Outpoint           string                 `protobuf:"bytes,1,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
@@ -7124,7 +7159,7 @@ type AssetDeposit struct {
 
 func (x *AssetDeposit) Reset() {
 	*x = AssetDeposit{}
-	mi := &file_client_proto_msgTypes[83]
+	mi := &file_client_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7136,7 +7171,7 @@ func (x *AssetDeposit) String() string {
 func (*AssetDeposit) ProtoMessage() {}
 
 func (x *AssetDeposit) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[83]
+	mi := &file_client_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7149,7 +7184,7 @@ func (x *AssetDeposit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetDeposit.ProtoReflect.Descriptor instead.
 func (*AssetDeposit) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{83}
+	return file_client_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *AssetDeposit) GetOutpoint() string {
@@ -7201,56 +7236,11 @@ func (x *AssetDeposit) GetRefundHeight() uint32 {
 	return 0
 }
 
-type ListAssetDepositsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Deposits      []*AssetDeposit        `protobuf:"bytes,1,rep,name=deposits,proto3" json:"deposits,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAssetDepositsResponse) Reset() {
-	*x = ListAssetDepositsResponse{}
-	mi := &file_client_proto_msgTypes[84]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAssetDepositsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAssetDepositsResponse) ProtoMessage() {}
-
-func (x *ListAssetDepositsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[84]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAssetDepositsResponse.ProtoReflect.Descriptor instead.
-func (*ListAssetDepositsResponse) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{84}
-}
-
-func (x *ListAssetDepositsResponse) GetDeposits() []*AssetDeposit {
-	if x != nil {
-		return x.Deposits
-	}
-	return nil
-}
-
-// AssetStaticLoopInRequest currently accepts one whole isolated asset deposit.
-type AssetStaticLoopInRequest struct {
+// AssetLoopInParams uses native units for one whole isolated asset deposit.
+type AssetLoopInParams struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId []byte                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	GroupKey  []byte                 `protobuf:"bytes,2,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
-	Outpoint  string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
 	// Exact native Lightning payout. The entire deposit is spent; its excess
 	// over this amount must equal the server fee and fit max_asset_fee.
 	Amount        uint64 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
@@ -7260,21 +7250,21 @@ type AssetStaticLoopInRequest struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AssetStaticLoopInRequest) Reset() {
-	*x = AssetStaticLoopInRequest{}
-	mi := &file_client_proto_msgTypes[85]
+func (x *AssetLoopInParams) Reset() {
+	*x = AssetLoopInParams{}
+	mi := &file_client_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AssetStaticLoopInRequest) String() string {
+func (x *AssetLoopInParams) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AssetStaticLoopInRequest) ProtoMessage() {}
+func (*AssetLoopInParams) ProtoMessage() {}
 
-func (x *AssetStaticLoopInRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[85]
+func (x *AssetLoopInParams) ProtoReflect() protoreflect.Message {
+	mi := &file_client_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7285,47 +7275,40 @@ func (x *AssetStaticLoopInRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AssetStaticLoopInRequest.ProtoReflect.Descriptor instead.
-func (*AssetStaticLoopInRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{85}
+// Deprecated: Use AssetLoopInParams.ProtoReflect.Descriptor instead.
+func (*AssetLoopInParams) Descriptor() ([]byte, []int) {
+	return file_client_proto_rawDescGZIP(), []int{83}
 }
 
-func (x *AssetStaticLoopInRequest) GetRequestId() []byte {
+func (x *AssetLoopInParams) GetRequestId() []byte {
 	if x != nil {
 		return x.RequestId
 	}
 	return nil
 }
 
-func (x *AssetStaticLoopInRequest) GetGroupKey() []byte {
+func (x *AssetLoopInParams) GetGroupKey() []byte {
 	if x != nil {
 		return x.GroupKey
 	}
 	return nil
 }
 
-func (x *AssetStaticLoopInRequest) GetOutpoint() string {
-	if x != nil {
-		return x.Outpoint
-	}
-	return ""
-}
-
-func (x *AssetStaticLoopInRequest) GetAmount() uint64 {
+func (x *AssetLoopInParams) GetAmount() uint64 {
 	if x != nil {
 		return x.Amount
 	}
 	return 0
 }
 
-func (x *AssetStaticLoopInRequest) GetMaxAssetDebit() uint64 {
+func (x *AssetLoopInParams) GetMaxAssetDebit() uint64 {
 	if x != nil {
 		return x.MaxAssetDebit
 	}
 	return 0
 }
 
-func (x *AssetStaticLoopInRequest) GetMaxAssetFee() uint64 {
+func (x *AssetLoopInParams) GetMaxAssetFee() uint64 {
 	if x != nil {
 		return x.MaxAssetFee
 	}
@@ -7347,7 +7330,7 @@ type AssetRequestStatus struct {
 
 func (x *AssetRequestStatus) Reset() {
 	*x = AssetRequestStatus{}
-	mi := &file_client_proto_msgTypes[86]
+	mi := &file_client_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7359,7 +7342,7 @@ func (x *AssetRequestStatus) String() string {
 func (*AssetRequestStatus) ProtoMessage() {}
 
 func (x *AssetRequestStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[86]
+	mi := &file_client_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7372,7 +7355,7 @@ func (x *AssetRequestStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetRequestStatus.ProtoReflect.Descriptor instead.
 func (*AssetRequestStatus) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{86}
+	return file_client_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *AssetRequestStatus) GetRequestId() []byte {
@@ -7410,86 +7393,6 @@ func (x *AssetRequestStatus) GetRefundRequest() bool {
 	return false
 }
 
-type ListAssetStaticLoopInsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAssetStaticLoopInsRequest) Reset() {
-	*x = ListAssetStaticLoopInsRequest{}
-	mi := &file_client_proto_msgTypes[87]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAssetStaticLoopInsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAssetStaticLoopInsRequest) ProtoMessage() {}
-
-func (x *ListAssetStaticLoopInsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[87]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAssetStaticLoopInsRequest.ProtoReflect.Descriptor instead.
-func (*ListAssetStaticLoopInsRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{87}
-}
-
-type ListAssetStaticLoopInsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Requests      []*AssetRequestStatus  `protobuf:"bytes,1,rep,name=requests,proto3" json:"requests,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAssetStaticLoopInsResponse) Reset() {
-	*x = ListAssetStaticLoopInsResponse{}
-	mi := &file_client_proto_msgTypes[88]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAssetStaticLoopInsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAssetStaticLoopInsResponse) ProtoMessage() {}
-
-func (x *ListAssetStaticLoopInsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[88]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAssetStaticLoopInsResponse.ProtoReflect.Descriptor instead.
-func (*ListAssetStaticLoopInsResponse) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{88}
-}
-
-func (x *ListAssetStaticLoopInsResponse) GetRequests() []*AssetRequestStatus {
-	if x != nil {
-		return x.Requests
-	}
-	return nil
-}
-
 type RefundAssetDepositRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Canonical txid:index of the original asset deposit.
@@ -7500,7 +7403,7 @@ type RefundAssetDepositRequest struct {
 
 func (x *RefundAssetDepositRequest) Reset() {
 	*x = RefundAssetDepositRequest{}
-	mi := &file_client_proto_msgTypes[89]
+	mi := &file_client_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7512,7 +7415,7 @@ func (x *RefundAssetDepositRequest) String() string {
 func (*RefundAssetDepositRequest) ProtoMessage() {}
 
 func (x *RefundAssetDepositRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[89]
+	mi := &file_client_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7525,7 +7428,7 @@ func (x *RefundAssetDepositRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefundAssetDepositRequest.ProtoReflect.Descriptor instead.
 func (*RefundAssetDepositRequest) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{89}
+	return file_client_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *RefundAssetDepositRequest) GetOutpoint() string {
@@ -7731,7 +7634,7 @@ const file_client_proto_rawDesc = "" +
 	"fail_count\x18\x03 \x01(\x04R\tfailCount\x12&\n" +
 	"\x0fsum_pending_amt\x18\x04 \x01(\x03R\rsumPendingAmt\x12*\n" +
 	"\x11sum_succeeded_amt\x18\x05 \x01(\x03R\x0fsumSucceededAmt\"\x10\n" +
-	"\x0eGetInfoRequest\"\xe1\x02\n" +
+	"\x0eGetInfoRequest\"\x92\x03\n" +
 	"\x0fGetInfoResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x1d\n" +
@@ -7744,7 +7647,9 @@ const file_client_proto_rawDesc = "" +
 	"\x0eloop_out_stats\x18\a \x01(\v2\x12.looprpc.LoopStatsR\floopOutStats\x126\n" +
 	"\rloop_in_stats\x18\b \x01(\v2\x12.looprpc.LoopStatsR\vloopInStats\x12\x1f\n" +
 	"\vcommit_hash\x18\t \x01(\tR\n" +
-	"commitHash\"\x1b\n" +
+	"commitHash\x12/\n" +
+	"\x14asset_static_loop_in\x18\n" +
+	" \x01(\bR\x11assetStaticLoopIn\"\x1b\n" +
 	"\x19GetLiquidityParamsRequest\"\x8b\f\n" +
 	"\x13LiquidityParameters\x12,\n" +
 	"\x05rules\x18\x01 \x03(\v2\x16.looprpc.LiquidityRuleR\x05rules\x12\x17\n" +
@@ -7872,18 +7777,24 @@ const file_client_proto_rawDesc = "" +
 	"\x06amount\x18\x05 \x01(\x03R\x06amount\"b\n" +
 	"\x18WithdrawDepositsResponse\x12,\n" +
 	"\x12withdrawal_tx_hash\x18\x01 \x01(\tR\x10withdrawalTxHash\x12\x18\n" +
-	"\aaddress\x18\x02 \x01(\tR\aaddress\"z\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\"\x9b\x01\n" +
 	" ListStaticAddressDepositsRequest\x128\n" +
 	"\fstate_filter\x18\x01 \x01(\x0e2\x15.looprpc.DepositStateR\vstateFilter\x12\x1c\n" +
-	"\toutpoints\x18\x02 \x03(\tR\toutpoints\"b\n" +
+	"\toutpoints\x18\x02 \x03(\tR\toutpoints\x12\x1f\n" +
+	"\vassets_only\x18\x03 \x01(\bR\n" +
+	"assetsOnly\"\xa0\x01\n" +
 	"!ListStaticAddressDepositsResponse\x12=\n" +
-	"\x11filtered_deposits\x18\x01 \x03(\v2\x10.looprpc.DepositR\x10filteredDeposits\"$\n" +
+	"\x11filtered_deposits\x18\x01 \x03(\v2\x10.looprpc.DepositR\x10filteredDeposits\x12<\n" +
+	"\x0easset_deposits\x18\x02 \x03(\v2\x15.looprpc.AssetDepositR\rassetDeposits\"$\n" +
 	"\"ListStaticAddressWithdrawalRequest\"i\n" +
 	"#ListStaticAddressWithdrawalResponse\x12B\n" +
-	"\vwithdrawals\x18\x01 \x03(\v2 .looprpc.StaticAddressWithdrawalR\vwithdrawals\"\x1f\n" +
-	"\x1dListStaticAddressSwapsRequest\"X\n" +
+	"\vwithdrawals\x18\x01 \x03(\v2 .looprpc.StaticAddressWithdrawalR\vwithdrawals\"@\n" +
+	"\x1dListStaticAddressSwapsRequest\x12\x1f\n" +
+	"\vassets_only\x18\x01 \x01(\bR\n" +
+	"assetsOnly\"\x9c\x01\n" +
 	"\x1eListStaticAddressSwapsResponse\x126\n" +
-	"\x05swaps\x18\x01 \x03(\v2 .looprpc.StaticAddressLoopInSwapR\x05swaps\"\x1d\n" +
+	"\x05swaps\x18\x01 \x03(\v2 .looprpc.StaticAddressLoopInSwapR\x05swaps\x12B\n" +
+	"\x0easset_requests\x18\x02 \x03(\v2\x1b.looprpc.AssetRequestStatusR\rassetRequests\"\x1d\n" +
 	"\x1bStaticAddressSummaryRequest\"\xca\x04\n" +
 	"\x1cStaticAddressSummaryResponse\x12%\n" +
 	"\x0estatic_address\x18\x01 \x01(\tR\rstaticAddress\x124\n" +
@@ -7928,7 +7839,7 @@ const file_client_proto_rawDesc = "" +
 	"\fcost_onchain\x18\n" +
 	" \x01(\x03R\vcostOnchain\x12#\n" +
 	"\rcost_offchain\x18\v \x01(\x03R\fcostOffchain\x12J\n" +
-	"\x13cost_onchain_status\x18\f \x01(\x0e2\x1a.looprpc.OnchainCostStatusR\x11costOnchainStatus\"\xef\x02\n" +
+	"\x13cost_onchain_status\x18\f \x01(\x0e2\x1a.looprpc.OnchainCostStatusR\x11costOnchainStatus\"\xae\x03\n" +
 	"\x1aStaticAddressLoopInRequest\x12\x1c\n" +
 	"\toutpoints\x18\x01 \x03(\tR\toutpoints\x121\n" +
 	"\x15max_swap_fee_satoshis\x18\x02 \x01(\x03R\x12maxSwapFeeSatoshis\x12\x19\n" +
@@ -7941,7 +7852,8 @@ const file_client_proto_rawDesc = "" +
 	"\x17payment_timeout_seconds\x18\b \x01(\rR\x15paymentTimeoutSeconds\x12\x16\n" +
 	"\x06amount\x18\t \x01(\x03R\x06amount\x12\x12\n" +
 	"\x04fast\x18\n" +
-	" \x01(\bR\x04fast\"\xb9\x04\n" +
+	" \x01(\bR\x04fast\x12=\n" +
+	"\fasset_params\x18\v \x01(\v2\x1a.looprpc.AssetLoopInParamsR\vassetParams\"\xfb\x04\n" +
 	"\x1bStaticAddressLoopInResponse\x12\x1b\n" +
 	"\tswap_hash\x18\x01 \x01(\fR\bswapHash\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x16\n" +
@@ -7959,7 +7871,8 @@ const file_client_proto_rawDesc = "" +
 	"\vswap_amount\x18\r \x01(\x04R\n" +
 	"swapAmount\x12\x16\n" +
 	"\x06change\x18\x0e \x01(\x03R\x06change\x12\x12\n" +
-	"\x04fast\x18\x0f \x01(\bR\x04fast\"\xa2\x01\n" +
+	"\x04fast\x18\x0f \x01(\bR\x04fast\x12@\n" +
+	"\rasset_request\x18\x10 \x01(\v2\x1b.looprpc.AssetRequestStatusR\fassetRequest\"\xa2\x01\n" +
 	"\x13AssetLoopOutRequest\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\fR\aassetId\x12&\n" +
 	"\x0fasset_edge_node\x18\x02 \x01(\fR\rassetEdgeNode\x120\n" +
@@ -7996,8 +7909,7 @@ const file_client_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\fR\trequestId\x12\x1b\n" +
 	"\tgroup_key\x18\x02 \x01(\fR\bgroupKey\x12\x16\n" +
-	"\x06amount\x18\x03 \x01(\x04R\x06amount\"\x1a\n" +
-	"\x18ListAssetDepositsRequest\"\xf0\x01\n" +
+	"\x06amount\x18\x03 \x01(\x04R\x06amount\"\xf0\x01\n" +
 	"\fAssetDeposit\x12\x1a\n" +
 	"\boutpoint\x18\x01 \x01(\tR\boutpoint\x12\x1b\n" +
 	"\tgroup_key\x18\x02 \x01(\fR\bgroupKey\x12\x16\n" +
@@ -8006,14 +7918,11 @@ const file_client_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x05 \x01(\fR\trequestId\x12\x1a\n" +
 	"\bconsumed\x18\x06 \x01(\bR\bconsumed\x12#\n" +
-	"\rrefund_height\x18\a \x01(\rR\frefundHeight\"N\n" +
-	"\x19ListAssetDepositsResponse\x121\n" +
-	"\bdeposits\x18\x01 \x03(\v2\x15.looprpc.AssetDepositR\bdeposits\"\xd6\x01\n" +
-	"\x18AssetStaticLoopInRequest\x12\x1d\n" +
+	"\rrefund_height\x18\a \x01(\rR\frefundHeight\"\xb3\x01\n" +
+	"\x11AssetLoopInParams\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\fR\trequestId\x12\x1b\n" +
-	"\tgroup_key\x18\x02 \x01(\fR\bgroupKey\x12\x1a\n" +
-	"\boutpoint\x18\x03 \x01(\tR\boutpoint\x12\x16\n" +
+	"\tgroup_key\x18\x02 \x01(\fR\bgroupKey\x12\x16\n" +
 	"\x06amount\x18\x04 \x01(\x04R\x06amount\x12&\n" +
 	"\x0fmax_asset_debit\x18\x05 \x01(\x04R\rmaxAssetDebit\x12\"\n" +
 	"\rmax_asset_fee\x18\x06 \x01(\x04R\vmaxAssetFee\"\xbc\x01\n" +
@@ -8023,10 +7932,7 @@ const file_client_proto_rawDesc = "" +
 	"\fpayment_hash\x18\x02 \x01(\fR\vpaymentHash\x12\x14\n" +
 	"\x05state\x18\x03 \x01(\tR\x05state\x12'\n" +
 	"\x0fdeposit_request\x18\x04 \x01(\bR\x0edepositRequest\x12%\n" +
-	"\x0erefund_request\x18\x05 \x01(\bR\rrefundRequest\"\x1f\n" +
-	"\x1dListAssetStaticLoopInsRequest\"Y\n" +
-	"\x1eListAssetStaticLoopInsResponse\x127\n" +
-	"\brequests\x18\x01 \x03(\v2\x1b.looprpc.AssetRequestStatusR\brequests\"7\n" +
+	"\x0erefund_request\x18\x05 \x01(\bR\rrefundRequest\"7\n" +
 	"\x19RefundAssetDepositRequest\x12\x1a\n" +
 	"\boutpoint\x18\x01 \x01(\tR\boutpoint*;\n" +
 	"\vAddressType\x12\x18\n" +
@@ -8114,7 +8020,7 @@ const file_client_proto_rawDesc = "" +
 	"\x1eSUCCEEDED_TRANSITIONING_FAILED\x10\t\x12\x13\n" +
 	"\x0fUNLOCK_DEPOSITS\x10\n" +
 	"\x12\x1e\n" +
-	"\x1aFAILED_STATIC_ADDRESS_SWAP\x10\v2\x94\x18\n" +
+	"\x1aFAILED_STATIC_ADDRESS_SWAP\x10\v2\xf8\x15\n" +
 	"\n" +
 	"SwapClient\x129\n" +
 	"\aLoopOut\x12\x17.looprpc.LoopOutRequest\x1a\x15.looprpc.SwapResponse\x127\n" +
@@ -8153,10 +8059,7 @@ const file_client_proto_rawDesc = "" +
 	"\x13StaticAddressLoopIn\x12#.looprpc.StaticAddressLoopInRequest\x1a$.looprpc.StaticAddressLoopInResponse\x12Z\n" +
 	"\x11StaticOpenChannel\x12!.looprpc.StaticOpenChannelRequest\x1a\".looprpc.StaticOpenChannelResponse\x12U\n" +
 	"\x12RefundAssetDeposit\x12\".looprpc.RefundAssetDepositRequest\x1a\x1b.looprpc.AssetRequestStatus\x12U\n" +
-	"\x12CreateAssetDeposit\x12\".looprpc.CreateAssetDepositRequest\x1a\x1b.looprpc.AssetRequestStatus\x12Z\n" +
-	"\x11ListAssetDeposits\x12!.looprpc.ListAssetDepositsRequest\x1a\".looprpc.ListAssetDepositsResponse\x12S\n" +
-	"\x11AssetStaticLoopIn\x12!.looprpc.AssetStaticLoopInRequest\x1a\x1b.looprpc.AssetRequestStatus\x12i\n" +
-	"\x16ListAssetStaticLoopIns\x12&.looprpc.ListAssetStaticLoopInsRequest\x1a'.looprpc.ListAssetStaticLoopInsResponseB'Z%github.com/lightninglabs/loop/looprpcb\x06proto3"
+	"\x12CreateAssetDeposit\x12\".looprpc.CreateAssetDepositRequest\x1a\x1b.looprpc.AssetRequestStatusB'Z%github.com/lightninglabs/loop/looprpcb\x06proto3"
 
 var (
 	file_client_proto_rawDescOnce sync.Once
@@ -8171,7 +8074,7 @@ func file_client_proto_rawDescGZIP() []byte {
 }
 
 var file_client_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_client_proto_msgTypes = make([]protoimpl.MessageInfo, 91)
+var file_client_proto_msgTypes = make([]protoimpl.MessageInfo, 87)
 var file_client_proto_goTypes = []any{
 	(AddressType)(0),                            // 0: looprpc.AddressType
 	(SwapType)(0),                               // 1: looprpc.SwapType
@@ -8266,25 +8169,21 @@ var file_client_proto_goTypes = []any{
 	(*StatelessRecovery)(nil),                   // 90: looprpc.StatelessRecovery
 	(*CooperativeSweep)(nil),                    // 91: looprpc.CooperativeSweep
 	(*CreateAssetDepositRequest)(nil),           // 92: looprpc.CreateAssetDepositRequest
-	(*ListAssetDepositsRequest)(nil),            // 93: looprpc.ListAssetDepositsRequest
-	(*AssetDeposit)(nil),                        // 94: looprpc.AssetDeposit
-	(*ListAssetDepositsResponse)(nil),           // 95: looprpc.ListAssetDepositsResponse
-	(*AssetStaticLoopInRequest)(nil),            // 96: looprpc.AssetStaticLoopInRequest
-	(*AssetRequestStatus)(nil),                  // 97: looprpc.AssetRequestStatus
-	(*ListAssetStaticLoopInsRequest)(nil),       // 98: looprpc.ListAssetStaticLoopInsRequest
-	(*ListAssetStaticLoopInsResponse)(nil),      // 99: looprpc.ListAssetStaticLoopInsResponse
-	(*RefundAssetDepositRequest)(nil),           // 100: looprpc.RefundAssetDepositRequest
-	nil,                                         // 101: looprpc.LiquidityParameters.EasyAssetParamsEntry
-	(*lnrpc.OpenChannelRequest)(nil),            // 102: lnrpc.OpenChannelRequest
-	(*swapserverrpc.RouteHint)(nil),             // 103: looprpc.RouteHint
-	(*lnrpc.OutPoint)(nil),                      // 104: lnrpc.OutPoint
+	(*AssetDeposit)(nil),                        // 93: looprpc.AssetDeposit
+	(*AssetLoopInParams)(nil),                   // 94: looprpc.AssetLoopInParams
+	(*AssetRequestStatus)(nil),                  // 95: looprpc.AssetRequestStatus
+	(*RefundAssetDepositRequest)(nil),           // 96: looprpc.RefundAssetDepositRequest
+	nil,                                         // 97: looprpc.LiquidityParameters.EasyAssetParamsEntry
+	(*lnrpc.OpenChannelRequest)(nil),            // 98: lnrpc.OpenChannelRequest
+	(*swapserverrpc.RouteHint)(nil),             // 99: looprpc.RouteHint
+	(*lnrpc.OutPoint)(nil),                      // 100: lnrpc.OutPoint
 }
 var file_client_proto_depIdxs = []int32{
-	102, // 0: looprpc.StaticOpenChannelRequest.open_channel_request:type_name -> lnrpc.OpenChannelRequest
+	98,  // 0: looprpc.StaticOpenChannelRequest.open_channel_request:type_name -> lnrpc.OpenChannelRequest
 	0,   // 1: looprpc.LoopOutRequest.account_addr_type:type_name -> looprpc.AddressType
 	86,  // 2: looprpc.LoopOutRequest.asset_info:type_name -> looprpc.AssetLoopOutRequest
 	87,  // 3: looprpc.LoopOutRequest.asset_rfq_info:type_name -> looprpc.AssetRfqInfo
-	103, // 4: looprpc.LoopInRequest.route_hints:type_name -> looprpc.RouteHint
+	99,  // 4: looprpc.LoopInRequest.route_hints:type_name -> looprpc.RouteHint
 	1,   // 5: looprpc.SwapStatus.type:type_name -> looprpc.SwapType
 	2,   // 6: looprpc.SwapStatus.state:type_name -> looprpc.SwapState
 	9,   // 7: looprpc.SwapStatus.static_loop_in_state:type_name -> looprpc.StaticAddressLoopInSwapState
@@ -8298,16 +8197,16 @@ var file_client_proto_depIdxs = []int32{
 	25,  // 15: looprpc.SweepHtlcResponse.not_requested:type_name -> looprpc.PublishNotRequested
 	26,  // 16: looprpc.SweepHtlcResponse.published:type_name -> looprpc.PublishSucceeded
 	27,  // 17: looprpc.SweepHtlcResponse.failed:type_name -> looprpc.PublishFailed
-	103, // 18: looprpc.QuoteRequest.loop_in_route_hints:type_name -> looprpc.RouteHint
+	99,  // 18: looprpc.QuoteRequest.loop_in_route_hints:type_name -> looprpc.RouteHint
 	86,  // 19: looprpc.QuoteRequest.asset_info:type_name -> looprpc.AssetLoopOutRequest
 	87,  // 20: looprpc.OutQuoteResponse.asset_rfq_info:type_name -> looprpc.AssetRfqInfo
-	103, // 21: looprpc.ProbeRequest.route_hints:type_name -> looprpc.RouteHint
+	99,  // 21: looprpc.ProbeRequest.route_hints:type_name -> looprpc.RouteHint
 	41,  // 22: looprpc.TokensResponse.tokens:type_name -> looprpc.L402Token
 	42,  // 23: looprpc.GetInfoResponse.loop_out_stats:type_name -> looprpc.LoopStats
 	42,  // 24: looprpc.GetInfoResponse.loop_in_stats:type_name -> looprpc.LoopStats
 	48,  // 25: looprpc.LiquidityParameters.rules:type_name -> looprpc.LiquidityRule
 	0,   // 26: looprpc.LiquidityParameters.account_addr_type:type_name -> looprpc.AddressType
-	101, // 27: looprpc.LiquidityParameters.easy_asset_params:type_name -> looprpc.LiquidityParameters.EasyAssetParamsEntry
+	97,  // 27: looprpc.LiquidityParameters.easy_asset_params:type_name -> looprpc.LiquidityParameters.EasyAssetParamsEntry
 	4,   // 28: looprpc.LiquidityParameters.loop_in_source:type_name -> looprpc.LoopInSource
 	1,   // 29: looprpc.LiquidityRule.swap_type:type_name -> looprpc.SwapType
 	5,   // 30: looprpc.LiquidityRule.type:type_name -> looprpc.LiquidityRuleType
@@ -8320,105 +8219,101 @@ var file_client_proto_depIdxs = []int32{
 	58,  // 37: looprpc.ListReservationsResponse.reservations:type_name -> looprpc.ClientReservation
 	65,  // 38: looprpc.ListInstantOutsResponse.swaps:type_name -> looprpc.InstantOut
 	70,  // 39: looprpc.ListUnspentDepositsResponse.utxos:type_name -> looprpc.Utxo
-	104, // 40: looprpc.WithdrawDepositsRequest.outpoints:type_name -> lnrpc.OutPoint
+	100, // 40: looprpc.WithdrawDepositsRequest.outpoints:type_name -> lnrpc.OutPoint
 	7,   // 41: looprpc.ListStaticAddressDepositsRequest.state_filter:type_name -> looprpc.DepositState
 	81,  // 42: looprpc.ListStaticAddressDepositsResponse.filtered_deposits:type_name -> looprpc.Deposit
-	82,  // 43: looprpc.ListStaticAddressWithdrawalResponse.withdrawals:type_name -> looprpc.StaticAddressWithdrawal
-	83,  // 44: looprpc.ListStaticAddressSwapsResponse.swaps:type_name -> looprpc.StaticAddressLoopInSwap
-	7,   // 45: looprpc.Deposit.state:type_name -> looprpc.DepositState
-	8,   // 46: looprpc.Deposit.cost_onchain_status:type_name -> looprpc.OnchainCostStatus
-	81,  // 47: looprpc.StaticAddressWithdrawal.deposits:type_name -> looprpc.Deposit
-	9,   // 48: looprpc.StaticAddressLoopInSwap.state:type_name -> looprpc.StaticAddressLoopInSwapState
-	81,  // 49: looprpc.StaticAddressLoopInSwap.deposits:type_name -> looprpc.Deposit
-	8,   // 50: looprpc.StaticAddressLoopInSwap.cost_onchain_status:type_name -> looprpc.OnchainCostStatus
-	103, // 51: looprpc.StaticAddressLoopInRequest.route_hints:type_name -> looprpc.RouteHint
-	81,  // 52: looprpc.StaticAddressLoopInResponse.used_deposits:type_name -> looprpc.Deposit
-	88,  // 53: looprpc.AssetRfqInfo.prepay_asset_rate:type_name -> looprpc.FixedPoint
-	88,  // 54: looprpc.AssetRfqInfo.swap_asset_rate:type_name -> looprpc.FixedPoint
-	94,  // 55: looprpc.ListAssetDepositsResponse.deposits:type_name -> looprpc.AssetDeposit
-	97,  // 56: looprpc.ListAssetStaticLoopInsResponse.requests:type_name -> looprpc.AssetRequestStatus
-	47,  // 57: looprpc.LiquidityParameters.EasyAssetParamsEntry.value:type_name -> looprpc.EasyAssetAutoloopParams
-	15,  // 58: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
-	16,  // 59: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
-	18,  // 60: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
-	20,  // 61: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
-	23,  // 62: looprpc.SwapClient.SweepHtlc:input_type -> looprpc.SweepHtlcRequest
-	28,  // 63: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
-	54,  // 64: looprpc.SwapClient.AbandonSwap:input_type -> looprpc.AbandonSwapRequest
-	29,  // 65: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
-	32,  // 66: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
-	29,  // 67: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
-	32,  // 68: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
-	35,  // 69: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
-	37,  // 70: looprpc.SwapClient.GetL402Tokens:input_type -> looprpc.TokensRequest
-	37,  // 71: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
-	39,  // 72: looprpc.SwapClient.FetchL402Token:input_type -> looprpc.FetchL402TokenRequest
-	43,  // 73: looprpc.SwapClient.GetInfo:input_type -> looprpc.GetInfoRequest
-	13,  // 74: looprpc.SwapClient.StopDaemon:input_type -> looprpc.StopDaemonRequest
-	45,  // 75: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
-	49,  // 76: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
-	51,  // 77: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
-	56,  // 78: looprpc.SwapClient.ListReservations:input_type -> looprpc.ListReservationsRequest
-	59,  // 79: looprpc.SwapClient.InstantOut:input_type -> looprpc.InstantOutRequest
-	61,  // 80: looprpc.SwapClient.InstantOutQuote:input_type -> looprpc.InstantOutQuoteRequest
-	63,  // 81: looprpc.SwapClient.ListInstantOuts:input_type -> looprpc.ListInstantOutsRequest
-	66,  // 82: looprpc.SwapClient.NewStaticAddress:input_type -> looprpc.NewStaticAddressRequest
-	68,  // 83: looprpc.SwapClient.ListUnspentDeposits:input_type -> looprpc.ListUnspentDepositsRequest
-	71,  // 84: looprpc.SwapClient.WithdrawDeposits:input_type -> looprpc.WithdrawDepositsRequest
-	73,  // 85: looprpc.SwapClient.ListStaticAddressDeposits:input_type -> looprpc.ListStaticAddressDepositsRequest
-	75,  // 86: looprpc.SwapClient.ListStaticAddressWithdrawals:input_type -> looprpc.ListStaticAddressWithdrawalRequest
-	77,  // 87: looprpc.SwapClient.ListStaticAddressSwaps:input_type -> looprpc.ListStaticAddressSwapsRequest
-	79,  // 88: looprpc.SwapClient.GetStaticAddressSummary:input_type -> looprpc.StaticAddressSummaryRequest
-	84,  // 89: looprpc.SwapClient.StaticAddressLoopIn:input_type -> looprpc.StaticAddressLoopInRequest
-	11,  // 90: looprpc.SwapClient.StaticOpenChannel:input_type -> looprpc.StaticOpenChannelRequest
-	100, // 91: looprpc.SwapClient.RefundAssetDeposit:input_type -> looprpc.RefundAssetDepositRequest
-	92,  // 92: looprpc.SwapClient.CreateAssetDeposit:input_type -> looprpc.CreateAssetDepositRequest
-	93,  // 93: looprpc.SwapClient.ListAssetDeposits:input_type -> looprpc.ListAssetDepositsRequest
-	96,  // 94: looprpc.SwapClient.AssetStaticLoopIn:input_type -> looprpc.AssetStaticLoopInRequest
-	98,  // 95: looprpc.SwapClient.ListAssetStaticLoopIns:input_type -> looprpc.ListAssetStaticLoopInsRequest
-	17,  // 96: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
-	17,  // 97: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
-	19,  // 98: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
-	22,  // 99: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
-	24,  // 100: looprpc.SwapClient.SweepHtlc:output_type -> looprpc.SweepHtlcResponse
-	19,  // 101: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
-	55,  // 102: looprpc.SwapClient.AbandonSwap:output_type -> looprpc.AbandonSwapResponse
-	31,  // 103: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
-	34,  // 104: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
-	30,  // 105: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
-	33,  // 106: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
-	36,  // 107: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
-	38,  // 108: looprpc.SwapClient.GetL402Tokens:output_type -> looprpc.TokensResponse
-	38,  // 109: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
-	40,  // 110: looprpc.SwapClient.FetchL402Token:output_type -> looprpc.FetchL402TokenResponse
-	44,  // 111: looprpc.SwapClient.GetInfo:output_type -> looprpc.GetInfoResponse
-	14,  // 112: looprpc.SwapClient.StopDaemon:output_type -> looprpc.StopDaemonResponse
-	46,  // 113: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
-	50,  // 114: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
-	53,  // 115: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
-	57,  // 116: looprpc.SwapClient.ListReservations:output_type -> looprpc.ListReservationsResponse
-	60,  // 117: looprpc.SwapClient.InstantOut:output_type -> looprpc.InstantOutResponse
-	62,  // 118: looprpc.SwapClient.InstantOutQuote:output_type -> looprpc.InstantOutQuoteResponse
-	64,  // 119: looprpc.SwapClient.ListInstantOuts:output_type -> looprpc.ListInstantOutsResponse
-	67,  // 120: looprpc.SwapClient.NewStaticAddress:output_type -> looprpc.NewStaticAddressResponse
-	69,  // 121: looprpc.SwapClient.ListUnspentDeposits:output_type -> looprpc.ListUnspentDepositsResponse
-	72,  // 122: looprpc.SwapClient.WithdrawDeposits:output_type -> looprpc.WithdrawDepositsResponse
-	74,  // 123: looprpc.SwapClient.ListStaticAddressDeposits:output_type -> looprpc.ListStaticAddressDepositsResponse
-	76,  // 124: looprpc.SwapClient.ListStaticAddressWithdrawals:output_type -> looprpc.ListStaticAddressWithdrawalResponse
-	78,  // 125: looprpc.SwapClient.ListStaticAddressSwaps:output_type -> looprpc.ListStaticAddressSwapsResponse
-	80,  // 126: looprpc.SwapClient.GetStaticAddressSummary:output_type -> looprpc.StaticAddressSummaryResponse
-	85,  // 127: looprpc.SwapClient.StaticAddressLoopIn:output_type -> looprpc.StaticAddressLoopInResponse
-	12,  // 128: looprpc.SwapClient.StaticOpenChannel:output_type -> looprpc.StaticOpenChannelResponse
-	97,  // 129: looprpc.SwapClient.RefundAssetDeposit:output_type -> looprpc.AssetRequestStatus
-	97,  // 130: looprpc.SwapClient.CreateAssetDeposit:output_type -> looprpc.AssetRequestStatus
-	95,  // 131: looprpc.SwapClient.ListAssetDeposits:output_type -> looprpc.ListAssetDepositsResponse
-	97,  // 132: looprpc.SwapClient.AssetStaticLoopIn:output_type -> looprpc.AssetRequestStatus
-	99,  // 133: looprpc.SwapClient.ListAssetStaticLoopIns:output_type -> looprpc.ListAssetStaticLoopInsResponse
-	96,  // [96:134] is the sub-list for method output_type
-	58,  // [58:96] is the sub-list for method input_type
-	58,  // [58:58] is the sub-list for extension type_name
-	58,  // [58:58] is the sub-list for extension extendee
-	0,   // [0:58] is the sub-list for field type_name
+	93,  // 43: looprpc.ListStaticAddressDepositsResponse.asset_deposits:type_name -> looprpc.AssetDeposit
+	82,  // 44: looprpc.ListStaticAddressWithdrawalResponse.withdrawals:type_name -> looprpc.StaticAddressWithdrawal
+	83,  // 45: looprpc.ListStaticAddressSwapsResponse.swaps:type_name -> looprpc.StaticAddressLoopInSwap
+	95,  // 46: looprpc.ListStaticAddressSwapsResponse.asset_requests:type_name -> looprpc.AssetRequestStatus
+	7,   // 47: looprpc.Deposit.state:type_name -> looprpc.DepositState
+	8,   // 48: looprpc.Deposit.cost_onchain_status:type_name -> looprpc.OnchainCostStatus
+	81,  // 49: looprpc.StaticAddressWithdrawal.deposits:type_name -> looprpc.Deposit
+	9,   // 50: looprpc.StaticAddressLoopInSwap.state:type_name -> looprpc.StaticAddressLoopInSwapState
+	81,  // 51: looprpc.StaticAddressLoopInSwap.deposits:type_name -> looprpc.Deposit
+	8,   // 52: looprpc.StaticAddressLoopInSwap.cost_onchain_status:type_name -> looprpc.OnchainCostStatus
+	99,  // 53: looprpc.StaticAddressLoopInRequest.route_hints:type_name -> looprpc.RouteHint
+	94,  // 54: looprpc.StaticAddressLoopInRequest.asset_params:type_name -> looprpc.AssetLoopInParams
+	81,  // 55: looprpc.StaticAddressLoopInResponse.used_deposits:type_name -> looprpc.Deposit
+	95,  // 56: looprpc.StaticAddressLoopInResponse.asset_request:type_name -> looprpc.AssetRequestStatus
+	88,  // 57: looprpc.AssetRfqInfo.prepay_asset_rate:type_name -> looprpc.FixedPoint
+	88,  // 58: looprpc.AssetRfqInfo.swap_asset_rate:type_name -> looprpc.FixedPoint
+	47,  // 59: looprpc.LiquidityParameters.EasyAssetParamsEntry.value:type_name -> looprpc.EasyAssetAutoloopParams
+	15,  // 60: looprpc.SwapClient.LoopOut:input_type -> looprpc.LoopOutRequest
+	16,  // 61: looprpc.SwapClient.LoopIn:input_type -> looprpc.LoopInRequest
+	18,  // 62: looprpc.SwapClient.Monitor:input_type -> looprpc.MonitorRequest
+	20,  // 63: looprpc.SwapClient.ListSwaps:input_type -> looprpc.ListSwapsRequest
+	23,  // 64: looprpc.SwapClient.SweepHtlc:input_type -> looprpc.SweepHtlcRequest
+	28,  // 65: looprpc.SwapClient.SwapInfo:input_type -> looprpc.SwapInfoRequest
+	54,  // 66: looprpc.SwapClient.AbandonSwap:input_type -> looprpc.AbandonSwapRequest
+	29,  // 67: looprpc.SwapClient.LoopOutTerms:input_type -> looprpc.TermsRequest
+	32,  // 68: looprpc.SwapClient.LoopOutQuote:input_type -> looprpc.QuoteRequest
+	29,  // 69: looprpc.SwapClient.GetLoopInTerms:input_type -> looprpc.TermsRequest
+	32,  // 70: looprpc.SwapClient.GetLoopInQuote:input_type -> looprpc.QuoteRequest
+	35,  // 71: looprpc.SwapClient.Probe:input_type -> looprpc.ProbeRequest
+	37,  // 72: looprpc.SwapClient.GetL402Tokens:input_type -> looprpc.TokensRequest
+	37,  // 73: looprpc.SwapClient.GetLsatTokens:input_type -> looprpc.TokensRequest
+	39,  // 74: looprpc.SwapClient.FetchL402Token:input_type -> looprpc.FetchL402TokenRequest
+	43,  // 75: looprpc.SwapClient.GetInfo:input_type -> looprpc.GetInfoRequest
+	13,  // 76: looprpc.SwapClient.StopDaemon:input_type -> looprpc.StopDaemonRequest
+	45,  // 77: looprpc.SwapClient.GetLiquidityParams:input_type -> looprpc.GetLiquidityParamsRequest
+	49,  // 78: looprpc.SwapClient.SetLiquidityParams:input_type -> looprpc.SetLiquidityParamsRequest
+	51,  // 79: looprpc.SwapClient.SuggestSwaps:input_type -> looprpc.SuggestSwapsRequest
+	56,  // 80: looprpc.SwapClient.ListReservations:input_type -> looprpc.ListReservationsRequest
+	59,  // 81: looprpc.SwapClient.InstantOut:input_type -> looprpc.InstantOutRequest
+	61,  // 82: looprpc.SwapClient.InstantOutQuote:input_type -> looprpc.InstantOutQuoteRequest
+	63,  // 83: looprpc.SwapClient.ListInstantOuts:input_type -> looprpc.ListInstantOutsRequest
+	66,  // 84: looprpc.SwapClient.NewStaticAddress:input_type -> looprpc.NewStaticAddressRequest
+	68,  // 85: looprpc.SwapClient.ListUnspentDeposits:input_type -> looprpc.ListUnspentDepositsRequest
+	71,  // 86: looprpc.SwapClient.WithdrawDeposits:input_type -> looprpc.WithdrawDepositsRequest
+	73,  // 87: looprpc.SwapClient.ListStaticAddressDeposits:input_type -> looprpc.ListStaticAddressDepositsRequest
+	75,  // 88: looprpc.SwapClient.ListStaticAddressWithdrawals:input_type -> looprpc.ListStaticAddressWithdrawalRequest
+	77,  // 89: looprpc.SwapClient.ListStaticAddressSwaps:input_type -> looprpc.ListStaticAddressSwapsRequest
+	79,  // 90: looprpc.SwapClient.GetStaticAddressSummary:input_type -> looprpc.StaticAddressSummaryRequest
+	84,  // 91: looprpc.SwapClient.StaticAddressLoopIn:input_type -> looprpc.StaticAddressLoopInRequest
+	11,  // 92: looprpc.SwapClient.StaticOpenChannel:input_type -> looprpc.StaticOpenChannelRequest
+	96,  // 93: looprpc.SwapClient.RefundAssetDeposit:input_type -> looprpc.RefundAssetDepositRequest
+	92,  // 94: looprpc.SwapClient.CreateAssetDeposit:input_type -> looprpc.CreateAssetDepositRequest
+	17,  // 95: looprpc.SwapClient.LoopOut:output_type -> looprpc.SwapResponse
+	17,  // 96: looprpc.SwapClient.LoopIn:output_type -> looprpc.SwapResponse
+	19,  // 97: looprpc.SwapClient.Monitor:output_type -> looprpc.SwapStatus
+	22,  // 98: looprpc.SwapClient.ListSwaps:output_type -> looprpc.ListSwapsResponse
+	24,  // 99: looprpc.SwapClient.SweepHtlc:output_type -> looprpc.SweepHtlcResponse
+	19,  // 100: looprpc.SwapClient.SwapInfo:output_type -> looprpc.SwapStatus
+	55,  // 101: looprpc.SwapClient.AbandonSwap:output_type -> looprpc.AbandonSwapResponse
+	31,  // 102: looprpc.SwapClient.LoopOutTerms:output_type -> looprpc.OutTermsResponse
+	34,  // 103: looprpc.SwapClient.LoopOutQuote:output_type -> looprpc.OutQuoteResponse
+	30,  // 104: looprpc.SwapClient.GetLoopInTerms:output_type -> looprpc.InTermsResponse
+	33,  // 105: looprpc.SwapClient.GetLoopInQuote:output_type -> looprpc.InQuoteResponse
+	36,  // 106: looprpc.SwapClient.Probe:output_type -> looprpc.ProbeResponse
+	38,  // 107: looprpc.SwapClient.GetL402Tokens:output_type -> looprpc.TokensResponse
+	38,  // 108: looprpc.SwapClient.GetLsatTokens:output_type -> looprpc.TokensResponse
+	40,  // 109: looprpc.SwapClient.FetchL402Token:output_type -> looprpc.FetchL402TokenResponse
+	44,  // 110: looprpc.SwapClient.GetInfo:output_type -> looprpc.GetInfoResponse
+	14,  // 111: looprpc.SwapClient.StopDaemon:output_type -> looprpc.StopDaemonResponse
+	46,  // 112: looprpc.SwapClient.GetLiquidityParams:output_type -> looprpc.LiquidityParameters
+	50,  // 113: looprpc.SwapClient.SetLiquidityParams:output_type -> looprpc.SetLiquidityParamsResponse
+	53,  // 114: looprpc.SwapClient.SuggestSwaps:output_type -> looprpc.SuggestSwapsResponse
+	57,  // 115: looprpc.SwapClient.ListReservations:output_type -> looprpc.ListReservationsResponse
+	60,  // 116: looprpc.SwapClient.InstantOut:output_type -> looprpc.InstantOutResponse
+	62,  // 117: looprpc.SwapClient.InstantOutQuote:output_type -> looprpc.InstantOutQuoteResponse
+	64,  // 118: looprpc.SwapClient.ListInstantOuts:output_type -> looprpc.ListInstantOutsResponse
+	67,  // 119: looprpc.SwapClient.NewStaticAddress:output_type -> looprpc.NewStaticAddressResponse
+	69,  // 120: looprpc.SwapClient.ListUnspentDeposits:output_type -> looprpc.ListUnspentDepositsResponse
+	72,  // 121: looprpc.SwapClient.WithdrawDeposits:output_type -> looprpc.WithdrawDepositsResponse
+	74,  // 122: looprpc.SwapClient.ListStaticAddressDeposits:output_type -> looprpc.ListStaticAddressDepositsResponse
+	76,  // 123: looprpc.SwapClient.ListStaticAddressWithdrawals:output_type -> looprpc.ListStaticAddressWithdrawalResponse
+	78,  // 124: looprpc.SwapClient.ListStaticAddressSwaps:output_type -> looprpc.ListStaticAddressSwapsResponse
+	80,  // 125: looprpc.SwapClient.GetStaticAddressSummary:output_type -> looprpc.StaticAddressSummaryResponse
+	85,  // 126: looprpc.SwapClient.StaticAddressLoopIn:output_type -> looprpc.StaticAddressLoopInResponse
+	12,  // 127: looprpc.SwapClient.StaticOpenChannel:output_type -> looprpc.StaticOpenChannelResponse
+	95,  // 128: looprpc.SwapClient.RefundAssetDeposit:output_type -> looprpc.AssetRequestStatus
+	95,  // 129: looprpc.SwapClient.CreateAssetDeposit:output_type -> looprpc.AssetRequestStatus
+	95,  // [95:130] is the sub-list for method output_type
+	60,  // [60:95] is the sub-list for method input_type
+	60,  // [60:60] is the sub-list for extension type_name
+	60,  // [60:60] is the sub-list for extension extendee
+	0,   // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_client_proto_init() }
@@ -8443,7 +8338,7 @@ func file_client_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_client_proto_rawDesc), len(file_client_proto_rawDesc)),
 			NumEnums:      11,
-			NumMessages:   91,
+			NumMessages:   87,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

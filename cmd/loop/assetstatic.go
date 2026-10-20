@@ -141,6 +141,22 @@ func createAssetDeposit(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+// requireAssetStaticLoopIn prevents unknown fields from being interpreted as
+// a Bitcoin request by an older daemon.
+func requireAssetStaticLoopIn(ctx context.Context,
+	client looprpc.SwapClientClient) error {
+
+	info, err := client.GetInfo(ctx, &looprpc.GetInfoRequest{})
+	if err != nil {
+		return err
+	}
+	if !info.GetAssetStaticLoopIn() {
+		return fmt.Errorf("daemon does not support or has disabled " +
+			"asset static loop-ins")
+	}
+	return nil
+}
+
 func assetStaticLoopIn(ctx context.Context, cmd *cli.Command) error {
 	id, group, err := assetCommandIdentity(cmd)
 	if err != nil {
@@ -160,11 +176,19 @@ func assetStaticLoopIn(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer cleanup()
-	response, err := client.AssetStaticLoopIn(ctx,
-		&looprpc.AssetStaticLoopInRequest{
-			RequestId: id, GroupKey: group, Outpoint: outpoint,
-			Amount: cmd.Uint64("amount"), MaxAssetDebit: maxDebit,
-			MaxAssetFee: cmd.Uint64("max_asset_fee"),
+	if err := requireAssetStaticLoopIn(ctx, client); err != nil {
+		return err
+	}
+
+	response, err := client.StaticAddressLoopIn(ctx,
+		&looprpc.StaticAddressLoopInRequest{
+			Outpoints: []string{outpoint},
+			AssetParams: &looprpc.AssetLoopInParams{
+				RequestId: id, GroupKey: group,
+				Amount:        cmd.Uint64("amount"),
+				MaxAssetDebit: maxDebit,
+				MaxAssetFee:   cmd.Uint64("max_asset_fee"),
+			},
 		})
 	if err != nil {
 		return err
@@ -179,8 +203,12 @@ func listAssetDeposits(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer cleanup()
-	response, err := client.ListAssetDeposits(
-		ctx, &looprpc.ListAssetDepositsRequest{},
+	if err := requireAssetStaticLoopIn(ctx, client); err != nil {
+		return err
+	}
+
+	response, err := client.ListStaticAddressDeposits(
+		ctx, &looprpc.ListStaticAddressDepositsRequest{AssetsOnly: true},
 	)
 	if err != nil {
 		return err
@@ -195,8 +223,12 @@ func listAssetSwaps(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer cleanup()
-	response, err := client.ListAssetStaticLoopIns(
-		ctx, &looprpc.ListAssetStaticLoopInsRequest{},
+	if err := requireAssetStaticLoopIn(ctx, client); err != nil {
+		return err
+	}
+
+	response, err := client.ListStaticAddressSwaps(
+		ctx, &looprpc.ListStaticAddressSwapsRequest{AssetsOnly: true},
 	)
 	if err != nil {
 		return err

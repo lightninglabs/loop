@@ -935,63 +935,6 @@
         ]
       }
     },
-    "/v1/staticaddr/assets/deposits": {
-      "get": {
-        "summary": "loop: `static asset deposits`\nListAssetDeposits lists native deposits and their reservation owners.",
-        "operationId": "SwapClient_ListAssetDeposits",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/looprpcListAssetDepositsResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "SwapClient"
-        ]
-      }
-    },
-    "/v1/staticaddr/assets/loopin": {
-      "post": {
-        "summary": "loop: `static asset in`\nAssetStaticLoopIn reserves one whole asset deposit for a same-group payout.",
-        "operationId": "SwapClient_AssetStaticLoopIn",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/looprpcAssetRequestStatus"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "body",
-            "description": "AssetStaticLoopInRequest currently accepts one whole isolated asset deposit.",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/looprpcAssetStaticLoopInRequest"
-            }
-          }
-        ],
-        "tags": [
-          "SwapClient"
-        ]
-      }
-    },
     "/v1/staticaddr/assets/refund": {
       "post": {
         "summary": "loop: `static asset refund`\nRefundAssetDeposit queues the original CSV recovery of an expired,\nunreserved native asset deposit.",
@@ -1020,29 +963,6 @@
             }
           }
         ],
-        "tags": [
-          "SwapClient"
-        ]
-      }
-    },
-    "/v1/staticaddr/assets/swaps": {
-      "get": {
-        "summary": "loop: `static asset swaps`\nListAssetStaticLoopIns reports durable request and controller progress.",
-        "operationId": "SwapClient_ListAssetStaticLoopIns",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/looprpcListAssetStaticLoopInsResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
         "tags": [
           "SwapClient"
         ]
@@ -1100,6 +1020,13 @@
               "type": "string"
             },
             "collectionFormat": "multi"
+          },
+          {
+            "name": "assets_only",
+            "description": "Select native asset deposits. The default keeps the Bitcoin listing.\nstate_filter is not supported for asset deposits.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -1222,6 +1149,15 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "assets_only",
+            "description": "Select durable asset funding, swap and refund requests. The default\nkeeps the Bitcoin swap listing.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
         "tags": [
           "SwapClient"
         ]
@@ -1355,6 +1291,33 @@
         }
       }
     },
+    "looprpcAssetLoopInParams": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "format": "byte"
+        },
+        "group_key": {
+          "type": "string",
+          "format": "byte"
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Exact native Lightning payout. The entire deposit is spent; its excess\nover this amount must equal the server fee and fit max_asset_fee."
+        },
+        "max_asset_debit": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "max_asset_fee": {
+          "type": "string",
+          "format": "uint64"
+        }
+      },
+      "description": "AssetLoopInParams uses native units for one whole isolated asset deposit."
+    },
     "looprpcAssetLoopOutInfo": {
       "type": "object",
       "properties": {
@@ -1457,36 +1420,6 @@
           "description": "The name of the asset to swap."
         }
       }
-    },
-    "looprpcAssetStaticLoopInRequest": {
-      "type": "object",
-      "properties": {
-        "request_id": {
-          "type": "string",
-          "format": "byte"
-        },
-        "group_key": {
-          "type": "string",
-          "format": "byte"
-        },
-        "outpoint": {
-          "type": "string"
-        },
-        "amount": {
-          "type": "string",
-          "format": "uint64",
-          "description": "Exact native Lightning payout. The entire deposit is spent; its excess\nover this amount must equal the server fee and fit max_asset_fee."
-        },
-        "max_asset_debit": {
-          "type": "string",
-          "format": "uint64"
-        },
-        "max_asset_fee": {
-          "type": "string",
-          "format": "uint64"
-        }
-      },
-      "description": "AssetStaticLoopInRequest currently accepts one whole isolated asset deposit."
     },
     "looprpcAutoReason": {
       "type": "string",
@@ -1743,6 +1676,10 @@
         "commit_hash": {
           "type": "string",
           "description": "The Git commit hash the Loop binary build was based on. If the build had\nuncommited changes, this field will contain the most recent commit hash,\nsuffixed by \"-dirty\"."
+        },
+        "asset_static_loop_in": {
+          "type": "boolean",
+          "description": "The daemon supports and has enabled asset parameters on the existing\nstatic-address RPCs. Clients must check this before sending them: older\ndaemons ignore unknown protobuf fields and must not run a Bitcoin swap."
         }
       }
     },
@@ -2171,30 +2108,6 @@
       ],
       "default": "UNKNOWN"
     },
-    "looprpcListAssetDepositsResponse": {
-      "type": "object",
-      "properties": {
-        "deposits": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/looprpcAssetDeposit"
-          }
-        }
-      }
-    },
-    "looprpcListAssetStaticLoopInsResponse": {
-      "type": "object",
-      "properties": {
-        "requests": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/looprpcAssetRequestStatus"
-          }
-        }
-      }
-    },
     "looprpcListInstantOutsResponse": {
       "type": "object",
       "properties": {
@@ -2231,6 +2144,14 @@
             "$ref": "#/definitions/looprpcDeposit"
           },
           "description": "A list of all deposits that match the filtered state."
+        },
+        "asset_deposits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/looprpcAssetDeposit"
+          },
+          "description": "Native asset quantities, returned only when assets_only is set."
         }
       }
     },
@@ -2244,6 +2165,14 @@
             "$ref": "#/definitions/looprpcStaticAddressLoopInSwap"
           },
           "description": "A list of all swaps known static address loop-in swaps."
+        },
+        "asset_requests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/looprpcAssetRequestStatus"
+          },
+          "description": "Includes requests still awaiting a server offer after a lost response."
         }
       }
     },
@@ -2768,6 +2697,10 @@
         "fast": {
           "type": "boolean",
           "description": "If set, request the server to use fast publication behavior."
+        },
+        "asset_params": {
+          "$ref": "#/definitions/looprpcAssetLoopInParams",
+          "description": "Select a same-group asset payout using exactly one outpoint. Native\nquantities belong here; all Bitcoin-only options must remain unset.\nThe request is journaled before contacting the server and returns an\nasset_request immediately. Retry the same request_id after ambiguity."
         }
       }
     },
@@ -2846,6 +2779,10 @@
         "fast": {
           "type": "boolean",
           "description": "If set, indicates that the server was requested to use fast publication\nbehavior."
+        },
+        "asset_request": {
+          "$ref": "#/definitions/looprpcAssetRequestStatus",
+          "description": "Present for an asset request, which may not have a swap hash yet.\nThe Bitcoin quantity and fee fields remain unset for these requests."
         }
       }
     },

@@ -391,7 +391,7 @@ func TestExpiredOfferBeforeControllerCreationReleasesSafely(t *testing.T) {
 }
 
 type lostOfferServer struct {
-	swapserverrpc.AssetLoopInServerClient
+	assetclient.Server
 	calls int
 }
 

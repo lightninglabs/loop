@@ -62,6 +62,7 @@
       "data": {
         "lines": [
           "{\n",
+          "    \"asset_static_loop_in\": false,\n",
           "    \"commit_hash\": \"579ea31979e0cdb1ee6049ab97cc2768888eac40\",\n",
           "    \"loop_in_stats\": {\n",
           "        \"fail_count\": \"0\",\n",
