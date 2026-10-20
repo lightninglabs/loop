@@ -1158,8 +1158,9 @@ func (s *swapClientServer) GetLoopInQuote(ctx context.Context,
 			req.DepositOutpoints, deposit.Deposited,
 		)
 		if !ok {
-			return nil, fmt.Errorf("selected deposit is not currently available: " +
-				"outpoints must be unique, active and in Deposited state")
+			return nil, s.unavailableDepositError(
+				req.DepositOutpoints,
+			)
 		}
 		numDeposits = len(selectedDeposits)
 		for _, d := range selectedDeposits {
@@ -2690,6 +2691,24 @@ func depositBlocksUntilExpiry(confirmationHeight int64, expiry uint32,
 	}
 
 	return confirmationHeight + int64(expiry) - bestBlockHeight
+}
+
+// unavailableDepositError returns the error for selected deposits that are not
+// all unique, active and in the Deposited state. It names the first selected
+// deposit that is not available by itself.
+func (s *swapClientServer) unavailableDepositError(outpoints []string) error {
+	for _, outpoint := range outpoints {
+		_, ok := s.depositManager.AllStringOutpointsActiveDeposits(
+			[]string{outpoint}, deposit.Deposited,
+		)
+		if !ok {
+			return fmt.Errorf("deposit %s is not currently "+
+				"available", outpoint)
+		}
+	}
+
+	return errors.New("selected deposits are not currently available: " +
+		"outpoints must be unique, active and in Deposited state")
 }
 
 // StaticOpenChannel initiates an open channel request using static address

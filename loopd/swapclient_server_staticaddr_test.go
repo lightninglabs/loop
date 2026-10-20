@@ -277,6 +277,7 @@ func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {
 		DepositOutpoints: []string{locked.OutPoint.String()},
 	})
 	require.ErrorContains(t, err, "is not currently available")
+	require.ErrorContains(t, err, locked.OutPoint.String())
 }
 
 // TestGetLoopInQuoteRejectsExpiringSelectedDeposit verifies manual quote
@@ -359,16 +360,23 @@ func TestGetLoopInQuoteAllowsFreshSelectedDeposit(t *testing.T) {
 	require.Zero(t, depMgr.recordLookupCalls)
 	require.Zero(t, depMgr.visibleLookupCalls)
 
-	for _, invalid := range [][]string{
-		{fresh.OutPoint.String(), fresh.OutPoint.String()},
-		{wire.OutPoint{Hash: chainhash.Hash{99}}.String()},
-		{"invalid"},
+	// A rejected selection names the deposit that is not available. A
+	// duplicate selection only fails as a whole.
+	unknown := wire.OutPoint{Hash: chainhash.Hash{99}}.String()
+	duplicate := []string{fresh.OutPoint.String(), fresh.OutPoint.String()}
+	for _, invalid := range []struct {
+		outpoints []string
+		err       string
+	}{
+		{outpoints: duplicate, err: "outpoints must be unique"},
+		{outpoints: []string{unknown}, err: "deposit " + unknown},
+		{outpoints: []string{"invalid"}, err: "deposit invalid"},
 	} {
 		quoter.request = nil
 		_, err := server.GetLoopInQuote(t.Context(), &looprpc.QuoteRequest{
-			DepositOutpoints: invalid,
+			DepositOutpoints: invalid.outpoints,
 		})
-		require.Error(t, err)
+		require.ErrorContains(t, err, invalid.err)
 		require.Nil(t, quoter.request)
 	}
 }
