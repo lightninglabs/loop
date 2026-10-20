@@ -6,6 +6,10 @@
 
 #### Bug Fixes
 
+* Update `looprpc`'s `github.com/klauspost/compress` dependency to v1.18.7
+  and synchronize the root module, including the fix for an out-of-bounds
+  read in `s2.NewDict`.
+
 * A MuSig2 Loop In no longer reveals the internal key of its HTLC to the
   server when the swap invoice is canceled. The key is only shared once the
   invoice is paid.
