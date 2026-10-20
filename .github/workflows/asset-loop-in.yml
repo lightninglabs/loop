@@ -1,0 +1,29 @@
+name: Asset Loop In modules
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  modules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Prepare pinned SDK dependency
+        run: |
+          git clone https://github.com/lightninglabs/tap-sdk.git ../tap-sdk
+          git -C ../tap-sdk checkout 8521da12bb7c01b5ed01e80e0443977df07fb2b9
+          git -C ../tap-sdk apply "$PWD/swapkit/tapsdk/dev/tap-sdk.patch"
+      - name: Test contracts and bridge
+        working-directory: swapkit
+        run: go test -race ./...
+      - name: Test SDK runtime and signer
+        working-directory: swapkit/tapsdk
+        run: go test -race ./...

@@ -1,0 +1,755 @@
+diff --git a/README.md b/README.md
+index 395d184..057b497 100644
+--- a/README.md
++++ b/README.md
+@@ -117,6 +117,12 @@ Most application code imports the root package plus one transport package.
+ Advanced integrations can use `wallet.Client()` to reach low-level methods
+ without importing `taprpc`.
+ 
++Low-level `ListAssetRecords` results include an optional `AnchorOutpoint` for
++each concrete wallet output. Pass this outpoint to `Wallet.ExportProofFile`
++when a script key has been reused, so the archive selects the exact output's
++proof. Records without chain anchor information leave the field nil. Both
++transports reject noncanonical anchor outpoint strings.
++
+ ## What You Can Build Today
+ 
+ - Wallet apps that issue, receive, send, burn, and list Taproot Assets.
+diff --git a/asset.go b/asset.go
+index 64c8977..50be62e 100644
+--- a/asset.go
++++ b/asset.go
+@@ -121,6 +121,11 @@ type AssetRecord struct {
+ 	// ScriptKey is the script key.
+ 	ScriptKey ScriptKey
+ 
++	// AnchorOutpoint identifies this concrete wallet output when tapd
++	// supplies its chain anchor. It is nil for records without an anchor.
++	// Use it when exporting proofs for a reused script key.
++	AnchorOutpoint *Outpoint
++
+ 	// AltLeaves are the auxiliary leaves.
+ 	AltLeaves []AltLeaf
+ }
+diff --git a/grpc/asset_record_test.go b/grpc/asset_record_test.go
+new file mode 100644
+index 0000000..83a98fc
+--- /dev/null
++++ b/grpc/asset_record_test.go
+@@ -0,0 +1,77 @@
++package grpc
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/lightninglabs/taproot-assets/taprpc"
++	"github.com/stretchr/testify/require"
++)
++
++func TestUnmarshalAssetAnchorOutpoint(t *testing.T) {
++	hash := strings.Repeat("0123456789abcdef", 4)
++	for _, test := range []struct {
++		name   string
++		anchor *taprpc.AnchorInfo
++		valid  bool
++	}{
++		{"missing", nil, true},
++		{"unconfirmed", &taprpc.AnchorInfo{}, true},
++		{"canonical", &taprpc.AnchorInfo{
++			AnchorOutpoint: hash + ":7"}, true},
++		{"uppercase", &taprpc.AnchorInfo{
++			AnchorOutpoint: strings.ToUpper(hash) + ":7"}, false},
++		{"short hash", &taprpc.AnchorInfo{
++			AnchorOutpoint: "1:7"}, false},
++		{"zero padded index", &taprpc.AnchorInfo{
++			AnchorOutpoint: hash + ":07"}, false},
++		{"signed index", &taprpc.AnchorInfo{
++			AnchorOutpoint: hash + ":+7"}, false},
++		{"overflow index", &taprpc.AnchorInfo{
++			AnchorOutpoint: hash + ":4294967296"}, false},
++		{"malformed", &taprpc.AnchorInfo{AnchorOutpoint: hash}, false},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			record, err := unmarshalAsset(&taprpc.Asset{
++				AssetGenesis: &taprpc.GenesisInfo{
++					GenesisPoint: zeroGenesisPoint,
++					AssetId:      testAssetID,
++				},
++				ScriptKey: testPubKey, ChainAnchor: test.anchor,
++			})
++			if !test.valid {
++				require.ErrorContains(
++					t,
++					err,
++					"canonical anchor outpoint",
++				)
++				require.Nil(t, record)
++				return
++			}
++			require.NoError(t, err)
++			if test.anchor == nil ||
++				test.anchor.AnchorOutpoint == "" {
++
++				require.Nil(t, record.AnchorOutpoint)
++				return
++			}
++			require.NotNil(t, record.AnchorOutpoint)
++			require.Equal(
++				t,
++				hash+":7",
++				record.AnchorOutpoint.String(),
++			)
++			require.EqualValues(t, 7, record.AnchorOutpoint.Index)
++			require.EqualValues(
++				t,
++				0xef,
++				record.AnchorOutpoint.Txid[0],
++			)
++			require.EqualValues(
++				t,
++				0x01,
++				record.AnchorOutpoint.Txid[31],
++			)
++		})
++	}
++}
+diff --git a/grpc/wallet_client.go b/grpc/wallet_client.go
+index 9ed36ab..5e27522 100644
+--- a/grpc/wallet_client.go
++++ b/grpc/wallet_client.go
+@@ -346,6 +346,18 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*tapsdk.AssetRecord, error) {
+ 			PubKey: scriptKeyPub,
+ 		},
+ 	}
++	if rpcAsset.ChainAnchor != nil &&
++		rpcAsset.ChainAnchor.AnchorOutpoint != "" {
++
++		raw := rpcAsset.ChainAnchor.AnchorOutpoint
++		point, err := tapsdk.NewOutpointFromStr(raw)
++		if err != nil || point.String() != raw {
++			return nil, fmt.Errorf(
++				"invalid canonical anchor outpoint",
++			)
++		}
++		asset.AnchorOutpoint = &point
++	}
+ 
+ 	// tapd keys every queryable map (ListBalances, ListAssetGroups,
+ 	// ListAssets filters) by the tweaked group key, so that's what
+diff --git a/itest/proof_test.go b/itest/proof_test.go
+index e3ee37d..3debb4c 100644
+--- a/itest/proof_test.go
++++ b/itest/proof_test.go
+@@ -254,6 +254,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
+ 
+ 			asset := assetsByIssuance[groupedAsset.IssuanceID]
+ 			require.NotNil(t, asset)
++			require.NotNil(t, asset.AnchorOutpoint)
+ 
+ 			_, err := h.AliceClient.ExportProof(
+ 				ctx, first.Ref, asset.ScriptKey.PubKey, nil,
+@@ -265,7 +266,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
+ 			proof, err := h.AliceClient.ExportProof(
+ 				ctx,
+ 				tapsdk.AssetRefFromAssetID(groupedAsset.IssuanceID),
+-				asset.ScriptKey.PubKey, nil,
++				asset.ScriptKey.PubKey, asset.AnchorOutpoint,
+ 			)
+ 			require.NoError(t, err)
+ 			require.NotEmpty(t, proof.RawProofFile)
+@@ -283,6 +284,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
+ 			require.True(t, decoded.AssetRef.Equivalent(first.Ref))
+ 			require.Equal(t, groupedAsset.IssuanceID,
+ 				decoded.IssuanceID)
++			require.Equal(t, *asset.AnchorOutpoint, decoded.Outpoint)
+ 
+ 			expected[groupedAsset.IssuanceID] = true
+ 		}
+diff --git a/rest/asset_record_test.go b/rest/asset_record_test.go
+new file mode 100644
+index 0000000..e0243cd
+--- /dev/null
++++ b/rest/asset_record_test.go
+@@ -0,0 +1,90 @@
++package rest
++
++import (
++	"encoding/hex"
++	"encoding/json"
++	"strings"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestUnmarshalAssetAnchorOutpoint(t *testing.T) {
++	hash := strings.Repeat("0123456789abcdef", 4)
++	for _, test := range []struct {
++		name   string
++		anchor *jsonChainAnchor
++		valid  bool
++	}{
++		{"missing", nil, true},
++		{"unconfirmed", &jsonChainAnchor{}, true},
++		{"canonical", &jsonChainAnchor{
++			AnchorOutpoint: hash + ":7"}, true},
++		{"uppercase", &jsonChainAnchor{
++			AnchorOutpoint: strings.ToUpper(hash) + ":7"}, false},
++		{"short hash", &jsonChainAnchor{
++			AnchorOutpoint: "1:7"}, false},
++		{"zero padded index", &jsonChainAnchor{
++			AnchorOutpoint: hash + ":07"}, false},
++		{"signed index", &jsonChainAnchor{
++			AnchorOutpoint: hash + ":+7"}, false},
++		{"overflow index", &jsonChainAnchor{
++			AnchorOutpoint: hash + ":4294967296"}, false},
++		{"malformed", &jsonChainAnchor{AnchorOutpoint: hash}, false},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			// Round-trip the public JSON name as well as the typed
++			// mapper.
++			raw, err := json.Marshal(map[string]any{
++				"asset_genesis": &jsonGenesisInfo{
++					GenesisPoint: hash + ":1",
++					AssetID: hex.EncodeToString(
++						restTestAssetID,
++					),
++					AssetType: "NORMAL",
++				},
++				"script_key": hex.EncodeToString(
++					restTestPubKey,
++				),
++				"chain_anchor": test.anchor,
++			})
++			require.NoError(t, err)
++			var asset jsonAsset
++			require.NoError(t, json.Unmarshal(raw, &asset))
++			record, err := unmarshalAsset(&asset)
++			if !test.valid {
++				require.ErrorContains(
++					t,
++					err,
++					"canonical anchor outpoint",
++				)
++				require.Nil(t, record)
++				return
++			}
++			require.NoError(t, err)
++			if test.anchor == nil ||
++				test.anchor.AnchorOutpoint == "" {
++
++				require.Nil(t, record.AnchorOutpoint)
++				return
++			}
++			require.NotNil(t, record.AnchorOutpoint)
++			require.Equal(
++				t,
++				hash+":7",
++				record.AnchorOutpoint.String(),
++			)
++			require.EqualValues(t, 7, record.AnchorOutpoint.Index)
++			require.EqualValues(
++				t,
++				0xef,
++				record.AnchorOutpoint.Txid[0],
++			)
++			require.EqualValues(
++				t,
++				0x01,
++				record.AnchorOutpoint.Txid[31],
++			)
++		})
++	}
++}
+diff --git a/rest/marshal.go b/rest/marshal.go
+index 88be14e..4884f8c 100644
+--- a/rest/marshal.go
++++ b/rest/marshal.go
+@@ -319,6 +319,16 @@ func unmarshalAsset(a *jsonAsset) (*tapsdk.AssetRecord, error) {
+ 			PubKey: scriptKeyPub,
+ 		},
+ 	}
++	if a.ChainAnchor != nil && a.ChainAnchor.AnchorOutpoint != "" {
++		raw := a.ChainAnchor.AnchorOutpoint
++		point, err := tapsdk.NewOutpointFromStr(raw)
++		if err != nil || point.String() != raw {
++			return nil, fmt.Errorf(
++				"invalid canonical anchor outpoint",
++			)
++		}
++		asset.AnchorOutpoint = &point
++	}
+ 
+ 	// tapd keys every queryable map by the tweaked group key, so
+ 	// that's what AssetRef must encode.
+diff --git a/rest/types.go b/rest/types.go
+index 15c2fa7..a681d54 100644
+--- a/rest/types.go
++++ b/rest/types.go
+@@ -48,6 +48,7 @@ type jsonAsset struct {
+ 	ScriptVersion    int32            `json:"script_version"`
+ 	ScriptKey        string           `json:"script_key"`
+ 	AssetGroup       *jsonAssetGroup  `json:"asset_group"`
++	ChainAnchor      *jsonChainAnchor `json:"chain_anchor"`
+ }
+ 
+ // jsonListAssetsResponse is the JSON shape of taprpc.ListAssetResponse.
+diff --git a/custom_anchor_builder.go b/custom_anchor_builder.go
+index ca9d3a1..d8d05b5 100644
+--- a/custom_anchor_builder.go
++++ b/custom_anchor_builder.go
+@@ -920,6 +920,13 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
+ 			if err != nil {
+ 				return nil, nil, nil, err
+ 			}
++			if mode == CustomAssetWitnessBackendSigner {
++				if err := b.resolveInputSigningKeys(
++					ctx, packet,
++				); err != nil {
++					return nil, nil, nil, err
++				}
++			}
+ 			backendSigning = append(
+ 				backendSigning,
+ 				mode == CustomAssetWitnessBackendSigner,
+@@ -997,6 +1004,56 @@ func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
+ 	}
+ }
+ 
++// resolveInputSigningKeys carries the authenticated wallet's complete key
++// derivation into each backend-signed input. Proofs contain the output key but
++// omit wallet metadata. In particular, a received unique script key requires
++// its Taproot tweak; a raw key locator alone would produce a BIP-86 signature.
++func (b *CustomAnchorTxBuilder) resolveInputSigningKeys(ctx context.Context,
++	packet *tappsbt.VPacket) error {
++
++	for idx, input := range packet.Inputs {
++		proofKey := schnorr.SerializePubKey(
++			input.Asset().ScriptKey.PubKey,
++		)
++		resolved, err := b.wallet.client.QueryScriptKey(ctx, proofKey)
++		if err != nil {
++			return fmt.Errorf(
++				"resolve input %d signing key: %w", idx, err,
++			)
++		}
++		if resolved == nil || (len(resolved.TapTweak) != 0 &&
++			len(resolved.TapTweak) != 32) {
++
++			return fmt.Errorf(
++				"input %d signing key is incomplete", idx,
++			)
++		}
++		key, err := tapAssetScriptKey(*resolved)
++		if err != nil || key.TweakedScriptKey == nil {
++			return fmt.Errorf(
++				"input %d signing key metadata is invalid", idx,
++			)
++		}
++		derived := txscript.ComputeTaprootOutputKey(
++			key.RawKey.PubKey, key.Tweak,
++		)
++		keyBytes := schnorr.SerializePubKey(key.PubKey)
++		derivedBytes := schnorr.SerializePubKey(derived)
++		if !bytes.Equal(keyBytes, proofKey) ||
++			!bytes.Equal(derivedBytes, proofKey) {
++
++			return fmt.Errorf(
++				"input %d signing key does not match proof",
++				idx,
++			)
++		}
++		inputAsset := input.Asset().Copy()
++		inputAsset.ScriptKey = key
++		packet.SetInputAsset(idx, inputAsset)
++	}
++	return nil
++}
++
+ func uniqueScriptKeyGen(base asset.ScriptKey) (tapsend.ScriptKeyGen, error) {
+ 	if base.TweakedScriptKey == nil ||
+ 		base.TweakedScriptKey.RawKey.PubKey == nil {
+diff --git a/custom_anchor_input_keys_test.go b/custom_anchor_input_keys_test.go
+new file mode 100644
+index 0000000..0388f6e
+--- /dev/null
++++ b/custom_anchor_input_keys_test.go
+@@ -0,0 +1,132 @@
++package tapsdk
++
++import (
++	"bytes"
++	"context"
++	"testing"
++
++	"github.com/btcsuite/btcd/btcec/v2/schnorr"
++	"github.com/btcsuite/btcd/psbt/v2"
++	"github.com/lightninglabs/taproot-assets/asset"
++	"github.com/lightninglabs/taproot-assets/tappsbt"
++	"github.com/lightninglabs/taproot-assets/tapscript"
++	"github.com/lightninglabs/taproot-assets/tapsend"
++	"github.com/lightningnetwork/lnd/keychain"
++	"github.com/stretchr/testify/require"
++)
++
++// TestCustomAnchorReceivedKeyTweak proves that a wallet-owned unique script
++// key needs its complete Taproot tweak, not only a recovered raw key locator.
++// This is the same signing distinction between freshly minted BIP-86 assets
++// and assets received at a unique Pedersen address.
++func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
++	fixture := newCustomAnchorBuilderFixture(t)
++	builder := NewWallet(fixture.client, NetworkRegtest).
++		NewCustomAnchorTxBuilder()
++	plan, err := builder.Build(t.Context(), fixture.request)
++	require.NoError(t, err)
++	packet, err := tappsbt.Decode(plan.ActiveVirtualPSBTs()[0])
++	require.NoError(t, err)
++	unique, err := asset.DeriveUniqueScriptKey(
++		*fixture.assetSpendKey.PubKey(), packet.Inputs[0].Asset().ID(),
++		asset.ScriptKeyDerivationUniquePedersen,
++	)
++	require.NoError(t, err)
++	inputAsset := packet.Inputs[0].Asset().Copy()
++	inputAsset.ScriptKey = asset.NewScriptKey(unique.PubKey)
++	packet.SetInputAsset(0, inputAsset)
++	input := packet.Inputs[0]
++	input.PrevID.ScriptKey = asset.ToSerialized(unique.PubKey)
++	input.Bip32Derivation = nil
++	input.TaprootBip32Derivation = nil
++	input.TaprootInternalKey = nil
++	input.TaprootMerkleRoot = nil
++	require.NoError(t, tapsend.PrepareOutputAssets(t.Context(), packet))
++	raw, err := tappsbt.Encode(packet)
++	require.NoError(t, err)
++
++	// Emulate the backend's incomplete metadata recovery. Its BIP-86
++	// signature must fail the actual asset VM against this unique key.
++	incomplete, err := tappsbt.Decode(raw)
++	require.NoError(t, err)
++	derivation, tapDerivation := tappsbt.Bip32DerivationFromKeyDesc(
++		keychain.KeyDescriptor{
++			PubKey: fixture.assetSpendKey.PubKey(),
++		}, 1,
++	)
++	incomplete.Inputs[0].Bip32Derivation = []*psbt.Bip32Derivation{
++		derivation,
++	}
++	incomplete.Inputs[0].TaprootBip32Derivation =
++		[]*psbt.TaprootBip32Derivation{tapDerivation}
++	err = tapsend.SignVirtualTransaction(
++		incomplete, tapscript.NewMockSigner(fixture.assetSpendKey),
++		customAnchorTestWitnessValidator{},
++	)
++	require.ErrorContains(t, err, "invalid transfer asset witness")
++
++	resolved := ScriptKey{
++		PubKey: mustCustomAnchorPubKey(t, unique.PubKey),
++		KeyDesc: KeyDescriptor{
++			RawKeyBytes: mustCustomAnchorPubKey(
++				t, fixture.assetSpendKey.PubKey(),
++			),
++		},
++		TapTweak: bytes.Clone(unique.Tweak),
++	}
++	fixture.client.queryScriptKey = func(_ context.Context,
++		key []byte) (*ScriptKey, error) {
++
++		require.Equal(t, schnorr.SerializePubKey(unique.PubKey), key)
++		return &resolved, nil
++	}
++	require.NoError(t, builder.resolveInputSigningKeys(t.Context(), packet))
++	require.Equal(t, unique.Tweak, packet.Inputs[0].TaprootMerkleRoot)
++	encoded, err := tappsbt.Encode(packet)
++	require.NoError(t, err)
++	hydrated, err := tappsbt.Decode(encoded)
++	require.NoError(t, err)
++	require.NoError(t, tapsend.SignVirtualTransaction(
++		hydrated, tapscript.NewMockSigner(fixture.assetSpendKey),
++		customAnchorTestWitnessValidator{},
++	))
++
++	for _, test := range []struct {
++		name   string
++		mutate func(*ScriptKey) *ScriptKey
++	}{
++		{"missing key", func(*ScriptKey) *ScriptKey { return nil }},
++		{"missing raw key", func(k *ScriptKey) *ScriptKey {
++			k.KeyDesc.RawKeyBytes = PubKey{}
++			return k
++		}},
++		{"missing tweak", func(k *ScriptKey) *ScriptKey {
++			k.TapTweak = nil
++			return k
++		}},
++		{"wrong tweak", func(k *ScriptKey) *ScriptKey {
++			k.TapTweak[0] ^= 1
++			return k
++		}},
++		{"wrong proof key", func(k *ScriptKey) *ScriptKey {
++			k.PubKey = mustCustomAnchorPubKey(t,
++				testPrivateKey(t, 99).PubKey())
++			return k
++		}},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			candidate := resolved
++			candidate.TapTweak = bytes.Clone(resolved.TapTweak)
++			fixture.client.queryScriptKey = func(context.Context,
++				[]byte) (*ScriptKey, error) {
++
++				return test.mutate(&candidate), nil
++			}
++			fresh, err := tappsbt.Decode(raw)
++			require.NoError(t, err)
++			require.Error(t, builder.resolveInputSigningKeys(
++				t.Context(), fresh,
++			))
++		})
++	}
++}
+diff --git a/docs/design/advanced-custom-anchor-transactions.md b/docs/design/advanced-custom-anchor-transactions.md
+index 548e99a..ed517b4 100644
+--- a/docs/design/advanced-custom-anchor-transactions.md
++++ b/docs/design/advanced-custom-anchor-transactions.md
+@@ -142,6 +142,14 @@ read-only inventory check that can prove this precondition, so the integration
+ must import selected proofs as a separate, authenticated setup step and retain
+ the proof source in its recovery state.
+ 
++For `CustomAssetWitnessBackendSigner`, the builder also queries the local
++wallet's complete script-key descriptor and checks that its raw key and
++Taproot tweak derive the exact proof-selected output key. It serializes both
++the derivation and the tweak into the virtual input before signing. A proof
++contains only the output key: recovering a raw key locator alone cannot sign
++assets received at unique Pedersen addresses, whose non-empty tweak must be
++preserved. Caller-provided witnesses do not require a wallet key lookup.
++
+ Local, host-attested, and backend-trusted checks are distinct entries in
+ `CustomAnchorVerificationResult`.
+ 
+diff --git a/itest/custom_anchor_builder_test.go b/itest/custom_anchor_builder_test.go
+index 7563c9f..0b09103 100644
+--- a/itest/custom_anchor_builder_test.go
++++ b/itest/custom_anchor_builder_test.go
+@@ -12,6 +12,7 @@ import (
+ 	"github.com/btcsuite/btcd/btcec/v2"
+ 	"github.com/btcsuite/btcd/btcutil/v2"
+ 	"github.com/btcsuite/btcd/chainhash/v2"
++	"github.com/btcsuite/btcd/mempool"
+ 	"github.com/btcsuite/btcd/psbt/v2"
+ 	"github.com/btcsuite/btcd/txscript/v2"
+ 	"github.com/btcsuite/btcd/wire/v2"
+@@ -32,6 +33,16 @@ const (
+ // the caller's transaction version, sequence, and fee survive virtual signing,
+ // commitment, external anchor signing, and publishing unchanged.
+ func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
++	testCustomAnchorBuilderEndToEnd(t, false)
++}
++
++// TestCustomAnchorBuilderReceivedAsset exercises backend signing after a
++// transfer to a V2 address, whose unique script key requires a Taproot tweak.
++func TestCustomAnchorBuilderReceivedAsset(t *testing.T) {
++	testCustomAnchorBuilderEndToEnd(t, true)
++}
++
++func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
+ 	runForTransports(t, func(t *testing.T, transport Transport) {
+ 		h, ctx := newFundedHarnessFor(t, transport)
+ 
+@@ -44,12 +55,64 @@ func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
+ 		require.NoError(t, err)
+ 		require.True(t, minted.Ref.IsGroupRef())
+ 
++		inputKey := minted.Asset.ScriptKey.PubKey
++		var inputPoint *tapsdk.Outpoint
++		if received {
++			// Move the whole asset to a fresh V2 address in Alice's
++			// wallet so the custom spend starts from a received key.
++			v1 := tapsdk.AssetVersionV1
++			v2 := tapsdk.AddressVersionV2
++			addr, err := h.AliceClient.NewAddr(
++				ctx, &tapsdk.NewAddressRequest{
++					AssetRef:       minted.Ref,
++					AssetVersion:   &v1,
++					AddressVersion: &v2,
++					ProofCourierAddr: envOr(
++						"TAPD_ALICE_PROOF_COURIER_ADDR",
++						"authmailbox+universerpc://"+
++							"tapd-alice:10029",
++					),
++				},
++			)
++			require.NoError(t, err)
++			transfer, err := h.AliceWallet.Send(
++				ctx, addr.Encoded,
++				tapsdk.WithAmount(minted.Asset.Amount),
++			)
++			require.NoError(t, err)
++			for _, output := range transfer.Outputs {
++				if output.Amount == minted.Asset.Amount &&
++					output.IssuanceID ==
++						minted.Asset.Genesis.IssuanceID {
++
++					inputKey = output.ScriptKey
++					point := output.AnchorOutpoint
++					inputPoint = &point
++				}
++			}
++			require.NotNil(t, inputPoint)
++			h.MineBlocks(t, defaultMineBlocks)
++			h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
++			h.WaitForProofFile(
++				t, ctx, h.AliceWallet,
++				tapsdk.AssetRefFromAssetID(
++					minted.Asset.Genesis.IssuanceID,
++				),
++				inputKey, inputPoint,
++			)
++			key, err := h.AliceClient.QueryScriptKey(
++				ctx, inputKey[1:],
++			)
++			require.NoError(t, err)
++			require.Len(t, key.TapTweak, 32)
++		}
++
+ 		inputProof, err := h.AliceWallet.ExportProofFile(
+ 			ctx,
+ 			tapsdk.AssetRefFromAssetID(
+ 				minted.Asset.Genesis.IssuanceID,
+ 			),
+-			minted.Asset.ScriptKey.PubKey, nil,
++			inputKey, inputPoint,
+ 		)
+ 		require.NoError(t, err)
+ 		require.NotEmpty(t, inputProof.RawProofFile)
+@@ -554,11 +617,6 @@ func broadcastCustomAnchorP2APackage(t testing.TB, h *TestHarness,
+ 	require.Zero(t, p2aOutput.Value)
+ 	require.Equal(t, customAnchorITestP2AScript(), p2aOutput.PkScript)
+ 
+-	utxo := customAnchorITestMinerUTXO(t, h)
+-	utxoAmount, err := btcutil.NewAmount(utxo.Amount)
+-	require.NoError(t, err)
+-	require.Greater(t, int64(utxoAmount), customAnchorITestChildFee)
+-
+ 	addressJSON := h.bitcoindRPCWallet(
+ 		t, "miner", "getnewaddress", `""`, `"bech32"`,
+ 	)
+@@ -578,6 +636,10 @@ func broadcastCustomAnchorP2APackage(t testing.TB, h *TestHarness,
+ 	outputScript, err := hex.DecodeString(addressInfo.ScriptPubKey)
+ 	require.NoError(t, err)
+ 
++	utxo := customAnchorITestMinerUTXO(t, h, outputScript)
++	utxoAmount, err := btcutil.NewAmount(utxo.Amount)
++	require.NoError(t, err)
++
+ 	minerHash, err := chainhash.NewHashFromStr(utxo.TxID)
+ 	require.NoError(t, err)
+ 	parentHash := parent.TxHash()
+@@ -677,7 +739,7 @@ type customAnchorMinerUTXO struct {
+ }
+ 
+ func customAnchorITestMinerUTXO(t testing.TB,
+-	h *TestHarness) customAnchorMinerUTXO {
++	h *TestHarness, outputScript []byte) customAnchorMinerUTXO {
+ 
+ 	t.Helper()
+ 	listJSON := h.bitcoindRPCWallet(
+@@ -688,7 +750,14 @@ func customAnchorITestMinerUTXO(t testing.TB,
+ 	for _, utxo := range utxos {
+ 		amount, err := btcutil.NewAmount(utxo.Amount)
+ 		require.NoError(t, err)
+-		if int64(amount) > customAnchorITestChildFee {
++		// Earlier tests can leave small miner outputs. The child must
++		// cover its fee and leave a standard, non-dust change output.
++		change := wire.NewTxOut(
++			int64(amount)-customAnchorITestChildFee, outputScript,
++		)
++		if change.Value > 0 &&
++			!mempool.IsDust(change, mempool.DefaultMinRelayTxFee) {
++
+ 			return utxo
+ 		}
+ 	}
+diff --git a/rest/walletkit_client.go b/rest/walletkit_client.go
+index af3ece2..f1e4db3 100644
+--- a/rest/walletkit_client.go
++++ b/rest/walletkit_client.go
+@@ -2,6 +2,7 @@ package rest
+ 
+ import (
+ 	"context"
++	"encoding/base64"
+ 	"encoding/hex"
+ 	"fmt"
+ 
+@@ -668,9 +669,9 @@ func (w *walletKitClient) QueryInternalKey(ctx context.Context,
+ func (w *walletKitClient) QueryScriptKey(ctx context.Context,
+ 	tweakedScriptKey []byte) (*tapsdk.ScriptKey, error) {
+ 
+-	keyHex := hex.EncodeToString(tweakedScriptKey)
++	keyBytes := base64.URLEncoding.EncodeToString(tweakedScriptKey)
+ 	path := fmt.Sprintf(
+-		"/v1/taproot-assets/wallet/script-key/%s", keyHex,
++		"/v1/taproot-assets/wallet/script-key/%s", keyBytes,
+ 	)
+ 
+ 	var resp jsonQueryScriptKeyResponse
+diff --git a/rest/walletkit_client_test.go b/rest/walletkit_client_test.go
+index fed6ec9..cd83685 100644
+--- a/rest/walletkit_client_test.go
++++ b/rest/walletkit_client_test.go
+@@ -3,12 +3,14 @@ package rest
+ import (
+ 	"bytes"
+ 	"context"
++	"encoding/base64"
+ 	"encoding/hex"
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
+ 	"net/http"
+ 	"net/http/httptest"
++	"strings"
+ 	"testing"
+ 	"time"
+ 
+@@ -18,6 +20,39 @@ import (
+ 	"github.com/stretchr/testify/require"
+ )
+ 
++// TestQueryScriptKeyPathEncoding checks the gateway's bytes path parameter
++// for both compressed and x-only public keys.
++func TestQueryScriptKeyPathEncoding(t *testing.T) {
++	for _, key := range [][]byte{restTestPubKey, restTestPubKey[1:]} {
++		t.Run(fmt.Sprintf("%d bytes", len(key)), func(t *testing.T) {
++			srv := httptest.NewServer(http.HandlerFunc(
++				func(w http.ResponseWriter, r *http.Request) {
++					encoded := strings.TrimPrefix(r.URL.Path,
++						"/v1/taproot-assets/wallet/script-key/")
++					decoded, err := base64.URLEncoding.
++						DecodeString(encoded)
++					assert.NoError(t, err)
++					assert.Equal(t, key, decoded)
++					_, err = fmt.Fprintf(w,
++						`{"script_key":{"pub_key":%q}}`,
++						hex.EncodeToString(restTestPubKey))
++					assert.NoError(t, err)
++				},
++			))
++			defer srv.Close()
++			client := newWalletKitClient(&transport{
++				baseURL:   srv.URL,
++				client:    srv.Client(),
++				timeout:   time.Second,
++				macaroons: macaroon.Pouch{},
++			})
++			result, err := client.QueryScriptKey(t.Context(), key)
++			require.NoError(t, err)
++			require.Equal(t, restTestPubKey, result.PubKey[:])
++		})
++	}
++}
++
+ func TestCustomAnchorCapabilities(t *testing.T) {
+ 	client := newWalletKitClient(&transport{
+ 		baseURL:   "http://example.invalid",
