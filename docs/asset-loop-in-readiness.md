@@ -61,7 +61,8 @@ go test ./staticaddr/... ./assets/assetln ./loopd ./cmd/loop
 (cd swapkit/tapsdk && go test -race ./runtime ./walletsigner)
 ```
 
-See the [client manager](../staticaddr/loopin/assetmanager/README.md),
+See the [asset state mapping](../staticaddr/loopin/asset-fsm.md),
+[client manager](../staticaddr/loopin/assetmanager/README.md),
 [execution controller](../staticaddr/loopin/assetexec/README.md), and
 [runtime](../swapkit/tapsdk/cmd/loopassetd/README.md) for ownership and restart
 requirements. Keep this document updated as each release blocker is closed.

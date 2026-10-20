@@ -66,7 +66,7 @@ func TestSwapServerProofMessageLimits(t *testing.T) {
 	t.Cleanup(func() { server.Stop(); <-done })
 	tokens, err := l402.NewFileStore(t.TempDir())
 	require.NoError(t, err)
-	auth := l402.NewInterceptor(nil, tokens, 5*time.Second, 0, 0, true)
+	auth := newL402ClientInterceptor(nil, tokens, 5*time.Second, 0, 0, true)
 	conn, err := getSwapServerConn("unix://"+socket, "", true, "", auth)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, conn.Close()) })

@@ -9,7 +9,7 @@ import (
 )
 
 // serverAuth preserves L402's serialized acquisition without making a queued
-// caller wait beyond its deadline. Every entry to the shared L402 interceptor
+// caller wait beyond its deadline. Every entry to the shared fallback interceptor
 // passes this gate, so its internal non-cancelable mutex remains uncontended.
 // The stream gate covers establishment only, matching the L402 interceptor.
 type serverAuth struct {

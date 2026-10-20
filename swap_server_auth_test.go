@@ -36,8 +36,8 @@ func testServerAuthBlocked(t *testing.T, firstStream, nextStream bool) {
 	t.Parallel()
 	store, err := l402.NewFileStore(t.TempDir())
 	require.NoError(t, err)
-	auth := newServerAuth(l402.NewInterceptor(nil, store,
-		5*time.Second, 0, 0, true))
+	auth := newL402ClientInterceptor(nil, store,
+		5*time.Second, 0, 0, true)
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(release) }) }
@@ -81,11 +81,11 @@ func testServerAuthBlocked(t *testing.T, firstStream, nextStream bool) {
 	require.False(t, invoked.Load())
 }
 
-func callServerAuth(auth *serverAuth, ctx context.Context, stream bool,
+func callServerAuth(auth *l402ClientInterceptor, ctx context.Context, stream bool,
 	body func(context.Context) error) error {
 
 	if stream {
-		_, err := auth.stream(ctx, &grpc.StreamDesc{},
+		_, err := auth.StreamInterceptor(ctx, &grpc.StreamDesc{},
 			nil, "/test/stream", func(ctx context.Context,
 				_ *grpc.StreamDesc, _ *grpc.ClientConn,
 				_ string, _ ...grpc.CallOption) (
@@ -95,7 +95,7 @@ func callServerAuth(auth *serverAuth, ctx context.Context, stream bool,
 			})
 		return err
 	}
-	return auth.unary(ctx, "/test/unary", nil, nil, nil,
+	return auth.UnaryInterceptor(ctx, "/test/unary", nil, nil, nil,
 		func(ctx context.Context, _ string, _, _ any,
 			_ *grpc.ClientConn, _ ...grpc.CallOption) error {
 

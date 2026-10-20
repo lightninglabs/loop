@@ -110,3 +110,6 @@ creation identities before RPC calls, and exposes the `loop static asset`
 commands. The separate runtime retains SDK transaction and wallet signing
 state across process restarts. The manager also recovers original CSV deposits
 that never reached a swap controller.
+
+See the [asset Loop In transitions](../asset-fsm.md) and
+[asset deposit transitions](../../deposit/asset-fsm.md) for the shared graphs.

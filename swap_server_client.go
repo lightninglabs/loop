@@ -192,12 +192,13 @@ func newL402ClientInterceptor(lnd *lndclient.LndServices, store l402.Store,
 	fallback := l402.NewInterceptor(
 		lnd, store, callTimeout, maxCost, maxFee, allowInsecure,
 	)
+	auth := newServerAuth(fallback)
 	interceptor := &l402ClientInterceptor{
 		tokenStore:     store,
 		callTimeout:    callTimeout,
 		allowInsecure:  allowInsecure,
-		fallbackUnary:  fallback.UnaryInterceptor,
-		fallbackStream: fallback.StreamInterceptor,
+		fallbackUnary:  auth.unary,
+		fallbackStream: auth.stream,
 	}
 	interceptor.loadPaidMacaroon = interceptor.currentPaidMacaroon
 
@@ -1058,17 +1059,16 @@ func getSwapServerConn(address, proxyAddress string, skipCertCheck bool,
 	error) {
 
 	// Create a dial options array.
-	auth := newServerAuth(interceptor)
 	opts := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallSendMsgSize(bridge.PublicRPCMaxBytes),
 			grpc.MaxCallRecvMsgSize(bridge.PublicRPCMaxBytes),
 		),
 		grpc.WithUnaryInterceptor(
-			auth.unary,
+			interceptor.UnaryInterceptor,
 		),
 		grpc.WithStreamInterceptor(
-			auth.stream,
+			interceptor.StreamInterceptor,
 		),
 	}
 

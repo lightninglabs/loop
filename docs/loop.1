@@ -427,6 +427,72 @@ Create a new static loop in address.
 .PP
 \fB--help, -h\fP: show help
 
+.SS asset
+Fund and swap native asset static deposits
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS refund
+Refund an expired unreserved asset deposit
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--utxo\fP="":
+
+.SS deposit
+Queue an asset deposit
+
+.PP
+\fB--amount\fP="": Native asset units to deposit (default: 0)
+
+.PP
+\fB--group_key\fP="": Compressed asset group key in lowercase hex
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--request_id\fP="": 32-byte lowercase hex identity; reuse this value after an ambiguous response
+
+.SS in
+Swap one whole asset deposit to Lightning
+
+.PP
+\fB--amount\fP="": Exact native Lightning payout; deposit excess is fee (default: 0)
+
+.PP
+\fB--group_key\fP="": Compressed asset group key in lowercase hex
+
+.PP
+\fB--help, -h\fP: show help
+
+.PP
+\fB--max_asset_debit\fP="": Maximum native debit; defaults to amount (default: 0)
+
+.PP
+\fB--max_asset_fee\fP="": Maximum native swap fee (default: 0)
+
+.PP
+\fB--request_id\fP="": 32-byte lowercase hex identity; reuse this value after an ambiguous response
+
+.PP
+\fB--utxo\fP="": Canonical txid:index of one whole deposit
+
+.SS deposits
+List asset deposits and reservations
+
+.PP
+\fB--help, -h\fP: show help
+
+.SS swaps
+List durable asset requests and swaps
+
+.PP
+\fB--help, -h\fP: show help
+
 .SS listunspent, l
 List unspent static address outputs.
 
