@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -37,25 +38,56 @@ func signerPubKeys(t *testing.T, version input.MuSig2Version,
 	pubKeys := make([]*btcec.PublicKey, len(seeds))
 	for i, seed := range seeds {
 		_, pubKey := test.CreateKey(seed)
-
-		if version == input.MuSig2Version040 {
-			var err error
-			pubKey, err = schnorr.ParsePubKey(
-				schnorr.SerializePubKey(pubKey),
-			)
-			require.NoError(t, err)
-		}
-
-		pubKeys[i] = pubKey
+		pubKeys[i] = versionedPubKey(t, version, pubKey)
 	}
 
 	return pubKeys
+}
+
+// versionedPubKey returns the public key in the format expected by the given
+// MuSig2 version.
+func versionedPubKey(t *testing.T, version input.MuSig2Version,
+	pubKey *btcec.PublicKey) *btcec.PublicKey {
+
+	t.Helper()
+
+	// MuSig2 v0.4 expects x-only public keys.
+	if version != input.MuSig2Version040 {
+		return pubKey
+	}
+
+	xOnlyPubKey, err := schnorr.ParsePubKey(
+		schnorr.SerializePubKey(pubKey),
+	)
+	require.NoError(t, err)
+
+	return xOnlyPubKey
 }
 
 // hasOddY returns true if the compressed serialization of the public key uses
 // the odd-Y prefix.
 func hasOddY(pubKey *btcec.PublicKey) bool {
 	return pubKey.SerializeCompressed()[0] == 0x03
+}
+
+// requireValidSig asserts that sigBytes is a valid Schnorr signature of msg
+// under the MuSig2 combination of the given signer public keys.
+func requireValidSig(t *testing.T, version input.MuSig2Version,
+	pubKeys []*btcec.PublicKey, tweaks *input.MuSig2Tweaks, msg [32]byte,
+	sigBytes []byte) {
+
+	t.Helper()
+
+	require.Len(t, sigBytes, 64)
+
+	sig, err := schnorr.ParseSignature(sigBytes)
+	require.NoError(t, err)
+
+	combinedKey, err := input.MuSig2CombineKeys(
+		version, pubKeys, true, tweaks,
+	)
+	require.NoError(t, err)
+	require.True(t, sig.Verify(msg[:], combinedKey.FinalKey))
 }
 
 // TestMuSig2SignRejectsTooFewSigners ensures the helper fails fast with a clear
@@ -153,19 +185,106 @@ func TestMuSig2SignSupportsVersions(t *testing.T) {
 				testCase.version, keys, tweaks, msg,
 			)
 			require.NoError(t, err)
-			require.Len(t, sigBytes, 64)
-
-			sig, err := schnorr.ParseSignature(sigBytes)
-			require.NoError(t, err)
-
-			combinedKey, err := input.MuSig2CombineKeys(
-				testCase.version, pubKeys, true, tweaks,
-			)
-			require.NoError(t, err)
-			require.True(
-				t, sig.Verify(msg[:], combinedKey.FinalKey),
+			requireValidSig(
+				t, testCase.version, pubKeys, tweaks, msg,
+				sigBytes,
 			)
 		})
+	}
+}
+
+// TestMuSig2SignNormalizesOverflowingKey verifies that a raw key above the
+// group order signs as its value modulo the group order, as documented on
+// MuSig2Sign.
+func TestMuSig2SignNormalizesOverflowingKey(t *testing.T) {
+	t.Parallel()
+
+	var overflowingKey [32]byte
+	for i := range overflowingKey {
+		overflowingKey[i] = 0xff
+	}
+
+	// Reduce the key with math/big instead of btcec, so the expected
+	// public key doesn't depend on the normalization under test. The
+	// reduction must change the key, otherwise it wasn't out of range.
+	var normalizedKey [32]byte
+	new(big.Int).Mod(
+		new(big.Int).SetBytes(overflowingKey[:]), btcec.S256().N,
+	).FillBytes(normalizedKey[:])
+	require.NotEqual(t, overflowingKey, normalizedKey)
+
+	_, normalizedPubKey := btcec.PrivKeyFromBytes(normalizedKey[:])
+	_, otherPubKey := test.CreateKey(2)
+	keys := [][32]byte{overflowingKey, rawKeys(2)[0]}
+
+	tweaks := &input.MuSig2Tweaks{}
+	msg := [32]byte{1}
+
+	for _, version := range musig2Versions {
+		t.Run(testVersionName(version), func(t *testing.T) {
+			t.Parallel()
+
+			sigBytes, err := MuSig2Sign(version, keys, tweaks, msg)
+			require.NoError(t, err)
+
+			pubKeys := []*btcec.PublicKey{
+				versionedPubKey(t, version, normalizedPubKey),
+				versionedPubKey(t, version, otherPubKey),
+			}
+			requireValidSig(
+				t, version, pubKeys, tweaks, msg, sigBytes,
+			)
+		})
+	}
+}
+
+// TestMuSig2SignRejectsZeroKeys verifies that the two raw keys that normalize
+// to zero, zero itself and the group order, are rejected with an error instead
+// of a panic.
+func TestMuSig2SignRejectsZeroKeys(t *testing.T) {
+	t.Parallel()
+
+	const wantErr = "signing key 1 is zero modulo the group order"
+
+	var groupOrderKey [32]byte
+	btcec.S256().N.FillBytes(groupOrderKey[:])
+
+	testCases := []struct {
+		name string
+		key  [32]byte
+	}{
+		{
+			name: "zero key",
+			key:  [32]byte{},
+		},
+		{
+			name: "group order key",
+			key:  groupOrderKey,
+		},
+	}
+
+	tweaks := &input.MuSig2Tweaks{}
+	msg := [32]byte{1}
+
+	for _, version := range musig2Versions {
+		for _, testCase := range testCases {
+			name := testVersionName(version) + " " + testCase.name
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				// Pass the bad key second, so the error has to
+				// name the right signer.
+				keys := [][32]byte{rawKeys(1)[0], testCase.key}
+
+				var err error
+				require.NotPanics(t, func() {
+					_, err = MuSig2Sign(
+						version, keys, tweaks, msg,
+					)
+				})
+				require.ErrorContains(t, err, wantErr)
+			})
+		}
 	}
 }
 
