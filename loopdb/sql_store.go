@@ -512,7 +512,7 @@ func loopToInsertArgs(hash lntypes.Hash,
 func loopOutToInsertArgs(hash lntypes.Hash,
 	loopOut *LoopOutContract) sqlc.InsertLoopOutParams {
 
-	return sqlc.InsertLoopOutParams{
+	args := sqlc.InsertLoopOutParams{
 		SwapHash:            hash[:],
 		DestAddress:         loopOut.DestAddr.String(),
 		SingleSweep:         loopOut.IsExternalAddr,
@@ -526,6 +526,10 @@ func loopOutToInsertArgs(hash lntypes.Hash,
 		PublicationDeadline: loopOut.SwapPublicationDeadline.UTC(),
 		PaymentTimeout:      int32(loopOut.PaymentTimeout.Seconds()),
 	}
+	if loopOut.PaymentAddr != nil {
+		args.PaymentAddress = loopOut.PaymentAddr[:]
+	}
+	return args
 }
 
 // loopInToInsertArgs converts a LoopInContract struct to the arguments needed
@@ -626,6 +630,14 @@ func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 		Loop: Loop{
 			Hash: swapHash,
 		},
+	}
+
+	if row.PaymentAddress != nil {
+		if len(row.PaymentAddress) != 32 {
+			return nil, errors.New("invalid stored payment address length")
+		}
+		addr := [32]byte(row.PaymentAddress)
+		loopOut.Contract.PaymentAddr = &addr
 	}
 
 	if row.AssetID != nil {

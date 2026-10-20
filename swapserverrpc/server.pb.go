@@ -490,9 +490,12 @@ type ServerLoopOutRequest struct {
 	// Examples:
 	//    loopd/v0.10.0-beta/commit=3b635821
 	//    litd/v0.2.0-alpha/commit=326d754
-	UserAgent     string `protobuf:"bytes,7,opt,name=user_agent,json=userAgent,proto3" json:"user_agent,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	UserAgent string `protobuf:"bytes,7,opt,name=user_agent,json=userAgent,proto3" json:"user_agent,omitempty"`
+	// The client accepts bLIP 39 invoices and a separate payment address for
+	// authenticating swap RPCs. Older clients must receive ordinary invoices.
+	AcceptBlindedInvoices bool `protobuf:"varint,8,opt,name=accept_blinded_invoices,json=acceptBlindedInvoices,proto3" json:"accept_blinded_invoices,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ServerLoopOutRequest) Reset() {
@@ -574,6 +577,13 @@ func (x *ServerLoopOutRequest) GetUserAgent() string {
 	return ""
 }
 
+func (x *ServerLoopOutRequest) GetAcceptBlindedInvoices() bool {
+	if x != nil {
+		return x.AcceptBlindedInvoices
+	}
+	return false
+}
+
 type ServerLoopOutResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SwapInvoice   string                 `protobuf:"bytes,1,opt,name=swap_invoice,json=swapInvoice,proto3" json:"swap_invoice,omitempty"`
@@ -586,8 +596,12 @@ type ServerLoopOutResponse struct {
 	Expiry int32 `protobuf:"varint,4,opt,name=expiry,proto3" json:"expiry,omitempty"`
 	// A human-readable message from the loop server.
 	ServerMessage string `protobuf:"bytes,5,opt,name=server_message,json=serverMessage,proto3" json:"server_message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The 32-byte payment address used to authenticate swap RPCs. Required for
+	// blinded swap invoices, whose payment address is encrypted in the path.
+	// For ordinary invoices this may be omitted or must match the invoice.
+	PaymentAddress []byte `protobuf:"bytes,6,opt,name=payment_address,json=paymentAddress,proto3" json:"payment_address,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ServerLoopOutResponse) Reset() {
@@ -654,6 +668,13 @@ func (x *ServerLoopOutResponse) GetServerMessage() string {
 		return x.ServerMessage
 	}
 	return ""
+}
+
+func (x *ServerLoopOutResponse) GetPaymentAddress() []byte {
+	if x != nil {
+		return x.PaymentAddress
+	}
+	return nil
 }
 
 type ServerLoopOutQuoteRequest struct {
@@ -3234,7 +3255,7 @@ var File_server_proto protoreflect.FileDescriptor
 
 const file_server_proto_rawDesc = "" +
 	"\n" +
-	"\fserver.proto\x12\alooprpc\x1a\fcommon.proto\x1a\x11reservation.proto\"\xa0\x02\n" +
+	"\fserver.proto\x12\alooprpc\x1a\fcommon.proto\x1a\x11reservation.proto\"\xd8\x02\n" +
 	"\x14ServerLoopOutRequest\x12!\n" +
 	"\freceiver_key\x18\x01 \x01(\fR\vreceiverKey\x12\x1b\n" +
 	"\tswap_hash\x18\x02 \x01(\fR\bswapHash\x12\x10\n" +
@@ -3243,14 +3264,16 @@ const file_server_proto_rawDesc = "" +
 	"\x10protocol_version\x18\x05 \x01(\x0e2\x18.looprpc.ProtocolVersionR\x0fprotocolVersion\x12\x16\n" +
 	"\x06expiry\x18\x06 \x01(\x05R\x06expiry\x12\x1d\n" +
 	"\n" +
-	"user_agent\x18\a \x01(\tR\tuserAgent\"\xc3\x01\n" +
+	"user_agent\x18\a \x01(\tR\tuserAgent\x126\n" +
+	"\x17accept_blinded_invoices\x18\b \x01(\bR\x15acceptBlindedInvoices\"\xec\x01\n" +
 	"\x15ServerLoopOutResponse\x12!\n" +
 	"\fswap_invoice\x18\x01 \x01(\tR\vswapInvoice\x12%\n" +
 	"\x0eprepay_invoice\x18\x02 \x01(\tR\rprepayInvoice\x12\x1d\n" +
 	"\n" +
 	"sender_key\x18\x03 \x01(\fR\tsenderKey\x12\x1a\n" +
 	"\x06expiry\x18\x04 \x01(\x05B\x02\x18\x01R\x06expiry\x12%\n" +
-	"\x0eserver_message\x18\x05 \x01(\tR\rserverMessage\"\xe5\x01\n" +
+	"\x0eserver_message\x18\x05 \x01(\tR\rserverMessage\x12'\n" +
+	"\x0fpayment_address\x18\x06 \x01(\fR\x0epaymentAddress\"\xe5\x01\n" +
 	"\x19ServerLoopOutQuoteRequest\x12\x10\n" +
 	"\x03amt\x18\x01 \x01(\x04R\x03amt\x12:\n" +
 	"\x19swap_publication_deadline\x18\x02 \x01(\x03R\x17swapPublicationDeadline\x12C\n" +

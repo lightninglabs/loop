@@ -1646,8 +1646,8 @@ func (f *SwapStoreWrapper) FetchSweep(ctx context.Context,
 		return nil, fmt.Errorf("failed to get htlc: %w", err)
 	}
 
-	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
-		swap.Contract.SwapInvoice, f.chainParams,
+	swapPaymentAddr, err := utils.ObtainLoopOutPaymentAddr(
+		swap.Contract, f.chainParams,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get payment addr: %w", err)

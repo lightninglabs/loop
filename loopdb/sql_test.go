@@ -84,6 +84,12 @@ func TestSqliteLoopOutStore(t *testing.T) {
 		testSqliteLoopOutStore(t, &restrictedSwap)
 	})
 
+	secretSwap := unrestrictedSwap
+	secretSwap.PaymentAddr = &[32]byte{1, 2, 3}
+	t.Run("explicit payment address", func(t *testing.T) {
+		testSqliteLoopOutStore(t, &secretSwap)
+	})
+
 	labelledSwap := unrestrictedSwap
 	labelledSwap.Label = testLabel
 	t.Run("labelled swap", func(t *testing.T) {

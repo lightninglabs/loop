@@ -99,6 +99,9 @@ var (
 	// value: uint32 confirmation value
 	confirmationsKey = []byte("confirmations")
 
+	// paymentAddrKey stores the optional loop-out RPC authentication secret.
+	paymentAddrKey = []byte("payment-address")
+
 	// liquidityBucket is a root bucket used to save liquidity manager
 	// related info.
 	liquidityBucket = []byte("liquidity")
@@ -516,6 +519,12 @@ func (s *boltSwapStore) CreateLoopOut(ctx context.Context, hash lntypes.Hash,
 		if err != nil {
 			return err
 		}
+		if swap.PaymentAddr != nil {
+			err = swapBucket.Put(paymentAddrKey, swap.PaymentAddr[:])
+			if err != nil {
+				return err
+			}
+		}
 
 		if err := putLabel(swapBucket, swap.Label); err != nil {
 			return err
@@ -847,6 +856,13 @@ func (s *boltSwapStore) fetchLoopOutSwap(rootBucket *bbolt.Bucket,
 
 	// Get our label for this swap, if it is present.
 	contract.Label = getLabel(swapBucket)
+	if addrBytes := swapBucket.Get(paymentAddrKey); addrBytes != nil {
+		if len(addrBytes) != 32 {
+			return nil, errors.New("invalid stored payment address length")
+		}
+		addr := [32]byte(addrBytes)
+		contract.PaymentAddr = &addr
+	}
 
 	// Read the list of concatenated outgoing channel ids
 	// that form the outgoing set.
