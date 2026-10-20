@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -32,7 +32,7 @@ func (a *Adapter) RequestOffer(
 	request *swapserverrpc.CreateAssetLoopInRequest,
 ) (assetexec.Offer, error) {
 
-	if request == nil || proto.Size(request) > bridge.PublicRPCMaxBytes ||
+	if request == nil || proto.Size(request) > swapkit.PublicRPCMaxBytes ||
 		request.ProtocolVersion != 1 ||
 		len(request.RequestId) != 32 ||
 		bytes.Equal(request.RequestId, make([]byte, 32)) {
@@ -73,12 +73,16 @@ func (a *Adapter) RequestOffer(
 }
 
 // Prepare drives the network-time exchange from a previously persisted Start.
-// Retries use the same invoice, fallback templates, and signatures. Neither a
+// Retries use the same invoice and unsigned fallback with fresh signing
+// rounds until the complete fallback is durable. Neither a
 // payment timeout nor an RPC error clears the controller's exposure record.
 func (s *Session) Prepare(ctx context.Context, hash [32]byte) error {
 	record, err := s.Adapter.Store.Get(ctx, hash)
 	if err != nil {
 		return err
+	}
+	if len(record.Fallback.Bundle) > 0 {
+		return s.Controller.ExposeClaim(ctx, hash)
 	}
 	var intent InvoiceIntent
 	if err := json.Unmarshal(record.InvoiceIntent, &intent); err != nil {
@@ -100,13 +104,21 @@ func (s *Session) Prepare(ctx context.Context, hash [32]byte) error {
 	if err != nil {
 		return err
 	}
+	round, err := s.Adapter.BeginFallback(ctx, record.Offer,
+		intent.RecoveryRequest)
+	if err != nil {
+		return err
+	}
+	defer round.Close()
 	fallback, err := s.Adapter.Server.AssetLoopInFallback(ctx,
-		&swapserverrpc.AssetLoopInReference{PaymentHash: hash[:]})
+		&swapserverrpc.AssetLoopInReference{
+			PaymentHash: hash[:], SigningNonce: round.Nonce[:],
+		})
 	if err != nil {
 		return err
 	}
 	if err := s.Controller.ReceiveFallback(ctx, hash,
-		fallback.GetRecoveryBundle()); err != nil {
+		fallback.GetRecoveryBundle(), round.Finalize); err != nil {
 		return err
 	}
 	return s.Controller.ExposeClaim(ctx, hash)

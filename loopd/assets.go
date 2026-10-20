@@ -3,10 +3,13 @@ package loopd
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
-	"path/filepath"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
@@ -16,26 +19,32 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
+	assetkit "github.com/lightninglabs/loop/swapkit/tapsdk"
+	sdk "github.com/lightninglabs/tap-sdk"
+	sdkgrpc "github.com/lightninglabs/tap-sdk/grpc"
+	"github.com/lightninglabs/tap-sdk/macaroon"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"google.golang.org/grpc"
 )
 
-// assetRuntimeConfig rejects partial activation before any funding is possible.
-func assetRuntimeConfig(cfg *Config) ([33]byte, bool, error) {
+// assetLoopInConfig rejects partial activation before any funding is possible.
+func assetLoopInConfig(cfg *Config) ([33]byte, bool, error) {
 	var peer [33]byte
-	enabled := cfg.AssetRuntimeSocket != "" ||
-		cfg.AssetRuntimeTokenFile != "" || cfg.AssetPeer != ""
+	enabled := cfg.AssetPeer != "" || cfg.AssetBitcoinURL != ""
 	if !enabled {
 		return peer, false, nil
 	}
-	if cfg.Tapd == nil || !cfg.Tapd.Activate ||
-		!filepath.IsAbs(cfg.AssetRuntimeSocket) ||
-		!filepath.IsAbs(cfg.AssetRuntimeTokenFile) {
+	backend, err := url.Parse(cfg.AssetBitcoinURL)
+	if cfg.Tapd == nil || !cfg.Tapd.Activate || err != nil ||
+		backend.Host == "" || backend.User != nil ||
+		(backend.Scheme != "http" && backend.Scheme != "https") ||
+		cfg.AssetFeeSat == 0 || cfg.AssetMaxFeeSat < cfg.AssetFeeSat {
 
 		return peer, false, fmt.Errorf("asset loop-in requires tapd, " +
-			"an absolute runtime socket and token path")
+			"Bitcoin RPC and valid anchor fee limits")
 	}
 	raw, err := hex.DecodeString(cfg.AssetPeer)
 	if err != nil || len(raw) != len(peer) ||
@@ -80,12 +89,12 @@ func (c assetAuthConn) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	return c.services.ClientConn.NewStream(ctx, desc, method, opts...)
 }
 
-// newAssetConfig imports legacy recovery records into the normal SQL store.
-func (d *Daemon) newAssetConfig(ctx context.Context, client *loop.Client,
+// newAssetConfig connects the kit to normal wallet and SQL services.
+func (d *Daemon) newAssetConfig(client *loop.Client,
 	addresses *address.Manager, deposits *deposit.Manager,
 	store *loopin.SqlStore) (*loopin.AssetConfig, error) {
 
-	peer, enabled, err := assetRuntimeConfig(d.cfg)
+	peer, enabled, err := assetLoopInConfig(d.cfg)
 	if err != nil || !enabled {
 		return nil, err
 	}
@@ -95,35 +104,86 @@ func (d *Daemon) newAssetConfig(ctx context.Context, client *loop.Client,
 				"tapd connection",
 		)
 	}
-	info, err := os.Lstat(d.cfg.AssetRuntimeTokenFile)
+	sdkClient, err := sdkgrpc.NewClient(&sdkgrpc.Config{
+		Host: d.cfg.Tapd.Host, Network: sdk.Network(d.cfg.Network),
+		TLS:      sdkgrpc.TLSFromPath(d.cfg.Tapd.TLSPath),
+		Macaroon: macaroon.FromPath(d.cfg.Tapd.MacaroonPath),
+	})
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
-		return nil, fmt.Errorf(
-			"asset runtime token must be a private file",
-		)
+	httpClient := &http.Client{}
+	if d.cfg.AssetBitcoinTLS != "" {
+		raw, err := os.ReadFile(d.cfg.AssetBitcoinTLS)
+		if err != nil {
+			sdkClient.Close()
+			return nil, err
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(raw) {
+			sdkClient.Close()
+			return nil, fmt.Errorf("invalid Bitcoin TLS certificate")
+		}
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:    roots,
+				MinVersion: tls.VersionTLS12,
+			},
+		}
 	}
-	token, err := os.ReadFile(d.cfg.AssetRuntimeTokenFile)
+	utxos := &assetkit.BitcoinUTXO{
+		URL:      d.cfg.AssetBitcoinURL,
+		User:     d.cfg.AssetBitcoinUser,
+		Password: d.cfg.AssetBitcoinPassword,
+		Client:   httpClient,
+	}
+	chain := &assetkit.LNDChain{
+		Kit:           d.lnd.ChainKit,
+		Notifier:      d.lnd.ChainNotifier,
+		UnspentOutput: utxos.Unspent,
+	}
+	network := sdk.Network(d.cfg.Network)
+	driver, err := assetkit.NewDriver(assetkit.DriverConfig{
+		Network:    network,
+		SDK:        sdkClient,
+		Wallet:     sdk.NewWallet(sdkClient, network),
+		WalletKit:  d.lnd.WalletKit,
+		Signer:     d.lnd.Signer,
+		Chain:      chain,
+		NodePubkey: d.lnd.NodePubkey,
+		FeeSat:     d.cfg.AssetFeeSat,
+		MaxFeeSat:  d.cfg.AssetMaxFeeSat,
+		MinConfs:   1,
+		Deposit: func(ctx context.Context, point string) (
+			swapkit.Deposit, keychain.KeyLocator, error) {
+
+			params, err := addresses.GetStaticAddressParameters(ctx)
+			if err != nil {
+				return swapkit.Deposit{}, keychain.KeyLocator{}, err
+			}
+			entries, err := store.AssetInventory(ctx)
+			if err != nil {
+				return swapkit.Deposit{}, keychain.KeyLocator{}, err
+			}
+			for _, entry := range entries {
+				if entry.Deposit.Outpoint == point {
+					return entry.Deposit, params.KeyLocator, nil
+				}
+			}
+			return swapkit.Deposit{}, keychain.KeyLocator{},
+				swapkit.ErrInvalid
+		},
+	})
 	if err != nil {
-		return nil, err
-	}
-	runtime, err := bridge.NewClient(d.cfg.AssetRuntimeSocket, token)
-	if err != nil {
-		return nil, err
-	}
-	if err := store.ImportLegacyAssetJournals(ctx,
-		filepath.Join(d.cfg.DataDir, "asset-inventory.db"),
-		filepath.Join(d.cfg.DataDir, "asset-loop-in.db"),
-	); err != nil {
-		runtime.Close()
+		sdkClient.Close()
+		httpClient.CloseIdleConnections()
 		return nil, err
 	}
 	auth := assetAuthConn{services: &d.lnd.LndServices}
 	var node [33]byte
 	copy(node[:], d.lnd.NodePubkey[:])
 	cfg := &loopin.AssetConfig{
-		Runtime: runtime, Store: store,
+		Driver: driver, Store: store,
 		Address: addresses, Deposits: deposits,
 		Server: assetclient.NewServerClient(client.Conn),
 		Receiver: &assetln.Receiver{
@@ -138,6 +198,9 @@ func (d *Daemon) newAssetConfig(ctx context.Context, client *loop.Client,
 			warnf("Asset recovery operation pending: %v", err)
 		},
 	}
-	d.assetCleanup = runtime.Close
+	d.assetCleanup = func() {
+		sdkClient.Close()
+		httpClient.CloseIdleConnections()
+	}
 	return cfg, nil
 }

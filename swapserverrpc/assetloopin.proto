@@ -45,6 +45,9 @@ message CreateAssetLoopInRequest {
 
 message AssetLoopInReference {
     bytes payment_hash = 1;
+
+    // Fresh public MuSig2 nonce, used only by AssetLoopInFallback.
+    bytes signing_nonce = 2;
 }
 
 message AssetLoopInOffer {
@@ -70,13 +73,14 @@ message AssetLoopInOffer {
 message PrepareAssetLoopInRequest {
     bytes payment_hash = 1;
     string asset_hold_invoice = 2;
-    // SDK fallback templates and public MuSig2 nonces. No private nonces.
+    // Immutable SDK fallback templates. No private nonces.
     bytes recovery_request = 3;
 }
 
 message AssetLoopInFallbackResponse {
-    // Server partial signatures, public nonces, and all asset transitions
-    // needed to reconstruct, persist, publish, and refund the fallback.
+    // Package digest, public nonces, and server partial signature for this
+    // signing round. The client reconstructs and persists the complete
+    // fallback using its saved immutable SDK package before sharing authority.
     bytes recovery_bundle = 1;
 }
 

@@ -107,7 +107,9 @@ func TestBlockedPeerCannotStarveChainLookupOrRefund(t *testing.T) {
 	_, err = controller.PrepareInvoice(t.Context(), offer.Hash)
 	require.NoError(t, err)
 	require.NoError(t, controller.ReceiveFallback(t.Context(), offer.Hash,
-		[]byte("server fallback")))
+		[]byte("server fallback"), func(ctx context.Context, raw []byte) (assetexec.Fallback, error) {
+			return actions.VerifyFinalizeFallback(ctx, offer, raw)
+		}))
 	require.NoError(t, controller.ExposeClaim(t.Context(), offer.Hash))
 
 	invoices := &cancelInvoices{}

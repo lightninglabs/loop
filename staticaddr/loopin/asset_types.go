@@ -2,9 +2,10 @@ package loopin
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
 )
 
 // AssetSwapRequest fixes user-approved native quantities before any server
@@ -33,18 +34,20 @@ func validAssetSwapAmount(depositAmount uint64, request AssetSwapRequest) bool {
 //
 //nolint:tagliatelle // Preserve the existing recovery and wire format.
 type AssetJob struct {
-	ID                   [32]byte                     `json:"ID"`
-	Deposit              *bridge.CreateDepositRequest `json:"Deposit"`
-	Swap                 *AssetSwapRequest            `json:"Swap"`
-	Refund               *bridge.RefundDepositRequest `json:"Refund"`
-	RefundProof          []byte                       `json:"RefundProof"`
-	Offer                *assetexec.Offer             `json:"Offer"`
-	Intent               []byte                       `json:"Intent"`
-	ServerRequest        []byte                       `json:"ServerRequest"`
-	Complete             bool                         `json:"Complete"`
-	Canceled             bool                         `json:"Canceled"`
-	RefundReported       bool                         `json:"RefundReported"`
-	CancellationReported bool                         `json:"CancellationReported"`
+	// Funding contains only the unfinished wallet transaction checkpoint.
+	Funding              json.RawMessage               `json:"Funding,omitempty"`
+	ID                   [32]byte                      `json:"ID"`
+	Deposit              *swapkit.CreateDepositRequest `json:"Deposit"`
+	Swap                 *AssetSwapRequest             `json:"Swap"`
+	Refund               *swapkit.RefundDepositRequest `json:"Refund"`
+	RefundProof          []byte                        `json:"RefundProof"`
+	Offer                *assetexec.Offer              `json:"Offer"`
+	Intent               []byte                        `json:"Intent"`
+	ServerRequest        []byte                        `json:"ServerRequest"`
+	Complete             bool                          `json:"Complete"`
+	Canceled             bool                          `json:"Canceled"`
+	RefundReported       bool                          `json:"RefundReported"`
+	CancellationReported bool                          `json:"CancellationReported"`
 }
 
 // AssetInventoryEntry binds one isolated asset anchor to a single active
@@ -53,10 +56,10 @@ type AssetJob struct {
 //
 //nolint:tagliatelle // Preserve the existing recovery and wire format.
 type AssetInventoryEntry struct {
-	Deposit   bridge.Deposit `json:"Deposit"`
-	RequestID [32]byte       `json:"RequestID"`
-	Hash      [32]byte       `json:"Hash"`
-	Consumed  bool           `json:"Consumed"`
+	Deposit   swapkit.Deposit `json:"Deposit"`
+	RequestID [32]byte        `json:"RequestID"`
+	Hash      [32]byte        `json:"Hash"`
+	Consumed  bool            `json:"Consumed"`
 }
 
 // AssetStore extends the normal loop-in store with asset deposit metadata,
@@ -68,7 +71,7 @@ type AssetStore interface {
 	GetAssetJob(context.Context, [32]byte) (*AssetJob, error)
 	AssetJobs(context.Context) ([]AssetJob, error)
 	AssetInventory(context.Context) ([]AssetInventoryEntry, error)
-	AddAssetDeposit(context.Context, bridge.Deposit) error
+	AddAssetDeposit(context.Context, swapkit.Deposit) error
 	FinishAssetRefund(context.Context, *AssetJob, []byte) error
 	CancelUnstartedAssetJob(context.Context, *AssetJob) error
 }

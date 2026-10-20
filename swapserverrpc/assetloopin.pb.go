@@ -189,8 +189,10 @@ func (x *CreateAssetLoopInRequest) GetRequestId() []byte {
 }
 
 type AssetLoopInReference struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PaymentHash   []byte                 `protobuf:"bytes,1,opt,name=payment_hash,json=paymentHash,proto3" json:"payment_hash,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	PaymentHash []byte                 `protobuf:"bytes,1,opt,name=payment_hash,json=paymentHash,proto3" json:"payment_hash,omitempty"`
+	// Fresh public MuSig2 nonce, used only by AssetLoopInFallback.
+	SigningNonce  []byte `protobuf:"bytes,2,opt,name=signing_nonce,json=signingNonce,proto3" json:"signing_nonce,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -228,6 +230,13 @@ func (*AssetLoopInReference) Descriptor() ([]byte, []int) {
 func (x *AssetLoopInReference) GetPaymentHash() []byte {
 	if x != nil {
 		return x.PaymentHash
+	}
+	return nil
+}
+
+func (x *AssetLoopInReference) GetSigningNonce() []byte {
+	if x != nil {
+		return x.SigningNonce
 	}
 	return nil
 }
@@ -408,7 +417,7 @@ type PrepareAssetLoopInRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	PaymentHash      []byte                 `protobuf:"bytes,1,opt,name=payment_hash,json=paymentHash,proto3" json:"payment_hash,omitempty"`
 	AssetHoldInvoice string                 `protobuf:"bytes,2,opt,name=asset_hold_invoice,json=assetHoldInvoice,proto3" json:"asset_hold_invoice,omitempty"`
-	// SDK fallback templates and public MuSig2 nonces. No private nonces.
+	// Immutable SDK fallback templates. No private nonces.
 	RecoveryRequest []byte `protobuf:"bytes,3,opt,name=recovery_request,json=recoveryRequest,proto3" json:"recovery_request,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -467,8 +476,9 @@ func (x *PrepareAssetLoopInRequest) GetRecoveryRequest() []byte {
 
 type AssetLoopInFallbackResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Server partial signatures, public nonces, and all asset transitions
-	// needed to reconstruct, persist, publish, and refund the fallback.
+	// Package digest, public nonces, and server partial signature for this
+	// signing round. The client reconstructs and persists the complete
+	// fallback using its saved immutable SDK package before sharing authority.
 	RecoveryBundle []byte `protobuf:"bytes,1,opt,name=recovery_bundle,json=recoveryBundle,proto3" json:"recovery_bundle,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -740,9 +750,10 @@ const file_assetloopin_proto_rawDesc = "" +
 	"\x0fmax_asset_debit\x18\x06 \x01(\x04R\rmaxAssetDebit\x12\x1a\n" +
 	"\bcontract\x18\a \x01(\fR\bcontract\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\b \x01(\fR\trequestId\"9\n" +
+	"request_id\x18\b \x01(\fR\trequestId\"^\n" +
 	"\x14AssetLoopInReference\x12!\n" +
-	"\fpayment_hash\x18\x01 \x01(\fR\vpaymentHash\"\x91\x05\n" +
+	"\fpayment_hash\x18\x01 \x01(\fR\vpaymentHash\x12#\n" +
+	"\rsigning_nonce\x18\x02 \x01(\fR\fsigningNonce\"\x91\x05\n" +
 	"\x10AssetLoopInOffer\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12!\n" +
 	"\fpayment_hash\x18\x02 \x01(\fR\vpaymentHash\x12\x1b\n" +

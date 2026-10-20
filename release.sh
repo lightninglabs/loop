@@ -218,6 +218,9 @@ commit=$(git --git-dir "${SCRIPT_DIR}/.git" rev-parse HEAD)
 green " - Checkout commit ${commit} in ${BUILD_DIR}"
 git checkout -b build-branch "$commit"
 
+# Prepare the SDK relative to the clean clone for every tag mode.
+make dev-tap-sdk
+
 green " - Checking tag $1"
 check_tag $1
 

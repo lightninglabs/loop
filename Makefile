@@ -30,7 +30,9 @@ DIRTY := $(shell git diff-index --quiet HEAD -- || echo dirty)
 LDFLAGS := -ldflags "-X $(PKG).Commit=$(COMMIT) -X $(PKG).CommitHash=$(COMMIT_HASH) -X $(PKG).Dirty=$(DIRTY)"
 DEV_TAGS = dev
 
-GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*" -not -name "*pb.go" -not -name "*pb.gw.go" -not -name "*.pb.json.go")
+GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' \
+	-not -path "./vendor/*" -not -path "./tap-sdk-loop-compat/*" \
+	-not -name "*pb.go" -not -name "*pb.gw.go" -not -name "*.pb.json.go")
 GOLIST := go list $(PKG)/... | grep -v '/vendor/'
 
 XARGS := xargs -L 1
@@ -49,13 +51,15 @@ DOCKER_TOOLS = docker run \
   --rm \
   -v $(shell bash -c "go env GOCACHE 2>/dev/null || (mkdir -p /tmp/go-cache; echo /tmp/go-cache)"):/tmp/build/.cache \
   -v $(shell bash -c "go env GOMODCACHE 2>/dev/null || (mkdir -p /tmp/go-modcache; echo /tmp/go-modcache)"):/tmp/build/.modcache \
-  -v $$(pwd):/build loop-tools
+  -v $$(pwd):/build \
+  -v $$(pwd)/../tap-sdk-loop-compat:/tap-sdk-loop-compat loop-tools
 
 DOCKER_RELEASE_BUILDER = docker run \
   --rm \
   -v $(shell bash -c "go env GOCACHE 2>/dev/null || (mkdir -p /tmp/go-cache; echo /tmp/go-cache)"):/tmp/build/.cache \
   -v $(shell bash -c "go env GOMODCACHE 2>/dev/null || (mkdir -p /tmp/go-modcache; echo /tmp/go-modcache)"):/tmp/build/.modcache \
   -v $$(pwd):/repo \
+  -v $$(pwd)/../tap-sdk-loop-compat:/tap-sdk-loop-compat \
   -e LOOPBUILDSYS='$(buildsys)' \
   loop-release-builder
 
@@ -248,3 +252,12 @@ fsm-check: fsm
 		exit 1; \
 	fi
 .PHONY: fsm fsm-check
+
+# The temporary SDK compatibility branch uses Loop's Bitcoin dependency graph.
+dev-tap-sdk:
+	sh scripts/prepare-tap-sdk.sh
+
+build install unit unit-race unit-postgres unit-postgres-race lint mod-tidy \
+mod-check docker-release rpc-js-compile fsm: dev-tap-sdk
+
+.PHONY: dev-tap-sdk

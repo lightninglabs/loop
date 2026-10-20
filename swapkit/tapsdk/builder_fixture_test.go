@@ -10,7 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/txscript"
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
@@ -24,6 +24,7 @@ var builderFixtureJSON []byte
 
 type builderFixtureClient struct {
 	sdk.Client
+
 	raw      []byte
 	verified *sdk.VerifyProofResponse
 }
@@ -67,9 +68,10 @@ type builderFixture struct {
 
 func newCustomAnchorBuilderFixture(t *testing.T) *builderFixture {
 	t.Helper()
+	//nolint:tagliatelle // Retain the SDK fixture's serialized field names.
 	var fixture struct {
-		Request  *sdk.CustomAnchorRequest
-		Verified *sdk.VerifyProofResponse
+		Request  *sdk.CustomAnchorRequest `json:"Request"`
+		Verified *sdk.VerifyProofResponse `json:"Verified"`
 	}
 	require.NoError(t, json.Unmarshal(builderFixtureJSON, &fixture))
 	require.NotNil(t, fixture.Request)
@@ -93,6 +95,7 @@ func testKey(t *testing.T, scalar byte) sdk.PubKey {
 
 func validateMuSig2Aggregate(expected sdk.XOnlyPubKey,
 	participants []sdk.PubKey) error {
+
 	keys := make([]*btcec.PublicKey, len(participants))
 	for i, key := range participants {
 		parsed, err := btcec.ParsePubKey(key[:])

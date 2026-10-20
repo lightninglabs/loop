@@ -94,5 +94,8 @@ before changing this flow. `loopd` and `looprpc` expose it; `cmd/loop` supplies
 `static asset` commands. Restore the deposit manager's asset exclusion before
 Bitcoin recovery. Execution checkpoints and ownership release must commit
 atomically; native quantities must never enter satoshi fields. SDK transaction
-and wallet-signing state belongs to the separate `swapkit/tapsdk` runtime;
-only primitive bridge types may enter the client's legacy dependency graph.
+operations live in `swapkit/tapsdk` inside the normal Loop module. Use the
+existing LND signer and chain services. Never persist secret MuSig2 nonces:
+restart unfinished rounds with fresh nonces for the same unsigned package.
+The normal SQL record owns preparation and the completed fallback; tapd owns
+transfer publication and confirmed proof reconstruction.

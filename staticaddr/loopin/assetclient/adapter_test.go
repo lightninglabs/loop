@@ -264,6 +264,7 @@ type sessionActions struct {
 	assetexec.Actions
 
 	creates, pushes, cancels int
+	rounds, closed           int
 }
 
 func (*sessionActions) CurrentHeight(context.Context) (uint32, error) {
@@ -285,6 +286,19 @@ func (a *sessionActions) CreateInvoice(context.Context, assetexec.Offer,
 		PaymentRequest: "held-invoice", PaymentPlan: []byte("rfq"),
 	}, nil
 }
+func (a *sessionActions) BeginFallback(ctx context.Context,
+	offer assetexec.Offer, _ []byte) (*assetexec.FallbackRound, error) {
+
+	a.rounds++
+	return &assetexec.FallbackRound{Nonce: [66]byte{byte(a.rounds)},
+		Close: func() { a.closed++ },
+		Finalize: func(ctx context.Context, raw []byte) (
+			assetexec.Fallback, error) {
+
+			return a.VerifyFinalizeFallback(ctx, offer, raw)
+		}}, nil
+}
+
 func (*sessionActions) VerifyFinalizeFallback(context.Context, assetexec.Offer,
 	[]byte) (assetexec.Fallback, error) {
 
@@ -538,4 +552,79 @@ func testSessionRecoveryResumesLostResponses(t *testing.T, lostPhase string) {
 		[]byte("signed-sdk-bundle"),
 		record.Fallback.Bundle,
 	)
+}
+
+// checkpointFailure simulates both sides of the durable-final boundary.
+type checkpointFailure struct {
+	assetexec.Store
+
+	afterWrite bool
+}
+
+func (s checkpointFailure) Update(ctx context.Context,
+	r *assetexec.Record, revision int64) error {
+
+	if len(r.Fallback.Bundle) != 0 && !r.SignaturesExposed {
+		if s.afterWrite {
+			if err := s.Store.Update(ctx, r, revision); err != nil {
+				return err
+			}
+		}
+		return errLost
+	}
+	return s.Store.Update(ctx, r, revision)
+}
+
+func TestFallbackCheckpointRestartUsesFreshRoundOrSavedFinal(t *testing.T) {
+	for _, afterWrite := range []bool{false, true} {
+		t.Run(fmt.Sprintf("durable=%v", afterWrite), func(t *testing.T) {
+			ctx := t.Context()
+			_, _, offer := offerFixture(t)
+			path := filepath.Join(t.TempDir(), "client.db")
+			store, err := openAssetClientStore(path)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, store.Close()) })
+			actions := &sessionActions{}
+			preparations := 0
+			server := &testServer{
+				prepare: func(req *swapserverrpc.PrepareAssetLoopInRequest) error {
+					preparations++
+					require.Equal(t, []byte("fixed package"), req.RecoveryRequest)
+					return nil
+				},
+				fallback: func() ([]byte, error) { return []byte("partial"), nil },
+			}
+			failing := checkpointFailure{Store: store, afterWrite: afterWrite}
+			adapter := &Adapter{Store: failing, Actions: actions, Server: server}
+			session := &Session{Adapter: adapter,
+				Controller: assetexec.NewController(failing, actions, nil)}
+			intent, err := json.Marshal(InvoiceIntent{
+				RecoveryRequest: []byte("fixed package"),
+			})
+			require.NoError(t, err)
+			require.NoError(t, session.Controller.Start(ctx, offer, intent))
+			require.ErrorIs(t, session.Prepare(ctx, offer.Hash), errLost)
+			require.Zero(t, actions.pushes)
+			require.Equal(t, 1, actions.closed)
+			require.NoError(t, store.Close())
+			store, err = openAssetClientStore(path)
+			require.NoError(t, err)
+			adapter.Store = store
+			session.Controller = assetexec.NewController(store, actions, nil)
+			require.NoError(t, session.Recover(ctx, offer.Hash))
+			want := 2
+			if afterWrite {
+				want = 1
+			}
+			require.Equal(t, want, actions.rounds)
+			require.Equal(t, want, actions.closed)
+			require.Equal(t, want, preparations)
+			require.Equal(t, 1, actions.creates)
+			require.Equal(t, 1, actions.pushes)
+			record, err := store.Get(ctx, offer.Hash)
+			require.NoError(t, err)
+			require.True(t, record.SignaturesExposed)
+			require.Equal(t, []byte("signed-sdk-bundle"), record.Fallback.Bundle)
+		})
+	}
 }

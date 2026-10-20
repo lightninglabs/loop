@@ -1,0 +1,1594 @@
+diff --git a/asset.go b/asset.go
+index 64c8977..50be62e 100644
+--- a/asset.go
++++ b/asset.go
+@@ -121,6 +121,11 @@ type AssetRecord struct {
+ 	// ScriptKey is the script key.
+ 	ScriptKey ScriptKey
+ 
++	// AnchorOutpoint identifies this concrete wallet output when tapd
++	// supplies its chain anchor. It is nil for records without an anchor.
++	// Use it when exporting proofs for a reused script key.
++	AnchorOutpoint *Outpoint
++
+ 	// AltLeaves are the auxiliary leaves.
+ 	AltLeaves []AltLeaf
+ }
+diff --git a/custom_anchor_activation.go b/custom_anchor_activation.go
+new file mode 100644
+index 0000000..03af31d
+--- /dev/null
++++ b/custom_anchor_activation.go
+@@ -0,0 +1,37 @@
++package tapsdk
++
++import "github.com/lightninglabs/taproot-assets/proof"
++
++// checkActivationEvidence enforces the same evidence requirements as tapd
++// v0.8.6 before accepting an unconfirmed transition. That released library
++// keeps this check private; remove this adapter when the compatible release
++// exposes Proof.CheckActivationEvidence.
++func checkActivationEvidence(p *proof.Proof) error {
++	if p.Asset.IsGenesisAsset() {
++		return nil
++	}
++	if p.Version != proof.TransitionV1 {
++		return proof.ErrTransitionV1Required
++	}
++	isSplit := p.Asset.HasSplitCommitmentWitness()
++	if (isSplit || p.Asset.SplitCommitmentRoot != nil) &&
++		p.RootLocatorProof == nil {
++
++		return proof.ErrMissingRootLocatorProof
++	}
++	root := &p.InclusionProof
++	if isSplit {
++		root = p.SplitRootProof
++		if root == nil || root.CommitmentProof == nil ||
++			len(root.CommitmentProof.STXOProofs) == 0 {
++
++			return proof.ErrMissingSplitSTXOProofs
++		}
++	}
++	if root.CommitmentProof == nil ||
++		len(root.CommitmentProof.SpenderProofs) == 0 {
++
++		return proof.ErrMissingSpenderProofs
++	}
++	return nil
++}
+diff --git a/custom_anchor_activation_test.go b/custom_anchor_activation_test.go
+new file mode 100644
+index 0000000..4f16103
+--- /dev/null
++++ b/custom_anchor_activation_test.go
+@@ -0,0 +1,74 @@
++package tapsdk
++
++import (
++	"testing"
++
++	"github.com/lightninglabs/taproot-assets/proof"
++	"github.com/stretchr/testify/require"
++)
++
++// TestCustomAnchorActivationEvidence binds the compatibility adapter to the
++// evidence required by released tapd for new transitions.
++func TestCustomAnchorActivationEvidence(t *testing.T) {
++	_, base, key := newAssetProofPathBase(t)
++	split := newAssetProofPathSplitTransition(t, base, key)
++	require.NoError(t, checkActivationEvidence(split))
++	pkg := newCustomAnchorTestFixture(t).sealed
++	regular, err := proof.Decode(pkg.ProofUpdates[0].ProofBlob)
++	require.NoError(t, err)
++	require.Equal(t, proof.TransitionV1, regular.Version)
++	require.NoError(t, checkActivationEvidence(regular))
++
++	tests := []struct {
++		name   string
++		base   *proof.Proof
++		mutate func(*proof.Proof)
++		err    error
++	}{
++		{
++			name: "old transition", base: regular,
++			mutate: func(p *proof.Proof) {
++				p.Version = proof.TransitionV0
++			},
++			err: proof.ErrTransitionV1Required,
++		},
++		{
++			name: "spender evidence", base: regular,
++			mutate: func(p *proof.Proof) {
++				p.InclusionProof.CommitmentProof.SpenderProofs = nil
++			},
++			err: proof.ErrMissingSpenderProofs,
++		},
++		{
++			name: "split locator", base: split,
++			mutate: func(p *proof.Proof) {
++				p.RootLocatorProof = nil
++			},
++			err: proof.ErrMissingRootLocatorProof,
++		},
++		{
++			name: "split stxo", base: split,
++			mutate: func(p *proof.Proof) {
++				p.SplitRootProof.CommitmentProof.STXOProofs = nil
++			},
++			err: proof.ErrMissingSplitSTXOProofs,
++		},
++		{
++			name: "split spender", base: split,
++			mutate: func(p *proof.Proof) {
++				p.SplitRootProof.CommitmentProof.SpenderProofs = nil
++			},
++			err: proof.ErrMissingSpenderProofs,
++		},
++	}
++	for _, test := range tests {
++		t.Run(test.name, func(t *testing.T) {
++			raw, err := test.base.Bytes()
++			require.NoError(t, err)
++			p, err := proof.Decode(raw)
++			require.NoError(t, err)
++			test.mutate(p)
++			require.ErrorIs(t, checkActivationEvidence(p), test.err)
++		})
++	}
++}
+diff --git a/custom_anchor_builder.go b/custom_anchor_builder.go
+index dc9524a..7a36d41 100644
+--- a/custom_anchor_builder.go
++++ b/custom_anchor_builder.go
+@@ -782,6 +782,13 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
+ 			if err != nil {
+ 				return nil, nil, nil, err
+ 			}
++			if mode == CustomAssetWitnessBackendSigner {
++				if err := b.resolveInputSigningKeys(
++					ctx, packet,
++				); err != nil {
++					return nil, nil, nil, err
++				}
++			}
+ 			backendSigning = append(
+ 				backendSigning,
+ 				mode == CustomAssetWitnessBackendSigner,
+@@ -859,6 +866,56 @@ func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
+ 	}
+ }
+ 
++// resolveInputSigningKeys carries the authenticated wallet's complete key
++// derivation into each backend-signed input. Proofs contain the output key but
++// omit wallet metadata. In particular, a received unique script key requires
++// its Taproot tweak; a raw key locator alone would produce a BIP-86 signature.
++func (b *CustomAnchorTxBuilder) resolveInputSigningKeys(ctx context.Context,
++	packet *tappsbt.VPacket) error {
++
++	for idx, input := range packet.Inputs {
++		proofKey := schnorr.SerializePubKey(
++			input.Asset().ScriptKey.PubKey,
++		)
++		resolved, err := b.wallet.client.QueryScriptKey(ctx, proofKey)
++		if err != nil {
++			return fmt.Errorf(
++				"resolve input %d signing key: %w", idx, err,
++			)
++		}
++		if resolved == nil || (len(resolved.TapTweak) != 0 &&
++			len(resolved.TapTweak) != 32) {
++
++			return fmt.Errorf(
++				"input %d signing key is incomplete", idx,
++			)
++		}
++		key, err := tapAssetScriptKey(*resolved)
++		if err != nil || key.TweakedScriptKey == nil {
++			return fmt.Errorf(
++				"input %d signing key metadata is invalid", idx,
++			)
++		}
++		derived := txscript.ComputeTaprootOutputKey(
++			key.RawKey.PubKey, key.Tweak,
++		)
++		keyBytes := schnorr.SerializePubKey(key.PubKey)
++		derivedBytes := schnorr.SerializePubKey(derived)
++		if !bytes.Equal(keyBytes, proofKey) ||
++			!bytes.Equal(derivedBytes, proofKey) {
++
++			return fmt.Errorf(
++				"input %d signing key does not match proof",
++				idx,
++			)
++		}
++		inputAsset := input.Asset().Copy()
++		inputAsset.ScriptKey = key
++		packet.SetInputAsset(idx, inputAsset)
++	}
++	return nil
++}
++
+ func uniqueScriptKeyGen(base asset.ScriptKey) (tapsend.ScriptKeyGen, error) {
+ 	if base.TweakedScriptKey == nil ||
+ 		base.TweakedScriptKey.RawKey.PubKey == nil {
+diff --git a/custom_anchor_input_keys_test.go b/custom_anchor_input_keys_test.go
+new file mode 100644
+index 0000000..1640de0
+--- /dev/null
++++ b/custom_anchor_input_keys_test.go
+@@ -0,0 +1,132 @@
++package tapsdk
++
++import (
++	"bytes"
++	"context"
++	"testing"
++
++	"github.com/btcsuite/btcd/btcec/v2/schnorr"
++	"github.com/btcsuite/btcd/btcutil/psbt"
++	"github.com/lightninglabs/taproot-assets/asset"
++	"github.com/lightninglabs/taproot-assets/tappsbt"
++	"github.com/lightninglabs/taproot-assets/tapscript"
++	"github.com/lightninglabs/taproot-assets/tapsend"
++	"github.com/lightningnetwork/lnd/keychain"
++	"github.com/stretchr/testify/require"
++)
++
++// TestCustomAnchorReceivedKeyTweak proves that a wallet-owned unique script
++// key needs its complete Taproot tweak, not only a recovered raw key locator.
++// This is the same signing distinction between freshly minted BIP-86 assets
++// and assets received at a unique Pedersen address.
++func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
++	fixture := newCustomAnchorBuilderFixture(t)
++	builder := NewWallet(fixture.client, NetworkRegtest).
++		NewCustomAnchorTxBuilder()
++	plan, err := builder.Build(t.Context(), fixture.request)
++	require.NoError(t, err)
++	packet, err := tappsbt.Decode(plan.ActiveVirtualPSBTs()[0])
++	require.NoError(t, err)
++	unique, err := asset.DeriveUniqueScriptKey(
++		*fixture.assetSpendKey.PubKey(), packet.Inputs[0].Asset().ID(),
++		asset.ScriptKeyDerivationUniquePedersen,
++	)
++	require.NoError(t, err)
++	inputAsset := packet.Inputs[0].Asset().Copy()
++	inputAsset.ScriptKey = asset.NewScriptKey(unique.PubKey)
++	packet.SetInputAsset(0, inputAsset)
++	input := packet.Inputs[0]
++	input.PrevID.ScriptKey = asset.ToSerialized(unique.PubKey)
++	input.Bip32Derivation = nil
++	input.TaprootBip32Derivation = nil
++	input.TaprootInternalKey = nil
++	input.TaprootMerkleRoot = nil
++	require.NoError(t, tapsend.PrepareOutputAssets(t.Context(), packet))
++	raw, err := tappsbt.Encode(packet)
++	require.NoError(t, err)
++
++	// Emulate the backend's incomplete metadata recovery. Its BIP-86
++	// signature must fail the actual asset VM against this unique key.
++	incomplete, err := tappsbt.Decode(raw)
++	require.NoError(t, err)
++	derivation, tapDerivation := tappsbt.Bip32DerivationFromKeyDesc(
++		keychain.KeyDescriptor{
++			PubKey: fixture.assetSpendKey.PubKey(),
++		}, 1,
++	)
++	incomplete.Inputs[0].Bip32Derivation = []*psbt.Bip32Derivation{
++		derivation,
++	}
++	incomplete.Inputs[0].TaprootBip32Derivation =
++		[]*psbt.TaprootBip32Derivation{tapDerivation}
++	err = tapsend.SignVirtualTransaction(
++		incomplete, tapscript.NewMockSigner(fixture.assetSpendKey),
++		customAnchorTestWitnessValidator{},
++	)
++	require.ErrorContains(t, err, "invalid transfer asset witness")
++
++	resolved := ScriptKey{
++		PubKey: mustCustomAnchorPubKey(t, unique.PubKey),
++		KeyDesc: KeyDescriptor{
++			RawKeyBytes: mustCustomAnchorPubKey(
++				t, fixture.assetSpendKey.PubKey(),
++			),
++		},
++		TapTweak: bytes.Clone(unique.Tweak),
++	}
++	fixture.client.queryScriptKey = func(_ context.Context,
++		key []byte) (*ScriptKey, error) {
++
++		require.Equal(t, schnorr.SerializePubKey(unique.PubKey), key)
++		return &resolved, nil
++	}
++	require.NoError(t, builder.resolveInputSigningKeys(t.Context(), packet))
++	require.Equal(t, unique.Tweak, packet.Inputs[0].TaprootMerkleRoot)
++	encoded, err := tappsbt.Encode(packet)
++	require.NoError(t, err)
++	hydrated, err := tappsbt.Decode(encoded)
++	require.NoError(t, err)
++	require.NoError(t, tapsend.SignVirtualTransaction(
++		hydrated, tapscript.NewMockSigner(fixture.assetSpendKey),
++		customAnchorTestWitnessValidator{},
++	))
++
++	for _, test := range []struct {
++		name   string
++		mutate func(*ScriptKey) *ScriptKey
++	}{
++		{"missing key", func(*ScriptKey) *ScriptKey { return nil }},
++		{"missing raw key", func(k *ScriptKey) *ScriptKey {
++			k.KeyDesc.RawKeyBytes = PubKey{}
++			return k
++		}},
++		{"missing tweak", func(k *ScriptKey) *ScriptKey {
++			k.TapTweak = nil
++			return k
++		}},
++		{"wrong tweak", func(k *ScriptKey) *ScriptKey {
++			k.TapTweak[0] ^= 1
++			return k
++		}},
++		{"wrong proof key", func(k *ScriptKey) *ScriptKey {
++			k.PubKey = mustCustomAnchorPubKey(t,
++				testPrivateKey(t, 99).PubKey())
++			return k
++		}},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			candidate := resolved
++			candidate.TapTweak = bytes.Clone(resolved.TapTweak)
++			fixture.client.queryScriptKey = func(context.Context,
++				[]byte) (*ScriptKey, error) {
++
++				return test.mutate(&candidate), nil
++			}
++			fresh, err := tappsbt.Decode(raw)
++			require.NoError(t, err)
++			require.Error(t, builder.resolveInputSigningKeys(
++				t.Context(), fresh,
++			))
++		})
++	}
++}
+diff --git a/custom_anchor_lifecycle.go b/custom_anchor_lifecycle.go
+index acdcf27..52cd891 100644
+--- a/custom_anchor_lifecycle.go
++++ b/custom_anchor_lifecycle.go
+@@ -341,7 +341,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
+ 		expectedPassivePackets...,
+ 	)
+ 	expectedOutputCommitments, err := tapsend.CreateOutputCommitments(
+-		expectedAllPackets,
++		expectedAllPackets, tapsend.WithSpenderLeaves(),
+ 	)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("derive expected committed virtual packets: %w",
+@@ -1428,6 +1428,7 @@ func verifyCommittedProofSuffixes(anchor *psbt.Packet, expected,
+ 			expectedSuffix, err := tapsend.CreateProofSuffix(
+ 				anchor.UnsignedTx, anchor.Outputs, expected[packetIdx],
+ 				outputCommitments, outputIdx, expected,
++				proof.WithVersion(proof.TransitionV1),
+ 			)
+ 			if err != nil {
+ 				return fmt.Errorf("recompute committed proof suffix %d:%d: %w",
+diff --git a/custom_anchor_lifecycle_test.go b/custom_anchor_lifecycle_test.go
+index 4c3249a..fc01373 100644
+--- a/custom_anchor_lifecycle_test.go
++++ b/custom_anchor_lifecycle_test.go
+@@ -14,6 +14,7 @@ import (
+ 	"github.com/btcsuite/btcd/wire"
+ 	"github.com/lightninglabs/taproot-assets/asset"
+ 	"github.com/lightninglabs/taproot-assets/commitment"
++	"github.com/lightninglabs/taproot-assets/proof"
+ 	"github.com/lightninglabs/taproot-assets/tappsbt"
+ 	"github.com/lightninglabs/taproot-assets/tapscript"
+ 	"github.com/lightninglabs/taproot-assets/tapsend"
+@@ -1173,7 +1174,9 @@ func customAnchorTestCommitResponseWithMutation(t *testing.T,
+ 	if mutate != nil {
+ 		mutate(anchor, active)
+ 	}
+-	outputCommitments, err := tapsend.CreateOutputCommitments(allPackets)
++	outputCommitments, err := tapsend.CreateOutputCommitments(
++		allPackets, tapsend.WithSpenderLeaves(),
++	)
+ 	require.NoError(t, err)
+ 	for _, packet := range allPackets {
+ 		require.NoError(t, tapsend.UpdateTaprootOutputKeys(
+@@ -1185,6 +1188,7 @@ func customAnchorTestCommitResponseWithMutation(t *testing.T,
+ 			suffix, err := tapsend.CreateProofSuffix(
+ 				anchor.UnsignedTx, anchor.Outputs, packet,
+ 				outputCommitments, outputIndex, allPackets,
++				proof.WithVersion(proof.TransitionV1),
+ 			)
+ 			require.NoError(t, err)
+ 			packet.Outputs[outputIndex].ProofSuffix = suffix
+diff --git a/custom_anchor_package.go b/custom_anchor_package.go
+index 7c187f7..0d93c35 100644
+--- a/custom_anchor_package.go
++++ b/custom_anchor_package.go
+@@ -1093,7 +1093,7 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
+ 	}
+ 	expectedSuffix, err := tapsend.CreateProofSuffix(
+ 		anchor.UnsignedTx, anchor.Outputs, packet, commitments,
+-		virtualIndex, allPackets,
++		virtualIndex, allPackets, proof.WithVersion(proof.TransitionV1),
+ 	)
+ 	if err != nil {
+ 		return err
+@@ -1102,6 +1102,9 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
+ 	if err != nil {
+ 		return fmt.Errorf("decode proof update: %w", err)
+ 	}
++	if err := checkActivationEvidence(updateProof); err != nil {
++		return err
++	}
+ 	actualMatches, err := customAnchorTransitionProofsEqual(
+ 		expectedSuffix, virtualOutput.ProofSuffix,
+ 	)
+diff --git a/custom_anchor_package_test.go b/custom_anchor_package_test.go
+index dc4a3e3..7fe38e2 100644
+--- a/custom_anchor_package_test.go
++++ b/custom_anchor_package_test.go
+@@ -1478,9 +1478,9 @@ func newCustomAnchorTestFixture(t *testing.T) *customAnchorTestFixture {
+ 		{
+ 			InputIndex: 1,
+ 			MuSig2: &CustomAnchorMuSig2SigningPlan{
+-				Participants: []XOnlyPubKey{
+-					customAnchorTestXOnly(muSigKeys[0]),
+-					customAnchorTestXOnly(muSigKeys[1]),
++				Participants: []PubKey{
++					customAnchorTestPubKey(muSigKeys[0]),
++					customAnchorTestPubKey(muSigKeys[1]),
+ 				},
+ 				SessionContext: []byte("batch-session-1"),
+ 			},
+diff --git a/custom_anchor_proof_path.go b/custom_anchor_proof_path.go
+index 57b310f..447b065 100644
+--- a/custom_anchor_proof_path.go
++++ b/custom_anchor_proof_path.go
+@@ -567,6 +567,10 @@ func (p *AssetProofPath) Verify(ctx context.Context,
+ 			)
+ 		}
+ 
++		if err := checkActivationEvidence(transition); err != nil {
++			return nil, err
++		}
++
+ 		verificationContext := proof.VerifierCtx{
+ 			// The confirmed base establishes the only group key that may
+ 			// appear in this path. The explicit identity check above binds
+diff --git a/custom_anchor_proof_path_test.go b/custom_anchor_proof_path_test.go
+index d3cd91d..7685d10 100644
+--- a/custom_anchor_proof_path_test.go
++++ b/custom_anchor_proof_path_test.go
+@@ -314,7 +314,7 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
+ 				a.Genesis.Tag += "-mutated"
+ 			},
+ 			errMsg:               "selected asset genesis changed",
+-			nativeVerifierAccept: true,
++			nativeVerifierAccept: false,
+ 		},
+ 		{
+ 			name: "type",
+@@ -330,7 +330,7 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
+ 				a.GroupKey.GroupPubKey = *testPrivateKey(t, 10).PubKey()
+ 			},
+ 			errMsg:               "selected asset group key changed",
+-			nativeVerifierAccept: true,
++			nativeVerifierAccept: false,
+ 		},
+ 		{
+ 			name: "group removed",
+@@ -338,7 +338,7 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
+ 				a.GroupKey = nil
+ 			},
+ 			errMsg:               "selected asset group key changed",
+-			nativeVerifierAccept: true,
++			nativeVerifierAccept: false,
+ 		},
+ 	}
+ 
+@@ -977,6 +977,9 @@ func newAssetProofPathTransitionWithMutator(t *testing.T,
+ 	require.NoError(t, tapCommitment.MergeAltLeaves(
+ 		asset.ToAltLeaves([]*asset.Asset{spentAsset}),
+ 	))
++	spenders, err := asset.CollectSpenders(newAsset)
++	require.NoError(t, err)
++	require.NoError(t, tapCommitment.MergeAltLeaves(spenders))
+ 	if hiddenAsset {
+ 		hiddenGenesis := asset.Genesis{
+ 			FirstPrevOut: previous.OutPoint(),
+@@ -1079,6 +1082,9 @@ func newAssetProofPathSplitTransition(t *testing.T, previous *proof.Proof,
+ 	require.NoError(t, rootTapCommitment.MergeAltLeaves(
+ 		asset.ToAltLeaves([]*asset.Asset{spentAsset}),
+ 	))
++	spenders, err := asset.CollectSpenders(rootAsset)
++	require.NoError(t, err)
++	require.NoError(t, rootTapCommitment.MergeAltLeaves(spenders))
+ 
+ 	rootInternalKey := testPrivateKey(t, 6).PubKey()
+ 	selectedInternalKey := testPrivateKey(t, 7).PubKey()
+@@ -1124,6 +1130,8 @@ func newAssetProofPathSplitTransition(t *testing.T, previous *proof.Proof,
+ 			RootOutputIndex:      0,
+ 			RootInternalKey:      rootInternalKey,
+ 			RootTaprootAssetTree: rootTapCommitment,
++			RootLocatorProof: &splitCommitment.SplitAssets[*rootLocator].
++				PrevWitnesses[0].SplitCommitment.Proof,
+ 		}, proof.WithVersion(proof.TransitionV1),
+ 	)
+ 	require.NoError(t, err)
+diff --git a/custom_anchor_signing.go b/custom_anchor_signing.go
+index bce478d..ec420f2 100644
+--- a/custom_anchor_signing.go
++++ b/custom_anchor_signing.go
+@@ -65,8 +65,11 @@ type CustomAnchorKeyPathSigningPlan struct {
+ // CustomAnchorMuSig2SigningPlan identifies an ordered MuSig2 participant set.
+ // Participant order is significant and is preserved in the signing request.
+ type CustomAnchorMuSig2SigningPlan struct {
+-	// Participants are the ordered x-only keys used for key aggregation.
+-	Participants []XOnlyPubKey `json:"participants"`
++	// Participants are the ordered 33-byte compressed keys used for key
++	// aggregation. Full keys preserve Y parity, so any cosigner key can
++	// participate; callers whose aggregation sorts keys declare them
++	// pre-sorted.
++	Participants []PubKey `json:"participants"`
+ 
+ 	// SessionContext is caller-defined public context used to distinguish
+ 	// signing sessions. It must never contain a secret nonce.
+@@ -124,7 +127,7 @@ type CustomAnchorMuSig2SigningRequest struct {
+ 	Sighash           Hash
+ 	InternalKey       XOnlyPubKey
+ 	TaprootMerkleRoot []byte
+-	Participants      []XOnlyPubKey
++	Participants      []PubKey
+ 	SessionContext    []byte
+ }
+ 
+@@ -300,7 +303,7 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
+ 						context.taprootMerkleRoot,
+ 					),
+ 					Participants: append(
+-						[]XOnlyPubKey(nil),
++						[]PubKey(nil),
+ 						plan.MuSig2.Participants...,
+ 					),
+ 					SessionContext: cloneBytes(
+@@ -839,7 +842,7 @@ func validateCustomAnchorSigningPlans(
+ 						"required", i,
+ 				)
+ 			}
+-			if err := validateCustomAnchorXOnlyKeys(
++			if err := validateCustomAnchorPubKeys(
+ 				"MuSig2 participant", plan.MuSig2.Participants,
+ 			); err != nil {
+ 				return fmt.Errorf("signing plan %d: %w", i, err)
+@@ -906,7 +909,7 @@ func cloneCustomAnchorSigningPlans(
+ 		if plans[i].MuSig2 != nil {
+ 			muSig2 := *plans[i].MuSig2
+ 			muSig2.Participants = append(
+-				[]XOnlyPubKey(nil), plans[i].MuSig2.Participants...,
++				[]PubKey(nil), plans[i].MuSig2.Participants...,
+ 			)
+ 			muSig2.SessionContext = cloneBytes(
+ 				plans[i].MuSig2.SessionContext,
+@@ -1266,11 +1269,11 @@ func verifyScriptPathWitness(tx *wire.MsgTx, inputIndex int,
+ }
+ 
+ func validateMuSig2Aggregate(internalKey XOnlyPubKey,
+-	participants []XOnlyPubKey) error {
++	participants []PubKey) error {
+ 
+ 	keys := make([]*btcec.PublicKey, len(participants))
+ 	for i, participant := range participants {
+-		key, err := schnorr.ParsePubKey(participant[:])
++		key, err := btcec.ParsePubKey(participant[:])
+ 		if err != nil {
+ 			return fmt.Errorf("participant %d: %w", i, err)
+ 		}
+@@ -1315,6 +1318,22 @@ func validateCustomAnchorXOnlyKey(label string, key XOnlyPubKey) error {
+ 	return nil
+ }
+ 
++func validateCustomAnchorPubKeys(label string, keys []PubKey) error {
++	seen := make(map[PubKey]struct{}, len(keys))
++	for i, key := range keys {
++		if _, err := btcec.ParsePubKey(key[:]); err != nil {
++			return fmt.Errorf("%s %d: invalid %s: %w", label, i,
++				label, err)
++		}
++		if _, ok := seen[key]; ok {
++			return fmt.Errorf("duplicate %s %d", label, i)
++		}
++		seen[key] = struct{}{}
++	}
++
++	return nil
++}
++
+ func anchorPrevOuts(packet *btcpsbt.Packet) (
+ 	*txscript.MultiPrevOutFetcher, []*wire.TxOut, error) {
+ 
+diff --git a/custom_anchor_signing_test.go b/custom_anchor_signing_test.go
+index 594b996..d8f68fd 100644
+--- a/custom_anchor_signing_test.go
++++ b/custom_anchor_signing_test.go
+@@ -67,7 +67,7 @@ func TestCustomAnchorSigningRequests(t *testing.T) {
+ }
+ 
+ func TestCustomAnchorSigningPlanValidation(t *testing.T) {
+-	validKey := customAnchorTestXOnly(
++	validParticipant := customAnchorTestPubKey(
+ 		customAnchorTestPrivateKey(8).PubKey(),
+ 	)
+ 	tests := []struct {
+@@ -114,8 +114,8 @@ func TestCustomAnchorSigningPlanValidation(t *testing.T) {
+ 		{
+ 			name: "too few musig participants",
+ 			mutate: func(pkg *CustomAnchorTransferPackage) {
+-				pkg.SigningPlans[1].MuSig2.Participants = []XOnlyPubKey{
+-					validKey,
++				pkg.SigningPlans[1].MuSig2.Participants = []PubKey{
++					validParticipant,
+ 				}
+ 			},
+ 			wantErr: "requires at least two participants",
+@@ -174,11 +174,11 @@ func TestCustomAnchorSigningRequestMismatch(t *testing.T) {
+ 		{
+ 			name: "musig aggregate",
+ 			mutate: func(pkg *CustomAnchorTransferPackage) {
+-				pkg.SigningPlans[1].MuSig2.Participants = []XOnlyPubKey{
+-					customAnchorTestXOnly(
++				pkg.SigningPlans[1].MuSig2.Participants = []PubKey{
++					customAnchorTestPubKey(
+ 						customAnchorTestPrivateKey(11).PubKey(),
+ 					),
+-					customAnchorTestXOnly(
++					customAnchorTestPubKey(
+ 						customAnchorTestPrivateKey(12).PubKey(),
+ 					),
+ 				}
+diff --git a/custom_anchor_types_test.go b/custom_anchor_types_test.go
+index 9d8fdde..c99230e 100644
+--- a/custom_anchor_types_test.go
++++ b/custom_anchor_types_test.go
+@@ -1270,7 +1270,7 @@ func TestCustomAnchorRequestCloneNoAlias(t *testing.T) {
+ 		clone.SigningPlans[0].MuSig2.SessionContext,
+ 	)
+ 	require.Equal(
+-		t, customAnchorTypesTestPubKey(t).XOnly(),
++		t, customAnchorTypesTestPubKey(t),
+ 		clone.SigningPlans[0].MuSig2.Participants[0],
+ 	)
+ }
+@@ -1495,8 +1495,8 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
+ 		{
+ 			InputIndex: 0,
+ 			MuSig2: &CustomAnchorMuSig2SigningPlan{
+-				Participants: []XOnlyPubKey{
+-					key.XOnly(), customAnchorTypesTestSecondPubKey(t).XOnly(),
++				Participants: []PubKey{
++					key, customAnchorTypesTestSecondPubKey(t),
+ 				},
+ 				SessionContext: []byte{21, 22},
+ 			},
+diff --git a/go.mod b/go.mod
+index a06c00f..d9a2f1f 100644
+--- a/go.mod
++++ b/go.mod
+@@ -1,6 +1,6 @@
+ module github.com/lightninglabs/tap-sdk
+ 
+-go 1.25.10
++go 1.25.13
+ 
+ require (
+ 	github.com/btcsuite/btcd v0.25.1-0.20260310163610-1c55c7c18179
+@@ -9,11 +9,11 @@ require (
+ 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10
+ 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
+ 	github.com/coder/websocket v1.8.14
+-	github.com/lightninglabs/taproot-assets v0.8.0
+-	github.com/lightninglabs/taproot-assets/taprpc v1.1.0
+-	github.com/lightningnetwork/lnd v0.21.0-beta
++	github.com/lightninglabs/taproot-assets v0.8.6
++	github.com/lightninglabs/taproot-assets/taprpc v1.3.3
++	github.com/lightningnetwork/lnd v0.21.3-beta
+ 	github.com/stretchr/testify v1.11.1
+-	google.golang.org/grpc v1.80.0
++	google.golang.org/grpc v1.83.2
+ )
+ 
+ require (
+@@ -27,7 +27,7 @@ require (
+ 	github.com/btcsuite/btcd/v2transport v1.0.1 // indirect
+ 	github.com/btcsuite/btclog v1.0.0 // indirect
+ 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b // indirect
+-	github.com/btcsuite/btcwallet v0.16.18 // indirect
++	github.com/btcsuite/btcwallet v0.16.19 // indirect
+ 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.5 // indirect
+ 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.2 // indirect
+ 	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.5 // indirect
+@@ -66,7 +66,7 @@ require (
+ 	github.com/google/btree v1.0.1 // indirect
+ 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
+ 	github.com/google/uuid v1.6.0 // indirect
+-	github.com/gorilla/websocket v1.5.0 // indirect
++	github.com/gorilla/websocket v1.5.3 // indirect
+ 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
+ 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
+ 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
+@@ -107,7 +107,7 @@ require (
+ 	github.com/lightningnetwork/lnd/sqldb v1.0.13 // indirect
+ 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
+ 	github.com/lightningnetwork/lnd/tlv v1.3.2 // indirect
+-	github.com/lightningnetwork/lnd/tor v1.1.6 // indirect
++	github.com/lightningnetwork/lnd/tor v1.1.7 // indirect
+ 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
+ 	github.com/mattn/go-isatty v0.0.20 // indirect
+ 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
+@@ -122,7 +122,7 @@ require (
+ 	github.com/ncruces/go-strftime v0.1.9 // indirect
+ 	github.com/opencontainers/go-digest v1.0.0 // indirect
+ 	github.com/opencontainers/image-spec v1.1.1 // indirect
+-	github.com/opencontainers/runc v1.2.8 // indirect
++	github.com/opencontainers/runc v1.3.6 // indirect
+ 	github.com/ory/dockertest/v3 v3.10.0 // indirect
+ 	github.com/pmezard/go-difflib v1.0.0 // indirect
+ 	github.com/prometheus/client_golang v1.14.0 // indirect
+@@ -152,31 +152,31 @@ require (
+ 	go.etcd.io/etcd/server/v3 v3.5.12 // indirect
+ 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+ 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
+-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 // indirect
+-	go.opentelemetry.io/otel v1.43.0 // indirect
++	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
++	go.opentelemetry.io/otel v1.44.0 // indirect
+ 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.29.0 // indirect
+ 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.20.0 // indirect
+-	go.opentelemetry.io/otel/metric v1.43.0 // indirect
+-	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
+-	go.opentelemetry.io/otel/trace v1.43.0 // indirect
++	go.opentelemetry.io/otel/metric v1.44.0 // indirect
++	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
++	go.opentelemetry.io/otel/trace v1.44.0 // indirect
+ 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
+ 	go.uber.org/atomic v1.10.0 // indirect
+ 	go.uber.org/multierr v1.6.0 // indirect
+ 	go.uber.org/zap v1.23.0 // indirect
+ 	go.yaml.in/yaml/v3 v3.0.4 // indirect
+-	golang.org/x/crypto v0.49.0 // indirect
++	golang.org/x/crypto v0.55.0 // indirect
+ 	golang.org/x/exp v0.0.0-20250811191247-51f88131bc50 // indirect
+-	golang.org/x/mod v0.33.0 // indirect
+-	golang.org/x/net v0.52.0 // indirect
+-	golang.org/x/sync v0.20.0 // indirect
+-	golang.org/x/sys v0.42.0 // indirect
+-	golang.org/x/term v0.41.0 // indirect
+-	golang.org/x/text v0.35.0 // indirect
++	golang.org/x/mod v0.38.0 // indirect
++	golang.org/x/net v0.58.0 // indirect
++	golang.org/x/sync v0.22.0 // indirect
++	golang.org/x/sys v0.47.0 // indirect
++	golang.org/x/term v0.45.0 // indirect
++	golang.org/x/text v0.41.0 // indirect
+ 	golang.org/x/time v0.11.0 // indirect
+-	golang.org/x/tools v0.42.0 // indirect
++	golang.org/x/tools v0.48.0 // indirect
+ 	google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9 // indirect
+-	google.golang.org/genproto/googleapis/api v0.0.0-20260330182312-d5a96adf58d8 // indirect
+-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260330182312-d5a96adf58d8 // indirect
++	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
++	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+ 	google.golang.org/protobuf v1.36.11 // indirect
+ 	gopkg.in/errgo.v1 v1.0.1 // indirect
+ 	gopkg.in/macaroon-bakery.v2 v2.3.0 // indirect
+diff --git a/go.sum b/go.sum
+index c3f3a80..e8ec544 100644
+--- a/go.sum
++++ b/go.sum
+@@ -600,8 +600,8 @@ git.sr.ht/~sbinet/gg v0.3.1/go.mod h1:KGYtlADtqsqANL9ueOFkWymvzUvLMQllU5Ixo+8v3p
+ github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c h1:udKWzYgxTojEKWjV8V+WSxDXJ4NFATAsZjh8iIbsQIg=
+ github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
+ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+-github.com/BurntSushi/toml v1.3.2 h1:o7IhLm0Msx3BaB+n3Ag7L8EVlByGnpq14C4YWiu/gL8=
+-github.com/BurntSushi/toml v1.3.2/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbicEuybxQ=
++github.com/BurntSushi/toml v1.4.0 h1:kuoIxZQy2WRRk1pttg9asf+WVv6tWQuBNVmK8+nqPr0=
++github.com/BurntSushi/toml v1.4.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
+ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
+ github.com/JohnCGriffin/overflow v0.0.0-20211019200055-46fa312c352c/go.mod h1:X0CRv0ky0k6m906ixxpzmDRLvX58TFUKS2eePweuyxk=
+ github.com/Masterminds/semver/v3 v3.1.1 h1:hLg3sBzpNErnxhQtUy/mmLR2I9foDujNK030IGemrRc=
+@@ -666,8 +666,8 @@ github.com/btcsuite/btclog v1.0.0/go.mod h1:w7xnGOhwT3lmrS4H3b/D1XAXxvh+tbhUm8xe
+ github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b h1:MQ+Q6sDy37V1wP1Yu79A5KqJutolqUGwA99UZWQDWZM=
+ github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b/go.mod h1:XItGUfVOxotJL8kkuk2Hj3EVow5KCugXl3wWfQ6K0AE=
+ github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d/go.mod h1:+5NJ2+qvTyV9exUAL/rxXi3DcLg2Ts+ymUAY5y4NvMg=
+-github.com/btcsuite/btcwallet v0.16.18 h1:6h0kMxij4igPu35jOPAWZbn22ceOC4me4L3jj8Za6Zk=
+-github.com/btcsuite/btcwallet v0.16.18/go.mod h1:4TTru0cgIPbCZpY4aRfAVwX87zrQw4GXM8MH6+A5xZw=
++github.com/btcsuite/btcwallet v0.16.19 h1:F52y5luPecfjSDajteVm8qYR6H8vsZ40Ot+Mim8e3JA=
++github.com/btcsuite/btcwallet v0.16.19/go.mod h1:u4908XXsJNEl8t8uYz01dEMZqGg6cMN4WCumcuHmbUE=
+ github.com/btcsuite/btcwallet/wallet/txauthor v1.3.5 h1:Rr0njWI3r341nhSPesKQ2JF+ugDSzdPoeckS75SeDZk=
+ github.com/btcsuite/btcwallet/wallet/txauthor v1.3.5/go.mod h1:+tXJ3Ym0nlQc/iHSwW1qzjmPs3ev+UVWMbGgfV1OZqU=
+ github.com/btcsuite/btcwallet/wallet/txrules v1.2.2 h1:YEO+Lx1ZJJAtdRrjuhXjWrYsmAk26wLTlNzxt2q0lhk=
+@@ -733,6 +733,8 @@ github.com/coreos/go-semver v0.3.0 h1:wkHLiw0WNATZnSG7epLsujiMCgPAc9xhjJ4tgnAxmf
+ github.com/coreos/go-semver v0.3.0/go.mod h1:nnelYz7RCh+5ahJtPPxZlU+153eP4D4r3EedlOD2RNk=
+ github.com/coreos/go-systemd v0.0.0-20190321100706-95778dfbb74e/go.mod h1:F5haX7vjVVG0kc13fIWeqUViNPyEJxv/OmvnBo0Yme4=
+ github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f/go.mod h1:F5haX7vjVVG0kc13fIWeqUViNPyEJxv/OmvnBo0Yme4=
++github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf h1:iW4rZ826su+pqaw19uhpSCzhj44qo35pNgKFGqzDKkU=
++github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf/go.mod h1:F5haX7vjVVG0kc13fIWeqUViNPyEJxv/OmvnBo0Yme4=
+ github.com/coreos/go-systemd/v22 v22.5.0 h1:RrqgGjYQKalulkV8NGVIfkXQf6YYmOyiJKk8iXXhfZs=
+ github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
+ github.com/creack/pty v1.1.7/go.mod h1:lj5s0c3V2DBrqTV7llrYr5NG6My20zk30Fl46Y7DoTY=
+@@ -949,10 +951,15 @@ github.com/googleapis/gax-go/v2 v2.7.0/go.mod h1:TEop28CZZQ2y+c0VxMUmu1lV+fQx57Q
+ github.com/googleapis/gax-go/v2 v2.7.1/go.mod h1:4orTrqY6hXxxaUL4LHIPl6lGo8vAE38/qKbhSAKP6QI=
+ github.com/googleapis/go-type-adapters v1.0.0/go.mod h1:zHW75FOG2aur7gAO2B+MLby+cLsWGBF62rFAi7WjWO4=
+ github.com/googleapis/google-cloud-go-testing v0.0.0-20200911160855-bcd43fbb19e8/go.mod h1:dvDLG8qkwmyD9a/MJJN3XJcT3xFxOKAvTZGvuZmac9g=
+-github.com/gorilla/websocket v1.5.0 h1:PPwGk2jz7EePpoHN/+ClbZu8SPxiqlu12wZP/3sWmnc=
+ github.com/gorilla/websocket v1.5.0/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
++github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
++github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+ github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 h1:UH//fgunKIs4JdUbpDl1VZCDaL56wXCB/5+wF6uHfaI=
+ github.com/grpc-ecosystem/go-grpc-middleware v1.4.0/go.mod h1:g5qyo/la0ALbONm6Vbp88Yd8NsDy6rZz+RcrMPxvld8=
++github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.0-rc.0 h1:mdLirNAJBxnGgyB6pjZLcs6ue/6eZGBui6gXspfq4ks=
++github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.0-rc.0/go.mod h1:kdXbOySqcQeTxiqglW7aahTmWZy3Pgi6SYL36yvKeyA=
++github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.3 h1:o95KDiV/b1xdkumY5YbLR0/n2+wBxUpgf3HgfKgTyLI=
++github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.3/go.mod h1:hTxjzRcX49ogbTGVJ1sM5mz5s+SSgiGIyL3jjPxl32E=
+ github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 h1:Ovs26xHkKqVztRpIrF/92BcuyuQ/YW4NSIpoGtfXNho=
+ github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgfV/d3M/q6VIi02HzZEHgUlZvzk=
+ github.com/grpc-ecosystem/grpc-gateway v1.16.0 h1:gmcG1KaJ57LophUzW0Hy8NmPhnMZb4M0+kPpLofRdBo=
+@@ -1100,14 +1107,14 @@ github.com/lightninglabs/neutrino/cache v1.1.3 h1:rgnabC41W+XaPuBTQrdeFjFCCAVKh1
+ github.com/lightninglabs/neutrino/cache v1.1.3/go.mod h1:qxkJb+pUxR5p84jl5uIGFCR4dGdFkhNUwMSxw3EUWls=
+ github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display h1:w7FM5LH9Z6CpKxl13mS48idsu6F+cEZf0lkyiV+Dq9g=
+ github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display/go.mod h1:qYOHts0dSfpeUzUFpOMr/WGzszTmLH+DiWniOlNbLDw=
+-github.com/lightninglabs/taproot-assets v0.8.0 h1:8Mky342/f5hbVm94Owj0YveIdKuTasJwFB6uqAa5/gc=
+-github.com/lightninglabs/taproot-assets v0.8.0/go.mod h1:SEoMeNzpENVUPnvuqllkDhl7QvNE74+Dtb/dnkbrygg=
+-github.com/lightninglabs/taproot-assets/taprpc v1.1.0 h1:Oum7ddGygrEaT+NHqpaQI8U6pV5jJUH4hvhezl5y00k=
+-github.com/lightninglabs/taproot-assets/taprpc v1.1.0/go.mod h1:X7XP753o8xCgjVI2mRu1Tvpyk3k4uybGDMFhpF6IRxI=
++github.com/lightninglabs/taproot-assets v0.8.6 h1:jGqRBjjdHMMC0FjNUAXwG5FCQKdYbYWuWm6Nyk0ROAE=
++github.com/lightninglabs/taproot-assets v0.8.6/go.mod h1:pVEEuvH5TCU2gdXHwq36s6k9UZld6E4y34SHEQ+ggoY=
++github.com/lightninglabs/taproot-assets/taprpc v1.3.3 h1:KwscIMQ7Nyy8SleDiUUTWPCgixpgrN9nunM+QwM/KJQ=
++github.com/lightninglabs/taproot-assets/taprpc v1.3.3/go.mod h1:0dBS6jLkddm8EvpJSpJjPUMWr294/YRoM/IAzdfo3pw=
+ github.com/lightningnetwork/lightning-onion v1.3.0 h1:FqILgHjD6euc/Muo1VOzZ4+XDPuFnw6EYROBq0rR/5c=
+ github.com/lightningnetwork/lightning-onion v1.3.0/go.mod h1:nP85zMHG7c0si/eHBbSQpuDCtnIXfSvFrK3tW6YWzmU=
+-github.com/lightningnetwork/lnd v0.21.0-beta h1:bDP5UH15E7DVGTztsmBPQLqgyilq5EXDrglvQFmRc3U=
+-github.com/lightningnetwork/lnd v0.21.0-beta/go.mod h1:HcKq9DyxbVEZXuR28TIyGbIIgAjANCxI+N6dqOnRBAA=
++github.com/lightningnetwork/lnd v0.21.3-beta h1:Tp1YdwnP0daq/wenwObkaCqe0hckIRnxibN2QKoUv9Y=
++github.com/lightningnetwork/lnd v0.21.3-beta/go.mod h1:cUmbodV1/27JGrM/aKib8mXfz8bFxT9iGm0WJi647ds=
+ github.com/lightningnetwork/lnd/actor v0.0.6 h1:Ge8N2wivARG+27qJBwTlB0vwsypStZYZy8vk4Zl38sU=
+ github.com/lightningnetwork/lnd/actor v0.0.6/go.mod h1:YAsoniSbY/cAM9HTVNfZLvt7RI6swDxy6wzPspTcMZg=
+ github.com/lightningnetwork/lnd/cert v1.2.2 h1:71YK6hogeJtxSxw2teq3eGeuy4rHGKcFf0d0Uy4qBjI=
+@@ -1128,8 +1135,8 @@ github.com/lightningnetwork/lnd/ticker v1.1.1 h1:J/b6N2hibFtC7JLV77ULQp++QLtCwT6
+ github.com/lightningnetwork/lnd/ticker v1.1.1/go.mod h1:waPTRAAcwtu7Ji3+3k+u/xH5GHovTsCoSVpho0KDvdA=
+ github.com/lightningnetwork/lnd/tlv v1.3.2 h1:MO4FCk7F4k5xPMqVZF6Nb/kOpxlwPrUQpYjmyKny5s0=
+ github.com/lightningnetwork/lnd/tlv v1.3.2/go.mod h1:pJuiBj1ecr1WWLOtcZ+2+hu9Ey25aJWFIsjmAoPPnmc=
+-github.com/lightningnetwork/lnd/tor v1.1.6 h1:WHUumk7WgU6BUFsqHuqszI9P6nfhMeIG+rjJBlVE6OE=
+-github.com/lightningnetwork/lnd/tor v1.1.6/go.mod h1:qSRB8llhAK+a6kaTPWOLLXSZc6Hg8ZC0mq1sUQ/8JfI=
++github.com/lightningnetwork/lnd/tor v1.1.7 h1:BfY1KQGz3LVaeaAGI4XYGYCwDQR1ADFD1P/uXsS2dQc=
++github.com/lightningnetwork/lnd/tor v1.1.7/go.mod h1:DANQ6QCQBiR+CqrM+mKudgkMy6CR/RS4ALDbjb2W4FU=
+ github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 h1:sjOGyegMIhvgfq5oaue6Td+hxZuf3tDC8lAPrFldqFw=
+ github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796/go.mod h1:3p7ZTf9V1sNPI5H8P3NkTFF4LuwMdPl2DodF60qAKqY=
+ github.com/ltcsuite/ltcutil v0.0.0-20181217130922-17f3b04680b6/go.mod h1:8Vg/LTOO0KYa/vlHWJ6XZAevPQThGH5sufO0Hrou/lA=
+@@ -1194,8 +1201,8 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
+ github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
+ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
+ github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
+-github.com/opencontainers/runc v1.2.8 h1:RnEICeDReapbZ5lZEgHvj7E9Q3Eex9toYmaGBsbvU5Q=
+-github.com/opencontainers/runc v1.2.8/go.mod h1:cC0YkmZcuvr+rtBZ6T7NBoVbMGNAdLa/21vIElJDOzI=
++github.com/opencontainers/runc v1.3.6 h1:SLGIymCtsk80iNPWgbc8dtjI30r+5mTVV+4dN8/17Sk=
++github.com/opencontainers/runc v1.3.6/go.mod h1:o1wyv76EDlTkcf0KTFgN8bMWLPvgF/HfX709lDv+rr4=
+ github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
+ github.com/ory/dockertest/v3 v3.10.0 h1:4K3z2VMe8Woe++invjaTB7VRyQXQy5UY+loujO4aNE4=
+ github.com/ory/dockertest/v3 v3.10.0/go.mod h1:nr57ZbRWMqfsdGdFNLHz5jjNdDb7VVFnzAeW1n5N1Lg=
+@@ -1344,22 +1351,22 @@ go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ
+ go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
+ go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 h1:4Pp6oUg3+e/6M4C0A/3kJ2VYa++dsWVTtGgLVj5xtHg=
+ go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0/go.mod h1:Mjt1i1INqiaoZOMGR1RIUJN+i3ChKoFRqzrRQhlkbs0=
+-go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 h1:sbiXRNDSWJOTobXh5HyQKjq6wUC5tNybqjIqDpAY4CU=
+-go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0/go.mod h1:69uWxva0WgAA/4bu2Yy70SLDBwZXuQ6PbBpbsa5iZrQ=
+-go.opentelemetry.io/otel v1.43.0 h1:mYIM03dnh5zfN7HautFE4ieIig9amkNANT+xcVxAj9I=
+-go.opentelemetry.io/otel v1.43.0/go.mod h1:JuG+u74mvjvcm8vj8pI5XiHy1zDeoCS2LB1spIq7Ay0=
++go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 h1:F7Jx+6hwnZ41NSFTO5q4LYDtJRXBf2PD0rNBkeB/lus=
++go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0/go.mod h1:UHB22Z8QsdRDrnAtX4PntOl36ajSxcdUMt1sF7Y6E7Q=
++go.opentelemetry.io/otel v1.44.0 h1:JjwHmHpA4iZ3wBxluu2fbbE7j4kqlE8jXyAyPXH7HqU=
++go.opentelemetry.io/otel v1.44.0/go.mod h1:BMgjTHL9WPRlRjL2oZCBTL4whCGtXch2H4BhOPIAyYc=
+ go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.29.0 h1:dIIDULZJpgdiHz5tXrTgKIMLkus6jEFa7x5SOKcyR7E=
+ go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.29.0/go.mod h1:jlRVBe7+Z1wyxFSUs48L6OBQZ5JwH2Hg/Vbl+t9rAgI=
+ go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.20.0 h1:gvmNvqrPYovvyRmCSygkUDyL8lC5Tl845MLEwqpxhEU=
+ go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.20.0/go.mod h1:vNUq47TGFioo+ffTSnKNdob241vePmtNZnAODKapKd0=
+-go.opentelemetry.io/otel/metric v1.43.0 h1:d7638QeInOnuwOONPp4JAOGfbCEpYb+K6DVWvdxGzgM=
+-go.opentelemetry.io/otel/metric v1.43.0/go.mod h1:RDnPtIxvqlgO8GRW18W6Z/4P462ldprJtfxHxyKd2PY=
+-go.opentelemetry.io/otel/sdk v1.43.0 h1:pi5mE86i5rTeLXqoF/hhiBtUNcrAGHLKQdhg4h4V9Dg=
+-go.opentelemetry.io/otel/sdk v1.43.0/go.mod h1:P+IkVU3iWukmiit/Yf9AWvpyRDlUeBaRg6Y+C58QHzg=
+-go.opentelemetry.io/otel/sdk/metric v1.43.0 h1:S88dyqXjJkuBNLeMcVPRFXpRw2fuwdvfCGLEo89fDkw=
+-go.opentelemetry.io/otel/sdk/metric v1.43.0/go.mod h1:C/RJtwSEJ5hzTiUz5pXF1kILHStzb9zFlIEe85bhj6A=
+-go.opentelemetry.io/otel/trace v1.43.0 h1:BkNrHpup+4k4w+ZZ86CZoHHEkohws8AY+WTX09nk+3A=
+-go.opentelemetry.io/otel/trace v1.43.0/go.mod h1:/QJhyVBUUswCphDVxq+8mld+AvhXZLhe+8WVFxiFff0=
++go.opentelemetry.io/otel/metric v1.44.0 h1:1w0gILTcHdr3YI+ixLyjemwrVnsMURbTZFrSYCdDdmc=
++go.opentelemetry.io/otel/metric v1.44.0/go.mod h1:8O7hanEPBNgEMmybD3s2VBKcgWOCsA6tzHBPODAiquo=
++go.opentelemetry.io/otel/sdk v1.44.0 h1:nHYwb9lK+fJPU/dnT6s7W7Z8itMWyqrnVfbheVYrZ58=
++go.opentelemetry.io/otel/sdk v1.44.0/go.mod h1:Osuydd3Se74nqjAKxid74N5eC+jfEqfTegHRnq58oK0=
++go.opentelemetry.io/otel/sdk/metric v1.44.0 h1:3LlKgI+VjbVsjNRFZJZAJ30WjXC5VkNRks6si09iEfI=
++go.opentelemetry.io/otel/sdk/metric v1.44.0/go.mod h1:5B5pMARnXxKhltooO4xUuCBorl65a4EpnTalObqOigA=
++go.opentelemetry.io/otel/trace v1.44.0 h1:jxF5CsGYCe74MCRx2X4g7WsY/VBKRqqpNvXlX/6gtIk=
++go.opentelemetry.io/otel/trace v1.44.0/go.mod h1:oLl1jrMQAVo6v3GAggN+1VH9VIz9iUSvW53sW1Q8PIE=
+ go.opentelemetry.io/proto/otlp v0.7.0/go.mod h1:PqfVotwruBrMGOCsRd/89rSnXhoiJIqeYNgFYFoEGnI=
+ go.opentelemetry.io/proto/otlp v0.15.0/go.mod h1:H7XAot3MsfNsj7EXtrA2q5xSNQ10UqI405h3+duxN4U=
+ go.opentelemetry.io/proto/otlp v0.19.0/go.mod h1:H7XAot3MsfNsj7EXtrA2q5xSNQ10UqI405h3+duxN4U=
+@@ -1408,8 +1415,8 @@ golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5y
+ golang.org/x/crypto v0.0.0-20211108221036-ceb1ce70b4fa/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
+ golang.org/x/crypto v0.19.0/go.mod h1:Iy9bg/ha4yyC70EfRS8jz+B6ybOBKMaSxLj6P6oBDfU=
+ golang.org/x/crypto v0.20.0/go.mod h1:Xwo95rrVNIoSMx9wa1JroENMToLWn3RNVrTBpLHgZPQ=
+-golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=
+-golang.org/x/crypto v0.49.0/go.mod h1:ErX4dUh2UM+CFYiXZRTcMpEcN8b/1gxEuv3nODoYtCA=
++golang.org/x/crypto v0.55.0 h1:+KWHjbgOaAQ66dh/YlkZKHlz9ZUlq61AFirAR9ntP8M=
++golang.org/x/crypto v0.55.0/go.mod h1:uq0V9dE/fzQuJtbnL+2EhWOE63vo164FY8xqEnV9xis=
+ golang.org/x/exp v0.0.0-20180321215751-8460e604b9de/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
+ golang.org/x/exp v0.0.0-20180807140117-3d87b88a115f/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
+ golang.org/x/exp v0.0.0-20190121172915-509febef88a4/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
+@@ -1469,8 +1476,8 @@ golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4/go.mod h1:jJ57K6gSWd91
+ golang.org/x/mod v0.7.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
+ golang.org/x/mod v0.8.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
+ golang.org/x/mod v0.9.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
+-golang.org/x/mod v0.33.0 h1:tHFzIWbBifEmbwtGz65eaWyGiGZatSrT9prnU8DbVL8=
+-golang.org/x/mod v0.33.0/go.mod h1:swjeQEj+6r7fODbD2cqrnje9PnziFuw4bmLbBZFrQ5w=
++golang.org/x/mod v0.38.0 h1:MECBjubtXD7yj4HrhIUcywNaGeNVUdfVnxmPajOk4yk=
++golang.org/x/mod v0.38.0/go.mod h1:V6Xz0pq8TQ3dGqVQ1FVHuelZpAL0uNhSkk9ogYP3c40=
+ golang.org/x/net v0.0.0-20150829230318-ea47fc708ee3/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
+ golang.org/x/net v0.0.0-20180719180050-a680a1efc54d/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
+ golang.org/x/net v0.0.0-20180724234803-3673e40ba225/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
+@@ -1541,8 +1548,8 @@ golang.org/x/net v0.8.0/go.mod h1:QVkue5JL9kW//ek3r6jTKnTFis1tRmNAW2P1shuFdJc=
+ golang.org/x/net v0.9.0/go.mod h1:d48xBJpPfHeWQsugry2m+kC02ZBRGRgulfHnEXEuWns=
+ golang.org/x/net v0.10.0/go.mod h1:0qNGK6F8kojg2nk9dLZ2mShWaEBan6FAoqfSigmmuDg=
+ golang.org/x/net v0.21.0/go.mod h1:bIjVDfnllIU7BJ2DNgfnXvpSvtn8VRwhlsaeUTyUS44=
+-golang.org/x/net v0.52.0 h1:He/TN1l0e4mmR3QqHMT2Xab3Aj3L9qjbhRm78/6jrW0=
+-golang.org/x/net v0.52.0/go.mod h1:R1MAz7uMZxVMualyPXb+VaqGSa3LIaUqk0eEt3w36Sw=
++golang.org/x/net v0.58.0 h1:ynWG7rqYi4ccpTEuPZ2QGWHktVEM9DMCj9yzDE0Q7To=
++golang.org/x/net v0.58.0/go.mod h1:YwCddHnFlT7eLQqVprV19OnhLGtc5xOKgE0RyqgfWAU=
+ golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be/go.mod h1:N/0e6XlmueqKjAGxoOufVs8QHGRruUQn6yWY3a++T0U=
+ golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421/go.mod h1:gOpvHmFTYa4IltrdGE7lF6nIHvwfUNPOp7c8zoXwtLw=
+ golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45/go.mod h1:gOpvHmFTYa4IltrdGE7lF6nIHvwfUNPOp7c8zoXwtLw=
+@@ -1588,8 +1595,8 @@ golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJ
+ golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.0.0-20220929204114-8fcdb60fdcc0/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.1.0/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+-golang.org/x/sync v0.20.0 h1:e0PTpb7pjO8GAtTs2dQ6jYa5BWYlMuX047Dco/pItO4=
+-golang.org/x/sync v0.20.0/go.mod h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0=
++golang.org/x/sync v0.22.0 h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=
++golang.org/x/sync v0.22.0/go.mod h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0=
+ golang.org/x/sys v0.0.0-20180830151530-49385e6e1522/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+ golang.org/x/sys v0.0.0-20180905080454-ebe1bf3edb33/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+ golang.org/x/sys v0.0.0-20180909124046-d0be0721c37e/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+@@ -1690,8 +1697,8 @@ golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.7.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.8.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.17.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+-golang.org/x/sys v0.42.0 h1:omrd2nAlyT5ESRdCLYdm3+fMfNFE/+Rf4bDIQImRJeo=
+-golang.org/x/sys v0.42.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
++golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
++golang.org/x/sys v0.47.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
+ golang.org/x/term v0.0.0-20201117132131-f5c789dd3221/go.mod h1:Nr5EML6q2oocZ2LXRh80K7BxOlk5/8JxuGnuhpl+muw=
+ golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
+ golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
+@@ -1703,8 +1710,8 @@ golang.org/x/term v0.6.0/go.mod h1:m6U89DPEgQRMq3DNkDClhWw02AUbt2daBVO4cn4Hv9U=
+ golang.org/x/term v0.7.0/go.mod h1:P32HKFT3hSsZrRxla30E9HqToFYAQPCMs/zFMBUFqPY=
+ golang.org/x/term v0.8.0/go.mod h1:xPskH00ivmX89bAKVGSKKtLOWNx2+17Eiy94tnKShWo=
+ golang.org/x/term v0.17.0/go.mod h1:lLRBjIVuehSbZlaOtGMbcMncT+aqLLLmKrsjNrUguwk=
+-golang.org/x/term v0.41.0 h1:QCgPso/Q3RTJx2Th4bDLqML4W6iJiaXFq2/ftQF13YU=
+-golang.org/x/term v0.41.0/go.mod h1:3pfBgksrReYfZ5lvYM0kSO0LIkAl4Yl2bXOkKP7Ec2A=
++golang.org/x/term v0.45.0 h1:NwWyBmoJCbfTHpxrWoZ9C6/VxOf7ic219I8xZZFdrf0=
++golang.org/x/term v0.45.0/go.mod h1:9aqxs0blBcrm/n0L9QW0aRVD+ktan8ssZromtqJC43w=
+ golang.org/x/text v0.0.0-20170915032832-14c0d48ead0c/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+ golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+ golang.org/x/text v0.3.1-0.20180807135948-17ff2d5776d2/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+@@ -1722,8 +1729,8 @@ golang.org/x/text v0.7.0/go.mod h1:mrYo+phRRbMaCq/xk9113O4dZlRixOauAjOtrjsXDZ8=
+ golang.org/x/text v0.8.0/go.mod h1:e1OnstbJyHTd6l/uOt8jFFHp6TRDWZR/bV3emEE/zU8=
+ golang.org/x/text v0.9.0/go.mod h1:e1OnstbJyHTd6l/uOt8jFFHp6TRDWZR/bV3emEE/zU8=
+ golang.org/x/text v0.14.0/go.mod h1:18ZOQIKpY8NJVqYksKHtTdi31H5itFRjB5/qKTNYzSU=
+-golang.org/x/text v0.35.0 h1:JOVx6vVDFokkpaq1AEptVzLTpDe9KGpj5tR4/X+ybL8=
+-golang.org/x/text v0.35.0/go.mod h1:khi/HExzZJ2pGnjenulevKNX1W67CUy0AsXcNubPGCA=
++golang.org/x/text v0.41.0 h1:vz/seA0lnX87Othu2f/0L24RcgrXD9/YFTSuGjj3rH8=
++golang.org/x/text v0.41.0/go.mod h1:jvf1O8ajNzZqhSrQBPbutR/EB83Cc0CFrezNQIwbb5M=
+ golang.org/x/time v0.0.0-20181108054448-85acf8d2951c/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+ golang.org/x/time v0.0.0-20190308202827-9d24e82272b4/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+ golang.org/x/time v0.0.0-20191024005414-555d28b269f0/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+@@ -1803,8 +1810,8 @@ golang.org/x/tools v0.1.12/go.mod h1:hNGJHUnrk76NpqgfD5Aqm5Crs+Hm0VOH/i9J2+nxYbc
+ golang.org/x/tools v0.3.0/go.mod h1:/rWhSS2+zyEVwoJf8YAX6L2f0ntZ7Kn/mGgAWcipA5k=
+ golang.org/x/tools v0.6.0/go.mod h1:Xwgl3UAJ/d3gWutnCtw505GrjyAbvKui8lOU390QaIU=
+ golang.org/x/tools v0.7.0/go.mod h1:4pg6aUX35JBAogB10C9AtvVL+qowtN4pT3CGSQex14s=
+-golang.org/x/tools v0.42.0 h1:uNgphsn75Tdz5Ji2q36v/nsFSfR/9BRFvqhGBaJGd5k=
+-golang.org/x/tools v0.42.0/go.mod h1:Ma6lCIwGZvHK6XtgbswSoWroEkhugApmsXyrUmBhfr0=
++golang.org/x/tools v0.48.0 h1:3+hClM1aLL5mjMKm5ovokw9epgRXPuu2tILgismM6RE=
++golang.org/x/tools v0.48.0/go.mod h1:08xX0orndb/F7jJxGDicx061tyd5pcMto75YMAXr6lk=
+ golang.org/x/xerrors v0.0.0-20190410155217-1f06c39b4373/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20190513163551-3ee3066db522/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+@@ -2024,10 +2031,10 @@ google.golang.org/genproto v0.0.0-20230331144136-dcfb400f0633/go.mod h1:UUQDJDOl
+ google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1/go.mod h1:nKE/iIaLqn2bQwXBg8f1g2Ylh6r5MN5CmZvuzZCgsCU=
+ google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9 h1:9+tzLLstTlPTRyJTh+ah5wIMsBW5c4tQwGTN3thOW9Y=
+ google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9/go.mod h1:mqHbVIp48Muh7Ywss/AD6I5kNVKZMmAa/QEW58Gxp2s=
+-google.golang.org/genproto/googleapis/api v0.0.0-20260330182312-d5a96adf58d8 h1:udju5p8o61FW6K2fxHWPIZhChk4FHl2Hjk8+uuLNnpM=
+-google.golang.org/genproto/googleapis/api v0.0.0-20260330182312-d5a96adf58d8/go.mod h1:EIQZ5bFCfRQDV4MhRle7+OgjNtZ6P1PiZBgAKuxXu/Y=
+-google.golang.org/genproto/googleapis/rpc v0.0.0-20260330182312-d5a96adf58d8 h1:OHkuo1i98/05rzpm9NBbfEtpJH/k3abEgZUKaAuCI7Y=
+-google.golang.org/genproto/googleapis/rpc v0.0.0-20260330182312-d5a96adf58d8/go.mod h1:4Hqkh8ycfw05ld/3BWL7rJOSfebL2Q+DVDeRgYgxUU8=
++google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa h1:Kjn0N0tCrDgiAFW+lGO4JZ3ck44CehvJQMAwj9QF0G8=
++google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa/go.mod h1:q4lMZS6kskjT5HvCPrnnypcDPVJqT/f4nfxmkE7gryY=
++google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa h1:mZHHdPZl0dbGHCflZgAq/Q468DWVFcU2whhB2KAo8fk=
++google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa/go.mod h1:4Hqkh8ycfw05ld/3BWL7rJOSfebL2Q+DVDeRgYgxUU8=
+ google.golang.org/grpc v1.19.0/go.mod h1:mqu4LbDTu4XGKhr4mRzUsmM4RtVoemTSY81AxZiDr8c=
+ google.golang.org/grpc v1.20.1/go.mod h1:10oTOabMzJvdu6/UiuZezV6QK5dSlG84ov/aaiqXj38=
+ google.golang.org/grpc v1.21.1/go.mod h1:oYelfM1adQP15Ek0mdvEgi9Df8B9CZIaU1084ijfRaM=
+@@ -2069,8 +2076,8 @@ google.golang.org/grpc v1.52.3/go.mod h1:pu6fVzoFb+NBYNAvQL08ic+lvB2IojljRYuun5v
+ google.golang.org/grpc v1.53.0/go.mod h1:OnIrk0ipVdj4N5d9IUoFUx72/VlD7+jUsHwZgwSMQpw=
+ google.golang.org/grpc v1.54.0/go.mod h1:PUSEXI6iWghWaB6lXM4knEgpJNu2qUcKfDtNci3EC2g=
+ google.golang.org/grpc v1.56.3/go.mod h1:I9bI3vqKfayGqPUAwGdOSu7kt6oIJLixfffKrpXqQ9s=
+-google.golang.org/grpc v1.80.0 h1:Xr6m2WmWZLETvUNvIUmeD5OAagMw3FiKmMlTdViWsHM=
+-google.golang.org/grpc v1.80.0/go.mod h1:ho/dLnxwi3EDJA4Zghp7k2Ec1+c2jqup0bFkw07bwF4=
++google.golang.org/grpc v1.83.2 h1:EManeRomTObA0BU7I8vXgg/78uE5MJ9M8B39EX2WscU=
++google.golang.org/grpc v1.83.2/go.mod h1:YPI1hK3kDked6iHvgX3tR0y+nX/qpMFKhPgFsokw1S8=
+ google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.1.0/go.mod h1:6Kw0yEErY5E/yWrBtf03jp27GLLJujG4z/JK95pnjjw=
+ gopkg.in/alecthomas/kingpin.v2 v2.2.6/go.mod h1:FMv+mEhP44yOT+4EoQTLFTRgOQ1FBLkstjWtayDeSgw=
+ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
+diff --git a/grpc/address_test.go b/grpc/address_test.go
+index de5b1a3..a30271e 100644
+--- a/grpc/address_test.go
++++ b/grpc/address_test.go
+@@ -353,7 +353,7 @@ func TestMarshalNewAddrRequest(t *testing.T) {
+ 			validate: func(t *testing.T, rpcReq *taprpc.NewAddrRequest) {
+ 				require.NotNil(t, rpcReq.ScriptKey)
+ 				require.Equal(t,
+-					testPubKey,
++					testPubKey[1:],
+ 					rpcReq.ScriptKey.PubKey,
+ 				)
+ 				require.Equal(t,
+diff --git a/grpc/asset_record_test.go b/grpc/asset_record_test.go
+new file mode 100644
+index 0000000..83a98fc
+--- /dev/null
++++ b/grpc/asset_record_test.go
+@@ -0,0 +1,77 @@
++package grpc
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/lightninglabs/taproot-assets/taprpc"
++	"github.com/stretchr/testify/require"
++)
++
++func TestUnmarshalAssetAnchorOutpoint(t *testing.T) {
++	hash := strings.Repeat("0123456789abcdef", 4)
++	for _, test := range []struct {
++		name   string
++		anchor *taprpc.AnchorInfo
++		valid  bool
++	}{
++		{"missing", nil, true},
++		{"unconfirmed", &taprpc.AnchorInfo{}, true},
++		{"canonical", &taprpc.AnchorInfo{
++			AnchorOutpoint: hash + ":7"}, true},
++		{"uppercase", &taprpc.AnchorInfo{
++			AnchorOutpoint: strings.ToUpper(hash) + ":7"}, false},
++		{"short hash", &taprpc.AnchorInfo{
++			AnchorOutpoint: "1:7"}, false},
++		{"zero padded index", &taprpc.AnchorInfo{
++			AnchorOutpoint: hash + ":07"}, false},
++		{"signed index", &taprpc.AnchorInfo{
++			AnchorOutpoint: hash + ":+7"}, false},
++		{"overflow index", &taprpc.AnchorInfo{
++			AnchorOutpoint: hash + ":4294967296"}, false},
++		{"malformed", &taprpc.AnchorInfo{AnchorOutpoint: hash}, false},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			record, err := unmarshalAsset(&taprpc.Asset{
++				AssetGenesis: &taprpc.GenesisInfo{
++					GenesisPoint: zeroGenesisPoint,
++					AssetId:      testAssetID,
++				},
++				ScriptKey: testPubKey, ChainAnchor: test.anchor,
++			})
++			if !test.valid {
++				require.ErrorContains(
++					t,
++					err,
++					"canonical anchor outpoint",
++				)
++				require.Nil(t, record)
++				return
++			}
++			require.NoError(t, err)
++			if test.anchor == nil ||
++				test.anchor.AnchorOutpoint == "" {
++
++				require.Nil(t, record.AnchorOutpoint)
++				return
++			}
++			require.NotNil(t, record.AnchorOutpoint)
++			require.Equal(
++				t,
++				hash+":7",
++				record.AnchorOutpoint.String(),
++			)
++			require.EqualValues(t, 7, record.AnchorOutpoint.Index)
++			require.EqualValues(
++				t,
++				0xef,
++				record.AnchorOutpoint.Txid[0],
++			)
++			require.EqualValues(
++				t,
++				0x01,
++				record.AnchorOutpoint.Txid[31],
++			)
++		})
++	}
++}
+diff --git a/grpc/script_key_test.go b/grpc/script_key_test.go
+new file mode 100644
+index 0000000..cfa27dd
+--- /dev/null
++++ b/grpc/script_key_test.go
+@@ -0,0 +1,50 @@
++package grpc
++
++import (
++	"context"
++	"testing"
++	"time"
++
++	tapsdk "github.com/lightninglabs/tap-sdk"
++	"github.com/lightninglabs/taproot-assets/rpcutils"
++	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
++	"github.com/stretchr/testify/require"
++	grpcpkg "google.golang.org/grpc"
++)
++
++type scriptKeyClient struct {
++	assetwalletrpc.AssetWalletClient
++
++	request *assetwalletrpc.DeclareScriptKeyRequest
++}
++
++func (c *scriptKeyClient) DeclareScriptKey(_ context.Context,
++	req *assetwalletrpc.DeclareScriptKeyRequest,
++	_ ...grpcpkg.CallOption) (*assetwalletrpc.DeclareScriptKeyResponse, error) {
++
++	c.request = req
++	return &assetwalletrpc.DeclareScriptKeyResponse{
++		ScriptKey: req.ScriptKey,
++	}, nil
++}
++
++func TestDeclareScriptKeyEncoding(t *testing.T) {
++	t.Parallel()
++
++	key, err := tapsdk.ParsePubKey(testPubKey)
++	require.NoError(t, err)
++	backend := &scriptKeyClient{}
++	client := &walletKitClient{client: backend, timeout: time.Second}
++	_, err = client.DeclareScriptKey(t.Context(), &tapsdk.DeclareScriptKeyRequest{
++		ScriptKey: tapsdk.ScriptKey{
++			PubKey:   key,
++			KeyDesc:  tapsdk.KeyDescriptor{RawKeyBytes: key},
++			TapTweak: make([]byte, 32),
++		},
++	})
++	require.NoError(t, err)
++	require.Equal(t, key[1:], backend.request.ScriptKey.PubKey)
++	require.Equal(t, key[:], backend.request.ScriptKey.KeyDesc.RawKeyBytes)
++	_, err = rpcutils.UnmarshalScriptKey(backend.request.ScriptKey)
++	require.NoError(t, err)
++}
+diff --git a/grpc/wallet_client.go b/grpc/wallet_client.go
+index fb2aca8..eff74cb 100644
+--- a/grpc/wallet_client.go
++++ b/grpc/wallet_client.go
+@@ -346,6 +346,18 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*tapsdk.AssetRecord, error) {
+ 			PubKey: scriptKeyPub,
+ 		},
+ 	}
++	if rpcAsset.ChainAnchor != nil &&
++		rpcAsset.ChainAnchor.AnchorOutpoint != "" {
++
++		raw := rpcAsset.ChainAnchor.AnchorOutpoint
++		point, err := tapsdk.NewOutpointFromStr(raw)
++		if err != nil || point.String() != raw {
++			return nil, fmt.Errorf(
++				"invalid canonical anchor outpoint",
++			)
++		}
++		asset.AnchorOutpoint = &point
++	}
+ 
+ 	// tapd keys every queryable map (ListBalances, ListAssetGroups,
+ 	// ListAssets filters) by the tweaked group key, so that's what
+@@ -902,7 +914,7 @@ func marshalNewAddrRequest(
+ 
+ 	if req.ScriptKey != nil {
+ 		rpcReq.ScriptKey = &taprpc.ScriptKey{
+-			PubKey:   req.ScriptKey.PubKey[:],
++			PubKey:   req.ScriptKey.PubKey[1:],
+ 			TapTweak: req.ScriptKey.TapTweak,
+ 		}
+ 		if req.ScriptKey.KeyDesc.RawKeyBytes != (tapsdk.PubKey{}) {
+diff --git a/grpc/walletkit_client.go b/grpc/walletkit_client.go
+index 069de31..685e690 100644
+--- a/grpc/walletkit_client.go
++++ b/grpc/walletkit_client.go
+@@ -249,6 +249,8 @@ func marshalCommitVirtualPsbtsRequest(
+ 		CustomLockId:          req.Funding.CustomLockID,
+ 		LockExpirationSeconds: req.Funding.LockExpirationSeconds,
+ 		SkipFunding:           req.Funding.SkipFunding,
++		TransitionProofVersion: assetwalletrpc.
++			TransitionProofVersion_TRANSITION_PROOF_VERSION_V1,
+ 	}
+ 
+ 	if req.Funding.SkipFunding {
+@@ -705,7 +707,7 @@ func (m *walletKitClient) DeclareScriptKey(ctx context.Context,
+ 	defer cancel()
+ 
+ 	rpcKey := &taprpc.ScriptKey{
+-		PubKey:   req.ScriptKey.PubKey[:],
++		PubKey:   req.ScriptKey.PubKey[1:],
+ 		TapTweak: req.ScriptKey.TapTweak,
+ 	}
+ 
+diff --git a/rest/asset_record_test.go b/rest/asset_record_test.go
+new file mode 100644
+index 0000000..e0243cd
+--- /dev/null
++++ b/rest/asset_record_test.go
+@@ -0,0 +1,90 @@
++package rest
++
++import (
++	"encoding/hex"
++	"encoding/json"
++	"strings"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestUnmarshalAssetAnchorOutpoint(t *testing.T) {
++	hash := strings.Repeat("0123456789abcdef", 4)
++	for _, test := range []struct {
++		name   string
++		anchor *jsonChainAnchor
++		valid  bool
++	}{
++		{"missing", nil, true},
++		{"unconfirmed", &jsonChainAnchor{}, true},
++		{"canonical", &jsonChainAnchor{
++			AnchorOutpoint: hash + ":7"}, true},
++		{"uppercase", &jsonChainAnchor{
++			AnchorOutpoint: strings.ToUpper(hash) + ":7"}, false},
++		{"short hash", &jsonChainAnchor{
++			AnchorOutpoint: "1:7"}, false},
++		{"zero padded index", &jsonChainAnchor{
++			AnchorOutpoint: hash + ":07"}, false},
++		{"signed index", &jsonChainAnchor{
++			AnchorOutpoint: hash + ":+7"}, false},
++		{"overflow index", &jsonChainAnchor{
++			AnchorOutpoint: hash + ":4294967296"}, false},
++		{"malformed", &jsonChainAnchor{AnchorOutpoint: hash}, false},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			// Round-trip the public JSON name as well as the typed
++			// mapper.
++			raw, err := json.Marshal(map[string]any{
++				"asset_genesis": &jsonGenesisInfo{
++					GenesisPoint: hash + ":1",
++					AssetID: hex.EncodeToString(
++						restTestAssetID,
++					),
++					AssetType: "NORMAL",
++				},
++				"script_key": hex.EncodeToString(
++					restTestPubKey,
++				),
++				"chain_anchor": test.anchor,
++			})
++			require.NoError(t, err)
++			var asset jsonAsset
++			require.NoError(t, json.Unmarshal(raw, &asset))
++			record, err := unmarshalAsset(&asset)
++			if !test.valid {
++				require.ErrorContains(
++					t,
++					err,
++					"canonical anchor outpoint",
++				)
++				require.Nil(t, record)
++				return
++			}
++			require.NoError(t, err)
++			if test.anchor == nil ||
++				test.anchor.AnchorOutpoint == "" {
++
++				require.Nil(t, record.AnchorOutpoint)
++				return
++			}
++			require.NotNil(t, record.AnchorOutpoint)
++			require.Equal(
++				t,
++				hash+":7",
++				record.AnchorOutpoint.String(),
++			)
++			require.EqualValues(t, 7, record.AnchorOutpoint.Index)
++			require.EqualValues(
++				t,
++				0xef,
++				record.AnchorOutpoint.Txid[0],
++			)
++			require.EqualValues(
++				t,
++				0x01,
++				record.AnchorOutpoint.Txid[31],
++			)
++		})
++	}
++}
+diff --git a/rest/marshal.go b/rest/marshal.go
+index 98e9df4..41c1066 100644
+--- a/rest/marshal.go
++++ b/rest/marshal.go
+@@ -319,6 +319,16 @@ func unmarshalAsset(a *jsonAsset) (*tapsdk.AssetRecord, error) {
+ 			PubKey: scriptKeyPub,
+ 		},
+ 	}
++	if a.ChainAnchor != nil && a.ChainAnchor.AnchorOutpoint != "" {
++		raw := a.ChainAnchor.AnchorOutpoint
++		point, err := tapsdk.NewOutpointFromStr(raw)
++		if err != nil || point.String() != raw {
++			return nil, fmt.Errorf(
++				"invalid canonical anchor outpoint",
++			)
++		}
++		asset.AnchorOutpoint = &point
++	}
+ 
+ 	// tapd keys every queryable map by the tweaked group key, so
+ 	// that's what AssetRef must encode.
+diff --git a/rest/script_key_test.go b/rest/script_key_test.go
+new file mode 100644
+index 0000000..88fb752
+--- /dev/null
++++ b/rest/script_key_test.go
+@@ -0,0 +1,52 @@
++package rest
++
++import (
++	"encoding/hex"
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++	"time"
++
++	tapsdk "github.com/lightninglabs/tap-sdk"
++	"github.com/lightninglabs/tap-sdk/macaroon"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func TestDeclareScriptKeyEncoding(t *testing.T) {
++	t.Parallel()
++
++	key, err := tapsdk.ParsePubKey(restTestPubKey)
++	require.NoError(t, err)
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
++		r *http.Request) {
++
++		var request struct {
++			ScriptKey *jsonScriptKey `json:"script_key"`
++		}
++		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) ||
++			!assert.NotNil(t, request.ScriptKey) {
++
++			return
++		}
++		assert.Equal(t, hex.EncodeToString(key[1:]), request.ScriptKey.PubKey)
++		if assert.NotNil(t, request.ScriptKey.KeyDesc) {
++			assert.Equal(t, hex.EncodeToString(key[:]),
++				request.ScriptKey.KeyDesc.RawKeyBytes)
++		}
++		assert.NoError(t, json.NewEncoder(w).Encode(request))
++	}))
++	defer srv.Close()
++	client := newWalletKitClient(&transport{
++		baseURL: srv.URL, client: srv.Client(), timeout: time.Second,
++		macaroons: macaroon.Pouch{},
++	})
++	_, err = client.DeclareScriptKey(t.Context(), &tapsdk.DeclareScriptKeyRequest{
++		ScriptKey: tapsdk.ScriptKey{
++			PubKey:  key,
++			KeyDesc: tapsdk.KeyDescriptor{RawKeyBytes: key},
++		},
++	})
++	require.NoError(t, err)
++}
+diff --git a/rest/types.go b/rest/types.go
+index 15c2fa7..a681d54 100644
+--- a/rest/types.go
++++ b/rest/types.go
+@@ -48,6 +48,7 @@ type jsonAsset struct {
+ 	ScriptVersion    int32            `json:"script_version"`
+ 	ScriptKey        string           `json:"script_key"`
+ 	AssetGroup       *jsonAssetGroup  `json:"asset_group"`
++	ChainAnchor      *jsonChainAnchor `json:"chain_anchor"`
+ }
+ 
+ // jsonListAssetsResponse is the JSON shape of taprpc.ListAssetResponse.
+diff --git a/rest/wallet_client.go b/rest/wallet_client.go
+index 2baa9a4..453b98b 100644
+--- a/rest/wallet_client.go
++++ b/rest/wallet_client.go
+@@ -1045,7 +1045,7 @@ func marshalScriptKeyJSON(
+ 	}
+ 
+ 	result := &jsonScriptKey{
+-		PubKey:   hex.EncodeToString(key.PubKey[:]),
++		PubKey:   hex.EncodeToString(key.PubKey[1:]),
+ 		TapTweak: hex.EncodeToString(key.TapTweak),
+ 	}
+ 
+diff --git a/rest/walletkit_client.go b/rest/walletkit_client.go
+index b2b1f28..84d181a 100644
+--- a/rest/walletkit_client.go
++++ b/rest/walletkit_client.go
+@@ -2,6 +2,7 @@ package rest
+ 
+ import (
+ 	"context"
++	"encoding/base64"
+ 	"encoding/hex"
+ 	"fmt"
+ 
+@@ -299,16 +300,17 @@ func (w *walletKitClient) SignVirtualPsbt(ctx context.Context,
+ // jsonCommitVirtualPsbtsRequest is the JSON body for
+ // CommitVirtualPsbts.
+ type jsonCommitVirtualPsbtsRequest struct {
+-	VirtualPsbts          []string `json:"virtual_psbts"`
+-	PassiveAssetPsbts     []string `json:"passive_asset_psbts,omitempty"`
+-	AnchorPsbt            string   `json:"anchor_psbt"`
+-	ExistingOutputIndex   *int32   `json:"existing_output_index,omitempty"`
+-	Add                   *bool    `json:"add,omitempty"`
+-	TargetConf            *uint32  `json:"target_conf,omitempty"`
+-	SatPerVByte           string   `json:"sat_per_vbyte,omitempty"`
+-	CustomLockID          string   `json:"custom_lock_id,omitempty"`
+-	LockExpirationSeconds string   `json:"lock_expiration_seconds,omitempty"`
+-	SkipFunding           bool     `json:"skip_funding,omitempty"`
++	TransitionProofVersion string   `json:"transition_proof_version"`
++	VirtualPsbts           []string `json:"virtual_psbts"`
++	PassiveAssetPsbts      []string `json:"passive_asset_psbts,omitempty"`
++	AnchorPsbt             string   `json:"anchor_psbt"`
++	ExistingOutputIndex    *int32   `json:"existing_output_index,omitempty"`
++	Add                    *bool    `json:"add,omitempty"`
++	TargetConf             *uint32  `json:"target_conf,omitempty"`
++	SatPerVByte            string   `json:"sat_per_vbyte,omitempty"`
++	CustomLockID           string   `json:"custom_lock_id,omitempty"`
++	LockExpirationSeconds  string   `json:"lock_expiration_seconds,omitempty"`
++	SkipFunding            bool     `json:"skip_funding,omitempty"`
+ }
+ 
+ // CommitVirtualPsbts commits virtual transactions using the legacy
+@@ -382,10 +384,11 @@ func marshalCommitVirtualPsbtsRequest(
+ 	}
+ 
+ 	body := &jsonCommitVirtualPsbtsRequest{
+-		VirtualPsbts:      hexEncodeByteSlices(req.VirtualPsbts),
+-		PassiveAssetPsbts: hexEncodeByteSlices(req.PassiveAssetPsbts),
+-		AnchorPsbt:        hex.EncodeToString(req.AnchorPsbt),
+-		SkipFunding:       req.Funding.SkipFunding,
++		TransitionProofVersion: "TRANSITION_PROOF_VERSION_V1",
++		VirtualPsbts:           hexEncodeByteSlices(req.VirtualPsbts),
++		PassiveAssetPsbts:      hexEncodeByteSlices(req.PassiveAssetPsbts),
++		AnchorPsbt:             hex.EncodeToString(req.AnchorPsbt),
++		SkipFunding:            req.Funding.SkipFunding,
+ 	}
+ 
+ 	if len(req.Funding.CustomLockID) > 0 {
+@@ -664,9 +667,9 @@ func (w *walletKitClient) QueryInternalKey(ctx context.Context,
+ func (w *walletKitClient) QueryScriptKey(ctx context.Context,
+ 	tweakedScriptKey []byte) (*tapsdk.ScriptKey, error) {
+ 
+-	keyHex := hex.EncodeToString(tweakedScriptKey)
++	keyBytes := base64.URLEncoding.EncodeToString(tweakedScriptKey)
+ 	path := fmt.Sprintf(
+-		"/v1/taproot-assets/wallet/script-key/%s", keyHex,
++		"/v1/taproot-assets/wallet/script-key/%s", keyBytes,
+ 	)
+ 
+ 	var resp jsonQueryScriptKeyResponse
+@@ -799,31 +802,8 @@ func (w *walletKitClient) DeclareScriptKey(ctx context.Context,
+ 	req *tapsdk.DeclareScriptKeyRequest) (
+ 	*tapsdk.ScriptKey, error) {
+ 
+-	keyDesc := map[string]any{
+-		"raw_key_bytes": hex.EncodeToString(
+-			req.ScriptKey.KeyDesc.RawKeyBytes[:],
+-		),
+-		"key_loc": map[string]any{
+-			"key_family": req.ScriptKey.KeyDesc.KeyLocator.Family,
+-			"key_index":  req.ScriptKey.KeyDesc.KeyLocator.Index,
+-		},
+-	}
+-
+-	scriptKeyMap := map[string]any{
+-		"pub_key": hex.EncodeToString(
+-			req.ScriptKey.PubKey[:],
+-		),
+-		"key_desc": keyDesc,
+-	}
+-
+-	if len(req.ScriptKey.TapTweak) > 0 {
+-		scriptKeyMap["tap_tweak"] = hex.EncodeToString(
+-			req.ScriptKey.TapTweak,
+-		)
+-	}
+-
+ 	body := map[string]any{
+-		"script_key": scriptKeyMap,
++		"script_key": marshalScriptKeyJSON(&req.ScriptKey),
+ 	}
+ 
+ 	var resp jsonDeclareScriptKeyResponse
+diff --git a/rest/walletkit_client_test.go b/rest/walletkit_client_test.go
+index 08647db..5b589ea 100644
+--- a/rest/walletkit_client_test.go
++++ b/rest/walletkit_client_test.go
+@@ -3,12 +3,14 @@ package rest
+ import (
+ 	"bytes"
+ 	"context"
++	"encoding/base64"
+ 	"encoding/hex"
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
+ 	"net/http"
+ 	"net/http/httptest"
++	"strings"
+ 	"testing"
+ 	"time"
+ 
+@@ -18,6 +20,39 @@ import (
+ 	"github.com/stretchr/testify/require"
+ )
+ 
++// TestQueryScriptKeyPathEncoding checks the gateway's bytes path parameter
++// for both compressed and x-only public keys.
++func TestQueryScriptKeyPathEncoding(t *testing.T) {
++	for _, key := range [][]byte{restTestPubKey, restTestPubKey[1:]} {
++		t.Run(fmt.Sprintf("%d bytes", len(key)), func(t *testing.T) {
++			srv := httptest.NewServer(http.HandlerFunc(
++				func(w http.ResponseWriter, r *http.Request) {
++					encoded := strings.TrimPrefix(r.URL.Path,
++						"/v1/taproot-assets/wallet/script-key/")
++					decoded, err := base64.URLEncoding.
++						DecodeString(encoded)
++					assert.NoError(t, err)
++					assert.Equal(t, key, decoded)
++					_, err = fmt.Fprintf(w,
++						`{"script_key":{"pub_key":%q}}`,
++						hex.EncodeToString(restTestPubKey))
++					assert.NoError(t, err)
++				},
++			))
++			defer srv.Close()
++			client := newWalletKitClient(&transport{
++				baseURL:   srv.URL,
++				client:    srv.Client(),
++				timeout:   time.Second,
++				macaroons: macaroon.Pouch{},
++			})
++			result, err := client.QueryScriptKey(t.Context(), key)
++			require.NoError(t, err)
++			require.Equal(t, restTestPubKey, result.PubKey[:])
++		})
++	}
++}
++
+ func TestCustomAnchorCapabilities(t *testing.T) {
+ 	client := newWalletKitClient(&transport{
+ 		baseURL:   "http://example.invalid",

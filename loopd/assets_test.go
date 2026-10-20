@@ -17,30 +17,30 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestAssetRuntimeConfigRequiresCompleteActivation(t *testing.T) {
-	_, enabled, err := assetRuntimeConfig(&Config{})
+func TestAssetLoopInConfigRequiresCompleteActivation(t *testing.T) {
+	_, enabled, err := assetLoopInConfig(&Config{})
 	require.NoError(t, err)
 	require.False(t, enabled)
 	_, public := btcec.PrivKeyFromBytes([]byte{1})
 	key := hex.EncodeToString(public.SerializeCompressed())
 	cfg := &Config{
-		Tapd:                  &assets.TapdConfig{Activate: true},
-		AssetRuntimeSocket:    "/tmp/asset.sock",
-		AssetRuntimeTokenFile: "/tmp/asset.token", AssetPeer: key,
+		Tapd:            &assets.TapdConfig{Activate: true},
+		AssetBitcoinURL: "http://127.0.0.1:18443", AssetPeer: key,
+		AssetFeeSat: 1000, AssetMaxFeeSat: 2000,
 	}
-	_, enabled, err = assetRuntimeConfig(cfg)
+	_, enabled, err = assetLoopInConfig(cfg)
 	require.NoError(t, err)
 	require.True(t, enabled)
 	cfg.Tapd.Activate = false
-	_, _, err = assetRuntimeConfig(cfg)
+	_, _, err = assetLoopInConfig(cfg)
 	require.Error(t, err)
 	cfg.Tapd.Activate = true
 	cfg.AssetPeer = strings.ToUpper(key)
-	_, _, err = assetRuntimeConfig(cfg)
+	_, _, err = assetLoopInConfig(cfg)
 	require.Error(t, err)
 	cfg.AssetPeer = key
-	cfg.AssetRuntimeTokenFile = "relative.token"
-	_, _, err = assetRuntimeConfig(cfg)
+	cfg.AssetBitcoinURL = "relative-rpc"
+	_, _, err = assetLoopInConfig(cfg)
 	require.Error(t, err)
 }
 

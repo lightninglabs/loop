@@ -18,7 +18,7 @@ import (
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -1061,8 +1061,8 @@ func getSwapServerConn(address, proxyAddress string, skipCertCheck bool,
 	// Create a dial options array.
 	opts := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(
-			grpc.MaxCallSendMsgSize(bridge.PublicRPCMaxBytes),
-			grpc.MaxCallRecvMsgSize(bridge.PublicRPCMaxBytes),
+			grpc.MaxCallSendMsgSize(swapkit.PublicRPCMaxBytes),
+			grpc.MaxCallRecvMsgSize(swapkit.PublicRPCMaxBytes),
 		),
 		grpc.WithUnaryInterceptor(
 			interceptor.UnaryInterceptor,

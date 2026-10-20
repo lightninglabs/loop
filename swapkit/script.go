@@ -1,7 +1,7 @@
 package swapkit
 
 import (
-	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/txscript"
 	"golang.org/x/crypto/ripemd160"
 )
 

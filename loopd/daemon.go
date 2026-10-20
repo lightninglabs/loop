@@ -389,7 +389,7 @@ func (d *Daemon) startWebServers() error {
 // this method fails with an error then no goroutine was started yet and no
 // cleanup is necessary. If it succeeds, then goroutines have been spawned.
 func (d *Daemon) initialize(withMacaroonService bool) error {
-	if _, _, err := assetRuntimeConfig(d.cfg); err != nil {
+	if _, _, err := assetLoopInConfig(d.cfg); err != nil {
 		return err
 	}
 	if d.cfg.EnableExperimental {
@@ -726,7 +726,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	)
 
 	assetConfig, err := d.newAssetConfig(
-		d.mainCtx, swapClient, staticAddressManager, depositManager,
+		swapClient, staticAddressManager, depositManager,
 		staticAddressLoopInStore,
 	)
 	if err != nil {

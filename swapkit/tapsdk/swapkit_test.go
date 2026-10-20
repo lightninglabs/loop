@@ -6,8 +6,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/txscript"
 	sdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/taproot-assets/tappsbt"
+	"github.com/lightninglabs/taproot-assets/tapsend"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,12 +129,26 @@ func testSwapKitBuilderCommitment(t *testing.T, kit swapKitOutput,
 	require.Equal(t, []byte{txscript.OP_TRUE},
 		planned.OPTrueSpend.LeafScript)
 
-	preview, err := plan.PreviewOutputCommitments()
+	// Derive the builder's root independently through tapd's public
+	// commitment implementation. No signing or backend commit is needed.
+	packets := plan.ActiveVirtualPSBTs()
+	require.Len(t, packets, 1)
+	packet, err := tappsbt.NewFromRawBytes(bytes.NewReader(packets[0]), false)
 	require.NoError(t, err)
-	require.Len(t, preview, 1)
-	spend, err := kit.TimeoutSpend(preview[0].TaprootAssetRoot)
+	commitments, err := tapsend.CreateOutputCommitments(
+		[]*tappsbt.VPacket{packet}, tapsend.WithSpenderLeaves(),
+	)
 	require.NoError(t, err)
-	require.Equal(t, preview[0].TaprootMerkleRoot, spend.TaprootMerkleRoot)
+	virtual := packet.Outputs[planned.VirtualOutputIndex]
+	_, merkle, root, err := tapsend.AnchorOutputScript(
+		virtual.AnchorOutputInternalKey,
+		virtual.AnchorOutputTapscriptSibling,
+		commitments[virtual.AnchorOutputIndex],
+	)
+	require.NoError(t, err)
+	spend, err := kit.TimeoutSpend(sdk.Hash(root))
+	require.NoError(t, err)
+	require.Equal(t, sdk.Hash(merkle), spend.TaprootMerkleRoot)
 	control, err := txscript.ParseControlBlock(spend.ControlBlock)
 	require.NoError(t, err)
 	require.NoError(t, txscript.VerifyTaprootLeafCommitment(

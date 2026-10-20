@@ -189,7 +189,8 @@ func (c *Controller) PrepareInvoice(ctx context.Context, hash [32]byte) (
 // ReceiveFallback verifies and finalizes the SDK recovery bundle, then stores
 // it before any client signature is permitted to leave this controller.
 func (c *Controller) ReceiveFallback(ctx context.Context, hash [32]byte,
-	bundle []byte) error {
+	bundle []byte,
+	finalize func(context.Context, []byte) (Fallback, error)) error {
 
 	unlock, err := c.lock(ctx, hash)
 	if err != nil {
@@ -211,9 +212,7 @@ func (c *Controller) ReceiveFallback(ctx context.Context, hash [32]byte,
 
 		return ErrState
 	}
-	fallback, err := c.actions.VerifyFinalizeFallback(
-		ctx, cloneOffer(r.Offer), bytes.Clone(bundle),
-	)
+	fallback, err := finalize(ctx, bytes.Clone(bundle))
 	if err != nil {
 		return err
 	}

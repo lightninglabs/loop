@@ -38,87 +38,54 @@ observing execution, cancellation, and reporting a confirmed refund are
 separate durable operations. Reusing method names must not make the client
 able to execute the swap or skip these persistence boundaries.
 
-## What the kit and runtime actually contain
+## Ownership in the normal daemons
 
-At the first draft, the `swapkit` tree contained roughly 5,700 lines of
-production Go, 4,500 lines of tests, 2,300 lines of dependency metadata, and
-fixtures/documentation. The small contract kit was about 500 production lines;
-the SDK adapter about 300. The rest was not a contract kit:
+The SDK is linked into the normal Loop and server modules. There is no asset
+companion daemon, transport bridge, private nonce database or transaction
+runtime store. The initial separate process existed to isolate incompatible
+Bitcoin dependencies; a compatible SDK pin removes that requirement.
 
-| Component | Responsibility | Assessment |
-| --- | --- | --- |
-| Contract kit | Bitcoin deposit/HTLC scripts, control blocks and witnesses. | Keep a small shared implementation. Existing Bitcoin helpers and asset contracts now use the same leaf serializers. |
-| SDK adapter | Convert contract outputs and signing plans into generic SDK requests. | Keep thin; generic asset construction belongs in the SDK. |
-| Runtime, about 2,800 lines | Asset inventory, fallback/claim/refund construction, proof import/reconstruction, chain discovery and transaction journal. | Transaction construction and proof recovery remain separate from the normal Loop In manager. |
-| Wallet signer, about 880 lines | Wallet key authorization and durable MuSig/signature recovery. | Preserve nonce/transaction bindings and restart guarantees; do not replace with ephemeral sessions. |
-| Bridge and daemon, about 1,100 lines | Authenticated process transport, configuration and SDK hosting. | Compatibility cost, not a requirement of asset swaps. Remove when dependencies can coexist. |
+| Component | Responsibility |
+| --- | --- |
+| `swapkit` | Shared Bitcoin deposit/HTLC leaves, control blocks and witnesses, plus typed asset operation data. |
+| `swapkit/tapsdk` | Map contracts to SDK transactions, validate asset proofs and policies, and call existing node services. |
+| Normal deposit and Loop In managers | Schedule funding, payment, execution and recovery. Their SQL records hold request identity, funding checkpoints, immutable recovery packages and completed fallbacks. |
+| LND | Own wallet keys, ephemeral MuSig2 sessions, script signing and chain notifications. |
+| tapd | Own transfer logging, publication and confirmed proof reconstruction. |
 
-The adapter uses SDK virtual transactions, commitments, asset witnesses,
-Bitcoin witness construction and package integrity validation. Shared Loop
-helpers build the contract leaves. Runtime recovery now shares observed-spend
-proof reconstruction and verification across original CSV and HTLC outcomes.
+Unfinished signing attempts restart with fresh LND sessions for the same
+unsigned transaction. A completed fallback is saved before claim authority
+leaves the client. The server keeps exposure and deposit locks across nonce
+rotation and accepts a valid completed transaction from an earlier round.
+No private nonce is exported or persisted by Loop.
 
-Two substantial pieces still have no upstream equivalent. The SDK signer is a
-callback, not a durable LND/MuSig signer. Its confirmed-path helper also rejects
-historical v0 bases with transitions. Removing the local implementations today
-would lose signing recovery or support for existing v0 assets.
+For a peer's already-mined transaction, the adapter verifies the known package
+against the observed witness, registers its OP_TRUE input and logs the transfer
+in tapd with broadcasting disabled. It then exports the exact confirmed proof.
+This also handles historical v0 assets; a custom proof assembler is unnecessary.
 
-## Shared managers and stores
+The client SQL store holds asset metadata on `deposits`; one request row holds
+admission and execution state. Terminal cleanup, deposit history and reservation
+release commit atomically. The server's existing PostgreSQL store shares deposit
+locks with Bitcoin. Neither side needs a second asset manager or journal.
+Unshipped draft Bolt layouts are not supported upgrade formats.
 
-The client no longer has an `assetmanager` or independent session worker. Its
-existing `loopin.Manager` schedules asset request and execution recovery beside
-Bitcoin notifications. The normal `loopin.SqlStore` holds asset metadata on
-`deposits`; a single request row contains pre-offer and execution state.
-Terminal cleanup, deposit history and reservation release commit atomically.
-The two draft Bolt journals are imported read-only, once, before recovery.
+## Remaining consolidation
 
-The server's existing Loop In manager owns readiness, recovery and shutdown for
-both protocols. Its existing Postgres store implements the asset store interface
-and shares deposit locking with Bitcoin. Typed asset payloads remain separate
-from required Bitcoin contract columns; the independent SQL store facade and
-service worker are removed.
+The asset execution controller still has mandatory, revision-checked writes
+before invoice creation, signature exposure and preimage release. The legacy
+FSM's entry notification cannot fail closed on a persistence error. Both
+protocols share transition policies and normal managers; merging their final
+dispatch layer requires a fallible durable transition barrier and regression
+coverage for both protocols.
 
-The small asset execution controller remains necessary: the legacy FSM's
-entry notification cannot fail closed on a persistence error. Both protocols
-share transition policies, while asset actions keep durable writes before
-invoice creation, signature exposure and preimage release. A failed write must
-never authorize one of those effects.
+The compatible SDK pin and small upstream patches are development dependencies.
+They must become reviewed release pins. Existing LND chain services replace
+custom block scanning; a small Bitcoin RPC callback remains for mempool-aware
+UTXO checks on anchors outside LND's wallet inventory.
 
-## Why a separate process exists today
+These priorities supplement the fee, reorg, capacity and operational release
+blockers in the [readiness document](asset-loop-in-readiness.md).
 
-The current root already uses LND 0.21. The obstacle is not simply an old LND
-version. Loop uses classic btcd/wallet types while the SDK graph uses split
-`wire/v2`, `txscript/v2`, PSBT and newer wallet types. An isolated mixed-module
-compile was tested on October 20, 2026. Pinning classic btcd made module
-resolution succeed, but compilation failed in wallet/neutrino/LND dependencies
-on incompatible types. Pinning those dependencies to Loop's versions moved the
-same mismatches into the SDK's anchor builder.
-
-An in-process driver is the preferred target. Getting there requires a
-coordinated dependency migration or an SDK compatibility implementation;
-removing the process boundary without that work does not produce a buildable
-client/server. The independent process must not become a permanent requirement
-merely because the first integration used it.
-
-## Remaining architecture priorities
-
-1. **Shared durable FSM runner.** Managers and stores are now shared. To merge
-   the remaining execution dispatch, give the common FSM a fallible durable
-   barrier before external effects and prove its crash semantics for both
-   protocols. Its current notification hook cannot replace fail-closed writes.
-2. **In-process SDK driver.** Align the dependency graphs, remove the JSON
-   bridge and extra daemon, and use the normal daemon configuration/lifecycle.
-   Track this independently from changes to contract authority.
-3. **Existing chain services.** Reuse LND confirmation/spend subscriptions,
-   height hints and ChainKit retrieval where they replace custom scanning.
-   Preserve current-chain proof validation and the arbitrary-outpoint mempool
-   unspent check. A notification timeout or wallet `ListUnspent` is not evidence
-   that an externally controlled anchor is unspent.
-4. **Proof API reuse.** Move generic confirmation/proof work into the SDK once
-   it covers the required historical asset versions. Its current helper cannot
-   directly replace the tested v0 proof path.
-
-These architecture priorities supplement the fee, reorg, capacity and
-operational release blockers in the [readiness document](asset-loop-in-readiness.md).
-A smaller diff must preserve server execution authority, native asset
-validation, and recovery after either process loses a response or restarts.
+The ordinary Loop unit/race jobs now include the contracts and adapter. No
+separate module-test workflow is needed.

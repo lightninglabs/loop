@@ -9,7 +9,7 @@ import (
 
 	depositflow "github.com/lightninglabs/loop/staticaddr/deposit/flow"
 	"github.com/lightninglabs/loop/staticaddr/loopin/flow"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
 )
 
 var (
@@ -37,10 +37,10 @@ const (
 
 // Terms is the shared public agreement. Client offers reject Admission, which
 // is private server recovery data; it is omitted from normal client encoding.
-type Terms = bridge.Terms
+type Terms = swapkit.Terms
 
 // Offer contains the server's hash commitment, never its execution preimage.
-type Offer = bridge.Offer
+type Offer = swapkit.Offer
 
 // Invoice contains the exact HOLD invoice and durable receiver RFQ binding.
 //
@@ -51,7 +51,7 @@ type Invoice struct {
 }
 
 // Fallback is independently verified, publishable SDK recovery material.
-type Fallback = bridge.Fallback
+type Fallback = swapkit.Fallback
 
 // Record contains private client recovery material. Do not expose it in RPCs.
 // InvoiceIntent and CooperativeRequest never contain private signing nonces.
@@ -95,9 +95,8 @@ type Store interface {
 
 // Actions connects the controller to the authenticated server, SDK and local
 // assetln.Receiver. All effects must be idempotent by hash and immutable input.
-// VerifyFinalizeFallback verifies every asset proof,
-// transaction, output, fee tier and signature, then returns a publishable
-// bundle. It must retain private nonces in its signer, never in Record.
+// ReceiveFallback accepts a one-use finalizer that verifies every asset proof,
+// transaction, output and signature before saving the publishable bundle.
 // Prepared must call Receiver.Prepared locally, not trust server IN_FLIGHT.
 // InvoiceSettled must observe the local invoice as SETTLED. RecoverRefund
 // idempotently publishes and monitors the persisted fallback and refund when
@@ -109,7 +108,6 @@ type Actions interface {
 	ValidateOffer(context.Context, Offer) error
 	CreateInvoice(context.Context, Offer, []byte) (Invoice, error)
 	LookupInvoice(context.Context, Offer) (Invoice, error)
-	VerifyFinalizeFallback(context.Context, Offer, []byte) (Fallback, error)
 	Prepared(context.Context, Offer) ([]byte, error)
 	PushSignatures(context.Context, Offer, []byte) error
 	LookupPreimage(context.Context, Offer) ([32]byte, bool, error)
@@ -119,4 +117,12 @@ type Actions interface {
 	InspectClaim(context.Context, Offer, Fallback) ([]byte, error)
 	RecoverRefund(context.Context, Offer, Fallback) ([]byte, error)
 	CancelInvoice(context.Context, Offer) error
+}
+
+// FallbackRound owns one ephemeral wallet session. Any failed or ambiguous
+// attempt is closed; retries keep the unsigned package but use fresh nonces.
+type FallbackRound struct {
+	Nonce    [66]byte
+	Finalize func(context.Context, []byte) (Fallback, error)
+	Close    func()
 }

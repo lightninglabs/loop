@@ -228,6 +228,9 @@ func (f *fixture) ready() {
 	require.NoError(f.t, err)
 	require.NoError(f.t, f.c.ReceiveFallback(
 		ctx, f.offer.Hash, []byte("server-package"),
+		func(ctx context.Context, raw []byte) (Fallback, error) {
+			return f.a.VerifyFinalizeFallback(ctx, f.offer, raw)
+		},
 	))
 }
 

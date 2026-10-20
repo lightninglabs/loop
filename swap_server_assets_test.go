@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/aperture/l402"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -42,7 +42,7 @@ func (s *proofSizeServer) GetAssetLoopIn(context.Context,
 	*swapserverrpc.AssetLoopInStatus, error) {
 
 	return &swapserverrpc.AssetLoopInStatus{
-		ResolutionProof: make([]byte, bridge.PublicRPCMaxBytes),
+		ResolutionProof: make([]byte, swapkit.PublicRPCMaxBytes),
 	}, nil
 }
 
@@ -57,8 +57,8 @@ func TestSwapServerProofMessageLimits(t *testing.T) {
 	listener, err := net.Listen("unix", socket)
 	require.NoError(t, err)
 	server := grpc.NewServer(
-		grpc.MaxRecvMsgSize(2*bridge.PublicRPCMaxBytes),
-		grpc.MaxSendMsgSize(2*bridge.PublicRPCMaxBytes),
+		grpc.MaxRecvMsgSize(2*swapkit.PublicRPCMaxBytes),
+		grpc.MaxSendMsgSize(2*swapkit.PublicRPCMaxBytes),
 	)
 	service := &proofSizeServer{}
 	swapserverrpc.RegisterAssetLoopInServerServer(server, service)
@@ -89,7 +89,7 @@ func TestSwapServerProofMessageLimits(t *testing.T) {
 	_, err = client.ServerStaticAddressLoopIn(t.Context(),
 		&swapserverrpc.ServerStaticAddressLoopInRequest{
 			AssetParams: &swapserverrpc.CreateAssetLoopInRequest{
-				Contract: make([]byte, bridge.PublicRPCMaxBytes),
+				Contract: make([]byte, swapkit.PublicRPCMaxBytes),
 			},
 		})
 	require.Equal(t, codes.ResourceExhausted, status.Code(err))

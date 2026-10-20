@@ -16,7 +16,8 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
+	assetkit "github.com/lightninglabs/loop/swapkit/tapsdk"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/stretchr/testify/require"
@@ -24,12 +25,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func testDeposit(t *testing.T) bridge.Deposit {
+func testDeposit(t *testing.T) swapkit.Deposit {
 	t.Helper()
 	_, pub := btcec.PrivKeyFromBytes([]byte{1})
 	var group [33]byte
 	copy(group[:], pub.SerializeCompressed())
-	return bridge.Deposit{
+	return swapkit.Deposit{
 		Outpoint: wire.OutPoint{Index: 1}.String(), GroupKey: group,
 		Amount: 1000, ConfirmationHeight: 3,
 		Proof: []byte(
@@ -38,7 +39,7 @@ func testDeposit(t *testing.T) bridge.Deposit {
 	}
 }
 
-func testSwap(d bridge.Deposit, id byte) *AssetJob {
+func testSwap(d swapkit.Deposit, id byte) *AssetJob {
 	requestID := [32]byte{id}
 	return &AssetJob{
 		ID: requestID, ServerRequest: []byte("exact original request"),
@@ -56,7 +57,7 @@ func TestOversizedProofDoesNotReserveDeposit(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	d := testDeposit(t)
-	d.Proof = make([]byte, bridge.PublicRPCMaxBytes)
+	d.Proof = make([]byte, swapkit.PublicRPCMaxBytes)
 	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	manager := &Manager{assetCfg: &AssetConfig{Store: store}}
 	require.ErrorIs(
@@ -224,7 +225,7 @@ func TestAssetReleaseCommitsWithRecoveryRecord(t *testing.T) {
 	require.Equal(t, [32]byte{2}, entries[0].RequestID)
 }
 
-func assetRecord(d bridge.Deposit, id [32]byte) *assetexec.Record {
+func assetRecord(d swapkit.Deposit, id [32]byte) *assetexec.Record {
 	return &assetexec.Record{
 		State:         assetexec.InitHtlcTx,
 		DepositState:  "Deposited",
@@ -252,12 +253,28 @@ func assetRecord(d bridge.Deposit, id [32]byte) *assetexec.Record {
 	}
 }
 
-type runtimeFunc func(context.Context, bridge.Method, any, any) error
+type assetTestDriver struct {
+	AssetDriver
 
-func (f runtimeFunc) Call(ctx context.Context, method bridge.Method,
-	input, output any) error {
+	height func() uint32
+	create func(swapkit.CreateDepositRequest) (swapkit.Deposit, error)
+	refund func(swapkit.RefundDepositRequest) ([]byte, error)
+}
 
-	return f(ctx, method, input, output)
+func (d assetTestDriver) Height(context.Context) (uint32, error) {
+	return d.height(), nil
+}
+func (d assetTestDriver) CreateDeposit(_ context.Context,
+	request swapkit.CreateDepositRequest, _ *assetkit.DepositFunding,
+	_ func() error) (swapkit.Deposit, error) {
+
+	return d.create(request)
+}
+func (d assetTestDriver) RefundDeposit(_ context.Context,
+	request swapkit.RefundDepositRequest, _ *assetkit.DepositFunding,
+	_ func() error) ([]byte, error) {
+
+	return d.refund(request)
 }
 
 func TestDepositLostResponseReplaysPersistedFundingIdentity(t *testing.T) {
@@ -266,7 +283,7 @@ func TestDepositLostResponseReplaysPersistedFundingIdentity(t *testing.T) {
 	require.NoError(t, err)
 	d := testDeposit(t)
 	job := &AssetJob{
-		ID: [32]byte{7}, Deposit: &bridge.CreateDepositRequest{
+		ID: [32]byte{7}, Deposit: &swapkit.CreateDepositRequest{
 			RequestID: [32]byte{
 				7,
 			}, GroupKey: d.GroupKey, Amount: d.Amount,
@@ -275,23 +292,21 @@ func TestDepositLostResponseReplaysPersistedFundingIdentity(t *testing.T) {
 	require.NoError(t, store.PutAssetJob(t.Context(), job))
 	var calls int
 	var original []byte
-	runtime := runtimeFunc(func(_ context.Context, method bridge.Method,
-		input, output any) error {
+	driver := assetTestDriver{create: func(
+		input swapkit.CreateDepositRequest) (swapkit.Deposit, error) {
 
-		require.Equal(t, bridge.CreateDeposit, method)
 		raw, err := json.Marshal(input)
 		require.NoError(t, err)
 		calls++
 		if calls == 1 {
 			original = raw
-			return errors.New("response lost after publish")
+			return swapkit.Deposit{}, errors.New("response lost after publish")
 		}
 		require.Equal(t, original, raw)
-		*(output.(*bridge.Deposit)) = d
-		return nil
-	})
+		return d, nil
+	}}
 	manager := &Manager{assetCfg: &AssetConfig{
-		Store: store, Runtime: runtime, Deposits: &deposit.Manager{},
+		Store: store, Driver: driver, Deposits: &deposit.Manager{},
 	}}
 	require.Error(t, manager.resumeAsset(t.Context(), job))
 	require.NoError(t, store.Close())
@@ -319,13 +334,9 @@ func TestOriginalRefundCannotRacePendingOffer(t *testing.T) {
 	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	var height uint32 = 99
 	manager := &Manager{assetCfg: &AssetConfig{
-		Store: store, Runtime: runtimeFunc(func(_ context.Context,
-			method bridge.Method, _, output any) error {
-
-			require.Equal(t, bridge.Height, method)
-			*(output.(*uint32)) = height
-			return nil
-		}),
+		Store: store, Driver: assetTestDriver{
+			height: func() uint32 { return height },
+		},
 	}}
 	_, err = manager.RefundAssetDeposit(t.Context(), d.Outpoint)
 	require.ErrorIs(t, err, assetexec.ErrPending)
@@ -350,34 +361,25 @@ func TestOriginalRefundPersistsUntilConfirmedProof(t *testing.T) {
 	require.NoError(t, store.AddAssetDeposit(t.Context(), d))
 	confirmed := false
 	manager := &Manager{assetCfg: &AssetConfig{
-		Store: store, Runtime: runtimeFunc(func(_ context.Context,
-			method bridge.Method, input, output any) error {
-
-			switch method {
-			case bridge.Height:
-				*(output.(*uint32)) = 100
-			case bridge.RefundDeposit:
-				require.Equal(t, bridge.RefundDepositRequest{
+		Store: store, Driver: assetTestDriver{
+			height: func() uint32 { return 100 },
+			refund: func(request swapkit.RefundDepositRequest) ([]byte, error) {
+				require.Equal(t, swapkit.RefundDepositRequest{
 					Outpoint: d.Outpoint,
-				}, input)
+				}, request)
 				if !confirmed {
-					return bridge.ErrPending
+					return nil, swapkit.ErrPending
 				}
-				*(output.(*[]byte)) = []byte(
-					"confirmed refund proof",
-				)
-			default:
-				t.Fatalf("unexpected method %s", method)
-			}
-			return nil
-		}),
+				return []byte("confirmed refund proof"), nil
+			},
+		},
 	}}
 	require.NoError(t, manager.expireDeposits(t.Context()))
 	jobs, err := store.AssetJobs(t.Context())
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
 	require.ErrorIs(t, manager.resumeAsset(t.Context(), &jobs[0]),
-		bridge.ErrPending)
+		swapkit.ErrPending)
 	require.ErrorIs(t, store.PutAssetJob(t.Context(), testSwap(d, 1)),
 		assetexec.ErrConflict)
 	require.NoError(t, store.Close())
@@ -448,15 +450,7 @@ func TestLostOfferResponseRefundsOnlyAfterOriginalMaturity(t *testing.T) {
 	manager := &Manager{assetCfg: &AssetConfig{
 		Store: store, Owner: [32]byte{3},
 		FetchL402: func(context.Context) error { return nil },
-		Runtime: runtimeFunc(
-			func(_ context.Context, method bridge.Method,
-				_, output any) error {
-
-				require.Equal(t, bridge.Height, method)
-				*(output.(*uint32)) = height
-				return nil
-			},
-		),
+		Driver:    assetTestDriver{height: func() uint32 { return height }},
 	}, assetSession: &assetclient.Session{Adapter: &assetclient.Adapter{
 		Server: server,
 	}}}
@@ -513,12 +507,7 @@ func TestUnknownOfferCannotReleaseExposedJournal(t *testing.T) {
 				Terms: assetexec.Terms{RequestID: job.ID},
 			},
 		}},
-		Runtime: runtimeFunc(func(_ context.Context, _ bridge.Method,
-			_, output any) error {
-
-			*(output.(*uint32)) = 100
-			return nil
-		}),
+		Driver: assetTestDriver{height: func() uint32 { return 100 }},
 	}}
 	_, err = manager.cancelExpiredUnknownOffer(t.Context(), job)
 	require.ErrorIs(t, err, assetexec.ErrState)

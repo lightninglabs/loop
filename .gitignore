@@ -51,3 +51,6 @@ profile.tmp
 .DS_Store
 
 .vscode
+
+# Compatible SDK prepared next to a release script's clean build clone.
+/tap-sdk-loop-compat/

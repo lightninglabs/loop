@@ -13,7 +13,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
 )
 
 // assetTx serializes local admissions and combines inventory and recovery
@@ -247,7 +247,7 @@ func (s *SqlStore) AssetInventory(
 // AddAssetDeposit persists a confirmed asset anchor in the normal inventory.
 func (s *SqlStore) AddAssetDeposit(
 	ctx context.Context,
-	d bridge.Deposit,
+	d swapkit.Deposit,
 ) error {
 
 	return s.assetTx(
@@ -259,7 +259,7 @@ func (s *SqlStore) AddAssetDeposit(
 func (s *SqlStore) addAssetDeposit(
 	ctx context.Context,
 	q Querier,
-	d bridge.Deposit,
+	d swapkit.Deposit,
 ) error {
 
 	op, err := assetPoint(d.Outpoint)

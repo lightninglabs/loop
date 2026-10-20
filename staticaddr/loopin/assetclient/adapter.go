@@ -25,8 +25,8 @@ import (
 // production chain driver never embeds unimplemented payment callbacks.
 type ClientChainActions interface {
 	ValidateOffer(context.Context, assetexec.Offer) error
-	VerifyFinalizeFallback(context.Context, assetexec.Offer,
-		[]byte) (assetexec.Fallback, error)
+	BeginFallback(context.Context, assetexec.Offer,
+		[]byte) (*assetexec.FallbackRound, error)
 	LookupPreimage(context.Context, assetexec.Offer) ([32]byte, bool, error)
 	SignCooperative(
 		context.Context,
@@ -65,8 +65,8 @@ func (a *Adapter) CurrentHeight(ctx context.Context) (uint32, error) {
 //nolint:tagliatelle // Preserve the existing recovery and wire format.
 type InvoiceIntent struct {
 	Peer []byte `json:"Peer"`
-	// RecoveryRequest fixes fallback templates and public nonces before
-	// any request is sent. Private nonces remain in the durable signer.
+	// RecoveryRequest fixes the unsigned fallback before payment dispatch.
+	// Each signing attempt uses fresh ephemeral wallet nonces.
 	RecoveryRequest []byte `json:"RecoveryRequest"`
 }
 

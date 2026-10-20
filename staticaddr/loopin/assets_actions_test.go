@@ -8,7 +8,7 @@ import (
 
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -30,18 +30,25 @@ func (s claimHintServer) GetAssetLoopIn(ctx context.Context,
 }
 
 type claimHintRuntime struct {
-	call func(context.Context, bridge.Operation) ([]byte, error)
+	AssetDriver
+
+	call func(context.Context, swapkit.Operation) ([]byte, error)
 }
 
-func (r claimHintRuntime) Call(ctx context.Context, method bridge.Method,
-	request, response any) error {
+func (r claimHintRuntime) InspectClaim(ctx context.Context,
+	request swapkit.Operation) ([]byte, error) {
 
-	if method != bridge.InspectClaim {
-		return errors.New("unexpected runtime method")
-	}
-	proof, err := r.call(ctx, request.(bridge.Operation))
-	*response.(*[]byte) = proof
-	return err
+	return r.call(ctx, request)
+}
+
+type claimHintStore struct{ AssetStore }
+
+func (claimHintStore) Get(context.Context, [32]byte) (
+	*assetexec.Record, error) {
+
+	return &assetexec.Record{
+		InvoiceIntent: []byte(`{"RecoveryRequest":"cGxhbg=="}`),
+	}, nil
 }
 
 // TestClaimHintsCannotVetoChainDiscovery ensures untrusted proof hints never
@@ -84,7 +91,7 @@ func testClaimHint(t *testing.T, scenario string) {
 		}, nil
 	}}
 	runtime := claimHintRuntime{call: func(ctx context.Context,
-		request bridge.Operation) ([]byte, error) {
+		request swapkit.Operation) ([]byte, error) {
 
 		calls++
 		require.Equal(t, offer.Hash, request.Offer.Hash)
@@ -113,8 +120,8 @@ func testClaimHint(t *testing.T, scenario string) {
 			return unverified, proofFailure
 		}
 	}}
-	actions := &runtimeActions{manager: &Manager{assetCfg: &AssetConfig{
-		Server: server, Runtime: runtime,
+	actions := &assetActions{manager: &Manager{assetCfg: &AssetConfig{
+		Server: server, Driver: runtime, Store: claimHintStore{},
 	}}}
 	proof, err := actions.InspectClaim(ctx, offer, fallback)
 	require.NoError(t, ctx.Err())

@@ -2,7 +2,8 @@
 
 Loop owns `DepositKit` and `SwapKit` in
 `github.com/lightninglabs/loop/swapkit/tapsdk`. They put the spending policy on
-the Bitcoin anchor while using an `OP_TRUE` asset leaf. Both produce `CustomAssetOutput` values for
+the Bitcoin anchor while using an `OP_TRUE` asset leaf. Both produce
+`CustomAssetOutput` values for
 `Wallet.NewCustomAnchorTxBuilder()`. Applications use SDK keys, asset references,
 amounts, hashes, and witness bytes; they do not need `taprpc`, virtual PSBT, or
 Taproot Assets commitment types to construct the contract.
@@ -111,16 +112,11 @@ the SDK's unique asset script keys. It does not reinterpret already-funded
 outputs or migrate their persisted witnesses. An application spending an old
 output must supply that output's exact proof and asset witness.
 
-The Bitcoin contract implementation lives in the independently versioned
-`github.com/lightninglabs/loop/swapkit` module. It requires Go 1.25 and split
-btcd v2 script primitives, with no lnd, tapd, or parent SDK dependency. Its
-byte-oriented API can coexist with older wallet dependencies. The Loop server's
-legacy kits delegate scripts, aggregation, control blocks, and witnesses to
-this shared implementation while retaining their proof/packet adapters.
-
-This Loop adapter and the generic SDK builder require Go 1.26 and the
-newer lnd/tapd graph. Importing the standalone contracts does not migrate an
-application's complete proof and transaction-building workflow to that builder.
+The Bitcoin contract implementation lives in `github.com/lightninglabs/loop/swapkit`.
+The contract and SDK adapter are packages in the normal Loop module, using the
+same classic Bitcoin types as the client and server. Existing server kits
+delegate scripts, aggregation, control blocks and witnesses to those contracts
+while retaining their proof/packet adapters.
 
 Unit tests cover fixed contract vectors, Bitcoin VM success and failure paths,
 timelock boundaries, key and amount validation, signature encoding, defensive
@@ -129,45 +125,42 @@ the SDK lifecycle against
 tapd, including cooperative deposit spending and unilateral HTLC settlement.
 It does not exercise a Loop client/server Lightning swap or pricing policy.
 
-## Runtime responsibilities
+## Normal daemon integration
 
-The SDK already builds virtual transactions and commitments, checks proofs and
-sealed transfer packages, assembles Bitcoin witnesses, and publishes transfers.
-The local runtime supplies Loop's contract and recipient checks, durable wallet
-effects, current-chain and mempool checks, and recovery when a peer disappears.
-Original deposit refunds and HTLC outcomes share one observed-spend proof
-reconstructor and one recipient/Bitcoin-policy verifier. The wallet signer keeps
-nonce bindings across process restarts; the SDK supplies signing requests and
-signature verification, but does not persist LND signing sessions.
+The adapter is part of the normal Loop module. `Driver` contains node-service
+dependencies only. The deposit manager owns unfinished wallet funding in its
+SQL request row, and the Loop In record owns the unsigned package and completed
+fallback. LND owns ephemeral signing sessions. An interrupted round uses fresh
+nonces for the same package; a durable fallback needs no signer recovery.
 
-The remaining confirmed-proof assembler is a compatibility boundary:
-`AssetProofPath.ConfirmProofFile` requires v1 assets when the path has transition
-steps, whereas deposits may carry a historical v0 base. Loop retains that
-assembler and verifies the completed lineage through tapd. Replacing it must
-preserve the v0 regression test and the current-chain checks; importing a proof
-alone does not establish current confirmation or unspentness.
+Tapd owns transfer logging, broadcasting and confirmed proof reconstruction.
+For an offline peer's already-mined spend, the adapter reconstructs the known
+package, verifies its exact transaction and witness, registers the OP_TRUE
+input, and logs it with broadcasting disabled. Export uses the exact issuance,
+script key and anchor outpoint. Both imported and exported proofs must pass
+asset, policy, current-chain and spendability checks.
+
+LND chain services restore spend notifications from the deposit height hint.
+A small Bitcoin RPC callback supplies the mempool-aware UTXO check, which LND's
+wallet-only inventory cannot provide for externally controlled anchors.
 
 ## Development setup
 
-The adapter is a separate Go module. Until SDK PRs
-[#187](https://github.com/lightninglabs/tap-sdk/pull/187) and
-[#188](https://github.com/lightninglabs/tap-sdk/pull/188) are released, its
-`go.mod` expects a sibling `tap-sdk` checkout next to the Loop repository.
-From a fresh Loop checkout, prepare the pinned SDK with:
+Run `scripts/prepare-tap-sdk.sh` from the Loop checkout, then build and test
+from the normal root module:
 
 ```sh
-git clone https://github.com/lightninglabs/tap-sdk.git ../tap-sdk
-git -C ../tap-sdk checkout 8521da12bb7c01b5ed01e80e0443977df07fb2b9
-git -C ../tap-sdk apply "$PWD/swapkit/tapsdk/dev/tap-sdk.patch"
-(cd swapkit && go test ./...)
-(cd swapkit/tapsdk && go test ./...)
+scripts/prepare-tap-sdk.sh
+go test ./swapkit/... ./staticaddr/... ./assets/assetln ./loopd
 ```
 
-The patch contains the two generic SDK fixes and their regression tests, not
-Loop contracts. If the sibling checkout already exists, preserve its work and
-check the patch with `git apply --check` before applying it. Do not reset an
-existing checkout to run these commands. The coordinated server development
-workspace prepares this same sibling layout through its setup target.
+The temporary SDK base is `932b4aa5429b66df2df13fcfac03fc6c6bdf974e`, the
+compatible revision before split btcd v2 imports. The preparation script
+applies the two generic metadata fixes, compressed MuSig2 participant support,
+and current proof rules against Taproot Assets v0.8.6. The SDK compatibility
+patch changes 184 production lines and removes 53; SDK source is not copied
+into Loop. Replace this development pin with a reviewed compatible SDK release
+before production.
 
 See [production priorities](../../docs/asset-loop-in-readiness.md) for the
 remaining release blockers and validation boundary.

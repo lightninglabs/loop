@@ -9,7 +9,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
-	"github.com/lightninglabs/loop/swapkit/bridge"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightningnetwork/lnd/clock"
 )
 
@@ -67,7 +67,7 @@ func (s *sqlClientStore) Create(
 		if len(terms.DepositOutpoints) != 1 {
 			return assetexec.ErrInvalid
 		}
-		d := bridge.Deposit{
+		d := swapkit.Deposit{
 			Outpoint: terms.DepositOutpoints[0],
 			GroupKey: terms.GroupKey,
 			Amount:   terms.DepositAmount,

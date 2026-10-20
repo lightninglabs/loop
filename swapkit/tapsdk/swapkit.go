@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 )
@@ -58,6 +58,7 @@ func (s *SwapKit) AnchorPlan() sdk.CustomAnchorOutputPlan {
 // Output creates an OP_TRUE asset output with this Bitcoin HTLC policy.
 func (s *SwapKit) Output(params SwapOutputParams) (
 	sdk.CustomAssetOutput, error) {
+
 	return newSwapOutput(params, s.AnchorPlan())
 }
 
@@ -76,6 +77,7 @@ func (s *SwapKit) CooperativeSigningPlan(inputIndex uint32,
 // asset root. The spending transaction needs version >= 2 and sequence >= 1.
 func (s *SwapKit) SuccessSpend(assetRoot sdk.Hash) (
 	*SwapAnchorSpendInfo, error) {
+
 	return wrapSwapSpend(s.contract.SuccessSpend(assetRoot))
 }
 
@@ -83,6 +85,7 @@ func (s *SwapKit) SuccessSpend(assetRoot sdk.Hash) (
 // CSV; V3 uses nLockTime >= Expiry with a non-final input sequence.
 func (s *SwapKit) TimeoutSpend(assetRoot sdk.Hash) (
 	*SwapAnchorSpendInfo, error) {
+
 	return wrapSwapSpend(s.contract.TimeoutSpend(assetRoot))
 }
 

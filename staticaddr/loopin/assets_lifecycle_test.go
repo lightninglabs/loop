@@ -11,7 +11,6 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
-	"github.com/lightninglabs/loop/swapkit/bridge"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,6 +19,7 @@ type assetLifecycleStore struct {
 
 	scanError error
 	scans     chan struct{}
+	inventory func(context.Context) error
 }
 
 func (s *assetLifecycleStore) ListActive(ctx context.Context) (
@@ -35,9 +35,12 @@ func (s *assetLifecycleStore) ListActive(ctx context.Context) (
 	return nil, s.scanError
 }
 
-func (*assetLifecycleStore) AssetInventory(context.Context) (
+func (s *assetLifecycleStore) AssetInventory(ctx context.Context) (
 	[]AssetInventoryEntry, error) {
 
+	if s.inventory != nil {
+		return nil, s.inventory(ctx)
+	}
 	return nil, nil
 }
 
@@ -45,14 +48,10 @@ func (*assetLifecycleStore) AssetJobs(context.Context) ([]AssetJob, error) {
 	return nil, nil
 }
 
-type assetLifecycleRuntime struct {
-	call func(context.Context, bridge.Method) error
-}
+type assetLifecycleDriver struct{ AssetDriver }
 
-func (r assetLifecycleRuntime) Call(ctx context.Context, method bridge.Method,
-	_, _ any) error {
-
-	return r.call(ctx, method)
+func (assetLifecycleDriver) Height(context.Context) (uint32, error) {
+	return 100, nil
 }
 
 type assetLifecycleNotifier struct {
@@ -79,8 +78,8 @@ func (s *assetLifecycleBitcoinStore) GetStaticAddressLoopInSwapsByStates(
 	return nil, s.recover(ctx)
 }
 
-func assetLifecycleManager(t *testing.T, runtime AssetRuntime,
-	store AssetStore) (*Manager, chan int32) {
+func assetLifecycleManager(t *testing.T, store AssetStore) (
+	*Manager, chan int32) {
 
 	t.Helper()
 	blocks := make(chan int32)
@@ -90,7 +89,7 @@ func assetLifecycleManager(t *testing.T, runtime AssetRuntime,
 		Store:               &mockStore{},
 	}, 1)
 	require.NoError(t, err)
-	m.assetCfg = &AssetConfig{Runtime: runtime, Store: store}
+	m.assetCfg = &AssetConfig{Store: store, Driver: assetLifecycleDriver{}}
 	m.assetSession = &assetclient.Session{
 		Controller: assetexec.NewController(store, nil, nil),
 		Adapter:    &assetclient.Adapter{Store: store},
@@ -115,22 +114,17 @@ func TestAssetRecoveryManagerLifecycle(t *testing.T) {
 		}
 	})
 	var calls atomic.Int32
-	runtime := assetLifecycleRuntime{call: func(ctx context.Context,
-		method bridge.Method) error {
-
-		if method != bridge.Inventory {
-			return ctx.Err()
-		}
+	inventory := func(ctx context.Context) error {
 		calls.Add(1)
 		close(started)
 		<-ctx.Done()
 		close(canceled)
 		<-release
 		return ctx.Err()
-	}}
+	}
 	scans := make(chan struct{}, 3)
-	m, blocks := assetLifecycleManager(t, runtime, &assetLifecycleStore{
-		scans: scans,
+	m, blocks := assetLifecycleManager(t, &assetLifecycleStore{
+		scans: scans, inventory: inventory,
 	})
 	m.cfg.Store = &assetLifecycleBitcoinStore{
 		recover: func(ctx context.Context) error {
@@ -184,15 +178,9 @@ func TestAssetRecoveryManagerLifecycle(t *testing.T) {
 
 func TestAssetRecoveryManagerReschedulesAndStopsOnStoreFailure(t *testing.T) {
 	calls := make(chan struct{}, 2)
-	runtime := assetLifecycleRuntime{call: func(_ context.Context,
-		method bridge.Method) error {
-
-		if method == bridge.Inventory {
-			calls <- struct{}{}
-		}
-		return nil
-	}}
-	m, _ := assetLifecycleManager(t, runtime, &assetLifecycleStore{})
+	m, _ := assetLifecycleManager(t, &assetLifecycleStore{
+		inventory: func(context.Context) error { calls <- struct{}{}; return nil },
+	})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	initialized := make(chan struct{})
@@ -209,8 +197,6 @@ func TestAssetRecoveryManagerReschedulesAndStopsOnStoreFailure(t *testing.T) {
 	require.ErrorIs(t, receiveOrFail(t, finished), context.Canceled)
 
 	lost := errors.New("asset database unavailable")
-	m, _ = assetLifecycleManager(t, assetLifecycleRuntime{
-		call: func(context.Context, bridge.Method) error { return nil },
-	}, &assetLifecycleStore{scanError: lost})
+	m, _ = assetLifecycleManager(t, &assetLifecycleStore{scanError: lost})
 	require.ErrorIs(t, m.Run(t.Context(), make(chan struct{})), lost)
 }

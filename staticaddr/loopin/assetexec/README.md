@@ -84,10 +84,9 @@ chain witness lookup.
 
 The journal contains payment preimages and signed recovery material and must
 be protected and backed up like the client wallet. Private MuSig2 nonces stay
-in the signing adapter. The controller and normal Loop SQL store provide durable execution.
-The normal `loopd` assembly uses its existing Loop In manager and the
-separate authenticated `swapkit/tapsdk` runtime for transaction and wallet
-signing operations. The regtest integration harness also exercises these
+inside LND's ephemeral sessions. The controller and normal Loop SQL store
+provide durable execution. The normal `loopd` assembly uses its existing Loop
+In manager and the `swapkit/tapsdk` adapter with normal LND signing services. The regtest integration harness also exercises these
 boundaries with SDK transactions and local asset Lightning nodes.
 
 The `assetclient.Session` adapter also resumes the network handshake: a restart
@@ -101,13 +100,14 @@ group key including parity.
 `Session.RecoverActive` performs one bounded recovery batch with independent
 action deadlines. The existing Loop In manager schedules these batches beside
 pending request recovery and Bitcoin notifications. It cancels and joins all
-asset work before shutdown closes the shared store or runtime connection.
+asset work before shutdown closes the shared store or node connections.
 Every action must honor context cancellation.
 
 The normal [`loopd` assembly](../assets.md) restores asset proof inventory and
 shared Bitcoin deposit exclusion before starting recovery. Creation identities
-are persisted before RPC calls. The separate runtime retains transaction and
-wallet signing state across process restarts. The same manager also recovers
+are persisted before RPC calls. The normal SQL record retains the fixed
+unsigned package and completed fallback across process restarts. An unfinished
+signing round uses fresh nonces; it never restores private signer state. The same manager also recovers
 original CSV deposits that never reached a swap controller.
 
 See the [asset Loop In transitions](../asset-fsm.md) and
