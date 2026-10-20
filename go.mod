@@ -45,7 +45,14 @@ require (
 	modernc.org/sqlite v1.34.5
 )
 
-require github.com/cenkalti/backoff/v5 v5.0.3 // indirect
+require (
+	github.com/btcsuite/btcd/address/v2 v2.0.0 // indirect
+	github.com/btcsuite/btcd/chaincfg/v2 v2.0.0 // indirect
+	github.com/btcsuite/btcd/chainhash/v2 v2.0.0 // indirect
+	github.com/btcsuite/btcd/txscript/v2 v2.0.0 // indirect
+	github.com/btcsuite/btcd/wire/v2 v2.0.0 // indirect
+	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
+)
 
 require (
 	dario.cat/mergo v1.0.1 // indirect

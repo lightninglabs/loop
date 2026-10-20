@@ -87,38 +87,9 @@ func (r *Runtime) refundDeposit(ctx context.Context,
 		if !free {
 			return nil, bridge.ErrPending
 		}
-		value := c.Output.AnchorValueSat - int64(r.cfg.FeeSat)
-		if value < 330 {
-			return nil, bridge.ErrInvalid
-		}
-		recipient, err := walletOutput(c.ClientKey, d.Request.KeyFamily,
-			d.Request.KeyIndex, c.Output.AssetRef,
-			c.Output.Amount, value)
-		if err != nil {
-			return nil, err
-		}
-		_, err = r.cfg.SDK.DeclareScriptKey(ctx,
-			&sdk.DeclareScriptKeyRequest{
-				ScriptKey: recipient.Script.External.ScriptKey,
-			})
-		if err != nil {
-			return nil, err
-		}
-		anchor, err := anchorTemplate(
-			p, recipient.Anchor.InternalKey, value, spend,
-		)
-		if err != nil {
-			return nil, err
-		}
-		input := assetInput(c.Output, d.Deposit.Proof)
-		d.RefundPlan = customRequest(input, recipient, anchor,
-			spend.SigningPlan(0))
-		if err := r.put(id, d); err != nil {
-			return nil, err
-		}
-	}
-	if d.Refund.Package == nil {
-		d.Refund.Package, err = r.commit(ctx, d.RefundPlan)
+		d.RefundPlan, err = r.recoveryPlan(ctx, c.Output,
+			d.Deposit.Proof, c.ClientKey,
+			locator(d.Request.KeyFamily, d.Request.KeyIndex), spend)
 		if err != nil {
 			return nil, err
 		}
@@ -126,33 +97,11 @@ func (r *Runtime) refundDeposit(ctx context.Context,
 			return nil, err
 		}
 	}
-	if len(d.Refund.Final) == 0 {
-		requests, err := d.Refund.Package.SigningRequests()
-		if err != nil || len(requests.ScriptPath) != 1 {
-			return nil, bridge.ErrInvalid
-		}
-		request := requests.ScriptPath[0]
-		sig, err := r.cfg.Signer.ScriptPath(ctx,
-			locator(d.Request.KeyFamily, d.Request.KeyIndex),
-			d.Refund.Package, request.ID)
-		if err != nil {
-			return nil, err
-		}
-		witness, err := policy.TimeoutWitness(
-			c.Output.TaprootAssetRoot, sig,
-		)
-		if err != nil {
-			return nil, err
-		}
-		final, err := d.Refund.Package.ApplyScriptPathWitness(
-			request.ID, witness[:len(witness)-2])
-		if err != nil {
-			return nil, err
-		}
-		d.Refund.Final = final.AnchorPsbt
-		if err := r.put(id, d); err != nil {
-			return nil, err
-		}
+	err = r.signScriptSpend(ctx, d.RefundPlan, &d.Refund,
+		locator(d.Request.KeyFamily, d.Request.KeyIndex), nil,
+		func() error { return r.put(id, d) })
+	if err != nil {
+		return nil, err
 	}
 	raw, err := r.publish(ctx, d.Refund, d.RefundSince)
 	if err != nil {

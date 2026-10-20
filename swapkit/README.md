@@ -5,6 +5,11 @@ clients and servers. Its public inputs and outputs are fixed-size byte arrays,
 scripts, control blocks, and witness stacks. It has no dependency on tapd, lnd,
 wallet implementations, or the Tap SDK runtime.
 
+Loop's existing Bitcoin HTLC and static-address helpers use the same leaf
+serializers in this module. Those primitives preserve the original signed
+expiry encodings and zero-hash quote templates. Funded asset contracts apply
+their stricter key, hash, and timelock checks in the kit constructors.
+
 `NewDepositKit` creates the sorted MuSig2 deposit policy with a client CSV refund.
 `NewSwapKit` requires an explicit policy: `SwapHTLCLegacyCSV` retains the original
 asset HTLC contract and `SwapHTLCStaticLoopInV3` uses Loop's CLTV refund contract.

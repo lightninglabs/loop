@@ -11,7 +11,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
-	"golang.org/x/crypto/ripemd160"
 )
 
 // PubKey is a compressed secp256k1 key. It has no wallet dependency.
@@ -413,9 +412,7 @@ func (p swapAnchorPolicy) spend(assetRoot Hash, script []byte, signer PubKey,
 }
 
 func swapTimeoutScript(key PubKey, expiry uint32, opcode byte) ([]byte, error) {
-	return txscript.NewScriptBuilder().AddData(key[1:]).
-		AddOp(txscript.OP_CHECKSIGVERIFY).AddInt64(int64(expiry)).
-		AddOp(opcode).Script()
+	return timeoutScript([32]byte(key[1:]), int64(expiry), opcode)
 }
 
 func validateSwapCSV(expiry uint32) error {
@@ -488,18 +485,7 @@ func GenSuccessScript(receiver PubKey, paymentHash Hash) ([]byte, error) {
 	if paymentHash == (Hash{}) {
 		return nil, fmt.Errorf("payment hash is required")
 	}
-	// Loop's V3 success leaf uses HASH160 to shorten the script while still
-	// committing to the SHA256 payment hash used by Lightning invoices.
-	hash160 := ripemd160.New()
-	_, _ = hash160.Write(paymentHash[:])
-	return txscript.NewScriptBuilder().
-		AddData(receiver[1:]).
-		AddOp(txscript.OP_CHECKSIGVERIFY).
-		AddOp(txscript.OP_SIZE).AddInt64(32).
-		AddOp(txscript.OP_EQUALVERIFY).
-		AddOp(txscript.OP_HASH160).AddData(hash160.Sum(nil)).
-		AddOp(txscript.OP_EQUALVERIFY).AddInt64(1).
-		AddOp(txscript.OP_CHECKSEQUENCEVERIFY).Script()
+	return HTLCSuccessScript([32]byte(receiver[1:]), paymentHash)
 }
 
 // GenCSVTimeoutScript constructs the shared block-based Bitcoin refund leaf.

@@ -170,82 +170,25 @@ func (r *Runtime) recoverSpend(ctx context.Context, s *swapRecord,
 	if err != nil {
 		return nil, err
 	}
+	key := locator(d.Request.KeyFamily, d.Request.KeyIndex)
 	if *plan == nil {
-		value := out.AnchorValueSat - int64(r.cfg.FeeSat)
-		if value < 330 {
-			return nil, bridge.ErrInvalid
-		}
-		recipient, err := walletOutput(public, d.Request.KeyFamily,
-			d.Request.KeyIndex, out.AssetRef, out.Amount, value)
+		*plan, err = r.recoveryPlan(ctx, out, fallbackProof, public,
+			key, spend)
 		if err != nil {
 			return nil, err
 		}
-		// Declare the locator so normal tapd wallet operations can
-		// spend the recovered asset after proof import.
-		_, err = r.cfg.SDK.DeclareScriptKey(ctx,
-			&sdk.DeclareScriptKeyRequest{
-				ScriptKey: recipient.Script.External.ScriptKey,
-			})
-		if err != nil {
-			return nil, err
-		}
-		p, err := lastProof(fallbackProof)
-		if err != nil {
-			return nil, err
-		}
-		anchor, err := anchorTemplate(
-			p, recipient.Anchor.InternalKey, value, spend,
-		)
-		if err != nil {
-			return nil, err
-		}
-		*plan = customRequest(assetInput(out, fallbackProof), recipient,
-			anchor, spend.SigningPlan(0))
 		if err := r.save(s); err != nil {
 			return nil, err
 		}
 	}
-	if transactionPtr.Package == nil {
-		pkg, err := r.commit(ctx, *plan)
-		if err != nil {
-			return nil, err
-		}
-		transactionPtr.Package = pkg
-		if err := r.save(s); err != nil {
-			return nil, err
-		}
+	var unlock *[32]byte
+	if !refund {
+		unlock = &preimage
 	}
-	if len(transactionPtr.Final) == 0 {
-		requests, err := transactionPtr.Package.SigningRequests()
-		if err != nil || len(requests.ScriptPath) != 1 {
-			return nil, bridge.ErrInvalid
-		}
-		request := requests.ScriptPath[0]
-		signature, err := r.cfg.Signer.ScriptPath(ctx,
-			locator(d.Request.KeyFamily, d.Request.KeyIndex),
-			transactionPtr.Package, request.ID)
-		if err != nil {
-			return nil, err
-		}
-		witness, err := policy.SuccessWitness(out.TaprootAssetRoot,
-			signature, preimage)
-		if refund {
-			witness, err = policy.TimeoutWitness(
-				out.TaprootAssetRoot, signature,
-			)
-		}
-		if err != nil {
-			return nil, err
-		}
-		finalized, err := transactionPtr.Package.ApplyScriptPathWitness(
-			request.ID, witness[:len(witness)-2])
-		if err != nil {
-			return nil, err
-		}
-		transactionPtr.Final = finalized.AnchorPsbt
-		if err := r.save(s); err != nil {
-			return nil, err
-		}
+	err = r.signScriptSpend(ctx, *plan, transactionPtr, key, unlock,
+		func() error { return r.save(s) })
+	if err != nil {
+		return nil, err
 	}
 	raw, err := r.publish(ctx, *transactionPtr, s.Since)
 	if err != nil {

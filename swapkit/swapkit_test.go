@@ -286,6 +286,92 @@ func TestDepositKitScriptExecution(t *testing.T) {
 	}
 }
 
+// TestSwapKitValidation rejects malformed Bitcoin contract parameters.
+func TestSwapKitValidation(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*SwapKitParams)
+	}{
+		{"no policy", func(p *SwapKitParams) {
+			p.Policy = SwapHTLCUnspecified
+		}},
+		{"unknown policy", func(p *SwapKitParams) { p.Policy = 99 }},
+		{"zero hash", func(p *SwapKitParams) {
+			p.PaymentHash = Hash{}
+		}},
+		{"bad key", func(p *SwapKitParams) {
+			p.SenderKey = PubKey{}
+		}},
+		{"same key", func(p *SwapKitParams) {
+			p.ReceiverKey = p.SenderKey
+		}},
+		{"opposite key", func(p *SwapKitParams) {
+			p.ReceiverKey = p.SenderKey
+			p.ReceiverKey[0] ^= 1
+		}},
+		{"same internal key", func(p *SwapKitParams) {
+			p.ReceiverInternalKey = p.SenderInternalKey
+		}},
+		{"zero expiry", func(p *SwapKitParams) { p.Expiry = 0 }},
+		{"large CSV", func(p *SwapKitParams) { p.Expiry = 65536 }},
+		{"timestamp CLTV", func(p *SwapKitParams) {
+			p.Policy, p.Expiry = SwapHTLCStaticLoopInV3, 500_000_000
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			params := swapKitTestParams(t)
+			test.mutate(&params)
+			_, err := NewSwapKit(params)
+			require.Error(t, err)
+		})
+	}
+
+	kit, err := NewSwapKit(swapKitTestParams(t))
+	require.NoError(t, err)
+	_, err = kit.SuccessSpend(Hash{})
+	require.ErrorContains(t, err, "asset commitment root")
+	_, err = kit.TimeoutWitness(swapKitTestAssetRoot(), nil)
+	require.ErrorContains(t, err, "signature must be")
+}
+
+// TestSwapKitSignatureEncoding rejects malformed Schnorr encodings and the
+// forbidden explicit SIGHASH_DEFAULT byte; a valid explicit hash mode spends.
+func TestSwapKitSignatureEncoding(t *testing.T) {
+	kit, err := NewSwapKit(swapKitTestParams(t))
+	require.NoError(t, err)
+	root := swapKitTestAssetRoot()
+	spend, err := kit.TimeoutSpend(root)
+	require.NoError(t, err)
+	tx, prevOut, signature := swapKitSignTestTx(t, spend, 1, nil)
+	for _, invalid := range [][]byte{
+		nil, signature[:63], append(bytes.Clone(signature), 0),
+		append(bytes.Clone(signature), 4),
+		append(bytes.Clone(signature), 0x80),
+		bytes.Repeat([]byte{0xff}, 64),
+	} {
+		_, err := kit.TimeoutWitness(root, invalid)
+		require.Error(t, err)
+	}
+	fetcher := txscript.NewCannedPrevOutputFetcher(
+		prevOut.PkScript, prevOut.Value,
+	)
+	keyBytes := make([]byte, 32)
+	keyBytes[31] = 1
+	key, _ := btcec.PrivKeyFromBytes(keyBytes)
+	signature, err = txscript.RawTxInTapscriptSignature(
+		tx, txscript.NewTxSigHashes(tx, fetcher), 0, prevOut.Value,
+		prevOut.PkScript, txscript.NewBaseTapLeaf(spend.LeafScript),
+		txscript.SigHashAll, key,
+	)
+	require.NoError(t, err)
+	require.Len(t, signature, 65)
+	tx.TxIn[0].Witness, err = kit.TimeoutWitness(root, signature)
+	require.NoError(t, err)
+	require.NoError(t, swapKitExecuteTestTx(tx, prevOut))
+	signature[0] ^= 1
+	require.NotEqual(t, signature, tx.TxIn[0].Witness[0])
+}
+
 func swapKitTestParams(t *testing.T) SwapKitParams {
 	t.Helper()
 	sender := testKey(t, 1)
