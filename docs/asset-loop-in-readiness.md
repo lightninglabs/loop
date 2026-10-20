@@ -5,6 +5,9 @@ The initial flow deposits one isolated asset on chain and pays the same asset
 or fungible group over Lightning. The server holds the swap preimage and
 controls execution. The client retains unilateral recovery paths.
 
+See the [architecture review](asset-loop-in-architecture.md) for RPC reuse,
+the runtime dependency boundary, and the remaining consolidation priorities.
+
 ## What is implemented
 
 - Normal `loop static asset` commands and `loopd` startup/recovery integration.
