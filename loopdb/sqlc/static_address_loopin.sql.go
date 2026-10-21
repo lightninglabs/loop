@@ -124,8 +124,11 @@ FROM
     static_address_swap_updates
 WHERE
     swap_hash = $1
+ORDER BY
+    id ASC
 `
 
+// The last update is the swap's current state.
 func (q *Queries) GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]StaticAddressSwapUpdate, error) {
 	rows, err := q.db.QueryContext(ctx, getLoopInSwapUpdates, swapHash)
 	if err != nil {
@@ -257,10 +260,11 @@ FROM
     htlc_keys ON swaps.swap_hash = htlc_keys.swap_hash
         JOIN
     static_address_swap_updates u ON swaps.swap_hash = u.swap_hash
-        -- This subquery ensures that we are checking only the latest update for
-        -- each swap_hash.
-        AND u.update_timestamp = (
-            SELECT MAX(update_timestamp)
+        -- This subquery picks the latest update for each swap_hash by id, not
+        -- by timestamp, since a later update can have an earlier timestamp,
+        -- for example after the clock was set back.
+        AND u.id = (
+            SELECT MAX(id)
             FROM static_address_swap_updates
             WHERE swap_hash = u.swap_hash
         )
@@ -420,7 +424,7 @@ func (q *Queries) InsertStaticAddressLoopIn(ctx context.Context, arg InsertStati
 	return err
 }
 
-const insertStaticAddressMetaUpdate = `-- name: InsertStaticAddressMetaUpdate :exec
+const insertStaticAddressMetaUpdate = `-- name: InsertStaticAddressMetaUpdate :one
 INSERT INTO static_address_swap_updates (
     swap_hash,
     update_state,
@@ -430,6 +434,7 @@ INSERT INTO static_address_swap_updates (
      $2,
      $3
  )
+RETURNING id
 `
 
 type InsertStaticAddressMetaUpdateParams struct {
@@ -438,9 +443,11 @@ type InsertStaticAddressMetaUpdateParams struct {
 	UpdateTimestamp time.Time
 }
 
-func (q *Queries) InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) error {
-	_, err := q.db.ExecContext(ctx, insertStaticAddressMetaUpdate, arg.SwapHash, arg.UpdateState, arg.UpdateTimestamp)
-	return err
+func (q *Queries) InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, insertStaticAddressMetaUpdate, arg.SwapHash, arg.UpdateState, arg.UpdateTimestamp)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
 }
 
 const isStored = `-- name: IsStored :one

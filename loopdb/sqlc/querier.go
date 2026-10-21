@@ -32,6 +32,7 @@ type Querier interface {
 	GetLastUpdateID(ctx context.Context, swapHash []byte) (int32, error)
 	GetLatestDepositUpdate(ctx context.Context, depositID []byte) (DepositUpdate, error)
 	GetLoopInSwap(ctx context.Context, swapHash []byte) (GetLoopInSwapRow, error)
+	// The last update is the swap's current state.
 	GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]StaticAddressSwapUpdate, error)
 	GetLoopInSwaps(ctx context.Context) ([]GetLoopInSwapsRow, error)
 	GetLoopOutSwap(ctx context.Context, swapHash []byte) (GetLoopOutSwapRow, error)
@@ -60,7 +61,7 @@ type Querier interface {
 	InsertMigration(ctx context.Context, arg InsertMigrationParams) error
 	InsertReservationUpdate(ctx context.Context, arg InsertReservationUpdateParams) error
 	InsertStaticAddressLoopIn(ctx context.Context, arg InsertStaticAddressLoopInParams) error
-	InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) error
+	InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) (int32, error)
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)

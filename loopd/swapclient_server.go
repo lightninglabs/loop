@@ -667,9 +667,9 @@ func staticAddressLoopInMonitorHighWater(
 		}
 
 		current, ok := highWater[swp.SwapHash]
-		if !ok || swp.LastUpdate.After(current.lastUpdate) {
+		if !ok || swp.StaticAddressLoopInUpdateID > current.updateID {
 			highWater[swp.SwapHash] = staticAddressLoopInHighWater{
-				lastUpdate:  swp.LastUpdate,
+				updateID:    swp.StaticAddressLoopInUpdateID,
 				staticState: swp.StaticAddressLoopInState,
 			}
 		}
@@ -678,10 +678,12 @@ func staticAddressLoopInMonitorHighWater(
 	return highWater
 }
 
-// staticAddressLoopInHighWater stores the most recent snapshot timestamp and
-// state for one static-address loop-in swap.
+// staticAddressLoopInHighWater stores the most recent snapshot update id and
+// state for one static-address loop-in swap. It uses the update id instead of
+// the update time, since an update stored in local time before the times were
+// stored in UTC can read back later than a newer update.
 type staticAddressLoopInHighWater struct {
-	lastUpdate  time.Time
+	updateID    int32
 	staticState fsm.StateType
 }
 
@@ -700,14 +702,16 @@ func isInitialStaticAddressLoopInStale(
 		return false
 	}
 
-	if swp.LastUpdate.Before(current.lastUpdate) {
+	if swp.StaticAddressLoopInUpdateID < current.updateID {
 		return true
 	}
-	if swp.LastUpdate.After(current.lastUpdate) {
+	if swp.StaticAddressLoopInUpdateID > current.updateID {
 		return false
 	}
 
-	// Equal timestamps can race the initial DB snapshot, so match state too.
+	// An update that is both in the initial DB snapshot and in the live
+	// queue has the same id in both. Match the state too, so that only an
+	// identical update is dropped.
 	return swp.StaticAddressLoopInState == current.staticState
 }
 
@@ -2426,12 +2430,13 @@ func staticAddressLoopInSwapInfoWithChainParams(
 				swp.ProtocolVersion,
 			),
 		},
-		LastUpdate:               lastUpdate,
-		SwapHash:                 swp.SwapHash,
-		SwapType:                 swap.TypeStaticAddressLoopIn,
-		StaticAddressLoopInState: swp.GetState(),
-		HtlcAddressP2WSH:         htlcAddress,
-		LastHop:                  lastHop,
+		LastUpdate:                  lastUpdate,
+		SwapHash:                    swp.SwapHash,
+		SwapType:                    swap.TypeStaticAddressLoopIn,
+		StaticAddressLoopInState:    swp.GetState(),
+		StaticAddressLoopInUpdateID: swp.LastUpdateID,
+		HtlcAddressP2WSH:            htlcAddress,
+		LastHop:                     lastHop,
 	}, nil
 }
 
