@@ -792,19 +792,37 @@ func TestFailedOffChainCancellation(t *testing.T) {
 		}
 
 		t.Run(name+" stable protocol", func(t *testing.T) {
-			testFailedOffChainCancellation(t, failedPayment)
+			testFailedOffChainCancellation(t, failedPayment, false)
 		})
 
 		t.Run(name+" experimental protocol", func(t *testing.T) {
 			loopdb.EnableExperimentalProtocol()
 			defer loopdb.ResetCurrentProtocolVersion()
 
-			testFailedOffChainCancellation(t, failedPayment)
+			testFailedOffChainCancellation(t, failedPayment, false)
 		})
 	}
 }
 
-func testFailedOffChainCancellation(t *testing.T, failedPayment paymentType) {
+// TestBlindedLoopOutCancellation verifies that failure of either blinded
+// invoice cancels the swap using the separately supplied payment address.
+func TestBlindedLoopOutCancellation(t *testing.T) {
+	for _, payment := range []paymentType{
+		paymentTypeInvoice, paymentTypePrepay,
+	} {
+		name := "swap invoice"
+		if payment == paymentTypePrepay {
+			name = "prepay"
+		}
+		t.Run(name, func(t *testing.T) {
+			testFailedOffChainCancellation(t, payment, true)
+		})
+	}
+}
+
+func testFailedOffChainCancellation(t *testing.T, failedPayment paymentType,
+	blinded bool) {
+
 	defer test.Guard(t)()
 
 	lnd := test.NewMockLnd()
@@ -819,8 +837,15 @@ func testFailedOffChainCancellation(t *testing.T, failedPayment paymentType) {
 		clock.NewTestClock(time.Unix(123, 0)),
 	)
 
+	secret := [32]byte{9, 8, 7}
+	if blinded {
+		cfg.server = &blindedServerMock{
+			serverMock: server, secret: &secret,
+		}
+	}
+
 	initResult, err := newLoopOutSwap(
-		context.Background(), cfg, lnd.Height, &testReq,
+		t.Context(), cfg, lnd.Height, &testReq,
 	)
 	require.NoError(t, err)
 	swap := initResult.swap
@@ -845,7 +870,7 @@ func testFailedOffChainCancellation(t *testing.T, failedPayment paymentType) {
 			verifySchnorrSig: mockVerifySchnorrSigFail,
 		}
 
-		err := swap.execute(context.Background(), cfg, ctx.Lnd.Height)
+		err := swap.execute(t.Context(), cfg, ctx.Lnd.Height)
 		errChan <- err
 	}()
 
@@ -923,7 +948,13 @@ func testFailedOffChainCancellation(t *testing.T, failedPayment paymentType) {
 	)
 	require.NoError(t, err)
 
-	payAddr := invoice.PaymentAddr.UnwrapOrFail(t)
+	var payAddr [32]byte
+	if blinded {
+		require.True(t, invoice.PaymentAddr.IsNone())
+		payAddr = secret
+	} else {
+		payAddr = invoice.PaymentAddr.UnwrapOrFail(t)
+	}
 	swapCancellation := &outCancelDetails{
 		hash:        swap.hash,
 		paymentAddr: payAddr,
@@ -950,6 +981,18 @@ func testFailedOffChainCancellation(t *testing.T, failedPayment paymentType) {
 // TestLoopOutMuSig2Sweep tests the loop out sweep flow when the MuSig2 signing
 // process is successful.
 func TestLoopOutMuSig2Sweep(t *testing.T) {
+	for _, blinded := range []bool{false, true} {
+		name := "ordinary invoices"
+		if blinded {
+			name = "blinded invoices"
+		}
+		t.Run(name, func(t *testing.T) {
+			testLoopOutMuSig2Sweep(t, blinded)
+		})
+	}
+}
+
+func testLoopOutMuSig2Sweep(t *testing.T, blinded bool) {
 	defer test.Guard(t)()
 
 	// TODO(bhandras): remove when MuSig2 is default.
@@ -980,8 +1023,15 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 		clock.NewTestClock(time.Unix(123, 0)),
 	)
 
+	secret := [32]byte{9, 8, 7}
+	if blinded {
+		cfg.server = &blindedServerMock{
+			serverMock: server, secret: &secret,
+		}
+	}
+
 	initResult, err := newLoopOutSwap(
-		context.Background(), cfg, ctx.Lnd.Height, &testReq,
+		t.Context(), cfg, ctx.Lnd.Height, &testReq,
 	)
 	require.NoError(t, err)
 	swap := initResult.swap
@@ -1012,9 +1062,28 @@ func TestLoopOutMuSig2Sweep(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	// A cooperative keyspend must authenticate using the explicit secret
+	// when the invoice does not expose its payment address.
+	signSweep := mockMuSig2SignSweep
+	if blinded {
+		signSweep = func(ctx context.Context,
+			version loopdb.ProtocolVersion, hash lntypes.Hash,
+			addr [32]byte, nonce, psbt []byte,
+			prevouts map[wire.OutPoint]*wire.TxOut) (
+			[]byte, []byte, error) {
+
+			if addr != secret {
+				return nil, nil, errors.New("incorrect payment address")
+			}
+			return mockMuSig2SignSweep(
+				ctx, version, hash, addr, nonce, psbt, prevouts,
+			)
+		}
+	}
+
 	batcher := sweepbatcher.NewBatcher(
 		lnd.WalletKit, lnd.ChainNotifier, lnd.Signer,
-		mockMuSig2SignSweep, mockVerifySchnorrSigSuccess,
+		signSweep, mockVerifySchnorrSigSuccess,
 		lnd.ChainParams, batcherStore, sweepStore,
 	)
 

@@ -16,7 +16,7 @@ import (
 // CreateBlindedInvoice creates an encoded bLIP 39 invoice for client unit
 // tests. Its encrypted payload is a placeholder and cannot forward a payment.
 func CreateBlindedInvoice(params *chaincfg.Params, hash lntypes.Hash,
-	amount btcutil.Amount) (string, error) {
+	amount btcutil.Amount, options ...func(*zpay32.Invoice)) (string, error) {
 
 	key, pub := CreateKey(42)
 	features := lnwire.NewFeatureVector(lnwire.NewRawFeatureVector(
@@ -41,6 +41,9 @@ func CreateBlindedInvoice(params *chaincfg.Params, hash lntypes.Hash,
 	)
 	if err != nil {
 		return "", err
+	}
+	for _, option := range options {
+		option(invoice)
 	}
 	return invoice.Encode(zpay32.MessageSigner{
 		SignCompact: func(msg []byte) ([]byte, error) {

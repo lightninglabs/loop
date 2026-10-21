@@ -17,13 +17,23 @@ import (
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
 
 type blindedServerMock struct {
 	*serverMock
-	secret *[32]byte
+
+	secret  *[32]byte
+	reports chan blindedRoutingReport
+}
+
+type blindedRoutingReport struct {
+	hash        lntypes.Hash
+	paymentAddr [32]byte
+	plugin      RoutingPluginType
+	success     bool
 }
 
 func (s *blindedServerMock) NewLoopOutSwap(ctx context.Context,
@@ -38,9 +48,32 @@ func (s *blindedServerMock) NewLoopOutSwap(ctx context.Context,
 	}
 	resp.swapInvoice, err = test.CreateBlindedInvoice(
 		s.lnd.ChainParams, hash, s.swapInvoiceAmt,
+		zpay32.Description(swapInvoiceDesc),
+	)
+	if err != nil {
+		return nil, err
+	}
+	resp.prepayInvoice, err = test.CreateBlindedInvoice(
+		s.lnd.ChainParams, s.prepayHash, s.prepayInvoiceAmt,
+		zpay32.Description(prepayInvoiceDesc),
 	)
 	resp.paymentAddr = s.secret
 	return resp, err
+}
+
+func (s *blindedServerMock) ReportRoutingResult(ctx context.Context,
+	hash lntypes.Hash, paymentAddr [32]byte, plugin RoutingPluginType,
+	success bool, _ int32, _ int64) error {
+
+	if s.reports == nil {
+		return nil
+	}
+	select {
+	case s.reports <- blindedRoutingReport{hash, paymentAddr, plugin, success}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // TestBlindedLoopOutInitResume verifies that a blinded swap initializes and
@@ -81,6 +114,7 @@ func TestBlindedLoopOutInitResume(t *testing.T) {
 
 type paymentAddressRPC struct {
 	swapserverrpc.SwapServerClient
+
 	response *swapserverrpc.ServerLoopOutResponse
 	request  *swapserverrpc.ServerLoopOutRequest
 }
@@ -120,6 +154,62 @@ func TestLoopOutResponsePaymentAddress(t *testing.T) {
 				require.Nil(t, resp.paymentAddr)
 			} else {
 				require.Equal(t, &[32]byte{}, resp.paymentAddr)
+			}
+		})
+	}
+}
+
+// TestBlindedLoopOutContractValidation verifies that blinding cannot bypass
+// the swap hash, swap fee or prepayment limits checked before accepting a swap.
+func TestBlindedLoopOutContractValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		hash      lntypes.Hash
+		swapAmt   btcutil.Amount
+		prepayAmt btcutil.Amount
+		wantError string
+	}{
+		{
+			name: "valid", hash: lntypes.Hash{1},
+			swapAmt: 50950, prepayAmt: 100,
+		},
+		{
+			name: "wrong hash", hash: lntypes.Hash{2},
+			swapAmt: 50950, prepayAmt: 100,
+			wantError: "not equal generated swap hash",
+		},
+		{
+			name: "excessive swap fee", hash: lntypes.Hash{1},
+			swapAmt: 50951, prepayAmt: 100,
+			wantError: ErrSwapFeeTooHigh.Error(),
+		},
+		{
+			name: "excessive prepayment", hash: lntypes.Hash{1},
+			swapAmt: 50949, prepayAmt: 101,
+			wantError: ErrPrepayAmountTooHigh.Error(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lnd := test.NewMockLnd()
+			swapInvoice, err := test.CreateBlindedInvoice(
+				lnd.ChainParams, tc.hash, tc.swapAmt,
+			)
+			require.NoError(t, err)
+			prepayInvoice, err := test.CreateBlindedInvoice(
+				lnd.ChainParams, lntypes.Hash{3}, tc.prepayAmt,
+			)
+			require.NoError(t, err)
+			err = validateLoopOutContract(
+				&lnd.LndServices, testRequest, lntypes.Hash{1},
+				&newLoopOutResponse{
+					swapInvoice:   swapInvoice,
+					prepayInvoice: prepayInvoice,
+				},
+			)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}
@@ -170,6 +260,7 @@ func TestBlindedPaymentDelegatesToLnd(t *testing.T) {
 	lnd := test.NewMockLnd()
 	server := &blindedServerMock{
 		serverMock: newServerMock(lnd), secret: &[32]byte{1},
+		reports: make(chan blindedRoutingReport, 1),
 	}
 	cfg := &swapConfig{
 		lnd: &lnd.LndServices, store: loopdb.NewStoreMock(t), server: server,
@@ -187,7 +278,7 @@ func TestBlindedPaymentDelegatesToLnd(t *testing.T) {
 	go func() {
 		_, err := swap.payInvoiceAsync(
 			ctx, swap.SwapInvoice, 100, loopdb.ChannelSet{7},
-			time.Minute, RoutingPluginLowHigh, false, nil,
+			time.Minute, RoutingPluginLowHigh, true, nil,
 		)
 		done <- err
 	}()
@@ -197,6 +288,7 @@ func TestBlindedPaymentDelegatesToLnd(t *testing.T) {
 		require.EqualValues(t, 100, payment.MaxFee)
 		require.Equal(t, []uint64{7}, payment.OutgoingChanIds)
 		require.EqualValues(t, 5, payment.MaxParts)
+		require.Equal(t, time.Minute, payment.Timeout)
 		select {
 		case payment.Updates <- lndclient.PaymentStatus{
 			State: lnrpc.Payment_SUCCEEDED,
@@ -212,6 +304,15 @@ func TestBlindedPaymentDelegatesToLnd(t *testing.T) {
 	select {
 	case err := <-done:
 		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case report := <-server.reports:
+		require.Equal(t, swap.hash, report.hash)
+		require.Equal(t, *server.secret, report.paymentAddr)
+		require.Equal(t, RoutingPluginNone, report.plugin)
+		require.True(t, report.success)
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}

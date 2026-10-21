@@ -23,6 +23,13 @@ channel restrictions still apply. A blinded prepay invoice is paid through the
 same normal invoice-payment path and needs no separate RPC authentication key.
 
 This change requires a payer LND with bLIP 39 support, already covered by Loop's
-minimum supported LND version. It does not select invoice paths or require a
-new LND RPC. Servers are responsible for creating payable invoices and checking
-the authentication secret against the corresponding swap.
+minimum supported LND version, v0.19.0-beta. It does not select invoice paths or
+require a new LND RPC. Servers are responsible for creating payable invoices
+and checking the authentication secret against the corresponding swap.
+
+The client can be released before server support is enabled. Existing servers
+ignore the capability flag and continue returning ordinary invoices. A server
+that supports blinding can later return blinded invoices to upgraded clients;
+it must continue returning ordinary invoices when the flag is unset. No client
+configuration or dependency on a particular server path-selection algorithm is
+required.

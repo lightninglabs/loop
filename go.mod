@@ -25,6 +25,7 @@ require (
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
 	github.com/lightninglabs/taproot-assets v0.8.1
 	github.com/lightninglabs/taproot-assets/taprpc v1.2.0
+	github.com/lightningnetwork/lightning-onion v1.3.0
 	github.com/lightningnetwork/lnd v0.21.0-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
@@ -116,7 +117,6 @@ require (
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/neutrino v0.17.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.3 // indirect
-	github.com/lightningnetwork/lightning-onion v1.3.0 // indirect
 	github.com/lightningnetwork/lnd/actor v0.0.6 // indirect
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.9 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
