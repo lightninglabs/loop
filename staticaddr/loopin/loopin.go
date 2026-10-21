@@ -50,6 +50,9 @@ const (
 
 // StaticAddressLoopIn represents the in-memory loop-in information.
 type StaticAddressLoopIn struct {
+	// Asset is present for a same-group asset swap with a server-owned hash.
+	Asset *AssetSwapInfo
+
 	// SwapHash is the hashed preimage of the swap invoice. It represents
 	// the primary identifier of the swap.
 	SwapHash lntypes.Hash

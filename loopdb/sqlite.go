@@ -117,8 +117,11 @@ func NewSqliteStore(cfg *SqliteConfig, network *chaincfg.Params) (*SqliteSwapSto
 			return nil, err
 		}
 
+		sqliteSchemas := newReplacerFS(sqlSchemas, map[string]string{
+			"ALTER TABLE swaps ALTER COLUMN preimage DROP NOT NULL;": sqliteNullablePreimage,
+		})
 		err = applyMigrations(
-			sqlSchemas, driver, "sqlc/migrations", "sqlc",
+			sqliteSchemas, driver, "sqlc/migrations", "sqlc",
 		)
 		if err != nil {
 			return nil, err

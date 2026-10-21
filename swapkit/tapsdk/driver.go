@@ -28,8 +28,8 @@ type DriverConfig struct {
 	MinConfs  uint32
 }
 
-// Driver contains dependencies only. The normal deposit request owns funding
-// checkpoints; the normal swap record owns preparation and signed fallback.
+// Driver contains dependencies only. Deposit and swap FSM actions own signed
+// transaction persistence and recovery.
 type Driver struct{ cfg DriverConfig }
 
 // NewDriver configures transaction operations without a database or worker.

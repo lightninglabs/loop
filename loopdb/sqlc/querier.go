@@ -12,7 +12,6 @@ import (
 type Querier interface {
 	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
-	BindAssetDeposit(ctx context.Context, arg BindAssetDepositParams) (int64, error)
 	CancelBatch(ctx context.Context, id int32) error
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
@@ -24,9 +23,6 @@ type Querier interface {
 	DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]DepositsForSwapHashRow, error)
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
-	GetAssetDeposit(ctx context.Context, arg GetAssetDepositParams) (Deposit, error)
-	GetAssetRecord(ctx context.Context, swapHash []byte) (StaticAddressAssetRequest, error)
-	GetAssetRequest(ctx context.Context, requestID []byte) (StaticAddressAssetRequest, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
 	GetDeposit(ctx context.Context, depositID []byte) (Deposit, error)
@@ -53,9 +49,6 @@ type Querier interface {
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
 	GetWithdrawalDeposits(ctx context.Context, withdrawalID []byte) ([][]byte, error)
 	GetWithdrawalIDByDepositID(ctx context.Context, depositID []byte) ([]byte, error)
-	InsertAssetDeposit(ctx context.Context, arg InsertAssetDepositParams) error
-	InsertAssetRecord(ctx context.Context, arg InsertAssetRecordParams) (int64, error)
-	InsertAssetRequest(ctx context.Context, arg InsertAssetRequestParams) error
 	InsertBatch(ctx context.Context, arg InsertBatchParams) (int32, error)
 	InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error
 	InsertHtlcKeys(ctx context.Context, arg InsertHtlcKeysParams) error
@@ -71,26 +64,19 @@ type Querier interface {
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
-	ListAssetDeposits(ctx context.Context) ([]Deposit, error)
-	ListAssetRequests(ctx context.Context) ([]StaticAddressAssetRequest, error)
 	MapDepositToSwap(ctx context.Context, arg MapDepositToSwapParams) error
 	OverrideSelectedSwapAmount(ctx context.Context, arg OverrideSelectedSwapAmountParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	RecordStaticAddressRiskDecision(ctx context.Context, arg RecordStaticAddressRiskDecisionParams) error
-	ReleaseAssetDeposit(ctx context.Context, arg ReleaseAssetDepositParams) (int64, error)
-	ReserveAssetDeposit(ctx context.Context, arg ReserveAssetDepositParams) (int64, error)
-	RestoreAssetDeposit(ctx context.Context, arg RestoreAssetDepositParams) error
 	SetDepositOnchainCost(ctx context.Context, arg SetDepositOnchainCostParams) error
 	SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error)
-	UpdateAssetDeposit(ctx context.Context, arg UpdateAssetDepositParams) error
-	UpdateAssetJob(ctx context.Context, arg UpdateAssetJobParams) error
-	UpdateAssetRecord(ctx context.Context, arg UpdateAssetRecordParams) (int64, error)
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
 	UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error
 	UpdateInstantOut(ctx context.Context, arg UpdateInstantOutParams) error
 	UpdateLoopOutAssetOffchainPayments(ctx context.Context, arg UpdateLoopOutAssetOffchainPaymentsParams) error
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
 	UpdateStaticAddressLoopIn(ctx context.Context, arg UpdateStaticAddressLoopInParams) error
+	UpdateStaticAddressPreimage(ctx context.Context, arg UpdateStaticAddressPreimageParams) error
 	UpdateWithdrawal(ctx context.Context, arg UpdateWithdrawalParams) error
 	UpsertLiquidityParams(ctx context.Context, params []byte) error
 	UpsertSweep(ctx context.Context, arg UpsertSweepParams) error

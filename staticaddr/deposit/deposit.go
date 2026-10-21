@@ -1,6 +1,7 @@
 package deposit
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"sync"
@@ -9,7 +10,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
-	"github.com/lightninglabs/loop/staticaddr/deposit/flow"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -70,6 +71,12 @@ type OnchainCost struct {
 type Deposit struct {
 	sync.Mutex
 
+	// Asset carries native quantities and proofs. Value remains satoshis.
+	Asset *swapkit.Deposit
+
+	// AssetTx is a completed funding or expiry package saved before publish.
+	AssetTx []byte
+
 	// Outpoint of the deposit.
 	wire.OutPoint
 
@@ -128,13 +135,19 @@ func (d *Deposit) IsInFinalState() bool {
 // isInFinalStateNoLock returns true if the deposit is final without acquiring
 // the deposit lock.
 func (d *Deposit) isInFinalStateNoLock() bool {
-	return flow.IsFinal(flow.State(d.state))
+	return d.state == Expired || d.state == Withdrawn ||
+		d.state == LoopedIn || d.state == HtlcTimeoutSwept ||
+		d.state == ChannelPublished
 }
 
 func (d *Deposit) IsExpired(currentHeight, expiry uint32) bool {
 	d.Lock()
 	defer d.Unlock()
 
+	if d.Asset != nil {
+		return d.Asset.RefundHeight > 0 &&
+			currentHeight >= d.Asset.RefundHeight
+	}
 	if d.ConfirmationHeight <= 0 {
 		return false
 	}
@@ -200,4 +213,17 @@ func GetRandomDepositID() (ID, error) {
 	var id ID
 	_, err := rand.Read(id[:])
 	return id, err
+}
+
+// AssetSnapshot copies native metadata while the funding action may update it.
+func (d *Deposit) AssetSnapshot() *swapkit.Deposit {
+	d.Lock()
+	defer d.Unlock()
+	if d.Asset == nil {
+		return nil
+	}
+	asset := *d.Asset
+	asset.Proof = bytes.Clone(asset.Proof)
+	asset.Contract = bytes.Clone(asset.Contract)
+	return &asset
 }

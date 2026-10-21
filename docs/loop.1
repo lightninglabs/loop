@@ -443,7 +443,7 @@ Refund an expired unreserved asset deposit
 \fB--utxo\fP="":
 
 .SS deposit
-Queue an asset deposit
+Fund an asset deposit
 
 .PP
 \fB--amount\fP="": Native asset units to deposit (default: 0)
@@ -455,7 +455,7 @@ Queue an asset deposit
 \fB--help, -h\fP: show help
 
 .PP
-\fB--request_id\fP="": 32-byte lowercase hex identity; reuse this value after an ambiguous response
+\fB--request_id\fP="": 32-byte lowercase hex request identity
 
 .SS in
 Swap one whole asset deposit to Lightning
@@ -476,7 +476,7 @@ Swap one whole asset deposit to Lightning
 \fB--max_asset_fee\fP="": Maximum native swap fee (default: 0)
 
 .PP
-\fB--request_id\fP="": 32-byte lowercase hex identity; reuse this value after an ambiguous response
+\fB--request_id\fP="": 32-byte lowercase hex request identity
 
 .PP
 \fB--utxo\fP="": Canonical txid:index of one whole deposit
@@ -488,7 +488,7 @@ List asset deposits and reservations
 \fB--help, -h\fP: show help
 
 .SS swaps
-List durable asset requests and swaps
+List asset swaps
 
 .PP
 \fB--help, -h\fP: show help

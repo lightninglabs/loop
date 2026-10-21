@@ -9,7 +9,7 @@ import (
 )
 
 // recoveryPlan returns a wallet-owned output for either a deposit refund or
-// an HTLC spend. The caller persists the plan before committing it.
+// an HTLC spend.
 func (r *Driver) recoveryPlan(ctx context.Context,
 	out sdk.CustomAnchorAssetOutputSummary, inputProof []byte, public [33]byte,
 	key keychain.KeyLocator, spend *SwapAnchorSpendInfo, fee uint64) (
@@ -51,12 +51,11 @@ func (r *Driver) recoveryPlan(ctx context.Context,
 		spend.SigningPlan(0)), nil
 }
 
-// signScriptSpend shares the durable commit/sign sequence for every unilateral
-// path. Persist the exact committed package before signing and the completed
-// transaction before returning it to a caller that can publish it.
+// signScriptSpend commits and signs one unilateral spend. Its caller owns
+// persistence of the completed transaction before publication.
 func (r *Driver) signScriptSpend(ctx context.Context,
 	plan *sdk.CustomAnchorRequest, tx *transaction, key keychain.KeyLocator,
-	preimage *[32]byte, save func() error) error {
+	preimage *[32]byte) error {
 
 	if tx.Package == nil {
 		pkg, err := r.commit(ctx, plan)
@@ -64,9 +63,6 @@ func (r *Driver) signScriptSpend(ctx context.Context,
 			return err
 		}
 		tx.Package = pkg
-		if err := save(); err != nil {
-			return err
-		}
 	}
 	if len(tx.Final) != 0 {
 		return nil
@@ -77,5 +73,5 @@ func (r *Driver) signScriptSpend(ctx context.Context,
 		return err
 	}
 	tx.Final = final
-	return save()
+	return nil
 }

@@ -2,6 +2,7 @@ package tapsdk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -125,4 +127,113 @@ func TestPartialFallbackRecoveryDiscovery(t *testing.T) {
 			require.ErrorIs(t, err, marker)
 		})
 	}
+}
+
+// observedRecoverySDK records the exact tapd logging request, then stops before
+// proof reconstruction, which is covered by the real-node tests.
+type observedRecoverySDK struct {
+	*partialRecoverySDK
+	sdk.CustomAnchorWalletKitClient
+
+	input   *sdk.ProofFile
+	point   sdk.Outpoint
+	logged  *sdk.PublishAndLogTransferRequest
+	stopErr error
+}
+
+func (s *observedRecoverySDK) ExportProof(_ context.Context, _ sdk.AssetRef,
+	_ sdk.PubKey, point *sdk.Outpoint) (*sdk.ProofFile, error) {
+
+	if point != nil && *point == s.point {
+		return s.input, nil
+	}
+	return nil, errors.New("proof not yet logged")
+}
+
+func (*observedRecoverySDK) CustomAnchorCapabilities(context.Context) (
+	*sdk.CustomAnchorCapabilities, error) {
+
+	capabilities := sdk.DefaultTapdCustomAnchorCapabilities()
+	return &capabilities, nil
+}
+
+func (s *observedRecoverySDK) PublishAndLogTransferWithRequest(
+	_ context.Context, request *sdk.PublishAndLogTransferRequest) (
+	*sdk.AssetPacket, error) {
+
+	s.logged = request
+	return nil, s.stopErr
+}
+
+// TestObservedSignedFallbackDoesNotRebroadcast exercises the discovery path
+// used by InspectRefund when a server restarts after its peer's refund mined.
+// Even a complete signed fallback must use observer logging for its lineage.
+func TestObservedSignedFallbackDoesNotRebroadcast(t *testing.T) {
+	driver, swap, outcome, chain := bindingOutcome(t, true)
+	pkg := signingPackage(t)
+	pkg.Publish.SkipAnchorTxBroadcast = false
+	pkg.Publish.ExternalBroadcast = false
+	pkg, err := pkg.Seal()
+	require.NoError(t, err)
+	clientRound, err := NewSigningRound(t.Context(), signingWallet(t, 2),
+		keychain.KeyLocator{}, pkg)
+	require.NoError(t, err)
+	defer clientRound.Close(t.Context())
+	serverRound, err := NewSigningRound(t.Context(), signingWallet(t, 3),
+		keychain.KeyLocator{}, pkg)
+	require.NoError(t, err)
+	defer serverRound.Close(t.Context())
+	partial, err := serverRound.Partial(t.Context(), clientRound.Nonce())
+	require.NoError(t, err)
+	signed, err := clientRound.Finalize(t.Context(), serverRound.Nonce(),
+		partial)
+	require.NoError(t, err)
+	fallback := transaction{Package: pkg,
+		Final: finishSigningFixture(t, signed)}
+	require.NotEmpty(t, fallback.Final)
+	require.NoError(t, validateFinalTx(fallback))
+	swap.Fallback = fallback
+
+	// Reuse the existing package's fully signed anchor. The chain stub
+	// reports the agreed timeout leaf spending that anchor's asset output.
+	prior := fallback.Package.Outputs[0]
+	var contract depositContract
+	require.NoError(t, json.Unmarshal(swap.Offer.Terms.Contract, &contract))
+	policy, err := htlc(swap.Offer, contract)
+	require.NoError(t, err)
+	spend, err := policy.TimeoutSpend(prior.TaprootAssetRoot)
+	require.NoError(t, err)
+	point := sdkPoint(prior.AnchorOutpoint)
+	outcome.AnchorTx.TxIn[0].PreviousOutPoint = point
+	outcome.AnchorTx.TxIn[0].Witness = [][]byte{
+		make([]byte, 64), spend.LeafScript, spend.ControlBlock,
+	}
+	driver.cfg.Chain = &partialRecoveryChain{
+		bindingChain: chain,
+		spend: func(actual wire.OutPoint) (*wire.MsgBlock, uint32, error) {
+			require.Equal(t, point, actual)
+			return bindingBlock(outcome), outcome.BlockHeight, nil
+		},
+	}
+
+	inputRaw := fallback.Package.Inputs[0].ProofSource.Blob
+	inputProof, err := lastProof(inputRaw)
+	require.NoError(t, err)
+	client := &observedRecoverySDK{
+		partialRecoverySDK: &partialRecoverySDK{
+			bindingSDK: &bindingSDK{valid: true},
+		},
+		input: &sdk.ProofFile{RawProofFile: inputRaw},
+		point: sdk.Outpoint{Txid: sdk.Hash(inputProof.OutPoint().Hash),
+			Index: inputProof.OutPoint().Index},
+		stopErr: errors.New("reached observer log"),
+	}
+	driver.cfg.SDK = client
+	driver.cfg.Wallet = sdk.NewWallet(client, sdk.NetworkRegtest)
+	_, err = driver.discoverOutcome(t.Context(), swap, true)
+	require.ErrorIs(t, err, client.stopErr)
+	require.NotNil(t, client.logged)
+	require.True(t, client.logged.SkipAnchorTxBroadcast)
+	// Logging flags belong to this observation, not the persisted package.
+	require.False(t, fallback.Package.Publish.SkipAnchorTxBroadcast)
 }

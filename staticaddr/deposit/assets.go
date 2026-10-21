@@ -2,40 +2,255 @@ package deposit
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
+	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/swapkit"
 )
 
-// RegisterAssetDeposit excludes a proof-bearing anchor from Bitcoin-only
-// selection and sweeping. Persistence runs while the shared manager lock is
-// held; callers restore these registrations before starting the manager.
-// Asset reservations and their hash ownership live in the durable asset
-// inventory. They must never reinterpret an existing Bitcoin deposit.
-func (m *Manager) RegisterAssetDeposit(ctx context.Context, outpoint string,
-	persist func() error) error {
+// AssetDriver constructs asset transactions; the deposit FSM owns persistence.
+type AssetDriver interface {
+	BuildDeposit(context.Context, swapkit.CreateDepositRequest) (
+		swapkit.Deposit, []byte, error)
+	PublishDeposit(context.Context, swapkit.Deposit, []byte) (
+		swapkit.Deposit, error)
+	BuildDepositRefund(context.Context, swapkit.Deposit) ([]byte, error)
+	PublishDepositRefund(context.Context, swapkit.Deposit, []byte) ([]byte, error)
+}
 
+// SetAssetDriver installs asset operations before the manager starts.
+func (m *Manager) SetAssetDriver(driver AssetDriver) {
+	m.cfg.AssetDriver = driver
+}
+
+// CreateAssetDeposit saves the completed funding package before publication.
+// A repeated ID retrieves that ordinary deposit record; unfinished building
+// has no publication effect and can be retried from scratch.
+func (m *Manager) CreateAssetDeposit(ctx context.Context,
+	request swapkit.CreateDepositRequest) (*Deposit, error) {
+
+	if m.cfg.AssetDriver == nil || request.RequestID == ([32]byte{}) {
+		return nil, swapkit.ErrInvalid
+	}
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+	id := ID(request.RequestID)
+	prior, err := m.cfg.Store.GetDeposit(ctx, id)
+	if err == nil {
+		var policy swapkit.Registration
+		if prior.Asset == nil || prior.Asset.GroupKey != request.GroupKey ||
+			prior.Asset.Amount != request.Amount ||
+			json.Unmarshal(prior.Asset.Contract, &policy) != nil ||
+			policy.ClientKey != request.ClientKey ||
+			policy.ServerKey != request.ServerKey || policy.CSV != request.CSV {
+
+			return nil, swapkit.ErrInvalid
+		}
+		if !prior.IsInFinalState() {
+			m.mu.Lock()
+			active := m.activeDeposits[prior.OutPoint] != nil
+			m.mu.Unlock()
+			if !active {
+				if err := m.resumeAssetDeposit(prior); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return prior, nil
+	}
+	if !errors.Is(err, ErrDepositNotFound) && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	asset, tx, err := m.cfg.AssetDriver.BuildDeposit(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	point, err := wire.NewOutPointFromString(asset.Outpoint)
+	if err != nil || point.String() != asset.Outpoint ||
+		asset.ValueSat > math.MaxInt64 || len(tx) == 0 {
+
+		return nil, swapkit.ErrInvalid
+	}
+	d := &Deposit{
+		ID: id, OutPoint: *point, state: PublishAssetDeposit,
+		Value: btcutil.Amount(asset.ValueSat), Asset: &asset,
+		AssetTx: tx, TimeOutSweepPkScript: []byte{},
+	}
+	if err := m.cfg.Store.CreateDeposit(ctx, d); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	m.deposits[d.OutPoint] = d
+	m.mu.Unlock()
+	runCtx := m.runCtx
+	if runCtx == nil {
+		runCtx = ctx
+	}
+	if err := m.startDepositFsm(runCtx, d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// resumeAssetDeposit restores a saved record if creation lost its live FSM.
+func (m *Manager) resumeAssetDeposit(d *Deposit) error {
+	ctx := m.runCtx
+	if ctx == nil {
+		return errors.New("deposit manager is not running")
+	}
+	sm, err := NewFSM(ctx, d, m.cfg, m.finalizedDepositChan, true)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.deposits[d.OutPoint], m.activeDeposits[d.OutPoint] = d, sm
+	m.mu.Unlock()
+	go func() { _ = sm.SendEvent(ctx, OnRecover, nil) }()
+	return nil
+}
+
+// AssetDeposit returns an active asset deposit owned by the ordinary manager.
+func (m *Manager) AssetDeposit(ctx context.Context, outpoint string) (
+	*Deposit, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	point, err := wire.NewOutPointFromString(outpoint)
 	if err != nil || point.String() != outpoint {
-		return fmt.Errorf("invalid asset deposit outpoint")
+		return nil, swapkit.ErrInvalid
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.assetDeposits == nil {
-		m.assetDeposits = make(map[wire.OutPoint]struct{})
+	sm := m.activeDeposits[*point]
+	if sm == nil || sm.deposit.Asset == nil {
+		return nil, ErrDepositNotFound
 	}
-	if _, exists := m.assetDeposits[*point]; exists {
-		return persist()
+	return sm.deposit, nil
+}
+
+// RefundAssetDeposit sends the ordinary expiry event for an available asset.
+func (m *Manager) RefundAssetDeposit(ctx context.Context, outpoint string) (
+	ID, error) {
+
+	d, err := m.AssetDeposit(ctx, outpoint)
+	if err != nil {
+		return ID{}, err
 	}
-	if _, exists := m.deposits[*point]; exists {
-		return fmt.Errorf("asset anchor is already a Bitcoin deposit")
+	d.Lock()
+	ready := d.state == Deposited &&
+		d.Asset.RefundHeight > 0 &&
+		m.currentHeight.Load() >= d.Asset.RefundHeight
+	id := d.ID
+	d.Unlock()
+	if !ready {
+		return id, fmt.Errorf("asset deposit is unavailable for refund")
 	}
-	if err := ctx.Err(); err != nil {
+	m.mu.Lock()
+	sm := m.activeDeposits[d.OutPoint]
+	m.mu.Unlock()
+	runCtx := m.runCtx
+	if runCtx == nil {
+		runCtx = ctx
+	}
+	go func() { _ = sm.SendEvent(runCtx, OnExpiry, nil) }()
+	return id, sm.DefaultObserver.WaitForState(
+		ctx, DefaultTransitionTimeout, PublishExpirySweep,
+	)
+}
+
+// PublishAssetDepositAction resumes the saved funding package after restart.
+func (f *FSM) PublishAssetDepositAction(ctx context.Context,
+	_ fsm.EventContext) fsm.EventType {
+
+	err := f.waitAssetOperation(ctx, "funding", func() error {
+		d := f.deposit
+		d.Lock()
+		asset, tx := *d.Asset, d.AssetTx
+		d.Unlock()
+		result, err := f.cfg.AssetDriver.PublishDeposit(ctx, asset, tx)
+		if err != nil {
+			return err
+		}
+		d.Lock()
+		defer d.Unlock()
+		previous, height, state := *d.Asset, d.ConfirmationHeight, d.state
+		*d.Asset, d.AssetTx, d.state = result, nil, Deposited
+		d.ConfirmationHeight = int64(result.ConfirmationHeight)
+		err = f.cfg.Store.UpdateDeposit(ctx, d)
+		if err != nil {
+			*d.Asset, d.AssetTx, d.state = previous, tx, state
+			d.ConfirmationHeight = height
+		}
 		return err
+	})
+	if err != nil {
+		return fsm.NoOp
 	}
-	if err := persist(); err != nil {
+	return OnStart
+}
+
+func (f *FSM) publishAssetExpiry(ctx context.Context) fsm.EventType {
+	err := f.waitAssetOperation(ctx, "refund", func() error {
+		d := f.deposit
+		d.Lock()
+		asset, tx := *d.Asset, d.AssetTx
+		d.Unlock()
+		if len(tx) == 0 {
+			var err error
+			tx, err = f.cfg.AssetDriver.BuildDepositRefund(ctx, asset)
+			if err != nil {
+				return err
+			}
+			d.Lock()
+			d.AssetTx = tx
+			err = f.cfg.Store.UpdateDeposit(ctx, d)
+			if err != nil {
+				d.AssetTx = nil
+			}
+			d.Unlock()
+			if err != nil {
+				return err
+			}
+		}
+		_, err := f.cfg.AssetDriver.PublishDepositRefund(ctx, asset, tx)
 		return err
+	})
+	if err != nil {
+		return fsm.NoOp
 	}
-	m.assetDeposits[*point] = struct{}{}
-	return nil
+	return OnExpiryPublished
+}
+
+// waitAssetOperation waits inside the ordinary FSM action because tapd proof
+// export can finish after the block notification that confirmed a transfer.
+func (f *FSM) waitAssetOperation(ctx context.Context, operation string,
+	action func() error) error {
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := action()
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, swapkit.ErrPending) {
+			f.Errorf("asset %s: %v", operation, err)
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		}
+	}
 }

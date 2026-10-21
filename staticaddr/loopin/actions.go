@@ -1467,9 +1467,24 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 func (f *FSM) PaymentReceivedAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
+	// An asset swap can restart after the deposit finalized but before the
+	// swap's terminal update. Its ordinary deposit row proves completion.
+	deposits := f.loopIn.Deposits
+	if f.loopIn.Asset != nil {
+		deposits = nil
+		for _, d := range f.loopIn.Deposits {
+			if !d.IsInState(deposit.LoopedIn) {
+				deposits = append(deposits, d)
+			}
+		}
+		if len(deposits) == 0 {
+			return OnSucceeded
+		}
+	}
+
 	// Unlock the deposits and transition them to the LoopedIn state.
 	err := f.cfg.DepositManager.TransitionDeposits(
-		ctx, f.loopIn.Deposits, deposit.OnLoopedIn, deposit.LoopedIn,
+		ctx, deposits, deposit.OnLoopedIn, deposit.LoopedIn,
 	)
 	if err != nil {
 		err = fmt.Errorf("payment received, but unable to transition "+
@@ -1500,8 +1515,20 @@ func (f *FSM) UnlockDepositsAction(ctx context.Context,
 }
 
 func (f *FSM) unlockDeposits(ctx context.Context) error {
+	deposits := f.loopIn.Deposits
+	if f.loopIn.Asset != nil {
+		deposits = nil
+		for _, d := range f.loopIn.Deposits {
+			if !d.IsInState(deposit.Deposited) {
+				deposits = append(deposits, d)
+			}
+		}
+		if len(deposits) == 0 {
+			return nil
+		}
+	}
 	err := f.cfg.DepositManager.TransitionDeposits(
-		ctx, f.loopIn.Deposits, fsm.OnError, deposit.Deposited,
+		ctx, deposits, fsm.OnError, deposit.Deposited,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to unlock deposits: %w", err)

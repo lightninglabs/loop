@@ -9,7 +9,9 @@ INSERT INTO deposits (
     expiry_sweep_txid,
     finalized_withdrawal_tx,
     onchain_cost,
-    onchain_cost_known
+    onchain_cost_known,
+    asset_data,
+    asset_tx
 ) VALUES (
              $1,
              $2,
@@ -20,7 +22,9 @@ INSERT INTO deposits (
              $7,
              $8,
              $9,
-             $10
+             $10,
+             $11,
+             $12
          );
 
 -- name: UpdateDeposit :exec
@@ -30,9 +34,11 @@ SET
     out_index = $3,
     confirmation_height = $4,
     expiry_sweep_txid = $5,
-    finalized_withdrawal_tx = $6
+    finalized_withdrawal_tx = $6,
+    asset_data = $7,
+    asset_tx = $8
 WHERE
-    deposits.deposit_id = $1 AND asset_data IS NULL;
+    deposits.deposit_id = $1;
 
 -- name: InsertDepositUpdate :exec
 INSERT INTO deposit_updates (
@@ -51,7 +57,7 @@ SELECT
 FROM
     deposits
 WHERE
-    deposit_id = $1 AND asset_data IS NULL;
+    deposit_id = $1;
 
 -- name: DepositForOutpoint :one
 SELECT
@@ -61,14 +67,13 @@ FROM
 WHERE
     tx_hash = $1
 AND
-    out_index = $2 AND asset_data IS NULL;
+    out_index = $2;
 
 -- name: AllDeposits :many
 SELECT
     *
 FROM
     deposits
-WHERE asset_data IS NULL
 ORDER BY
     id ASC;
 
@@ -91,4 +96,4 @@ SET
 WHERE
     deposit_id = $1
 AND
-    onchain_cost_known IS NULL AND asset_data IS NULL;
+    onchain_cost_known IS NULL;

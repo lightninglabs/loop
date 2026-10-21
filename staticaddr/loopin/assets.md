@@ -1,27 +1,19 @@
-# Normal client asset deposits and loop-ins
+# Asset deposits and Loop In
 
-`loopd` configures its existing static Loop In manager with a typed asset
-transaction adapter. It currently hosts a separate asset session/controller
-and recovery batches. The normal SQL connection holds separate asset request
-and execution data; assets do not yet run through the normal FSMs. The
-[architecture audit](../../docs/asset-loop-in-architecture.md) describes their
-replacement with existing deposit and Loop In actions. The behavior below
-remains the current implementation until that refactor is complete.
-The adapter calls the existing LND signer and chain services and the SDK's
-custom-anchor builder. Tapd journals publications and constructs confirmed
-proofs. There is no separate asset daemon, transport, or signer database.
+Asset deposits and swaps run in the existing deposit and static Loop In FSMs.
+They use the ordinary SQL records, manager admission and startup recovery.
+Asset metadata contains native quantities, the asset contract and proofs;
+Bitcoin amount fields continue to contain only the anchor's satoshis.
 
-The first version accepts one whole isolated asset output per deposit and
-one deposit per swap. Payout uses the same compressed asset group and the exact
-requested native quantity, equal to the deposit minus the agreed fee. The
-adapter rejects passive assets, multiple assets in an anchor, and partial
-deposit spending. Bitcoin funds on-chain transaction fees; the request
-separately caps the server's native asset debit.
+The first version accepts one whole isolated asset output per deposit and one
+per swap. The Lightning payout uses the same asset group and exact native
+quantity. The difference between the deposit and payout is the agreed asset
+fee. Partial deposits, change, passive assets and multipart payments are not
+supported initially. Bitcoin pays the anchor transaction fees.
 
-## Configure and use
+## Configuration and commands
 
-Supply these options to normal `loopd`, alongside its network, LND and
-Loop server configuration:
+Supply the ordinary `loopd` network, LND and server configuration together with:
 
 ```text
 --tapd.activate
@@ -34,121 +26,80 @@ Loop server configuration:
 --assetbitcoinpassword=<Bitcoin RPC password>
 ```
 
-Use `assetbitcointls` for a private Bitcoin RPC CA. This connection only checks
-current UTXO and mempool spendability; normal LND services provide blocks and
-spend notifications. Anchor fees default to 1000 satoshis with a 2000-satoshi
+`assetbitcointls` supplies a private Bitcoin RPC CA. This connection checks
+current UTXO and mempool spendability; normal LND services supply blocks and
+spend notifications. Anchor fees default to 1000 satoshis, with a 2000-satoshi
 funding cap (`assetfeesat` and `assetmaxfeesat`). Startup checks the tapd network
-and signing-node identity before restoring asset exclusions.
-
-The normal `loop static asset` command group provides:
+and signing-node identity before normal recovery starts.
 
 ```sh
 loop static asset deposit --group_key=<group> --amount=1000
 loop static asset deposits
-loop static asset in --group_key=<group> --amount=1000 \
-  --utxo=<txid:index> --max_asset_debit=1000 --max_asset_fee=0
+loop static asset in --group_key=<group> --amount=990 \
+  --utxo=<txid:index> --max_asset_debit=990 --max_asset_fee=10
 loop static asset swaps
 loop static asset refund --utxo=<txid:index>
 ```
 
+The example swaps a 1000-unit deposit for a 990-unit Lightning payout and a
+10-unit service fee. `max_asset_debit` separately caps the server's native
+outgoing payment, including routing. Identifiers must use canonical lowercase
+hex. Wait for a confirmed deposit before starting a swap.
+
+Creation prints a request ID. A funding request uses that ID as its ordinary
+deposit ID. A swap stores it alongside its normal payment hash; replaying the
+same request returns that swap. An initial attempt interrupted before claim
+exposure is abandoned by normal recovery. A new attempt needs a new request
+ID. The implementation does not promise to resume every interrupted RPC.
+
 These commands reuse `StaticAddressLoopIn`, `ListStaticAddressDeposits` and
-`ListStaticAddressSwaps`. Set `asset_params` on a loop-in request, and
-`assets_only` on either list request. The response carries `asset_request`,
-`asset_deposits` or `asset_requests`; Bitcoin amount fields remain in satoshis
-and are not reused for assets. Requests without these fields keep the existing
-Bitcoin behavior. The asset outpoint stays inside `asset_params`; every
-Bitcoin request field remains empty. Older daemons that ignore this variant
-reject the missing Bitcoin selection before starting a swap. The CLI requires
-`asset_request` in creation responses and an `assets_only` acknowledgement in
-list responses, including empty lists. Each operation uses its own macaroon
-permissions without an unrelated capability request. An asset loop-in rejects Bitcoin-only options, including
-satoshi amounts and fees, instead of ignoring them. `CreateAssetDeposit` and
-`RefundAssetDeposit` remain separate operations because they fund a custom
-asset anchor and recover its original CSV script.
+`ListStaticAddressSwaps`: `asset_params` selects native swaps, and `assets_only`
+selects native status records. The response contains `asset_request`,
+`asset_deposits` or `asset_requests`. The legacy Bitcoin status stream has no
+native quantity fields, so native status is available in the static lists.
+Bitcoin request fields remain empty for asset operations; older daemons reject
+an asset request they do not understand. The CLI checks the asset response
+acknowledgement. Asset requests reject unrelated Bitcoin-only options.
+`CreateAssetDeposit` funds an asset anchor and `RefundAssetDeposit` starts its
+original CSV expiry action.
 
-The deposit and swap commands print a random request ID before sending the RPC.
-After an interrupted response, retry the identical command with
-`--request_id=<that ID>`. Reusing an ID with different terms is rejected.
-Amounts are native asset units; group keys and outpoints use canonical lowercase
-hex. Wait for a nonzero deposit confirmation height before starting the swap.
+## Ownership and recovery
 
-For `in`, `amount` is the exact Lightning payout. The whole selected deposit is
-spent, and its excess over that payout must equal the configured server fee and
-fit `max_asset_fee`. For example, a 1000-unit deposit with a 10-unit server fee
-uses `--amount=990 --max_asset_fee=10`. No change output is created. The separate
-`max_asset_debit` bounds the server's outgoing native payment, including
-routing, and defaults to the requested payout.
+The SDK kit lives in Loop and uses the normal LND signer and chain services.
+Tapd publishes transfers and constructs confirmed proofs. There is no
+companion process, private signer database or asset execution journal.
 
-Funding first creates or retrieves the registered static address and stores its
-client key locator, client/server public keys and CSV delay. The adapter funds
-the asset anchor using those keys. A swap request atomically reserves that
-anchor and saves the exact server request bytes before contacting the server.
-Subsequent retries preserve the request ID, proof, offer, invoice, quote and
-recovery transactions. On the wire, `ServerStaticAddressLoopIn` and
-`PushStaticAddressHtlcSigs` carry typed asset payloads with protocol `ASSET_V1`.
-The immutable inner offer request remains the digest and restart identity;
-Bitcoin fields stay empty. Separate prepare, fallback, status, cancellation
-and refund-report operations retain the additional recovery boundaries.
+The deposit manager stores the final signed funding package on the normal
+`Deposit` before publication. Its FSM publishes and confirms it, then enters
+`Deposited`. Proof-bearing deposits are excluded from Bitcoin selection and
+Bitcoin-only spending actions. Their original CSV refund runs in the same
+expiry states, using an asset transaction and proof operation instead.
 
-## Recovery and shared ownership
+`StaticAddressLoopIn.Asset` carries the server offer, HOLD invoice, unsigned
+recovery package, complete fallback and accepted asset HTLC evidence. The
+ordinary swap state describes its progress. The client does not initially know
+the server's preimage; the normal SQL preimage field is nullable until learned.
 
-The normal Loop SQL database stores asset metadata on `deposits` and one
-`static_address_asset_requests` row per request. That row holds the immutable
-request, recovered offer and execution checkpoints. Native quantities remain
-in asset metadata; the deposit's ordinary amount is the Bitcoin anchor value.
-Bitcoin queries exclude asset rows, including consumed anchors.
+`InitHtlcTx` obtains the server hash, creates the ordinary swap row and
+reserves its deposit. `SignHtlcTx` creates the same-group HOLD invoice,
+prepares the asset fallback and verifies local native acceptance. It explicitly
+saves the completed fallback and monitoring state before sending claim
+signatures. MuSig nonces remain ephemeral in LND; a new attempt uses new
+sessions. Initial states recover by safely aborting, as Bitcoin swaps do.
 
-Back up the normal Loop database and the corresponding LND/tapd state.
-Funding checkpoints belong to the deposit request. The unsigned fallback is
-fixed with payment preparation, and the completed fallback is stored before
-client claim authority is sent. Incomplete signing rounds use fresh LND MuSig2
-sessions after restart. A local nonce is never paired with a different peer
-nonce. Server exposure and deposit locks remain set when a round is replaced.
-Already-completed fallback signatures are replayed without a signing session.
-Earlier unshipped draft runtime journals are not an upgrade format.
+After exposure, `MonitorInvoiceAndHtlcTx` retries the conditional signature
+submission only while the same local HTLC and expiry remain valid. Server
+preimage disclosure permits local settlement. The ordinary `PaymentReceived`
+action finalizes the deposit immediately after verified local settlement; the
+client does not track the server's claim proof for completion.
 
-On startup, the shared deposit manager restores asset exclusions before
-recovering Bitcoin deposits. Registration, Bitcoin deposit creation and
-selection share its mutex. A conflicting stored Bitcoin deposit stops startup.
-The SQL transaction that records terminal cleanup also releases the matching
-reservation and records its deposit state. There is no separate release-receipt
-journal. A failed transaction leaves both progress and ownership unchanged.
+On timeout, the normal swap FSM publishes its saved fallback and asset refund.
+A confirmed spendable refund permits invoice cancellation and deposit
+finalization. An unavailable server cannot veto that local path. Reporting the
+refund proof is best effort. Original deposits locked in `LoopingIn` stay
+under the swap FSM's recovery rather than running a competing CSV refund.
 
-The normal Loop In manager resumes pending funding/offer requests and active
-sessions in bounded batches alongside Bitcoin notifications. Active execution
-recovery runs independently of pending offer requests; a stalled offer cannot
-block an existing swap's recovery. Shutdown cancels and joins both before
-closing the shared database and node connections.
-The shared Loop In and deposit transition policies govern those sessions. Once
-claim signatures may have escaped, only local settled payout plus confirmed
-claim proof, or a confirmed spendable refund proof, can release the reservation.
-The client can discover the execution secret from the chain when the server is
-offline. Refund proof reporting retries independently after local success.
-Claim proof hints from the server receive strict proof verification within
-a bounded portion of the recovery deadline. Missing, invalid or stale hints
-fall back to independent chain discovery with the remaining budget.
-Optional server proof and cancellation reports use a one-second timeout so an
-unresponsive peer cannot consume a later request's recovery deadline.
-The normal server connection also makes waiting for L402 authentication
-serialization cancelable for unary calls and stream establishment. A stalled
-authenticated request cannot trap another swap's chain-recovery budget.
-
-At the original deposit CSV maturity, unreserved deposits automatically queue
-an original-script refund. The `refund` command queues the same deterministic
-operation explicitly. A pending offer request or active swap keeps its
-reservation, so it cannot race this refund. The adapter independently verifies
-maturity, live inputs and asset proofs before signing. Reservations remain held
-until a confirmed refund proof is saved atomically with the consumed marker.
-
-A network timeout preserves the request and its reservation. Recovery retries
-the exact saved bytes. If an offer expires before any client controller was
-created, the manager records cancellation and releases that unstarted request.
-If the offer response was lost, it keeps the reservation until the original
-CSV maturity. It then checks that no active journal owns the request or anchor,
-records cancellation atomically, and permits the original refund. Canceled
-requests never restart offer creation. An exposed controller keeps its lock
-until its normal proof-gated recovery completes.
-
-If a reorg relocates a refund before invoice cancellation, the controller
-replaces its stored proof only after verifying the current spendable refund.
-The server report uses that new proof; terminal records remain immutable.
+Back up the normal Loop database and corresponding LND/tapd state. Earlier
+unshipped controller/request journals are not an upgrade format. See the
+[state mapping](asset-fsm.md) and [production priorities](../../docs/asset-loop-in-readiness.md)
+for the remaining release requirements.

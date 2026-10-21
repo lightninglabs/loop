@@ -151,7 +151,7 @@ func (r *Driver) recoverSpend(ctx context.Context, s *swapContext,
 		c.Output.OPTrueSpend.WitnessStack()); err != nil {
 		return nil, err
 	}
-	fallbackProof, err := r.fallbackProof(ctx, s)
+	fallbackProof, err := r.fallbackProof(ctx, s, false)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (r *Driver) recoverSpend(ctx context.Context, s *swapContext,
 	}
 	var tx transaction
 	err = r.signScriptSpend(
-		ctx, plan, &tx, key, unlock, func() error { return nil },
+		ctx, plan, &tx, key, unlock,
 	)
 	if err != nil {
 		return nil, err
@@ -298,7 +298,7 @@ func (r *Driver) discoverOutcome(ctx context.Context, s *swapContext,
 	if !spendsLeaf(found, out, spend) {
 		return nil, swapkit.ErrPending
 	}
-	fallbackProof, err := r.fallbackProof(ctx, s)
+	fallbackProof, err := r.fallbackProof(ctx, s, true)
 	if err != nil {
 		return nil, err
 	}
@@ -408,8 +408,10 @@ func (r *Driver) LookupPreimage(ctx context.Context,
 
 // fallbackProof recovers a complete fallback even if the client's final reply
 // was lost: the fixed unsigned transaction identifies its observed witness.
+// A confirmed successor also proves the fallback was mined; importing that
+// lineage must not try to broadcast its already-spent anchor.
 func (r *Driver) fallbackProof(ctx context.Context,
-	s *swapContext) ([]byte, error) {
+	s *swapContext, observed bool) ([]byte, error) {
 
 	if s.Fallback.Package == nil {
 		return nil, swapkit.ErrPending
@@ -426,7 +428,7 @@ func (r *Driver) fallbackProof(ctx context.Context,
 		return nil, err
 	}
 	if len(s.Fallback.Final) > 0 {
-		return r.publish(ctx, s.Fallback)
+		return r.logAndExport(ctx, s.Fallback, observed)
 	}
 	pkg := s.Fallback.Package
 	packet, err := decodePSBT(pkg.AnchorPsbt)

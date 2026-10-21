@@ -7,7 +7,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/loopin/flow"
 	"github.com/lightninglabs/loop/staticaddr/version"
 )
 
@@ -53,6 +52,12 @@ func NewFSM(ctx context.Context, loopIn *StaticAddressLoopIn, cfg *Config,
 	}
 
 	loopInStates := loopInFsm.LoopInStatesV0()
+	if loopIn.Asset != nil {
+		if cfg.Assets == nil {
+			return nil, fmt.Errorf("asset services unavailable for recovery")
+		}
+		loopInStates = loopInFsm.assetStates()
+	}
 	switch params.ProtocolVersion {
 	case version.ProtocolVersion_V0:
 
@@ -79,12 +84,12 @@ func NewFSM(ctx context.Context, loopIn *StaticAddressLoopIn, cfg *Config,
 // States that the loop-in fsm can transition to.
 var (
 	// InitHtlcTx initiates the htlc tx creation with the server.
-	InitHtlcTx = fsm.StateType(flow.InitHtlcTx)
+	InitHtlcTx = fsm.StateType("InitHtlcTx")
 
 	// SignHtlcTx partially signs the htlc transaction with the received
 	// server nonces. The client doesn't hold a final signature hence can't
 	// publish the htlc.
-	SignHtlcTx = fsm.StateType(flow.SignHtlcTx)
+	SignHtlcTx = fsm.StateType("SignHtlcTx")
 
 	// MonitorInvoiceAndHtlcTx monitors the swap invoice payment and the
 	// htlc transaction confirmation.
@@ -94,39 +99,39 @@ var (
 	// this case.
 	// If the server pays the swap invoice as expected we can stop to
 	// monitor the htlc timeout path.
-	MonitorInvoiceAndHtlcTx = fsm.StateType(flow.MonitorInvoiceAndHtlcTx)
+	MonitorInvoiceAndHtlcTx = fsm.StateType("MonitorInvoiceAndHtlcTx")
 
 	// PaymentReceived is the state where the swap invoice was paid by the
 	// server. The client can now sign the sweepless sweep transaction.
-	PaymentReceived = fsm.StateType(flow.PaymentReceived)
+	PaymentReceived = fsm.StateType("PaymentReceived")
 
 	// SweepHtlcTimeout is the state where the htlc timeout path is
 	// published because the server did not pay the invoice on time.
-	SweepHtlcTimeout = fsm.StateType(flow.SweepHtlcTimeout)
+	SweepHtlcTimeout = fsm.StateType("SweepHtlcTimeout")
 
 	// MonitorHtlcTimeoutSweep monitors the htlc timeout sweep transaction
 	// confirmation.
-	MonitorHtlcTimeoutSweep = fsm.StateType(flow.MonitorHtlcTimeoutSweep)
+	MonitorHtlcTimeoutSweep = fsm.StateType("MonitorHtlcTimeoutSweep")
 
 	// HtlcTimeoutSwept is the state where the htlc timeout sweep
 	// transaction was sufficiently confirmed.
-	HtlcTimeoutSwept = fsm.StateType(flow.HtlcTimeoutSwept)
+	HtlcTimeoutSwept = fsm.StateType("HtlcTimeoutSwept")
 
 	// Succeeded is the state the swap is in if it was successful.
-	Succeeded = fsm.StateType(flow.Succeeded)
+	Succeeded = fsm.StateType("Succeeded")
 
 	// SucceededTransitioningFailed is the state the swap is in if the swap
 	// payment was received but the client was not able to transition
 	// the deposits to the looped-in state.
-	SucceededTransitioningFailed = fsm.StateType(flow.SucceededTransitioningFailed) //nolint:lll
+	SucceededTransitioningFailed = fsm.StateType("SucceededTransitioningFailed") //nolint:lll
 
 	// UnlockDeposits is the state where the deposits are reset. This
 	// happens when the state machine encountered an error and the swap
 	// process needs to start from the beginning.
-	UnlockDeposits = fsm.StateType(flow.UnlockDeposits)
+	UnlockDeposits = fsm.StateType("UnlockDeposits")
 
 	// Failed is the state the swap is in if it failed.
-	Failed = fsm.StateType(flow.Failed)
+	Failed = fsm.StateType("Failed")
 )
 
 var PendingStates = []fsm.StateType{
@@ -144,51 +149,98 @@ var AllStates = append(
 
 // Events.
 var (
-	OnInitHtlc                  = fsm.EventType(flow.OnInitHtlc)
-	OnHtlcInitiated             = fsm.EventType(flow.OnHtlcInitiated)
-	OnHtlcTxSigned              = fsm.EventType(flow.OnHtlcTxSigned)
-	OnSweepHtlcTimeout          = fsm.EventType(flow.OnSweepHtlcTimeout)
-	OnHtlcTimeoutSweepPublished = fsm.EventType(
-		flow.OnHtlcTimeoutSweepPublished,
-	)
-	OnHtlcTimeoutSwept = fsm.EventType(flow.OnHtlcTimeoutSwept)
-	OnPaymentReceived  = fsm.EventType(flow.OnPaymentReceived)
-	OnSwapTimedOut     = fsm.EventType(flow.OnSwapTimedOut)
-	OnSucceeded        = fsm.EventType(flow.OnSucceeded)
-	OnRecover          = fsm.EventType(flow.OnRecover)
+	OnInitHtlc                  = fsm.EventType("OnInitHtlc")
+	OnHtlcInitiated             = fsm.EventType("OnHtlcInitiated")
+	OnHtlcTxSigned              = fsm.EventType("OnHtlcTxSigned")
+	OnSweepHtlcTimeout          = fsm.EventType("OnSweepHtlcTimeout")
+	OnHtlcTimeoutSweepPublished = fsm.EventType("OnHtlcTimeoutSweepPublished")
+	OnHtlcTimeoutSwept          = fsm.EventType("OnHtlcTimeoutSwept")
+	OnPaymentReceived           = fsm.EventType("OnPaymentReceived")
+	OnSwapTimedOut              = fsm.EventType("OnSwapTimedOut")
+	OnSucceeded                 = fsm.EventType("OnSucceeded")
+	OnRecover                   = fsm.EventType("OnRecover")
 )
 
 // LoopInStatesV0 returns the state and transition map for the loop-in state
 // machine.
 func (f *FSM) LoopInStatesV0() fsm.States {
-	actions := map[flow.State]fsm.Action{
-		flow.InitHtlcTx:              f.InitHtlcAction,
-		flow.SignHtlcTx:              f.SignHtlcTxAction,
-		flow.MonitorInvoiceAndHtlcTx: f.MonitorInvoiceAndHtlcTxAction,
-		flow.SweepHtlcTimeout:        f.SweepHtlcTimeoutAction,
-		flow.MonitorHtlcTimeoutSweep: f.MonitorHtlcTimeoutSweepAction,
-		flow.PaymentReceived:         f.PaymentReceivedAction,
-		flow.UnlockDeposits:          f.UnlockDepositsAction,
+	return fsm.States{
+		fsm.EmptyState: fsm.State{
+			Transitions: fsm.Transitions{
+				OnInitHtlc: InitHtlcTx,
+			},
+			Action: fsm.NoOpAction,
+		},
+		InitHtlcTx: fsm.State{
+			Transitions: fsm.Transitions{
+				OnHtlcInitiated: SignHtlcTx,
+				OnRecover:       UnlockDeposits,
+				fsm.OnError:     UnlockDeposits,
+			},
+			Action: f.InitHtlcAction,
+		},
+		SignHtlcTx: fsm.State{
+			Transitions: fsm.Transitions{
+				OnHtlcTxSigned: MonitorInvoiceAndHtlcTx,
+				OnRecover:      UnlockDeposits,
+				fsm.OnError:    UnlockDeposits,
+			},
+			Action: f.SignHtlcTxAction,
+		},
+		MonitorInvoiceAndHtlcTx: fsm.State{
+			Transitions: fsm.Transitions{
+				OnPaymentReceived:  PaymentReceived,
+				OnSweepHtlcTimeout: SweepHtlcTimeout,
+				OnSwapTimedOut:     Failed,
+				OnRecover:          MonitorInvoiceAndHtlcTx,
+				fsm.OnError:        UnlockDeposits,
+			},
+			Action: f.MonitorInvoiceAndHtlcTxAction,
+		},
+		SweepHtlcTimeout: fsm.State{
+			Transitions: fsm.Transitions{
+				OnHtlcTimeoutSweepPublished: MonitorHtlcTimeoutSweep,
+				OnRecover:                   SweepHtlcTimeout,
+				fsm.OnError:                 Failed,
+			},
+			Action: f.SweepHtlcTimeoutAction,
+		},
+		MonitorHtlcTimeoutSweep: fsm.State{
+			Transitions: fsm.Transitions{
+				OnHtlcTimeoutSwept: HtlcTimeoutSwept,
+				OnRecover:          MonitorHtlcTimeoutSweep,
+				fsm.OnError:        Failed,
+			},
+			Action: f.MonitorHtlcTimeoutSweepAction,
+		},
+		PaymentReceived: fsm.State{
+			Transitions: fsm.Transitions{
+				OnSucceeded: Succeeded,
+				OnRecover:   Succeeded,
+				fsm.OnError: SucceededTransitioningFailed,
+			},
+			Action: f.PaymentReceivedAction,
+		},
+		HtlcTimeoutSwept: fsm.State{
+			Action: fsm.NoOpAction,
+		},
+		Succeeded: fsm.State{
+			Action: fsm.NoOpAction,
+		},
+		SucceededTransitioningFailed: fsm.State{
+			Action: fsm.NoOpAction,
+		},
+		UnlockDeposits: fsm.State{
+			Transitions: fsm.Transitions{
+				OnRecover:   UnlockDeposits,
+				fsm.OnError: Failed,
+			},
+			Action: f.UnlockDepositsAction,
+		},
+		Failed: fsm.State{
+			Action: fsm.NoOpAction,
+		},
 	}
-	states := make(fsm.States)
-	for state, transitions := range flow.States(flow.BitcoinV0) {
-		action := actions[state]
-		if action == nil {
-			action = fsm.NoOpAction
-		}
-		var events fsm.Transitions
-		if len(transitions) != 0 {
-			events = make(fsm.Transitions, len(transitions))
-			for event, next := range transitions {
-				eventType := fsm.EventType(event)
-				events[eventType] = fsm.StateType(next)
-			}
-		}
-		states[fsm.StateType(state)] = fsm.State{
-			Transitions: events, Action: action,
-		}
-	}
-	return states
 }
 
 // updateLoopIn is called after every action and updates the loop-in in the db.

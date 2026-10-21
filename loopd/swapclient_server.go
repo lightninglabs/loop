@@ -2233,7 +2233,7 @@ func (s *swapClientServer) ListStaticAddressSwaps(ctx context.Context,
 
 	var clientSwaps []*looprpc.StaticAddressLoopInSwap
 	for _, swp := range swaps {
-		if swp == nil {
+		if swp == nil || swp.Asset != nil {
 			continue
 		}
 
@@ -2396,7 +2396,7 @@ func (s *swapClientServer) staticAddressLoopInSwapInfos(
 
 	swapInfos := make([]*loop.SwapInfo, 0, len(staticSwaps))
 	for _, swp := range staticSwaps {
-		if swp == nil {
+		if swp == nil || swp.Asset != nil {
 			continue
 		}
 

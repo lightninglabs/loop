@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 )
@@ -378,7 +377,7 @@ func (r *Driver) BuildFallback(ctx context.Context,
 // BeginFallback owns no persistent secret. Its caller closes the round after
 // the complete fallback is saved, or abandons it after any ambiguous failure.
 func (r *Driver) BeginFallback(ctx context.Context, offer swapkit.Offer,
-	raw []byte) (*assetexec.FallbackRound, error) {
+	raw []byte) (*swapkit.FallbackRound, error) {
 
 	req, err := r.validateRecovery(ctx, offer, raw)
 	if err != nil {
@@ -393,40 +392,40 @@ func (r *Driver) BeginFallback(ctx context.Context, offer swapkit.Offer,
 	if err != nil {
 		return nil, err
 	}
-	return &assetexec.FallbackRound{
+	return &swapkit.FallbackRound{
 		Nonce: round.Nonce(), Close: func() { round.Close(ctx) },
 		Finalize: func(ctx context.Context, raw []byte) (
-			assetexec.Fallback, error) {
+			swapkit.Fallback, error) {
 
 			var b serverFallback
 			if swapkit.Decode(raw, &b) != nil ||
 				b.ClientNonce != round.Nonce() ||
 				b.PackageDigest != req.Package.CommittedPackageDigest {
 
-				return assetexec.Fallback{}, swapkit.ErrInvalid
+				return swapkit.Fallback{}, swapkit.ErrInvalid
 			}
 			signed, err := round.Finalize(ctx, b.ServerNonce, b.Partial)
 			if err != nil {
-				return assetexec.Fallback{}, err
+				return swapkit.Fallback{}, err
 			}
 			packet, err := decodePSBT(signed.AnchorPsbt)
 			if err != nil {
-				return assetexec.Fallback{}, err
+				return swapkit.Fallback{}, err
 			}
 			if err := psbt.MaybeFinalizeAll(packet); err != nil {
-				return assetexec.Fallback{}, err
+				return swapkit.Fallback{}, err
 			}
 			final, err := encodePSBT(packet)
 			if err != nil {
-				return assetexec.Fallback{}, err
+				return swapkit.Fallback{}, err
 			}
 			if err := req.Package.VerifyFinalAnchorPSBT(final); err != nil {
-				return assetexec.Fallback{}, err
+				return swapkit.Fallback{}, err
 			}
 			result, err := json.Marshal(transaction{
 				Package: req.Package, Final: final,
 			})
-			return assetexec.Fallback{
+			return swapkit.Fallback{
 				Bundle: result, ClaimSignatures: result,
 			}, err
 		},

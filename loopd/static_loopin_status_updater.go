@@ -57,6 +57,11 @@ func newStaticLoopInStatusUpdater(statusChan chan<- loop.SwapInfo,
 // forwards it to the status stream unless either context is canceled.
 func (u *staticLoopInStatusUpdater) sendUpdate(ctx context.Context,
 	swp *loopin.StaticAddressLoopIn) error {
+	// Native quantities are exposed through the asset variant of the static
+	// swap list; the legacy status stream has only Bitcoin amount fields.
+	if swp.Asset != nil {
+		return nil
+	}
 
 	// The on-chain cost is the cost of the deposits mapped to the swap,
 	// as in ListStaticAddressSwaps. The swap's own deposits can include

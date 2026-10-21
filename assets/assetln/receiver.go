@@ -262,8 +262,9 @@ func (r *Receiver) Settle(ctx context.Context, hash, preimage [32]byte) error {
 	return err
 }
 
-// CancelBeforeExposure cancels an uncommitted invoice. The durable client
-// controller, not a peer request, must establish that no claim was exposed.
+// CancelBeforeExposure cancels an invoice when the owning swap FSM has
+// established that no claim was exposed, or a confirmed spendable refund has
+// resolved the on-chain exposure. A peer request cannot authorize cancellation.
 func (r *Receiver) CancelBeforeExposure(ctx context.Context,
 	hash [32]byte) error {
 

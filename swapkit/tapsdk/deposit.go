@@ -31,15 +31,6 @@ type depositContract struct {
 	Output    sdk.CustomAnchorAssetOutputSummary `json:"Output"`
 }
 
-// DepositFunding is the wallet funding checkpoint stored by the normal
-// deposit request. It contains no keys or signer sessions.
-//
-//nolint:tagliatelle // Preserve existing serialized funding field names.
-type DepositFunding struct {
-	Plan        *sdk.CustomAnchorRequest `json:"Plan"`
-	Transaction transaction              `json:"Transaction"`
-}
-
 // depositRecord is derived from the normal inventory and address key locator.
 type depositRecord struct {
 	Request swapkit.CreateDepositRequest
@@ -72,149 +63,161 @@ func (r *Driver) checkKey(ctx context.Context, family int32,
 	return nil
 }
 
-// CreateDeposit resumes the normal manager's persisted funding checkpoint.
-// The checkpoint callback must commit before any completed transaction is
-// published. Retrying a lost publication response uses the saved package.
-func (r *Driver) CreateDeposit(ctx context.Context,
-	request swapkit.CreateDepositRequest, record *DepositFunding,
-	save func() error) (swapkit.Deposit, error) {
+// BuildDeposit funds and signs an asset deposit without publishing it. The
+// deposit FSM saves the returned package before calling PublishDeposit.
+func (r *Driver) BuildDeposit(ctx context.Context,
+	request swapkit.CreateDepositRequest) (swapkit.Deposit, []byte, error) {
 
-	if record == nil || save == nil {
-		return swapkit.Deposit{}, swapkit.ErrInvalid
-	}
-	if record.Plan == nil {
-		if request.RequestID == ([32]byte{}) || request.Amount == 0 ||
-			request.CSV == 0 || r.cfg.MaxFeeSat > 1_000_000 {
+	if request.RequestID == ([32]byte{}) || request.Amount == 0 ||
+		request.CSV == 0 || r.cfg.MaxFeeSat > 1_000_000 {
 
-			return swapkit.Deposit{}, swapkit.ErrInvalid
-		}
-		err := r.checkKey(ctx, request.KeyFamily, request.KeyIndex,
-			request.ClientKey)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		dk, err := NewDepositKit(DepositKitParams{
-			ClientKey: request.ClientKey,
-			ServerKey: request.ServerKey,
-			CSVExpiry: request.CSV,
-		})
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		ref := sdk.AssetRefFromGroupKey(request.GroupKey)
-		inputProof, err := r.fundingProof(ctx, request)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		p, err := lastProof(inputProof)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		keys, err := r.cfg.Wallet.DeriveKeys(ctx)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		value := 330 + 4*r.cfg.MaxFeeSat
-		output, err := dk.Output(SwapOutputParams{
-			ID: "deposit", AssetRef: ref, Amount: request.Amount,
-			AnchorValueSat:   value,
-			AssetInternalKey: keys.ScriptKey.KeyDesc,
-		})
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		anchor, err := anchorTemplate(p, output.Anchor.InternalKey,
-			int64(value), nil)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		key, err := sdk.ParseXOnlyPubKey(schnorr.SerializePubKey(
-			p.InclusionProof.InternalKey))
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		plan := customRequest(sdk.CustomAssetInput{
-			ID: "wallet", AssetRef: ref, Amount: request.Amount,
-			ProofFile: inputProof,
-			Witness: sdk.CustomAssetWitnessPlan{
-				Mode: sdk.CustomAssetWitnessBackendSigner,
-			},
-		}, output, anchor, sdk.CustomAnchorInputSigningPlan{
-			InputIndex: 0,
-			KeyPath: &sdk.CustomAnchorKeyPathSigningPlan{
-				Signer: key,
-			},
-		})
-		rate, err := sdk.NewFeeRateSatPerVByte(max(1, r.cfg.FeeSat/200))
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		plan.Funding = sdk.CustomAnchorFundingPlan{
-			Mode: sdk.CustomAnchorFundingWalletFunded,
-			WalletFunded: &sdk.CustomAnchorWalletFunding{
-				ChangeOutput: sdk.AnchorChangeOutput{
-					Mode: sdk.AnchorChangeOutputAdd,
-				},
-				Fee: sdk.AnchorFee{
-					Mode:    sdk.AnchorFeeSatPerVByte,
-					FeeRate: rate},
-				MaxFeeSat:             r.cfg.MaxFeeSat,
-				CustomLockID:          request.RequestID[:],
-				LockExpirationSeconds: 60,
-			},
-		}
-		record.Plan = plan
-		if err := save(); err != nil {
-			return swapkit.Deposit{}, err
-		}
+		return swapkit.Deposit{}, nil, swapkit.ErrInvalid
 	}
-	if record.Transaction.Package == nil {
-		pkg, err := r.commit(ctx, record.Plan)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		record.Transaction.Package = pkg
-		if err := save(); err != nil {
-			return swapkit.Deposit{}, err
-		}
-	}
-	if len(record.Transaction.Final) == 0 {
-		packet, err := decodePSBT(record.Transaction.Package.AnchorPsbt)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		packet, err = r.cfg.WalletKit.SignPsbt(ctx, packet)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		packet, _, err = r.cfg.WalletKit.FinalizePsbt(
-			ctx, packet, lnwallet.DefaultAccountName,
-		)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		final, err := encodePSBT(packet)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		err = record.Transaction.Package.VerifyFinalAnchorPSBT(final)
-		if err != nil {
-			return swapkit.Deposit{}, err
-		}
-		record.Transaction.Final = final
-		if err := save(); err != nil {
-			return swapkit.Deposit{}, err
-		}
-	}
-	raw, err := r.publish(ctx, record.Transaction)
+	err := r.checkKey(ctx, request.KeyFamily, request.KeyIndex,
+		request.ClientKey)
 	if err != nil {
-		return swapkit.Deposit{}, err
+		return swapkit.Deposit{}, nil, err
 	}
-	output := record.Transaction.Package.Outputs[0]
+	dk, err := NewDepositKit(DepositKitParams{
+		ClientKey: request.ClientKey,
+		ServerKey: request.ServerKey,
+		CSVExpiry: request.CSV,
+	})
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	ref := sdk.AssetRefFromGroupKey(request.GroupKey)
+	inputProof, err := r.fundingProof(ctx, request)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	p, err := lastProof(inputProof)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	keys, err := r.cfg.Wallet.DeriveKeys(ctx)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	value := 330 + 4*r.cfg.MaxFeeSat
+	output, err := dk.Output(SwapOutputParams{
+		ID: "deposit", AssetRef: ref, Amount: request.Amount,
+		AnchorValueSat:   value,
+		AssetInternalKey: keys.ScriptKey.KeyDesc,
+	})
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	anchor, err := anchorTemplate(p, output.Anchor.InternalKey,
+		int64(value), nil)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	key, err := sdk.ParseXOnlyPubKey(schnorr.SerializePubKey(
+		p.InclusionProof.InternalKey))
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	plan := customRequest(sdk.CustomAssetInput{
+		ID: "wallet", AssetRef: ref, Amount: request.Amount,
+		ProofFile: inputProof,
+		Witness: sdk.CustomAssetWitnessPlan{
+			Mode: sdk.CustomAssetWitnessBackendSigner,
+		},
+	}, output, anchor, sdk.CustomAnchorInputSigningPlan{
+		InputIndex: 0,
+		KeyPath: &sdk.CustomAnchorKeyPathSigningPlan{
+			Signer: key,
+		},
+	})
+	rate, err := sdk.NewFeeRateSatPerVByte(max(1, r.cfg.FeeSat/200))
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	plan.Funding = sdk.CustomAnchorFundingPlan{
+		Mode: sdk.CustomAnchorFundingWalletFunded,
+		WalletFunded: &sdk.CustomAnchorWalletFunding{
+			ChangeOutput: sdk.AnchorChangeOutput{
+				Mode: sdk.AnchorChangeOutputAdd,
+			},
+			Fee: sdk.AnchorFee{
+				Mode:    sdk.AnchorFeeSatPerVByte,
+				FeeRate: rate},
+			MaxFeeSat:             r.cfg.MaxFeeSat,
+			CustomLockID:          request.RequestID[:],
+			LockExpirationSeconds: 60,
+		},
+	}
+	pkg, err := r.commit(ctx, plan)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	if len(pkg.Outputs) != 1 {
+		return swapkit.Deposit{}, nil, swapkit.ErrInvalid
+	}
+	packet, err := decodePSBT(pkg.AnchorPsbt)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	packet, err = r.cfg.WalletKit.SignPsbt(ctx, packet)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	packet, _, err = r.cfg.WalletKit.FinalizePsbt(
+		ctx, packet, lnwallet.DefaultAccountName,
+	)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	final, err := encodePSBT(packet)
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	if err := pkg.VerifyFinalAnchorPSBT(final); err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	out := pkg.Outputs[0]
 	contract, err := json.Marshal(depositContract{
 		Version: 1, ClientKey: request.ClientKey,
-		ServerKey: request.ServerKey, CSV: request.CSV, Output: output,
+		ServerKey: request.ServerKey, CSV: request.CSV, Output: out,
 	})
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	raw, err := json.Marshal(transaction{Package: pkg, Final: final})
+	if err != nil {
+		return swapkit.Deposit{}, nil, err
+	}
+	return swapkit.Deposit{
+		Outpoint: sdkPoint(out.AnchorOutpoint).String(),
+		GroupKey: request.GroupKey, Amount: request.Amount,
+		Contract: contract, ValueSat: uint64(out.AnchorValueSat),
+	}, raw, nil
+}
+
+// PublishDeposit publishes the saved transaction and returns confirmed asset
+// metadata. It can repeat after a process restart without funding another spend.
+func (r *Driver) PublishDeposit(ctx context.Context, deposit swapkit.Deposit,
+	signedPackage []byte) (swapkit.Deposit, error) {
+
+	var tx transaction
+	var contract depositContract
+	if swapkit.Decode(signedPackage, &tx) != nil ||
+		swapkit.Decode(deposit.Contract, &contract) != nil ||
+		contract.Version != 1 || tx.Package == nil ||
+		len(tx.Package.Outputs) != 1 ||
+		!equal(contract.Output, tx.Package.Outputs[0]) ||
+		deposit.Outpoint != sdkPoint(contract.Output.AnchorOutpoint).String() ||
+		deposit.Amount != contract.Output.Amount ||
+		deposit.ValueSat != uint64(contract.Output.AnchorValueSat) {
+
+		return swapkit.Deposit{}, swapkit.ErrInvalid
+	}
+	group, grouped := contract.Output.AssetRef.GroupKey()
+	if !grouped || group != deposit.GroupKey {
+		return swapkit.Deposit{}, swapkit.ErrInvalid
+	}
+	raw, err := r.publish(ctx, tx)
 	if err != nil {
 		return swapkit.Deposit{}, err
 	}
@@ -222,15 +225,14 @@ func (r *Driver) CreateDeposit(ctx context.Context,
 	if err != nil {
 		return swapkit.Deposit{}, err
 	}
-	if uint64(p.BlockHeight)+uint64(request.CSV) > math.MaxUint32 {
+	if uint64(p.BlockHeight)+uint64(contract.CSV) > math.MaxUint32 {
 		return swapkit.Deposit{}, swapkit.ErrInvalid
 	}
-	deposit := swapkit.Deposit{
-		Outpoint: p.OutPoint().String(), GroupKey: request.GroupKey,
-		Amount: request.Amount, Proof: raw, Contract: contract,
-		ConfirmationHeight: p.BlockHeight,
-		RefundHeight:       p.BlockHeight + request.CSV,
-		ValueSat:           uint64(output.AnchorValueSat),
+	deposit.Proof = raw
+	deposit.ConfirmationHeight = p.BlockHeight
+	deposit.RefundHeight = p.BlockHeight + contract.CSV
+	if _, err := r.verifyDeposit(ctx, deposit, false); err != nil {
+		return swapkit.Deposit{}, err
 	}
 	return deposit, nil
 }

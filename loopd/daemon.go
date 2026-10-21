@@ -727,7 +727,6 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	assetConfig, err := d.newAssetConfig(
 		swapClient, staticAddressManager, depositManager,
-		staticAddressLoopInStore,
 	)
 	if err != nil {
 		return fmt.Errorf("initialize asset loop-in: %w", err)

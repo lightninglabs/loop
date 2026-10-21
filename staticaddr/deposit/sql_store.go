@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -43,7 +45,17 @@ func NewSqlStore(db *loopdb.BaseDB) *SqlStore {
 
 // CreateDeposit creates a static address deposit record in the database.
 func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
+	var assetData []byte
+	if deposit.Asset != nil {
+		var err error
+		assetData, err = json.Marshal(deposit.Asset)
+		if err != nil {
+			return err
+		}
+	}
 	createArgs := sqlc.CreateDepositParams{
+		AssetData:            assetData,
+		AssetTx:              deposit.AssetTx,
 		DepositID:            deposit.ID[:],
 		TxHash:               deposit.Hash[:],
 		OutIndex:             int32(deposit.Index),
@@ -118,7 +130,17 @@ func (s *SqlStore) UpdateDeposit(ctx context.Context, deposit *Deposit) error {
 		finalizedWithdrawalTx = hex.EncodeToString(buffer.Bytes())
 	}
 
+	var assetData []byte
+	if deposit.Asset != nil {
+		var err error
+		assetData, err = json.Marshal(deposit.Asset)
+		if err != nil {
+			return err
+		}
+	}
 	updateArgs := sqlc.UpdateDepositParams{
+		AssetData:          assetData,
+		AssetTx:            deposit.AssetTx,
 		DepositID:          deposit.ID[:],
 		TxHash:             txHash,
 		OutIndex:           outIndex.Int32,
@@ -310,9 +332,18 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		swapHash = &hash
 	}
 
+	var asset *swapkit.Deposit
+	if len(row.AssetData) != 0 {
+		asset = new(swapkit.Deposit)
+		if err := json.Unmarshal(row.AssetData, asset); err != nil {
+			return nil, err
+		}
+	}
 	onchainCost := toOnchainCost(row.OnchainCost, row.OnchainCostKnown)
 
 	return &Deposit{
+		Asset:       asset,
+		AssetTx:     row.AssetTx,
 		ID:          id,
 		OnchainCost: onchainCost,
 		state:       fsm.StateType(lastUpdate.UpdateState),

@@ -3,6 +3,7 @@ package swapkit
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,7 +15,7 @@ var (
 	ErrPending = errors.New("asset transaction pending")
 )
 
-// Terms matches the durable coordinator's public terms. Admission is private
+// Terms contains the agreed asset swap terms. Admission is private
 // server recovery data containing authenticated registration and input proofs.
 //
 //nolint:tagliatelle // Preserve the existing recovery and wire format.
@@ -75,7 +76,7 @@ type Deposit struct {
 }
 
 // Admission binds client-supplied proofs to server-authenticated registration
-// and server policy before the execution journal reserves any deposit.
+// and server policy before the normal Loop In flow reserves any deposit.
 //
 //nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Admission struct {
@@ -197,3 +198,11 @@ type RefundDepositRequest struct {
 // PublicRPCMaxBytes bounds complete external protobuf requests and responses.
 // Complete proofs and packages must fit within the external RPC limit.
 const PublicRPCMaxBytes = 16 << 20
+
+// FallbackRound owns one ephemeral wallet session. An interrupted attempt uses
+// fresh nonces for the same unsigned package; secret nonces stay in LND.
+type FallbackRound struct {
+	Nonce    [66]byte
+	Finalize func(context.Context, []byte) (Fallback, error)
+	Close    func()
+}

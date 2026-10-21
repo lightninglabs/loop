@@ -43,7 +43,7 @@ func assetOperationError(err error) error {
 	return status.Error(codes.Unavailable, "asset operation unavailable")
 }
 
-// CreateAssetDeposit durably queues funding with registered static keys.
+// CreateAssetDeposit starts the normal deposit FSM with registered static keys.
 func (s *swapClientServer) CreateAssetDeposit(ctx context.Context,
 	request *looprpc.CreateAssetDepositRequest) (
 	*looprpc.AssetRequestStatus, error) {
@@ -57,18 +57,18 @@ func (s *swapClientServer) CreateAssetDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	err = s.staticLoopInManager.CreateAssetDeposit(
+	d, err := s.staticLoopInManager.CreateAssetDeposit(
 		ctx, id, group, request.GetAmount(),
 	)
 	if err != nil {
 		return nil, assetOperationError(err)
 	}
 	return &looprpc.AssetRequestStatus{
-		RequestId: id[:], State: "queued", DepositRequest: true,
+		RequestId: d.ID[:], State: string(d.GetState()), DepositRequest: true,
 	}, nil
 }
 
-// listAssetDeposits reports native quantities and durable reservation owners.
+// listAssetDeposits reports native quantities from normal deposit records.
 func (s *swapClientServer) listAssetDeposits(ctx context.Context,
 	request *looprpc.ListStaticAddressDepositsRequest) (
 	*looprpc.ListStaticAddressDepositsResponse, error) {
@@ -95,20 +95,20 @@ func (s *swapClientServer) listAssetDeposits(ctx context.Context,
 	result := &looprpc.ListStaticAddressDepositsResponse{AssetsOnly: true}
 	for _, entry := range entries {
 		if len(request.Outpoints) > 0 && !slices.Contains(
-			request.Outpoints, entry.Deposit.Outpoint,
+			request.Outpoints, entry.Asset.Outpoint,
 		) {
 
 			continue
 		}
 		result.AssetDeposits = append(result.AssetDeposits,
 			&looprpc.AssetDeposit{
-				Outpoint:           entry.Deposit.Outpoint,
-				GroupKey:           entry.Deposit.GroupKey[:],
-				Amount:             entry.Deposit.Amount,
-				ConfirmationHeight: entry.Deposit.ConfirmationHeight,
-				RefundHeight:       entry.Deposit.RefundHeight,
-				RequestId:          entry.RequestID[:],
-				Consumed:           entry.Consumed,
+				Outpoint:           entry.Asset.Outpoint,
+				GroupKey:           entry.Asset.GroupKey[:],
+				Amount:             entry.Asset.Amount,
+				ConfirmationHeight: entry.Asset.ConfirmationHeight,
+				RefundHeight:       entry.Asset.RefundHeight,
+				RequestId:          entry.ID[:],
+				Consumed:           entry.IsInFinalState(),
 			})
 	}
 	return result, nil
@@ -156,8 +156,7 @@ func assetLoopInRequest(request *looprpc.StaticAddressLoopInRequest) (
 	}, nil
 }
 
-// assetStaticLoopIn queues an immutable native request through the normal
-// static loop-in RPC. The server may not have assigned its payment hash yet.
+// assetStaticLoopIn starts an asset swap through the ordinary Loop In FSM.
 func (s *swapClientServer) assetStaticLoopIn(ctx context.Context,
 	request *looprpc.StaticAddressLoopInRequest) (
 	*looprpc.StaticAddressLoopInResponse, error) {
@@ -169,61 +168,45 @@ func (s *swapClientServer) assetStaticLoopIn(ctx context.Context,
 	if !s.staticLoopInManager.AssetsEnabled() {
 		return nil, assetOperationError(nil)
 	}
-	if err := s.staticLoopInManager.StartAssetLoopIn(ctx, intent); err != nil {
+	swap, err := s.staticLoopInManager.StartAssetLoopIn(ctx, intent)
+	if err != nil {
 		return nil, assetOperationError(err)
 	}
 	return &looprpc.StaticAddressLoopInResponse{
 		AssetRequest: &looprpc.AssetRequestStatus{
-			RequestId: intent.RequestID[:], State: "queued",
+			RequestId: intent.RequestID[:], State: string(swap.GetState()),
+			PaymentHash: swap.SwapHash[:],
 		},
 	}, nil
 }
 
-// listAssetStaticLoopIns reports creation and recovered session progress.
+// listAssetStaticLoopIns reports asset variants of ordinary swap records.
 func (s *swapClientServer) listAssetStaticLoopIns(ctx context.Context) (
 	*looprpc.ListStaticAddressSwapsResponse, error) {
-
 	if !s.staticLoopInManager.AssetsEnabled() {
 		return nil, assetOperationError(nil)
 	}
-	jobs, err := s.staticLoopInManager.AssetJobs(ctx)
+	swaps, err := s.staticLoopInManager.GetAllSwaps(ctx)
 	if err != nil {
 		return nil, assetOperationError(err)
 	}
 	result := &looprpc.ListStaticAddressSwapsResponse{AssetsOnly: true}
-	for _, job := range jobs {
-		entry := &looprpc.AssetRequestStatus{
-			RequestId: job.ID[:], State: "queued",
-			DepositRequest: job.Deposit != nil,
-			RefundRequest:  job.Refund != nil,
+	for _, swap := range swaps {
+		if swap.Asset == nil {
+			continue
 		}
-		if job.Deposit != nil && job.Complete {
-			entry.State = "funded"
-		}
-		if job.Refund != nil && job.Complete {
-			entry.State = "refunded"
-		}
-		if job.Offer != nil {
-			entry.PaymentHash = job.Offer.Hash[:]
-			record, err := s.staticLoopInManager.AssetStatus(
-				ctx,
-				job.Offer.Hash,
-			)
-			if err == nil {
-				entry.State = string(record.State)
-			} else {
-				entry.State = "preparing"
-			}
-		}
-		if job.Canceled {
-			entry.State = "canceled"
-		}
-		result.AssetRequests = append(result.AssetRequests, entry)
+		result.AssetRequests = append(
+			result.AssetRequests, &looprpc.AssetRequestStatus{
+				RequestId:   swap.Asset.Request.RequestID[:],
+				PaymentHash: swap.SwapHash[:],
+				State:       string(swap.GetState()),
+			},
+		)
 	}
 	return result, nil
 }
 
-// RefundAssetDeposit queues the original CSV recovery of an expired deposit.
+// RefundAssetDeposit starts the existing deposit FSM expiry action.
 func (s *swapClientServer) RefundAssetDeposit(ctx context.Context,
 	request *looprpc.RefundAssetDepositRequest) (
 	*looprpc.AssetRequestStatus, error) {
@@ -239,6 +222,6 @@ func (s *swapClientServer) RefundAssetDeposit(ctx context.Context,
 		return nil, assetOperationError(err)
 	}
 	return &looprpc.AssetRequestStatus{
-		RequestId: id[:], State: "queued", RefundRequest: true,
+		RequestId: id[:], State: "PublishExpirySweep", RefundRequest: true,
 	}, nil
 }

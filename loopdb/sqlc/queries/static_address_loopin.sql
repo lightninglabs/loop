@@ -10,7 +10,8 @@ INSERT INTO static_address_swaps (
     htlc_tx_fee_rate_sat_kw,
     htlc_timeout_sweep_tx_id,
     htlc_timeout_sweep_address,
-    fast
+    fast,
+    asset_data
 ) VALUES (
     $1,
     $2,
@@ -22,14 +23,17 @@ INSERT INTO static_address_swaps (
     $8,
     $9,
     $10,
-    $11
+    $11,
+    $12
 );
 
 -- name: UpdateStaticAddressLoopIn :exec
 UPDATE static_address_swaps
 SET
     htlc_tx_fee_rate_sat_kw = $2,
-    htlc_timeout_sweep_tx_id = $3
+    htlc_timeout_sweep_tx_id = $3,
+    asset_data = $4,
+    swap_invoice = $5
 WHERE
     swap_hash = $1;
 
@@ -126,7 +130,7 @@ UPDATE
 SET
     swap_hash = $2
 WHERE
-    deposit_id = $1 AND asset_data IS NULL;
+    deposit_id = $1;
 
 -- name: SwapHashForDepositID :one
 SELECT
@@ -134,7 +138,7 @@ SELECT
 FROM
     deposits
 WHERE
-    deposit_id = $1 AND asset_data IS NULL;
+    deposit_id = $1;
 
 -- name: DepositIDsForSwapHash :many
 SELECT
@@ -142,7 +146,7 @@ SELECT
 FROM
     deposits
 WHERE
-    swap_hash = $1 AND asset_data IS NULL;
+    swap_hash = $1;
 
 -- name: DepositsForSwapHash :many
 SELECT
@@ -160,6 +164,9 @@ FROM
         LIMIT 1
     )
 WHERE
-    d.swap_hash = $1 AND d.asset_data IS NULL;
+    d.swap_hash = $1;
 
 
+
+-- name: UpdateStaticAddressPreimage :exec
+UPDATE swaps SET preimage = $2 WHERE swap_hash = $1 AND preimage IS NULL;

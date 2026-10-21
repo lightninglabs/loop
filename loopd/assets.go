@@ -18,7 +18,6 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
-	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/swapkit"
 	assetkit "github.com/lightninglabs/loop/swapkit/tapsdk"
 	sdk "github.com/lightninglabs/tap-sdk"
@@ -89,10 +88,10 @@ func (c assetAuthConn) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	return c.services.ClientConn.NewStream(ctx, desc, method, opts...)
 }
 
-// newAssetConfig connects the kit to normal wallet and SQL services.
+// newAssetConfig connects the kit to the normal node services.
 func (d *Daemon) newAssetConfig(client *loop.Client,
-	addresses *address.Manager, deposits *deposit.Manager,
-	store *loopin.SqlStore) (*loopin.AssetConfig, error) {
+	addresses *address.Manager, deposits *deposit.Manager) (
+	*loopin.AssetConfig, error) {
 
 	peer, enabled, err := assetLoopInConfig(d.cfg)
 	if err != nil || !enabled {
@@ -161,14 +160,12 @@ func (d *Daemon) newAssetConfig(client *loop.Client,
 			if err != nil {
 				return swapkit.Deposit{}, keychain.KeyLocator{}, err
 			}
-			entries, err := store.AssetInventory(ctx)
+			d, err := deposits.AssetDeposit(ctx, point)
 			if err != nil {
 				return swapkit.Deposit{}, keychain.KeyLocator{}, err
 			}
-			for _, entry := range entries {
-				if entry.Deposit.Outpoint == point {
-					return entry.Deposit, params.KeyLocator, nil
-				}
+			if asset := d.AssetSnapshot(); asset != nil {
+				return *asset, params.KeyLocator, nil
 			}
 			return swapkit.Deposit{}, keychain.KeyLocator{},
 				swapkit.ErrInvalid
@@ -183,20 +180,16 @@ func (d *Daemon) newAssetConfig(client *loop.Client,
 	var node [33]byte
 	copy(node[:], d.lnd.NodePubkey[:])
 	cfg := &loopin.AssetConfig{
-		Driver: driver, Store: store,
+		Driver:  driver,
 		Address: addresses, Deposits: deposits,
-		Server: assetclient.NewServerClient(client.Conn),
+		Server: loopin.NewAssetServerClient(client.Conn),
 		Receiver: &assetln.Receiver{
 			Assets:    d.assetClient.TaprootAssetChannelsClient,
 			Lightning: lnrpc.NewLightningClient(auth),
 			Invoices:  invoicesrpc.NewInvoicesClient(auth),
 		},
 		Owner: sha256.Sum256(node[:]), Peer: peer,
-		Network: d.cfg.Network, NodePubkey: node,
 		FetchL402: client.Server.FetchL402,
-		OnError: func(err error) {
-			warnf("Asset recovery operation pending: %v", err)
-		},
 	}
 	d.assetCleanup = func() {
 		sdkClient.Close()

@@ -1211,6 +1211,7 @@ func TestActiveDepositsForLoopInUsesCurrentDepositOutpoints(t *testing.T) {
 	}
 
 	deposits, allActive := manager.activeDepositsForLoopIn(
+		t.Context(),
 		&StaticAddressLoopIn{
 			DepositOutpoints: []string{oldOutpoint.String()},
 			Deposits:         []*deposit.Deposit{currentDeposit},

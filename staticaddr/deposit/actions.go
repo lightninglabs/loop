@@ -25,6 +25,10 @@ const (
 func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
+	if f.deposit.Asset != nil {
+		return f.publishAssetExpiry(ctx)
+	}
+
 	msgTx := wire.NewMsgTx(2)
 
 	params, err := f.cfg.AddressManager.GetStaticAddressParameters(ctx)
@@ -130,6 +134,11 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 // sweep is considered successful.
 func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
+
+	// The asset driver returns only after its confirmed proof is available.
+	if f.deposit.Asset != nil {
+		return OnExpirySwept
+	}
 
 	var txID *chainhash.Hash
 	// Only pass the txid if we know it from our own publication.

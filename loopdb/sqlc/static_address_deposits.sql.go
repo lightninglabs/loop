@@ -13,10 +13,9 @@ import (
 
 const allDeposits = `-- name: AllDeposits :many
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_request_id, asset_consumed
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_tx
 FROM
     deposits
-WHERE asset_data IS NULL
 ORDER BY
     id ASC
 `
@@ -44,8 +43,7 @@ func (q *Queries) AllDeposits(ctx context.Context) ([]Deposit, error) {
 			&i.OnchainCost,
 			&i.OnchainCostKnown,
 			&i.AssetData,
-			&i.AssetRequestID,
-			&i.AssetConsumed,
+			&i.AssetTx,
 		); err != nil {
 			return nil, err
 		}
@@ -71,7 +69,9 @@ INSERT INTO deposits (
     expiry_sweep_txid,
     finalized_withdrawal_tx,
     onchain_cost,
-    onchain_cost_known
+    onchain_cost_known,
+    asset_data,
+    asset_tx
 ) VALUES (
              $1,
              $2,
@@ -82,7 +82,9 @@ INSERT INTO deposits (
              $7,
              $8,
              $9,
-             $10
+             $10,
+             $11,
+             $12
          )
 `
 
@@ -97,6 +99,8 @@ type CreateDepositParams struct {
 	FinalizedWithdrawalTx sql.NullString
 	OnchainCost           int64
 	OnchainCostKnown      sql.NullBool
+	AssetData             []byte
+	AssetTx               []byte
 }
 
 func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) error {
@@ -111,19 +115,21 @@ func (q *Queries) CreateDeposit(ctx context.Context, arg CreateDepositParams) er
 		arg.FinalizedWithdrawalTx,
 		arg.OnchainCost,
 		arg.OnchainCostKnown,
+		arg.AssetData,
+		arg.AssetTx,
 	)
 	return err
 }
 
 const depositForOutpoint = `-- name: DepositForOutpoint :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_request_id, asset_consumed
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_tx
 FROM
     deposits
 WHERE
     tx_hash = $1
 AND
-    out_index = $2 AND asset_data IS NULL
+    out_index = $2
 `
 
 type DepositForOutpointParams struct {
@@ -148,19 +154,18 @@ func (q *Queries) DepositForOutpoint(ctx context.Context, arg DepositForOutpoint
 		&i.OnchainCost,
 		&i.OnchainCostKnown,
 		&i.AssetData,
-		&i.AssetRequestID,
-		&i.AssetConsumed,
+		&i.AssetTx,
 	)
 	return i, err
 }
 
 const getDeposit = `-- name: GetDeposit :one
 SELECT
-    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_request_id, asset_consumed
+    id, deposit_id, tx_hash, out_index, amount, confirmation_height, timeout_sweep_pk_script, expiry_sweep_txid, finalized_withdrawal_tx, swap_hash, onchain_cost, onchain_cost_known, asset_data, asset_tx
 FROM
     deposits
 WHERE
-    deposit_id = $1 AND asset_data IS NULL
+    deposit_id = $1
 `
 
 func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (Deposit, error) {
@@ -180,8 +185,7 @@ func (q *Queries) GetDeposit(ctx context.Context, depositID []byte) (Deposit, er
 		&i.OnchainCost,
 		&i.OnchainCostKnown,
 		&i.AssetData,
-		&i.AssetRequestID,
-		&i.AssetConsumed,
+		&i.AssetTx,
 	)
 	return i, err
 }
@@ -241,7 +245,7 @@ SET
 WHERE
     deposit_id = $1
 AND
-    onchain_cost_known IS NULL AND asset_data IS NULL
+    onchain_cost_known IS NULL
 `
 
 type SetDepositOnchainCostParams struct {
@@ -262,9 +266,11 @@ SET
     out_index = $3,
     confirmation_height = $4,
     expiry_sweep_txid = $5,
-    finalized_withdrawal_tx = $6
+    finalized_withdrawal_tx = $6,
+    asset_data = $7,
+    asset_tx = $8
 WHERE
-    deposits.deposit_id = $1 AND asset_data IS NULL
+    deposits.deposit_id = $1
 `
 
 type UpdateDepositParams struct {
@@ -274,6 +280,8 @@ type UpdateDepositParams struct {
 	ConfirmationHeight    int64
 	ExpirySweepTxid       []byte
 	FinalizedWithdrawalTx sql.NullString
+	AssetData             []byte
+	AssetTx               []byte
 }
 
 func (q *Queries) UpdateDeposit(ctx context.Context, arg UpdateDepositParams) error {
@@ -284,6 +292,8 @@ func (q *Queries) UpdateDeposit(ctx context.Context, arg UpdateDepositParams) er
 		arg.ConfirmationHeight,
 		arg.ExpirySweepTxid,
 		arg.FinalizedWithdrawalTx,
+		arg.AssetData,
+		arg.AssetTx,
 	)
 	return err
 }

@@ -37,16 +37,17 @@ func (w *scriptWallet) SignOutputRawKeyLocator(context.Context, *wire.MsgTx,
 	return [][]byte{w.signature}, nil
 }
 
-// TestScriptSpendRecovery checks unilateral signing across lost wallet replies
-// and failed caller checkpoints. A fresh driver recovers from the caller's
-// committed transaction; no signing database or secret nonce is necessary.
+// TestScriptSpendRecovery checks retry after a lost signer reply and reuse of
+// the completed transaction after the owning FSM saves it.
 func TestScriptSpendRecovery(t *testing.T) {
-	for _, failure := range []string{"wallet reply", "checkpoint", "none"} {
-		t.Run(failure, func(t *testing.T) {
+	for _, lostReply := range []bool{false, true} {
+		name := "completed package"
+		if lostReply {
+			name = "lost signer reply"
+		}
+		t.Run(name, func(t *testing.T) {
 			tx := scriptPackage(t)
 			tx.Final = nil
-			checkpoint, err := json.Marshal(tx)
-			require.NoError(t, err)
 			requests, err := tx.Package.SigningRequests()
 			require.NoError(t, err)
 			require.Len(t, requests.ScriptPath, 1)
@@ -55,41 +56,33 @@ func TestScriptSpendRecovery(t *testing.T) {
 				bindingKey(2), request.Sighash[:],
 			)
 			require.NoError(t, err)
-			lost := errors.New("simulated lost operation")
+			lost := errors.New("simulated lost signer reply")
 			wallet := &scriptWallet{signature: signature.Serialize()}
-			if failure == "wallet reply" {
+			if lostReply {
 				wallet.failure = lost
 			}
 			r := &Driver{cfg: DriverConfig{Signer: wallet}}
-			save := func() error {
-				checkpoint, err = json.Marshal(tx)
-				return err
-			}
-			saveFirst := save
-			if failure == "checkpoint" {
-				saveFirst = func() error { return lost }
-			}
 			err = r.signScriptSpend(t.Context(), nil, &tx,
-				keychain.KeyLocator{}, nil, saveFirst)
-			if failure != "none" {
+				keychain.KeyLocator{}, nil)
+			if lostReply {
 				require.ErrorIs(t, err, lost)
-				tx = transaction{}
-				require.NoError(t, json.Unmarshal(checkpoint, &tx))
 				require.Empty(t, tx.Final)
 				r = &Driver{cfg: DriverConfig{Signer: wallet}}
 				err = r.signScriptSpend(t.Context(), nil, &tx,
-					keychain.KeyLocator{}, nil, save)
+					keychain.KeyLocator{}, nil)
 			}
 			require.NoError(t, err)
 			final := tx.Final
 			require.NotEmpty(t, final)
+			stored, err := json.Marshal(tx)
+			require.NoError(t, err)
 			tx = transaction{}
-			require.NoError(t, json.Unmarshal(checkpoint, &tx))
+			require.NoError(t, json.Unmarshal(stored, &tx))
 			require.Equal(t, final, tx.Final)
 			r = &Driver{cfg: DriverConfig{Signer: wallet}}
 			calls := wallet.calls
 			err = r.signScriptSpend(t.Context(), nil, &tx,
-				keychain.KeyLocator{}, nil, nil)
+				keychain.KeyLocator{}, nil)
 			require.NoError(t, err)
 			require.Equal(t, calls, wallet.calls)
 		})

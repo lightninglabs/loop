@@ -6,33 +6,31 @@ or fungible group over Lightning. The server holds the swap preimage and
 controls execution. The client retains unilateral recovery paths.
 
 See the [architecture review](asset-loop-in-architecture.md) for RPC reuse,
-the normal daemon integration, and the remaining consolidation priorities.
+the normal FSM ownership, protocol saves, and restart boundaries.
 
 ## What is implemented
 
 - Normal `loop static asset` commands and `loopd` startup/recovery integration.
-- Normal managers and SQL connections host a separate asset controller,
-  request workflow and recovery batches. Actual deposit/Loop In FSM reuse is
-  still missing; shared graphs and database objects do not provide it.
+- Ordinary deposit and static Loop In FSMs, records and startup recovery.
+  Asset metadata selects native payment/transaction actions; no separate
+  controller, request journal or recovery worker remains.
 - Loop-owned deposit/HTLC contracts and an SDK adapter using normal LND signing
   and tapd proof publication. Asset leaves use `OP_TRUE`; spending authority
   remains in the Bitcoin deposit and HTLC scripts.
-- Durable request identities, completed fallbacks, tapd publication records, proof
-  import, deposit exclusion, and recovery after process restarts.
+- Complete signed packages and fallbacks saved before publication or claim
+  exposure, tapd proof import, and recovery through the ordinary stores.
 - Same-group native asset HOLD invoices, accepted-HTLC amount/group/expiry
   validation, and server-controlled preimage release.
 
-The companion server process harness has exercised the normal CLI/daemon flow
-on regtest, including Lightning settlement before fallback confirmation,
-lost signing responses, restart during publication, and original-deposit
-recovery after a long outage. This is evidence for those scenarios, not a
-claim of comprehensive failure or deployment coverage.
+The companion server process suite exercises the normal CLI/daemon flow on
+regtest: server-held execution, restart during publication, unilateral refunds
+and force-close recovery. Early uncommitted handshakes may abort safely. These
+tests do not establish comprehensive failure or deployment coverage.
 
 ## Priorities before production
 
 | Priority | Shortcoming | Completion criterion |
 | --- | --- | --- |
-| P0 | Parallel asset lifecycle instead of existing FSM reuse. | Follow the [architecture audit](asset-loop-in-architecture.md): use normal deposit/swap records, FSM actions and recovery; remove the separate controllers, request workflow and revision framework. |
 | P0 | Fixed pre-signed fallback fees; no automatic claim/refund fee escalation. | A bounded unilateral fee-bump strategy preserves asset proofs and survives restart. Test fee increases, eviction, and confirmation before deadlines. |
 | P0 | Chain-notification reorg tests do not cover every real-node confirmation/cleanup boundary. | Disconnect and replace blocks around deposit, fallback, claim, and refund confirmation with real proofs. Define finality and recovery after terminal cleanup. |
 | P0 | Development dependency patches and coordinated protocol changes remain under review. | Review the client/server pair, merge required SDK/tapd fixes, pin released dependencies, and pass required CI, including the process regressions. |
@@ -58,5 +56,5 @@ native amount rounding fix. These pins and patches remain release blockers.
 
 Run the package checks from the normal modules; there is no separate runtime
 build. The server's `make asset-loop-in-production-itest` exercises normal
-client/server processes and `make asset-loop-in-itest` covers protocol cases.
+client/server processes; `make asset-loop-in-itest` is an alias for that suite.
 The production priorities above still apply after the architecture reduction.

@@ -1,77 +1,54 @@
 package loopin
 
 import (
-	"context"
-	"encoding/json"
-
-	"github.com/lightninglabs/loop/staticaddr/loopin/assetexec"
+	"github.com/lightninglabs/loop/assets/assetln"
 	"github.com/lightninglabs/loop/swapkit"
 )
 
-// AssetSwapRequest fixes user-approved native quantities before any server
-// call.
+// AssetSwapRequest fixes the native quantity and fees accepted by the user.
 //
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
+//nolint:tagliatelle // Preserve the existing recovery format.
 type AssetSwapRequest struct {
 	RequestID [32]byte `json:"RequestID"`
 	GroupKey  [33]byte `json:"GroupKey"`
 	Outpoint  string   `json:"Outpoint"`
-	Amount    uint64   `json:"Amount"` // Exact native Lightning payout.
+	Amount    uint64   `json:"Amount"`
 	MaxDebit  uint64   `json:"MaxDebit"`
 	MaxFee    uint64   `json:"MaxFee"`
 }
 
-// validAssetSwapAmount spends the complete deposit without a change output. Its
-// excess over the exact payout must fit the caller's native service fee cap.
-func validAssetSwapAmount(depositAmount uint64, request AssetSwapRequest) bool {
-	return request.Amount > 0 && request.Amount <= depositAmount &&
+func validAssetSwapAmount(amount uint64, request AssetSwapRequest) bool {
+	return request.Amount > 0 && request.Amount <= amount &&
 		request.MaxDebit >= request.Amount &&
-		depositAmount-request.Amount <= request.MaxFee
+		amount-request.Amount <= request.MaxFee
 }
 
-// AssetJob persists creation identity before a possibly ambiguous remote
-// effect.
+// AssetSwapInfo contains the asset-specific contract and recovery material of
+// a normal static Loop In. Its lifecycle is StaticAddressLoopIn.state.
 //
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
-type AssetJob struct {
-	// Funding contains only the unfinished wallet transaction checkpoint.
-	Funding              json.RawMessage               `json:"Funding,omitempty"`
-	ID                   [32]byte                      `json:"ID"`
-	Deposit              *swapkit.CreateDepositRequest `json:"Deposit"`
-	Swap                 *AssetSwapRequest             `json:"Swap"`
-	Refund               *swapkit.RefundDepositRequest `json:"Refund"`
-	RefundProof          []byte                        `json:"RefundProof"`
-	Offer                *assetexec.Offer              `json:"Offer"`
-	Intent               []byte                        `json:"Intent"`
-	ServerRequest        []byte                        `json:"ServerRequest"`
-	Complete             bool                          `json:"Complete"`
-	Canceled             bool                          `json:"Canceled"`
-	RefundReported       bool                          `json:"RefundReported"`
-	CancellationReported bool                          `json:"CancellationReported"`
+//nolint:tagliatelle // Preserve the existing recovery format.
+type AssetSwapInfo struct {
+	Request         AssetSwapRequest     `json:"Request"`
+	Offer           swapkit.Offer        `json:"Offer"`
+	Invoice         *assetln.HoldInvoice `json:"Invoice"`
+	RecoveryRequest []byte               `json:"RecoveryRequest"`
+	Fallback        swapkit.Fallback     `json:"Fallback"`
+	Accepted        *assetln.Evidence    `json:"Accepted"`
 }
 
-// AssetInventoryEntry binds one isolated asset anchor to a single active
-// request.
-// Consumed anchors remain excluded from every Bitcoin-only spending path.
-//
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
-type AssetInventoryEntry struct {
-	Deposit   swapkit.Deposit `json:"Deposit"`
-	RequestID [32]byte        `json:"RequestID"`
-	Hash      [32]byte        `json:"Hash"`
-	Consumed  bool            `json:"Consumed"`
+func (a *AssetSwapInfo) paymentTerms() assetln.Terms {
+	t := a.Offer.Terms
+	return assetln.Terms{
+		Hash: a.Offer.Hash, GroupKey: t.GroupKey, Amount: t.PayoutAmount,
+		MaxDebit: t.MaxDebit, RefundHeight: t.RefundHeight,
+		RecoveryBlocks: t.RecoveryDelta, HoldExpiryDelta: 20,
+		Deadline: t.OfferExpiry.Unix(),
+	}
 }
 
-// AssetStore extends the normal loop-in store with asset deposit metadata,
-// admission requests, and execution checkpoints in one transaction domain.
-type AssetStore interface {
-	assetexec.Store
-	PutAssetJob(context.Context, *AssetJob) error
-	UpdateAssetJob(context.Context, *AssetJob) error
-	GetAssetJob(context.Context, [32]byte) (*AssetJob, error)
-	AssetJobs(context.Context) ([]AssetJob, error)
-	AssetInventory(context.Context) ([]AssetInventoryEntry, error)
-	AddAssetDeposit(context.Context, swapkit.Deposit) error
-	FinishAssetRefund(context.Context, *AssetJob, []byte) error
-	CancelUnstartedAssetJob(context.Context, *AssetJob) error
+func (a *AssetSwapInfo) operation() swapkit.Operation {
+	return swapkit.Operation{
+		Offer: a.Offer, Fallback: a.Fallback,
+		Preparation: swapkit.Preparation{RecoveryRequest: a.RecoveryRequest},
+	}
 }

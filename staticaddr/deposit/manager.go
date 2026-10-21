@@ -45,6 +45,9 @@ var (
 
 // ManagerConfig holds the configuration for the address manager.
 type ManagerConfig struct {
+	// AssetDriver builds and publishes proof-preserving asset transactions.
+	AssetDriver AssetDriver
+
 	// LightningClient is used to obtain a chain-synced wallet height for
 	// confirmation-height reconciliation.
 	LightningClient LightningClient
@@ -78,6 +81,9 @@ type ManagerConfig struct {
 type Manager struct {
 	cfg *ManagerConfig
 
+	// runCtx keeps deposit actions alive beyond a creating RPC.
+	runCtx context.Context
+
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
@@ -87,9 +93,6 @@ type Manager struct {
 
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
-
-	// assetDeposits excludes proof-bearing anchors from Bitcoin-only paths.
-	assetDeposits map[wire.OutPoint]struct{}
 
 	// deposits contain all the deposits that have ever been made to the
 	// static address. This field is used to store and recover deposits. It
@@ -123,6 +126,7 @@ func NewManager(cfg *ManagerConfig) *Manager {
 
 // Run runs the address manager.
 func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
+	m.runCtx = ctx
 	newBlockChan, newBlockErrChan, err := m.cfg.ChainNotifier.RegisterBlockEpochNtfn(ctx) //nolint:lll
 	if err != nil {
 		log.Errorf("unable to register block epoch notifier: %v", err)
@@ -259,10 +263,6 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 	}
 
 	for i, d := range deposits {
-		if _, asset := m.assetDeposits[d.OutPoint]; asset {
-			return fmt.Errorf("asset anchor conflicts with " +
-				"Bitcoin deposit")
-		}
 		m.deposits[d.OutPoint] = deposits[i]
 
 		// If the current deposit is final it wasn't active when we
@@ -628,17 +628,14 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, asset := m.assetDeposits[deposit.OutPoint]; asset {
-		return nil, fmt.Errorf("asset anchor requires asset recovery")
-	}
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
 	if err != nil {
 		return nil, err
 	}
 
+	m.mu.Lock()
 	m.deposits[deposit.OutPoint] = deposit
+	m.mu.Unlock()
 
 	return deposit, nil
 }
@@ -677,7 +674,7 @@ func (m *Manager) updateDepositConfirmations(ctx context.Context,
 		m.mu.Lock()
 		deposit, ok := m.deposits[utxo.OutPoint]
 		m.mu.Unlock()
-		if !ok {
+		if !ok || deposit.Asset != nil {
 			continue
 		}
 
@@ -774,7 +771,7 @@ func (m *Manager) syncActiveDeposits(ctx context.Context,
 				continue
 			}
 
-			if fsm == nil || fsm.deposit == nil {
+			if fsm == nil || fsm.deposit == nil || fsm.deposit.Asset != nil {
 				continue
 			}
 
@@ -823,9 +820,6 @@ func (m *Manager) filterNewDeposits(utxos []*lnwallet.Utxo) []*lnwallet.Utxo {
 
 	var newDeposits []*lnwallet.Utxo
 	for _, utxo := range utxos {
-		if _, asset := m.assetDeposits[utxo.OutPoint]; asset {
-			continue
-		}
 		_, ok := m.deposits[utxo.OutPoint]
 		if !ok {
 			newDeposits = append(newDeposits, utxo)
@@ -852,7 +846,11 @@ func (m *Manager) startDepositFsm(ctx context.Context, deposit *Deposit) error {
 		}
 	}()
 
-	err = fsm.DefaultObserver.WaitForState(ctx, time.Minute, Deposited)
+	initialState := Deposited
+	if deposit.Asset != nil {
+		initialState = PublishAssetDeposit
+	}
+	err = fsm.DefaultObserver.WaitForState(ctx, time.Minute, initialState)
 	if err != nil {
 		return err
 	}
@@ -884,7 +882,7 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 
 	filteredDeposits := make([]*Deposit, 0, len(deposits))
 	for _, d := range deposits {
-		if !d.isInStateNoLock(stateFilter) {
+		if d.Asset != nil || !d.isInStateNoLock(stateFilter) {
 			continue
 		}
 
@@ -916,6 +914,11 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	_, deposits := m.toActiveDeposits(&outpoints)
 	if deposits == nil {
 		return nil, false
+	}
+	for _, d := range deposits {
+		if d.Asset != nil {
+			return nil, false
+		}
 	}
 
 	// If the targetState is empty we return all active deposits regardless
@@ -1100,9 +1103,6 @@ func (m *Manager) toActiveDeposits(outpoints *[]wire.OutPoint) ([]*FSM,
 	fsms := make([]*FSM, 0, len(*outpoints))
 	deposits := make([]*Deposit, 0, len(*outpoints))
 	for _, o := range *outpoints {
-		if _, asset := m.assetDeposits[o]; asset {
-			return nil, nil
-		}
 		sm, ok := m.activeDeposits[o]
 		if !ok {
 			return nil, nil

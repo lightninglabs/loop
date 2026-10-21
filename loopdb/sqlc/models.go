@@ -23,8 +23,7 @@ type Deposit struct {
 	OnchainCost           int64
 	OnchainCostKnown      sql.NullBool
 	AssetData             []byte
-	AssetRequestID        []byte
-	AssetConsumed         bool
+	AssetTx               []byte
 }
 
 type DepositUpdate struct {
@@ -141,14 +140,6 @@ type StaticAddress struct {
 	InitiationHeight int32
 }
 
-type StaticAddressAssetRequest struct {
-	RequestID  []byte
-	JobData    []byte
-	SwapHash   []byte
-	RecordData []byte
-	Revision   int64
-}
-
 type StaticAddressSwap struct {
 	ID                           int32
 	SwapHash                     []byte
@@ -164,6 +155,7 @@ type StaticAddressSwap struct {
 	Fast                         bool
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
+	AssetData                    []byte
 }
 
 type StaticAddressSwapUpdate struct {

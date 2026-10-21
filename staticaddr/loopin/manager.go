@@ -23,7 +23,6 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/loopin/assetclient"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -131,6 +130,7 @@ type Config struct {
 
 // newSwapRequest is used to send a loop-in request to the manager main loop.
 type newSwapRequest struct {
+	assetRequest  *AssetSwapRequest
 	loopInRequest *loop.StaticAddressLoopInRequest
 	respChan      chan *newSwapResponse
 }
@@ -143,10 +143,6 @@ type newSwapResponse struct {
 
 // Manager manages the address state machines.
 type Manager struct {
-	assetCfg       *AssetConfig
-	assetSession   *assetclient.Session
-	assetRequestMu sync.Mutex
-
 	cfg *Config
 
 	// newLoopInChan receives swap requests from the server and initiates
@@ -177,9 +173,6 @@ func NewManager(cfg *Config, currentHeight uint32) (*Manager, error) {
 		sweepRequestConcurrency: maxConcurrentSweepRequests,
 	}
 	m.currentHeight.Store(currentHeight)
-	if err := m.initAssetSession(); err != nil {
-		return nil, err
-	}
 
 	return m, nil
 }
@@ -230,48 +223,6 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		sweepHandlers.Wait()
 	}()
 
-	// The same manager owns asset request recovery and protocol resumption.
-	// A batch runs beside Bitcoin notifications; shutdown joins it before
-	// the shared SQL store or runtime connection can be closed.
-	assetCtx, cancelAssets := context.WithCancel(ctx)
-	var assetRequestsDone, assetSessionsDone chan error
-	var assetTicks <-chan time.Time
-	if m.AssetsEnabled() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		assetTicks = ticker.C
-	}
-	startAssets := func() {
-		if !m.AssetsEnabled() {
-			return
-		}
-		if assetRequestsDone == nil {
-			assetRequestsDone = make(chan error, 1)
-			go func(done chan<- error) {
-				done <- m.recoverAssetRequests(assetCtx)
-			}(assetRequestsDone)
-		}
-		if assetSessionsDone == nil {
-			assetSessionsDone = make(chan error, 1)
-			go func(done chan<- error) {
-				done <- m.assetSession.RecoverActive(
-					assetCtx, 30*time.Second, 4,
-					func(_ [32]byte, err error) { m.report(err) },
-				)
-			}(assetSessionsDone)
-		}
-	}
-	defer func() {
-		cancelAssets()
-		if assetRequestsDone != nil {
-			<-assetRequestsDone
-		}
-		if assetSessionsDone != nil {
-			<-assetSessionsDone
-		}
-	}()
-	startAssets()
-
 	// Communicate to the caller that startup recovery is scheduled.
 	close(initChan)
 
@@ -284,25 +235,12 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		case err = <-newBlockErrChan:
 			return err
 
-		case <-assetTicks:
-			startAssets()
-
-		case err := <-assetRequestsDone:
-			assetRequestsDone = nil
-			if err != nil {
-				return err
-			}
-
-		case err := <-assetSessionsDone:
-			assetSessionsDone = nil
-			if err != nil {
-				return err
-			}
-
 		case request := <-m.newLoopInChan:
-			loopIn, err = m.initiateLoopIn(
-				ctx, request.loopInRequest,
-			)
+			if request.assetRequest != nil {
+				loopIn, err = m.initiateAssetLoopIn(ctx, *request.assetRequest)
+			} else {
+				loopIn, err = m.initiateLoopIn(ctx, request.loopInRequest)
+			}
 			if err != nil {
 				log.Errorf("Error initiating loop-in swap: %v",
 					err)
@@ -757,7 +695,7 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		// deposits are active in the in-mem map of the deposits manager,
 		// use those active instances. Otherwise, keep the store's
 		// swap_hash/deposit-id reconstruction and continue recovery.
-		activeDeposits, allActive := m.activeDepositsForLoopIn(loopIn)
+		activeDeposits, allActive := m.activeDepositsForLoopIn(ctx, loopIn)
 		if !allActive {
 			log.Errorf("one or more deposits are not active")
 		} else {
@@ -1069,8 +1007,8 @@ func (m *Manager) GetAllSwaps(ctx context.Context) ([]*StaticAddressLoopIn,
 // using the current deposit outpoints reconstructed by the store. The stored
 // deposit outpoint snapshots remain the original swap inputs and are not the
 // source of truth for current deposit rows.
-func (m *Manager) activeDepositsForLoopIn(loopIn *StaticAddressLoopIn) (
-	[]*deposit.Deposit, bool) {
+func (m *Manager) activeDepositsForLoopIn(ctx context.Context,
+	loopIn *StaticAddressLoopIn) ([]*deposit.Deposit, bool) {
 
 	outpoints := loopIn.DepositOutpoints
 	if len(loopIn.Deposits) > 0 {
@@ -1080,6 +1018,17 @@ func (m *Manager) activeDepositsForLoopIn(loopIn *StaticAddressLoopIn) (
 		}
 	}
 
+	if loopIn.Asset != nil && m.AssetsEnabled() {
+		var result []*deposit.Deposit
+		for _, point := range outpoints {
+			d, err := m.cfg.Assets.Deposits.AssetDeposit(ctx, point)
+			if err != nil {
+				return nil, false
+			}
+			result = append(result, d)
+		}
+		return result, true
+	}
 	return m.cfg.DepositManager.AllStringOutpointsActiveDeposits(
 		outpoints, fsm.EmptyState,
 	)

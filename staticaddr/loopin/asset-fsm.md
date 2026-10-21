@@ -1,41 +1,48 @@
-# Asset state transitions
+# Asset Loop In states
 
-The [generated Bitcoin diagram](fsm.md) describes the ordinary FSM. The diagram
-below describes the separate [asset controller](assetexec/README.md), which
-currently shares state names but does not instantiate that FSM. The
-[architecture audit](../../docs/asset-loop-in-architecture.md) maps these
-operations to normal actions and identifies the added durability to remove:
+`NewFSM` selects asset actions in the ordinary static Loop In state map.
+`Manager.recoverLoopIns` loads these swaps from the ordinary SQL store and
+sends `OnRecover`, as it does for Bitcoin swaps. There is no asset controller,
+request journal, recovery worker, or second transition graph.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> InitHtlcTx: Persist offer and invoice intent
-    InitHtlcTx --> SignHtlcTx: Persist HOLD invoice and RFQ
-    SignHtlcTx --> SignHtlcTx: Verify and persist full SDK fallback
-    SignHtlcTx --> MonitorInvoiceAndHtlcTx: Local accepted HTLC and durable exposure
-    MonitorInvoiceAndHtlcTx --> PaymentReceived: Persist preimage and observe local settlement
-    MonitorInvoiceAndHtlcTx --> SweepHtlcTimeout: Offer or refund deadline; drive SDK recovery
-    SweepHtlcTimeout --> PaymentReceived: Recover preimage and observe local settlement
-    SweepHtlcTimeout --> HtlcTimeoutSwept: Confirm refund and spendable asset proofs
-    PaymentReceived --> Succeeded: Confirm claim and asset proofs
-    InitHtlcTx --> Failed: Cancel before signature exposure
-    SignHtlcTx --> Failed: Cancel before signature exposure
+    [*] --> InitHtlcTx: OnInitHtlc
+    InitHtlcTx --> SignHtlcTx: Server hash and normal swap record
+    SignHtlcTx --> MonitorInvoiceAndHtlcTx: Complete fallback and local native acceptance saved
+    InitHtlcTx --> UnlockDeposits: Error or restart before exposure
+    SignHtlcTx --> UnlockDeposits: Error or restart before exposure
+    UnlockDeposits --> Failed: Cancel invoice and release deposits
+    MonitorInvoiceAndHtlcTx --> MonitorInvoiceAndHtlcTx: OnRecover
+    MonitorInvoiceAndHtlcTx --> PaymentReceived: Server secret and local settlement
+    MonitorInvoiceAndHtlcTx --> SweepHtlcTimeout: Offer or refund deadline
+    SweepHtlcTimeout --> SweepHtlcTimeout: OnRecover
+    SweepHtlcTimeout --> PaymentReceived: Local settlement wins
+    SweepHtlcTimeout --> HtlcTimeoutSwept: Confirmed spendable refund
+    PaymentReceived --> PaymentReceived: OnRecover
+    PaymentReceived --> Succeeded: Normal deposit finalization
 ```
 
-RPC errors preserve the durable state. After exposure, neither an elapsed
-refund height nor server unavailability permits releasing deposits. Terminal
-cleanup commits its execution checkpoint, deposit history and ownership-scoped
-release in one transaction in the normal SQL store.
+The completed fallback, accepted native HTLC evidence and monitoring state are
+saved together with an explicit checked `UpdateLoopIn` before the client sends
+conditional claim signatures. This is the protocol boundary needed for
+unilateral recovery. Other state changes use the existing FSM persistence
+hook. There are no revision counters or a second set of lifecycle flags.
 
-Both graphs are implemented in `loopin/flow`, selected by protocol. The Bitcoin
-FSM binds its existing actions to `BitcoinV0`; the durable asset controller
-uses `ServerAsset` for event dispatch, recovery routing, and journal transition
-validation. The asset journal also advances the shared `deposit/flow` lifecycle
-atomically with exposure and confirmed outcome evidence. See
-[the deposit FSM](../deposit/asset-fsm.md). The write-ahead journal remains the effect
-authorization boundary; an in-memory transition alone cannot expose signatures.
+Recovery from either initial signing state aborts the unexposed attempt.
+Recovery from monitoring keeps the saved fallback, checks the local invoice,
+and rechecks the accepted asset circuit before resending claim signatures.
+The server alone decides when to disclose its secret. The client can also
+recover that secret from a verified on-chain success witness.
 
-The existing `loopin.Manager` schedules both Bitcoin recovery and bounded asset
-batches. Asset metadata lives on normal deposit rows; one SQL request row owns
-the pre-offer request and subsequent execution record. This remains a second lifecycle. The planned integration uses explicit writes
-in normal FSM actions before exposing signatures, following the existing
-server payment action; a separate controller is not required.
+Client success requires local settlement of the same accepted group, amount
+and HTLC. It does not wait for the server's claim confirmation. After exposure,
+a deadline or RPC error cannot release deposits: timeout recovery must produce
+a confirmed spendable asset refund. An unavailable server does not block the
+local recovery path. A refund proof report is best effort; it is not a second
+durable reporting workflow.
+
+Asset deposits use the [normal deposit FSM](../deposit/asset-fsm.md). Their
+`LoopingIn` state disables the original CSV expiry action while the swap owns
+recovery. Normal deposit transitions handle cancellation, paid swaps and HTLC
+refunds.

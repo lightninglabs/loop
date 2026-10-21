@@ -25,7 +25,7 @@ var staticAssetCommand = &cli.Command{
 			Action: refundAssetDeposit,
 		},
 		{
-			Name: "deposit", Usage: "Queue an asset deposit",
+			Name: "deposit", Usage: "Fund an asset deposit",
 			Flags: assetRequestFlags(
 				false,
 			), Action: createAssetDeposit,
@@ -44,7 +44,7 @@ var staticAssetCommand = &cli.Command{
 		},
 		{
 			Name:   "swaps",
-			Usage:  "List durable asset requests and swaps",
+			Usage:  "List asset swaps",
 			Action: listAssetSwaps,
 		},
 	},
@@ -60,8 +60,7 @@ func assetRequestFlags(swap bool) []cli.Flag {
 		&cli.StringFlag{
 			Name: "request_id",
 			Usage: "32-byte lowercase " +
-				"hex identity; reuse this value after an " +
-				"ambiguous response",
+				"hex request identity",
 		},
 		&cli.StringFlag{Name: "group_key", Required: true,
 			Usage: "Compressed asset group key in lowercase hex"},
@@ -113,7 +112,7 @@ func assetCommandIdentity(cmd *cli.Command) ([]byte, []byte, error) {
 	} else if _, err := rand.Read(id); err != nil {
 		return nil, nil, err
 	}
-	// Print before the RPC so an interrupted invocation remains retryable.
+	// Print the identity used to find the operation in normal status lists.
 	fmt.Fprintf(os.Stderr, "Asset request ID: %x\n", id)
 	return id, group, nil
 }

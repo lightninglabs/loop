@@ -590,7 +590,7 @@ The following flags are supported:
 
 ### `static asset deposit` subcommand
 
-Queue an asset deposit.
+Fund an asset deposit.
 
 Usage:
 
@@ -600,12 +600,12 @@ $ loop [GLOBAL FLAGS] static asset deposit [COMMAND FLAGS] [ARGUMENTS...]
 
 The following flags are supported:
 
-| Name               | Description                                                                  | Type   | Default value |
-|--------------------|------------------------------------------------------------------------------|--------|:-------------:|
-| `--request_id="…"` | 32-byte lowercase hex identity; reuse this value after an ambiguous response | string |
-| `--group_key="…"`  | Compressed asset group key in lowercase hex                                  | string |
-| `--amount="…"`     | Native asset units to deposit                                                | uint   |      `0`      |
-| `--help` (`-h`)    | show help                                                                    | bool   |    `false`    |
+| Name               | Description                                 | Type   | Default value |
+|--------------------|---------------------------------------------|--------|:-------------:|
+| `--request_id="…"` | 32-byte lowercase hex request identity      | string |
+| `--group_key="…"`  | Compressed asset group key in lowercase hex | string |
+| `--amount="…"`     | Native asset units to deposit               | uint   |      `0`      |
+| `--help` (`-h`)    | show help                                   | bool   |    `false`    |
 
 ### `static asset in` subcommand
 
@@ -619,15 +619,15 @@ $ loop [GLOBAL FLAGS] static asset in [COMMAND FLAGS] [ARGUMENTS...]
 
 The following flags are supported:
 
-| Name                    | Description                                                                  | Type   | Default value |
-|-------------------------|------------------------------------------------------------------------------|--------|:-------------:|
-| `--request_id="…"`      | 32-byte lowercase hex identity; reuse this value after an ambiguous response | string |
-| `--group_key="…"`       | Compressed asset group key in lowercase hex                                  | string |
-| `--amount="…"`          | Exact native Lightning payout; deposit excess is fee                         | uint   |      `0`      |
-| `--utxo="…"`            | Canonical txid:index of one whole deposit                                    | string |
-| `--max_asset_debit="…"` | Maximum native debit; defaults to amount                                     | uint   |      `0`      |
-| `--max_asset_fee="…"`   | Maximum native swap fee                                                      | uint   |      `0`      |
-| `--help` (`-h`)         | show help                                                                    | bool   |    `false`    |
+| Name                    | Description                                          | Type   | Default value |
+|-------------------------|------------------------------------------------------|--------|:-------------:|
+| `--request_id="…"`      | 32-byte lowercase hex request identity               | string |
+| `--group_key="…"`       | Compressed asset group key in lowercase hex          | string |
+| `--amount="…"`          | Exact native Lightning payout; deposit excess is fee | uint   |      `0`      |
+| `--utxo="…"`            | Canonical txid:index of one whole deposit            | string |
+| `--max_asset_debit="…"` | Maximum native debit; defaults to amount             | uint   |      `0`      |
+| `--max_asset_fee="…"`   | Maximum native swap fee                              | uint   |      `0`      |
+| `--help` (`-h`)         | show help                                            | bool   |    `false`    |
 
 ### `static asset deposits` subcommand
 
@@ -647,7 +647,7 @@ The following flags are supported:
 
 ### `static asset swaps` subcommand
 
-List durable asset requests and swaps.
+List asset swaps.
 
 Usage:
 

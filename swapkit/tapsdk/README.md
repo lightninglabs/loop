@@ -128,10 +128,12 @@ It does not exercise a Loop client/server Lightning swap or pricing policy.
 ## Normal daemon integration
 
 The adapter is part of the normal Loop module. `Driver` contains node-service
-dependencies only. The deposit manager owns unfinished wallet funding in its
-SQL request row, and the Loop In record owns the unsigned package and completed
-fallback. LND owns ephemeral signing sessions. An interrupted round uses fresh
-nonces for the same package; a durable fallback needs no signer recovery.
+dependencies only. `BuildDeposit` and `BuildDepositRefund` return signed
+transaction packages without publishing. The ordinary deposit FSM saves each
+package on its deposit row before calling the corresponding publish method.
+The Loop In record owns the unsigned recovery package and completed fallback.
+LND owns ephemeral signing sessions. An interrupted round uses fresh nonces
+for the same package; a saved fallback needs no signer recovery.
 
 Tapd owns transfer logging, broadcasting and confirmed proof reconstruction.
 For an offline peer's already-mined spend, the adapter reconstructs the known

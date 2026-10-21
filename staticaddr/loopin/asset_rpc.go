@@ -1,4 +1,4 @@
-package assetclient
+package loopin
 
 import (
 	"context"
@@ -9,9 +9,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Server exposes the asset protocol operations to the durable controller.
+// AssetServer exposes the asset protocol operations to the normal loop-in FSM.
 // Creation and commitment use the existing static-address RPCs on the wire.
-type Server interface {
+type AssetServer interface {
 	swapserverrpc.AssetLoopInServerClient
 
 	CreateAssetLoopIn(context.Context,
@@ -28,9 +28,9 @@ type serverClient struct {
 	static swapserverrpc.StaticAddressServerClient
 }
 
-// NewServerClient binds the asset variant of the existing static RPCs and the
-// additional payout/recovery phases to the same authenticated connection.
-func NewServerClient(conn grpc.ClientConnInterface) Server {
+// NewAssetServerClient binds the asset variant of the static RPCs and its
+// payout/recovery phases to the same authenticated connection.
+func NewAssetServerClient(conn grpc.ClientConnInterface) AssetServer {
 	return &serverClient{
 		AssetLoopInServerClient: swapserverrpc.NewAssetLoopInServerClient(
 			conn,
