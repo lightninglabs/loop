@@ -183,6 +183,7 @@ func (s *swapClientServer) assetStaticLoopIn(ctx context.Context,
 // listAssetStaticLoopIns reports asset variants of ordinary swap records.
 func (s *swapClientServer) listAssetStaticLoopIns(ctx context.Context) (
 	*looprpc.ListStaticAddressSwapsResponse, error) {
+
 	if !s.staticLoopInManager.AssetsEnabled() {
 		return nil, assetOperationError(nil)
 	}

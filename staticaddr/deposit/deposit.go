@@ -71,14 +71,14 @@ type OnchainCost struct {
 type Deposit struct {
 	sync.Mutex
 
+	// Outpoint of the deposit.
+	wire.OutPoint
+
 	// Asset carries native quantities and proofs. Value remains satoshis.
 	Asset *swapkit.Deposit
 
 	// AssetTx is a completed funding or expiry package saved before publish.
 	AssetTx []byte
-
-	// Outpoint of the deposit.
-	wire.OutPoint
 
 	// ID is the unique identifier of the deposit.
 	ID ID
