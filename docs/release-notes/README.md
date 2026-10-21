@@ -112,4 +112,5 @@ a versioned file, then reset the next-release sections.
 | [v0.34.0-beta](release-notes-0.34.0.md) | 2026-07-23 | Tracked low-confirmation deposits and production Taproot channels |
 | [v0.35.0-beta](release-notes-0.35.0.md) | 2026-08-24 | Added stateless Loop Out HTLC recovery and hardened Instant Out handling |
 | [v0.35.1-beta](release-notes-0.35.1.md) | 2026-10-19 | Reported static address on-chain costs and required Instant Out fee caps |
+| [v0.35.2-beta](release-notes-0.35.2.md) | 2026-10-21 | Hardened MuSig2 Loop In key handling and refunds, and raised the minimum Go version to 1.27.3 |
 | [Next release](release-notes-next.md) | Unreleased | No changes yet |
