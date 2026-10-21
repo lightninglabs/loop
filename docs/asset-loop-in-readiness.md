@@ -11,9 +11,9 @@ the normal daemon integration, and the remaining consolidation priorities.
 ## What is implemented
 
 - Normal `loop static asset` commands and `loopd` startup/recovery integration.
-- Existing deposit/Loop In managers and SQL stores, shared transition graphs,
-  and asset-specific guards. One client request row holds admission and
-  execution state; cleanup and deposit release commit atomically.
+- Normal managers and SQL connections host a separate asset controller,
+  request workflow and recovery batches. Actual deposit/Loop In FSM reuse is
+  still missing; shared graphs and database objects do not provide it.
 - Loop-owned deposit/HTLC contracts and an SDK adapter using normal LND signing
   and tapd proof publication. Asset leaves use `OP_TRUE`; spending authority
   remains in the Bitcoin deposit and HTLC scripts.
@@ -32,6 +32,7 @@ claim of comprehensive failure or deployment coverage.
 
 | Priority | Shortcoming | Completion criterion |
 | --- | --- | --- |
+| P0 | Parallel asset lifecycle instead of existing FSM reuse. | Follow the [architecture audit](asset-loop-in-architecture.md): use normal deposit/swap records, FSM actions and recovery; remove the separate controllers, request workflow and revision framework. |
 | P0 | Fixed pre-signed fallback fees; no automatic claim/refund fee escalation. | A bounded unilateral fee-bump strategy preserves asset proofs and survives restart. Test fee increases, eviction, and confirmation before deadlines. |
 | P0 | Chain-notification reorg tests do not cover every real-node confirmation/cleanup boundary. | Disconnect and replace blocks around deposit, fallback, claim, and refund confirmation with real proofs. Define finality and recovery after terminal cleanup. |
 | P0 | Development dependency patches and coordinated protocol changes remain under review. | Review the client/server pair, merge required SDK/tapd fixes, pin released dependencies, and pass required CI, including the process regressions. |

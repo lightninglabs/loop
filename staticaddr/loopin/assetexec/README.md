@@ -6,12 +6,12 @@ preimage. The client creates a same-group asset HOLD invoice, verifies its
 incoming committed HTLC locally, and keeps a fully signed SDK fallback before
 sending any signature to the server.
 
-The controller dispatches events through the same `loopin/flow` transition
-policy used by the existing Bitcoin FSM, selecting its `ServerAsset` branch.
-The branch retains preparation and exposure across recovery; Bitcoin's branch
-keeps its existing unlock transitions. Mandatory journal writes remain inside
-the controller, before effects, because the legacy FSM entry hook cannot fail
-closed on persistence errors. `InitHtlcTx` journals the offer, shared deposit
+This is a separate executor, not the ordinary Loop In FSM. `loopin/flow`
+selects separate Bitcoin and asset graphs. The [architecture audit](../../../docs/asset-loop-in-architecture.md)
+calls for replacing this package with asset actions in the normal FSM. Existing
+actions can explicitly save before effects; the entry hook does not justify a
+separate durability framework. The following describes the current controller,
+not requirements to retain its revision/checkpoint machinery. `InitHtlcTx` journals the offer, shared deposit
 reservation, and invoice intent/result. `SignHtlcTx` receives and persists the
 complete verified recovery bundle. `MonitorInvoiceAndHtlcTx` begins only after
 local acceptance is verified and signature exposure is durably recorded.
@@ -55,12 +55,9 @@ sending signatures into an expired payout. An uncertain response never clears ex
 
 Use `ReceivePreimage` for authenticated server notifications or a preimage
 recovered from a verified claim witness. It verifies the hash and journals the
-preimage before settling the HOLD invoice. `CooperativeSignature` rechecks
-local settlement and fixes its request and resulting signature durably. A
-server's claimed payment state cannot authorize an unconditional cooperative
-spend. `Recover` resumes the persisted boundary after restart; adapters must
-recover existing invoices, RFQs, signing sessions, and broadcasts by the same
-hash, without replacing them.
+preimage before settling the HOLD invoice. `Recover` resumes the persisted
+boundary after restart; adapters must recover existing invoices, RFQs, signing
+sessions, and broadcasts by the same hash, without replacing them.
 
 After signatures may have escaped, an elapsed refund height or a mempool
 transaction cannot authorize cancellation or deposit release. The transaction

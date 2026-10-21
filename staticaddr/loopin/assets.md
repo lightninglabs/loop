@@ -1,8 +1,12 @@
 # Normal client asset deposits and loop-ins
 
 `loopd` configures its existing static Loop In manager with a typed asset
-transaction adapter. The same manager owns admission and recovery; the normal
-SQL store holds deposit metadata, funding checkpoints and swap progress.
+transaction adapter. It currently hosts a separate asset session/controller
+and recovery batches. The normal SQL connection holds separate asset request
+and execution data; assets do not yet run through the normal FSMs. The
+[architecture audit](../../docs/asset-loop-in-architecture.md) describes their
+replacement with existing deposit and Loop In actions. The behavior below
+remains the current implementation until that refactor is complete.
 The adapter calls the existing LND signer and chain services and the SDK's
 custom-anchor builder. Tapd journals publications and constructs confirmed
 proofs. There is no separate asset daemon, transport, or signer database.

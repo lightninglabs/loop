@@ -87,15 +87,20 @@ pull request uses the `no-changelog` label instead. This is enforced by CI.
 
 ### Asset static loop-in ownership
 
-`staticaddr/loopin.Manager` owns Bitcoin and asset admission and recovery.
-Its existing `SqlStore` stores asset metadata on deposit rows and combines
-pending requests with execution checkpoints. Read `staticaddr/loopin/assets.md`
-before changing this flow. `loopd` and `looprpc` expose it; `cmd/loop` supplies
-`static asset` commands. Restore the deposit manager's asset exclusion before
-Bitcoin recovery. Execution checkpoints and ownership release must commit
-atomically; native quantities must never enter satoshi fields. SDK transaction
-operations live in `swapkit/tapsdk` inside the normal Loop module. Use the
-existing LND signer and chain services. Never persist secret MuSig2 nonces:
-restart unfinished rounds with fresh nonces for the same unsigned package.
-The normal SQL record owns preparation and the completed fallback; tapd owns
-transfer publication and confirmed proof reconstruction.
+`staticaddr/loopin.Manager` currently hosts a separate asset controller and
+recovery batches. This is not yet integration into the existing FSMs. Read
+`docs/asset-loop-in-architecture.md` for the audit and removal plan, and
+`staticaddr/loopin/assets.md` for current behavior. Prefer normal deposit/swap
+records, actions and startup recovery; do not preserve the extra revisions,
+request workflow or worker abstractions merely because draft tests use them.
+
+Preserve server-owned execution, accepted native payment checks, signed fallback
+availability and unilateral recovery. Save explicitly before exposing claim
+authority, using the existing action-level persistence pattern. Native
+quantities must never enter satoshi fields. Keep asset anchors out of
+Bitcoin-only spend paths throughout consolidation.
+
+SDK transaction operations live in `swapkit/tapsdk` inside the normal Loop
+module. Use existing LND signing and chain services. Never persist secret
+MuSig2 nonces: restart unfinished rounds with fresh nonces for the same
+unsigned package. Tapd owns publication and confirmed proof reconstruction.

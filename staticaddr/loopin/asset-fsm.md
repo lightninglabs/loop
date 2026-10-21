@@ -1,8 +1,10 @@
 # Asset state transitions
 
-The [generated Bitcoin diagram](fsm.md) retains its existing client-preimage behavior. The
-[asset execution controller](assetexec/README.md) reuses these lifecycle names
-with durable server-preimage boundaries:
+The [generated Bitcoin diagram](fsm.md) describes the ordinary FSM. The diagram
+below describes the separate [asset controller](assetexec/README.md), which
+currently shares state names but does not instantiate that FSM. The
+[architecture audit](../../docs/asset-loop-in-architecture.md) maps these
+operations to normal actions and identifies the added durability to remove:
 
 ```mermaid
 stateDiagram-v2
@@ -22,7 +24,7 @@ stateDiagram-v2
 RPC errors preserve the durable state. After exposure, neither an elapsed
 refund height nor server unavailability permits releasing deposits. Terminal
 cleanup commits its execution checkpoint, deposit history and ownership-scoped
-release in one transaction in the normal SQL store. Cooperative signatures require a fresh local settlement check.
+release in one transaction in the normal SQL store.
 
 Both graphs are implemented in `loopin/flow`, selected by protocol. The Bitcoin
 FSM binds its existing actions to `BitcoinV0`; the durable asset controller
@@ -34,6 +36,6 @@ authorization boundary; an in-memory transition alone cannot expose signatures.
 
 The existing `loopin.Manager` schedules both Bitcoin recovery and bounded asset
 batches. Asset metadata lives on normal deposit rows; one SQL request row owns
-the pre-offer request and subsequent execution record. The controller supplies
-the fallible persistence barrier before external effects; the legacy FSM entry
-notification cannot authorize an asset signature when storage fails.
+the pre-offer request and subsequent execution record. This remains a second lifecycle. The planned integration uses explicit writes
+in normal FSM actions before exposing signatures, following the existing
+server payment action; a separate controller is not required.

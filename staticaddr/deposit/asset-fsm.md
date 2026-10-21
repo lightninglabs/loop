@@ -1,12 +1,11 @@
 # Asset state transitions
 
-The [generated Bitcoin diagram](fsm.md) is unchanged. `deposit/flow` owns the transition
-names and graph; the legacy deposit FSM binds its wallet actions to that graph.
-The asset execution journal uses the `ServerAsset` variant, shown afterward.
-Ownership, atomic deposit reservations, and verified chain evidence remain
-responsibilities of the caller and shared deposit manager.
-
-
+The [generated Bitcoin diagram](fsm.md) describes the existing deposit FSM.
+The asset journal currently mirrors deposit state using a separate graph,
+shown below. Assets are excluded from ordinary deposit queries and do not
+instantiate `deposit.FSM`. The [architecture audit](../../docs/asset-loop-in-architecture.md)
+calls for replacing this mirror with optional asset data and asset-aware expiry
+actions in the actual deposit FSM.
 
 The asset variant keeps the existing reservation and terminal state names.
 It adds an explicit exposure barrier before signatures can leave the client.
