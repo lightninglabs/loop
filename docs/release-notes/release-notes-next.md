@@ -33,4 +33,10 @@
 
 * `utils.MuSig2Sign` now takes the signers' raw 32-byte private keys and derives their public keys itself, instead of separate private and public key slices. Out-of-range keys are reduced modulo the secp256k1 group order, while keys that reduce to zero and calls with fewer than two signers are rejected. Go callers of this exported helper need to be updated.
 
+* Raise the minimum Go version to 1.27.3 and move the build and release
+  toolchain to match. Go 1.27.3 carries the fix for CVE-2026-111943, which
+  distrusts a set of intermediate certificates in `crypto/x509`. Release
+  binaries are statically linked, so they only pick up the new trust
+  decision when rebuilt with a patched toolchain.
+
 #### Contributors (Alphabetical Order)

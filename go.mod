@@ -232,7 +232,7 @@ replace go.augendre.info/arangolint => github.com/Crocmagnon/arangolint v0.4.0
 
 replace go.augendre.info/fatcontext => github.com/Crocmagnon/fatcontext v0.9.0
 
-go 1.25.12
+go 1.27.3
 
 // This sqldb revision contains lnd's pgx v5 migration, which removes the
 // vulnerable legacy pgx v4/pgproto3 dependency chain. Remove this replacement
