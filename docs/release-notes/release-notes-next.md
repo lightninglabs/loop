@@ -16,6 +16,9 @@
 
 #### Bug Fixes
 
+* Avoid a deposit recovery lock inversion when reservation and startup
+  recovery run concurrently. Unchanged recovery states need no store write.
+
 * Recover asset spends through LND chain notifications and verified tapd
   proofs, including original CSV refunds after an extended outage.
 

@@ -157,3 +157,29 @@ func TestLoopingInTransitionsToSweepHtlcTimeout(t *testing.T) {
 	require.Equal(t, SweepHtlcTimeout, deposit.GetState())
 	store.AssertExpectations(t)
 }
+
+// TestDepositRecoverySkipsUnchangedState covers the lock order of a
+// recovered self-loop racing with TransitionDeposits. The latter holds the
+// deposit lock while SendEvent already holds the FSM lock.
+func TestDepositRecoverySkipsUnchangedState(t *testing.T) {
+	d := &Deposit{state: SweepHtlcTimeout}
+	f := &FSM{deposit: d}
+	d.Lock()
+	done := make(chan struct{})
+	go func() {
+		f.updateDeposit(t.Context(), fsm.Notification{
+			PreviousState: SweepHtlcTimeout,
+			NextState:     SweepHtlcTimeout, Event: OnRecover,
+		})
+		close(done)
+	}()
+	completed := false
+	select {
+	case <-done:
+		completed = true
+	case <-time.After(time.Second):
+	}
+	d.Unlock()
+	<-done
+	require.True(t, completed, "recovery must not relock an unchanged deposit")
+}

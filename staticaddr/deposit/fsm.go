@@ -485,6 +485,16 @@ func (f *FSM) updateDeposit(ctx context.Context,
 		return
 	}
 
+	// Recovery restores this state from the deposit row before SendEvent.
+	// A self-loop has nothing to persist. Avoid taking the deposit lock
+	// while holding the FSM lock: normal transitions acquire them in the
+	// opposite order.
+	if notification.Event == OnRecover &&
+		notification.PreviousState == notification.NextState {
+
+		return
+	}
+
 	_, alreadyLocked := lockedEvents[notification.Event]
 	if !alreadyLocked {
 		f.deposit.Lock()
