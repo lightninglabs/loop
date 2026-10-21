@@ -21,7 +21,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/lightninglabs/aperture v0.4.0
 	github.com/lightninglabs/lndclient v0.21.0-2
-	github.com/lightninglabs/loop/looprpc v1.0.7
+	github.com/lightninglabs/loop/looprpc v1.0.17-0.20261021185954-333ed1efccdd
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
 	github.com/lightninglabs/taproot-assets v0.8.1
 	github.com/lightninglabs/taproot-assets/taprpc v1.2.0
