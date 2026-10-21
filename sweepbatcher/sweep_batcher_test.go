@@ -3881,8 +3881,8 @@ func testAddSweepReturnsContextErrorOnRunCancellation(t *testing.T,
 		SweepConfTarget: confTarget,
 	}
 
-	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
-		swapInvoice, lnd.ChainParams,
+	swapPaymentAddr, err := utils.ObtainLoopOutPaymentAddr(
+		&loopdb.LoopOutContract{SwapInvoice: swapInvoice}, lnd.ChainParams,
 	)
 	require.NoError(t, err)
 
@@ -4101,8 +4101,8 @@ func testSweepFetcher(t *testing.T, store testStore,
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Extract payment address from the invoice.
-	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
-		swapInvoice, lnd.ChainParams,
+	swapPaymentAddr, err := utils.ObtainLoopOutPaymentAddr(
+		&loopdb.LoopOutContract{SwapInvoice: swapInvoice}, lnd.ChainParams,
 	)
 	require.NoError(t, err)
 
@@ -5042,8 +5042,8 @@ func testWithMixedBatch(t *testing.T, store testStore,
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Extract payment address from the invoice.
-	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
-		swapInvoice, lnd.ChainParams,
+	swapPaymentAddr, err := utils.ObtainLoopOutPaymentAddr(
+		&loopdb.LoopOutContract{SwapInvoice: swapInvoice}, lnd.ChainParams,
 	)
 	require.NoError(t, err)
 
@@ -5250,8 +5250,8 @@ func testWithMixedBatchCustom(t *testing.T, store testStore,
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Extract payment address from the invoice.
-	swapPaymentAddr, err := utils.ObtainSwapPaymentAddr(
-		swapInvoice, lnd.ChainParams,
+	swapPaymentAddr, err := utils.ObtainLoopOutPaymentAddr(
+		&loopdb.LoopOutContract{SwapInvoice: swapInvoice}, lnd.ChainParams,
 	)
 	require.NoError(t, err)
 

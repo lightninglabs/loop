@@ -11,10 +11,13 @@ authenticated swap RPC. This secret authorizes cancellation, routing reports
 and cooperative sweep signing; it is distinct from the swap preimage.
 
 The client persists this value with the swap and uses it after restart and
-when the sweep batcher reloads the swap. Missing secrets for blinded swap
-invoices and malformed response lengths are rejected. For ordinary invoices,
-the separate value is optional and must match the invoice when supplied. Old
-swaps continue deriving their secret from their invoice.
+when the sweep batcher reloads the swap. Database-backed recovery with
+`out sweephtlc --cooperative` uses the persisted value too. Stateless
+cooperative recovery requires the operator to provide the secret explicitly.
+Missing secrets for blinded swap invoices and malformed response lengths are
+rejected. For ordinary invoices, the separate value is optional and must match
+the invoice when supplied. Old swaps continue deriving their secret from their
+invoice.
 
 LND receives the complete invoice string and handles introduction-node routing
 and blinded payment paths, including multipart payments. Destination-based Loop

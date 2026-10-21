@@ -529,11 +529,22 @@ func TestSweepHtlcCooperative(t *testing.T) {
 	const clientKeyIndex = int32(7)
 
 	testCases := []struct {
-		name      string
-		stateless bool
+		name               string
+		stateless          bool
+		blinded            bool
+		missingPaymentAddr bool
 	}{
 		{
 			name: "stateful",
+		},
+		{
+			name:    "stateful blinded invoice",
+			blinded: true,
+		},
+		{
+			name:               "stateful blinded invoice missing secret",
+			blinded:            true,
+			missingPaymentAddr: true,
 		},
 		{
 			name:      "stateless",
@@ -655,13 +666,25 @@ func TestSweepHtlcCooperative(t *testing.T) {
 				payReq, err := test.EncodePayReq(invoice)
 				require.NoError(t, err)
 
+				loopOutContract := &loopdb.LoopOutContract{
+					SwapContract: contract,
+					DestAddr:     destAddr,
+					SwapInvoice:  payReq,
+				}
+				if testCase.blinded {
+					loopOutContract.SwapInvoice, err =
+						test.CreateBlindedInvoice(
+							lnd.ChainParams, swapHash,
+							contract.AmountRequested,
+						)
+					require.NoError(t, err)
+					if !testCase.missingPaymentAddr {
+						loopOutContract.PaymentAddr = &paymentAddr
+					}
+				}
 				storeMock := loopdb.NewStoreMock(t)
 				storeMock.LoopOutSwaps[swapHash] =
-					&loopdb.LoopOutContract{
-						SwapContract: contract,
-						DestAddr:     destAddr,
-						SwapInvoice:  payReq,
-					}
+					loopOutContract
 				store = storeMock
 			}
 
@@ -669,6 +692,19 @@ func TestSweepHtlcCooperative(t *testing.T) {
 				t.Context(), 5*time.Second,
 			)
 			defer cancel()
+			if testCase.missingPaymentAddr {
+				_, err := sweepHtlc(
+					ctx, request, lnd.ChainParams, store,
+					lnd.ChainNotifier, wallet, nil,
+					clientSigner, cooperativeSigner.sign,
+				)
+				require.ErrorContains(
+					t, err, "missing blinded swap payment address",
+				)
+				require.Zero(t, cooperativeSigner.calls)
+				require.NoError(t, lnd.IsDone())
+				return
+			}
 			go sendSweepConfirmation(ctx, lnd, fundingTx)
 
 			response, err := sweepHtlc(

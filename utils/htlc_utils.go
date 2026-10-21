@@ -61,6 +61,8 @@ func GetHtlcScriptVersion(
 }
 
 // ObtainSwapPaymentAddr will retrieve the payment addr from the passed invoice.
+//
+// Deprecated: Use ObtainLoopOutPaymentAddr to support blinded swap invoices.
 func ObtainSwapPaymentAddr(swapInvoice string, chainParams *chaincfg.Params) (
 	*[32]byte, error) {
 
