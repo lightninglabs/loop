@@ -15,15 +15,6 @@ GOBUILD := CGO_ENABLED=0 GO111MODULE=on go build -v
 GOINSTALL := CGO_ENABLED=0 GO111MODULE=on go install -v
 GOMOD := GO111MODULE=on go mod
 
-# GitLab-backed module sources can reject CI runner traffic. Seed GitLab and
-# modernc.org modules through the public Go proxy before the direct check.
-MOD_CHECK_FILES := go.mod go.sum swapserverrpc/go.mod swapserverrpc/go.sum \
-	looprpc/go.mod looprpc/go.sum tools/go.mod tools/go.sum
-MOD_CHECK_PREFETCH := $(shell awk '($$1 ~ /^(gitlab\.com\/|modernc\.org\/)/) { \
-	version=$$2; sub("/go.mod$$", "", version); \
-	if (version ~ /^v/) print $$1 "@" version; \
-}' $(MOD_CHECK_FILES) | sort -u)
-
 COMMIT := $(shell git describe --abbrev=40 --dirty --tags)
 COMMIT_HASH := $(shell git rev-parse HEAD)
 DIRTY := $(shell git diff-index --quiet HEAD -- || echo dirty)
@@ -165,13 +156,10 @@ mod-tidy:
 
 mod-check:
 	@$(call print, "Checking modules.")
-ifneq ($(MOD_CHECK_PREFETCH),)
-	@GOPROXY=https://proxy.golang.org $(GOMOD) download $(MOD_CHECK_PREFETCH)
-endif
-	GOPROXY=direct $(GOMOD) tidy
-	cd swapserverrpc/ && GOPROXY=direct $(GOMOD) tidy
-	cd looprpc/ && GOPROXY=direct $(GOMOD) tidy
-	cd tools/ && GOPROXY=direct $(GOMOD) tidy
+	$(GOMOD) tidy
+	cd swapserverrpc/ && $(GOMOD) tidy
+	cd looprpc/ && $(GOMOD) tidy
+	cd tools/ && $(GOMOD) tidy
 	if test -n "$$(git status --porcelain)"; then echo "Running go mod tidy changes go.mod/go.sum"; git status; git diff; exit 1; fi
 
 commitmsg-lint:
