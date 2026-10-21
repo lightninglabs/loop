@@ -23,7 +23,7 @@ env:
   GO_VERSION: 1.26.8
   # Test the coordinated migration until lightning-terminal#1438 lands.
   LITD_ITEST_REPOSITORY: hieblmi/lightning-terminal
-  LITD_ITEST_BRANCH: feab37aa372e2bb62052335dd678f1d305b253fc
+  LITD_ITEST_BRANCH: 020303943686284e08669995b02eda03841b06d2
 
 jobs:
   ########################
