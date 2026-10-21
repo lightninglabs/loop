@@ -23,6 +23,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	looptest "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -685,9 +686,9 @@ type sweepRequestSigner struct {
 }
 
 // MuSig2CreateSession returns a deterministic, size-correct session.
-func (s *sweepRequestSigner) MuSig2CreateSession(context.Context,
-	input.MuSig2Version, *keychain.KeyLocator, [][]byte,
-	...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo, error) {
+func (s *sweepRequestSigner) MuSig2CreateSession(_ context.Context,
+	version input.MuSig2Version, _ *keychain.KeyLocator, pubkeys [][]byte,
+	opts ...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo, error) {
 
 	sessionNumber := s.nextSession.Add(1)
 	var sessionID [32]byte
@@ -695,10 +696,12 @@ func (s *sweepRequestSigner) MuSig2CreateSession(context.Context,
 	var publicNonce [musig2.PubNonceSize]byte
 	publicNonce[0] = byte(sessionNumber)
 
-	return &input.MuSig2SessionInfo{
-		SessionID:   sessionID,
-		PublicNonce: publicNonce,
-	}, nil
+	session, err := looptest.MockMuSig2Session(version, pubkeys, opts...)
+	if err != nil {
+		return nil, err
+	}
+	session.SessionID, session.PublicNonce = sessionID, publicNonce
+	return session, nil
 }
 
 // MuSig2RegisterNonces reports that the deterministic session has all nonces.

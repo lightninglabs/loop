@@ -115,9 +115,8 @@ func CreateMusig2Session(ctx context.Context,
 
 	rootHash := expiryLeaf.TapHash()
 
-	return signer.MuSig2CreateSession(
-		ctx, input.MuSig2Version100RC2, &addrParams.KeyLocator,
-		signers, lndclient.MuSig2TaprootTweakOpt(rootHash[:], false),
+	return script.CreateMuSig2Session(
+		ctx, signer, addrParams.KeyLocator, signers, rootHash[:],
 	)
 }
 

@@ -5,11 +5,11 @@ import (
 	"math"
 
 	"github.com/lightninglabs/loop/swapkit"
+	sdk "github.com/lightninglabs/tap-sdk"
 )
 
-// originalRefundPolicy is also usable by a server that exposed its partial
-// signature but never received the client's fully signed fallback package.
-func originalRefundPolicy(d *depositRecord) (depositContract,
+// OriginalRefundPolicy selects the original deposit's unilateral CSV leaf.
+func OriginalRefundPolicy(d *DepositContext) (DepositContract,
 	*swapkit.SwapAnchorSpendInfo, error) {
 
 	c := d.Contract
@@ -24,37 +24,32 @@ func originalRefundPolicy(d *depositRecord) (depositContract,
 	return c, spend, err
 }
 
-// verifyOriginalRefund recognizes the independent original-deposit CSV path.
-// The client's recovered full amount must remain unspent at its wallet key.
-func (r *Driver) verifyOriginalRefund(ctx context.Context, s *swapContext,
-	raw []byte) error {
-
-	return r.verifyOriginalRefundPolicy(ctx, s, raw, true)
-}
-
-func (r *Driver) verifyOriginalRefundPolicy(ctx context.Context,
-	s *swapContext, raw []byte, requireUnspent bool) error {
+// verifyOriginalRefund verifies the original deposit's CSV recovery proof.
+func verifyOriginalRefund(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32,
+	s *SwapContext, raw []byte, requireUnspent bool) error {
 
 	d := s.Deposit
 	base := d.Proof
-	c, spend, err := originalRefundPolicy(d)
+	c, spend, err := OriginalRefundPolicy(d)
 	if err != nil {
 		return err
 	}
-	err = r.verifyWalletSpend(ctx, raw, c.Output, c.ClientKey,
-		spend, requireUnspent, uint64(base.BlockHeight)+uint64(c.CSV))
+	err = VerifyWalletSpend(
+		ctx, wallet, chain, minConfs, raw, c.Output, c.ClientKey,
+		spend, requireUnspent, uint64(base.BlockHeight)+uint64(c.CSV),
+	)
 	return err
 }
 
-// discoverOriginalRefund rebuilds an offline client's original CSV proof
-// from the admitted deposit and its observed spend. No transaction is signed
-// or published: only the already-mined witness is applied to the SDK package.
-func (r *Driver) discoverOriginalRefund(ctx context.Context,
-	s *swapContext) ([]byte, error) {
+// DiscoverOriginalRefund reconstructs an offline client's CSV recovery proof.
+func DiscoverOriginalRefund(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32,
+	s *SwapContext) ([]byte, error) {
 
 	d := s.Deposit
 	base := d.Proof
-	c, spend, err := originalRefundPolicy(d)
+	c, spend, err := OriginalRefundPolicy(d)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +57,7 @@ func (r *Driver) discoverOriginalRefund(ctx context.Context,
 	if start > math.MaxUint32 {
 		return nil, swapkit.ErrInvalid
 	}
-	block, _, err := r.cfg.Chain.Spend(ctx, base.OutPoint(),
+	block, _, err := chain.Spend(ctx, base.OutPoint(),
 		base.AnchorTx.TxOut[base.OutPoint().Index].PkScript, uint32(start))
 	if err != nil {
 		return nil, err
@@ -74,28 +69,30 @@ func (r *Driver) discoverOriginalRefund(ctx context.Context,
 	if !spendsLeaf(tx, c.Output, spend) {
 		return nil, swapkit.ErrPending
 	}
-	raw, err := r.rebuildObservedSpend(ctx, c.Output, d.Deposit.Proof,
-		c.ClientKey, spend, tx)
+	raw, err := rebuildObservedSpend(
+		ctx, wallet, chain, minConfs, c.Output, d.Deposit.Proof,
+		c.ClientKey, spend, tx,
+	)
 	if err != nil {
 		return nil, err
 	}
 	return raw, nil
 }
 
-// verifyRefundOutcome lets the server close a failed execution after the
-// client has spent its returned assets. That later spend cannot restore the
-// server's claim rights. Client RecoverRefund still requires spendability.
-func (r *Driver) verifyRefundOutcome(ctx context.Context, s *swapContext,
+// VerifyRefundOutcome recognizes either refund after it is spent again.
+// A later wallet spend cannot restore the server's expired claim authority.
+func VerifyRefundOutcome(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32, s *SwapContext,
 	raw []byte) error {
 
-	p, err := lastProof(raw)
+	p, err := LastProof(raw)
 	if err != nil {
 		return err
 	}
 	if len(p.AnchorTx.TxIn) == 1 && p.AnchorTx.TxIn[0].PreviousOutPoint ==
 		s.Deposit.Proof.OutPoint() {
 
-		return r.verifyOriginalRefundPolicy(ctx, s, raw, false)
+		return verifyOriginalRefund(ctx, wallet, chain, minConfs, s, raw, false)
 	}
-	return r.verifyOutcomePolicy(ctx, s, raw, true, false)
+	return VerifyOutcome(ctx, wallet, chain, minConfs, s, raw, true, false)
 }

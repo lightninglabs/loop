@@ -2,7 +2,7 @@ package swapkit
 
 import (
 	"github.com/btcsuite/btcd/txscript"
-	"golang.org/x/crypto/ripemd160" //nolint:staticcheck // Bitcoin OP_HASH160.
+	"golang.org/x/crypto/ripemd160" //nolint:gosec,staticcheck // OP_HASH160.
 )
 
 // HTLCSuccessScript serializes Loop's Bitcoin HTLC success leaf. The key is

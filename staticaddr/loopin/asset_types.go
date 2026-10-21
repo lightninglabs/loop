@@ -1,7 +1,7 @@
 package loopin
 
 import (
-	"github.com/lightninglabs/loop/assets/assetln"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/swapkit"
 )
 
@@ -28,27 +28,9 @@ func validAssetSwapAmount(amount uint64, request AssetSwapRequest) bool {
 //
 //nolint:tagliatelle // Preserve the existing recovery format.
 type AssetSwapInfo struct {
-	Request         AssetSwapRequest     `json:"Request"`
-	Offer           swapkit.Offer        `json:"Offer"`
-	Invoice         *assetln.HoldInvoice `json:"Invoice"`
-	RecoveryRequest []byte               `json:"RecoveryRequest"`
-	Fallback        swapkit.Fallback     `json:"Fallback"`
-	Accepted        *assetln.Evidence    `json:"Accepted"`
-}
-
-func (a *AssetSwapInfo) paymentTerms() assetln.Terms {
-	t := a.Offer.Terms
-	return assetln.Terms{
-		Hash: a.Offer.Hash, GroupKey: t.GroupKey, Amount: t.PayoutAmount,
-		MaxDebit: t.MaxDebit, RefundHeight: t.RefundHeight,
-		RecoveryBlocks: t.RecoveryDelta, HoldExpiryDelta: 20,
-		Deadline: t.OfferExpiry.Unix(),
-	}
-}
-
-func (a *AssetSwapInfo) operation() swapkit.Operation {
-	return swapkit.Operation{
-		Offer: a.Offer, Fallback: a.Fallback,
-		Preparation: swapkit.Preparation{RecoveryRequest: a.RecoveryRequest},
-	}
+	Request         AssetSwapRequest `json:"Request"`
+	Offer           swapkit.Offer    `json:"Offer"`
+	RecoveryRequest []byte           `json:"RecoveryRequest"`
+	Fallback        []byte           `json:"Fallback"`
+	Accepted        *assets.Evidence `json:"Accepted"`
 }

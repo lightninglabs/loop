@@ -8,9 +8,10 @@
   recovery. Server-controlled execution requires locally verified asset
   payments; reservations remain protected until confirmed proof resolution.
 
-* Add Loop-owned deposit/HTLC contracts and an SDK adapter using normal LND
-  signing and tapd proof publication. Normal SQL records preserve completed
-  fallbacks; interrupted signing attempts use fresh LND sessions.
+* Add Loop-owned deposit/HTLC contracts and native SDK transfer operations in
+  the ordinary FSM actions. Existing LND services sign, tapd publishes proofs,
+  and normal SQL records preserve completed fallbacks. Interrupted signing
+  attempts use fresh LND sessions.
 
 #### Breaking Changes
 
@@ -22,9 +23,13 @@
 * Recover asset spends through LND chain notifications and verified tapd
   proofs, including original CSV refunds after an extended outage.
 
+* Preserve native SDK key descriptors when registering OP_TRUE outputs so
+  recovered assets remain spendable through the ordinary wallet.
+
 #### Maintenance
 
-* Use SDK transfer packages directly for asset signing and recovery, with
-  one deposit/proof validation per operation and no duplicate kit wrappers.
+* Reuse native SDK packages, existing LND payment clients and the shared
+  static-address MuSig2 helper. Asset policy/proof helpers hold no services or
+  lifecycle, and normal swap records avoid duplicate invoice/fallback fields.
 
 #### Contributors (Alphabetical Order)

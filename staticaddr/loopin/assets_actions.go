@@ -6,9 +6,12 @@ import (
 	"crypto/sha256"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapkit"
+	assetkit "github.com/lightninglabs/loop/swapkit/tapsdk"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -47,7 +50,7 @@ func (f *FSM) InitAssetHtlcAction(ctx context.Context,
 	if err != nil {
 		return f.HandleError(err)
 	}
-	if err := cfg.Driver.ValidateOffer(ctx, offer); err != nil {
+	if err := f.validateAssetOffer(ctx, offer); err != nil {
 		return f.HandleError(err)
 	}
 	a.Offer = offer
@@ -71,18 +74,15 @@ func (f *FSM) SignAssetHtlcAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
 	cfg, a := f.cfg.Assets, f.loopIn.Asset
-	height, err := cfg.Driver.Height(ctx)
+	height, err := cfg.Chain.Height(ctx)
 	if err != nil {
 		return f.HandleError(err)
 	}
-	a.Invoice, err = cfg.Receiver.Create(
-		ctx, a.paymentTerms(), cfg.Peer[:], height,
-	)
+	f.loopIn.SwapInvoice, err = f.createAssetInvoice(ctx, height)
 	if err != nil {
 		return f.HandleError(err)
 	}
-	f.loopIn.SwapInvoice = a.Invoice.PaymentRequest
-	a.RecoveryRequest, err = cfg.Driver.PrepareRecovery(ctx, a.Offer)
+	a.RecoveryRequest, err = f.prepareAssetRecovery(ctx)
 	if err != nil {
 		return f.HandleError(err)
 	}
@@ -90,7 +90,7 @@ func (f *FSM) SignAssetHtlcAction(ctx context.Context,
 	defer cancel()
 	prepare := &swapserverrpc.PrepareAssetLoopInRequest{
 		PaymentHash:      a.Offer.Hash[:],
-		AssetHoldInvoice: a.Invoice.PaymentRequest,
+		AssetHoldInvoice: f.loopIn.SwapInvoice,
 		RecoveryRequest:  a.RecoveryRequest,
 	}
 	for {
@@ -105,17 +105,36 @@ func (f *FSM) SignAssetHtlcAction(ctx context.Context,
 			return fsm.NoOp
 		}
 	}
-	round, err := cfg.Driver.BeginFallback(ctx, a.Offer, a.RecoveryRequest)
+	s, err := f.assetSwap(ctx, a.Offer, a.RecoveryRequest, false, true)
 	if err != nil {
 		return f.HandleError(err)
 	}
-	defer round.Close()
+	requests, err := s.Fallback.SigningRequests()
+	if err != nil || len(requests.MuSig2) != 1 {
+		return f.HandleError(swapkit.ErrInvalid)
+	}
+	signing := requests.MuSig2[0]
+	participants := make([][]byte, len(signing.Participants))
+	for i := range participants {
+		participants[i] = signing.Participants[i][:]
+	}
+	session, err := script.CreateMuSig2Session(ctx, f.cfg.Signer,
+		s.Deposit.Key, participants, signing.TaprootMerkleRoot)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx),
+			5*time.Second)
+		defer cancel()
+		_ = f.cfg.Signer.MuSig2Cleanup(cleanup, session.SessionID)
+	}()
 	var bundle *swapserverrpc.AssetLoopInFallbackResponse
 	for {
 		bundle, err = cfg.Server.AssetLoopInFallback(peerCtx,
 			&swapserverrpc.AssetLoopInReference{
 				PaymentHash:  a.Offer.Hash[:],
-				SigningNonce: round.Nonce[:],
+				SigningNonce: session.PublicNonce[:],
 			})
 		if err == nil {
 			break
@@ -127,19 +146,63 @@ func (f *FSM) SignAssetHtlcAction(ctx context.Context,
 			return fsm.NoOp
 		}
 	}
-	a.Fallback, err = round.Finalize(ctx, bundle.GetRecoveryBundle())
+	var partial swapkit.FallbackSignature
+	if swapkit.Decode(bundle.GetRecoveryBundle(), &partial) != nil ||
+		partial.ClientNonce != session.PublicNonce ||
+		partial.PackageDigest != s.Fallback.CommittedPackageDigest {
+
+		return f.HandleError(swapkit.ErrInvalid)
+	}
+	all, err := f.cfg.Signer.MuSig2RegisterNonces(ctx, session.SessionID,
+		[][66]byte{partial.ServerNonce})
 	if err != nil {
 		return f.HandleError(err)
 	}
-	if len(a.Fallback.Bundle) == 0 || len(a.Fallback.ClaimSignatures) == 0 {
+	if !all {
 		return f.HandleError(swapkit.ErrInvalid)
 	}
+	if _, err := f.cfg.Signer.MuSig2Sign(ctx, session.SessionID,
+		signing.Sighash, false); err != nil {
+		return f.HandleError(err)
+	}
+	all, signature, err := f.cfg.Signer.MuSig2CombineSig(ctx,
+		session.SessionID, [][]byte{partial.Partial})
+	if err != nil {
+		return f.HandleError(err)
+	}
+	if !all {
+		return f.HandleError(swapkit.ErrInvalid)
+	}
+	signed, err := s.Fallback.ApplyKeyPathSignature(signing.ID, signature)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	packet, err := assetkit.DecodePSBT(signed.AnchorPsbt)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	if err := psbt.MaybeFinalizeAll(packet); err != nil {
+		return f.HandleError(err)
+	}
+	final, err := assetkit.EncodePSBT(packet)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	completed, err := s.Fallback.WithFinalAnchorPSBT(final)
+	if err != nil {
+		return f.HandleError(err)
+	}
+	a.Fallback, err = completed.MarshalBinary()
+	if err != nil {
+		return f.HandleError(err)
+	}
+
 	// Preparing a payment and receiving its HTLC are asynchronous. Wait in
 	// this existing action until the local node confirms the exact circuit.
 	for {
-		height, err = cfg.Driver.Height(ctx)
+		height, err = cfg.Chain.Height(ctx)
 		if err == nil {
-			a.Accepted, err = cfg.Receiver.Prepared(ctx, a.paymentTerms(), height)
+			a.Accepted, err = f.acceptedAssetPayment(ctx, height)
 		}
 		if err == nil {
 			break
@@ -154,12 +217,21 @@ func (f *FSM) SignAssetHtlcAction(ctx context.Context,
 	// This is the protocol's one safety boundary. Recovery must retain the
 	// complete fallback and treat signatures as exposed even if the send's
 	// response is lost. Save the existing lifecycle state before that send.
-	f.loopIn.SetState(MonitorInvoiceAndHtlcTx)
-	if err := f.cfg.Store.UpdateLoopIn(ctx, f.loopIn); err != nil {
-		f.loopIn.SetState(SignHtlcTx)
+	if err := f.saveAssetFallback(ctx); err != nil {
 		return f.HandleError(err)
 	}
 	return OnHtlcTxSigned
+}
+
+// saveAssetFallback records the exposure boundary before the monitor can
+// send claim signatures. A failed save leaves normal early-abort recovery.
+func (f *FSM) saveAssetFallback(ctx context.Context) error {
+	f.loopIn.SetState(MonitorInvoiceAndHtlcTx)
+	if err := f.cfg.Store.UpdateLoopIn(ctx, f.loopIn); err != nil {
+		f.loopIn.SetState(SignHtlcTx)
+		return err
+	}
+	return nil
 }
 
 // MonitorAssetInvoiceAction settles only after server disclosure and verified
@@ -176,7 +248,7 @@ func (f *FSM) MonitorAssetInvoiceAction(ctx context.Context,
 		if ctx.Err() != nil {
 			return fsm.NoOp
 		}
-		height, heightErr := cfg.Driver.Height(ctx)
+		height, heightErr := cfg.Chain.Height(ctx)
 		if heightErr == nil && (height >= a.Offer.Terms.RefundHeight ||
 			!time.Now().Before(a.Offer.Terms.OfferExpiry)) {
 
@@ -187,9 +259,9 @@ func (f *FSM) MonitorAssetInvoiceAction(ctx context.Context,
 		if heightErr == nil && uint64(height)+uint64(a.Offer.Terms.ExecutionDelta) <
 			uint64(a.Offer.Terms.RefundHeight) {
 
-			evidence, err := cfg.Receiver.Prepared(ctx, a.paymentTerms(), height)
+			evidence, err := f.acceptedAssetPayment(ctx, height)
 			if err == nil && a.Accepted != nil && *evidence == *a.Accepted {
-				height, err = cfg.Driver.Height(ctx)
+				height, err = cfg.Chain.Height(ctx)
 				if err != nil || !time.Now().Before(a.Offer.Terms.OfferExpiry) ||
 					uint64(height)+uint64(a.Offer.Terms.ExecutionDelta) >=
 						uint64(a.Offer.Terms.RefundHeight) {
@@ -200,7 +272,7 @@ func (f *FSM) MonitorAssetInvoiceAction(ctx context.Context,
 				_, err = cfg.Server.CommitAssetLoopIn(peerCtx,
 					&swapserverrpc.CommitAssetLoopInRequest{
 						PaymentHash:      a.Offer.Hash[:],
-						ClientSignatures: a.Fallback.ClaimSignatures,
+						ClientSignatures: a.Fallback,
 					})
 				cancel()
 				if err != nil {
@@ -217,11 +289,11 @@ func (f *FSM) MonitorAssetInvoiceAction(ctx context.Context,
 // assetPaymentSettled uses local invoice and accepted-circuit evidence. A
 // server status or on-chain secret alone is never proof of payment.
 func (f *FSM) assetPaymentSettled(ctx context.Context) (bool, error) {
-	cfg, a := f.cfg.Assets, f.loopIn.Asset
+	a := f.loopIn.Asset
 	if a.Accepted == nil {
 		return false, swapkit.ErrInvalid
 	}
-	settled, err := cfg.Receiver.Settled(ctx, a.paymentTerms(), *a.Accepted)
+	settled, err := f.settledAssetPayment(ctx)
 	if err != nil || settled {
 		return settled, err
 	}
@@ -229,13 +301,13 @@ func (f *FSM) assetPaymentSettled(ctx context.Context) (bool, error) {
 	if err != nil || !found {
 		return false, nil
 	}
-	if err := cfg.Receiver.Settle(ctx, a.Offer.Hash, preimage); err != nil {
-		return cfg.Receiver.Settled(ctx, a.paymentTerms(), *a.Accepted)
+	if err := f.settleAssetInvoice(ctx, preimage); err != nil {
+		return f.settledAssetPayment(ctx)
 	}
 	// LND persists settlement. Recover the preimage there if this SQL update
 	// or its response is interrupted.
 	f.loopIn.SwapPreimage = lntypes.Preimage(preimage)
-	return cfg.Receiver.Settled(ctx, a.paymentTerms(), *a.Accepted)
+	return f.settledAssetPayment(ctx)
 }
 
 func (f *FSM) assetPreimage(ctx context.Context) ([32]byte, bool, error) {
@@ -243,7 +315,8 @@ func (f *FSM) assetPreimage(ctx context.Context) ([32]byte, bool, error) {
 	if f.loopIn.SwapPreimage.Hash() == f.loopIn.SwapHash {
 		return [32]byte(f.loopIn.SwapPreimage), true, nil
 	}
-	invoice, err := cfg.Receiver.Lookup(ctx, a.Offer.Hash)
+	authCtx, _, lightning := f.cfg.LndClient.RawClientWithMacAuth(ctx)
+	invoice, err := lightning.LookupInvoice(authCtx, &lnrpc.PaymentHash{RHash: a.Offer.Hash[:]})
 	if err == nil && invoice != nil && invoice.State == lnrpc.Invoice_SETTLED {
 		if len(invoice.RPreimage) != 32 ||
 			!bytes.Equal(invoice.RHash, a.Offer.Hash[:]) {
@@ -270,7 +343,7 @@ func (f *FSM) assetPreimage(ctx context.Context) ([32]byte, bool, error) {
 	}
 	chainCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	result, err := cfg.Driver.LookupPreimage(chainCtx, a.operation())
+	result, err := f.lookupAssetChainPreimage(chainCtx)
 	return result.Preimage, result.Found, err
 }
 
@@ -305,9 +378,9 @@ func (f *FSM) SweepAssetHtlcTimeoutAction(ctx context.Context,
 		}
 		if err == nil {
 			var proof []byte
-			proof, err = cfg.Driver.RecoverRefund(ctx, a.operation())
+			proof, err = f.refundAssetSwap(ctx)
 			if err == nil && len(proof) > 0 {
-				err = cfg.Receiver.CancelBeforeExposure(ctx, a.Offer.Hash)
+				err = f.cancelAssetInvoice(ctx)
 				if err == nil {
 					err = f.cfg.DepositManager.TransitionDeposits(ctx, f.loopIn.Deposits,
 						deposit.OnHtlcTimeoutSwept, deposit.HtlcTimeoutSwept)
@@ -338,7 +411,7 @@ func (f *FSM) UnlockAssetDepositsAction(ctx context.Context,
 
 	cfg, a := f.cfg.Assets, f.loopIn.Asset
 	if a.Offer.Hash != ([32]byte{}) {
-		if err := cfg.Receiver.CancelBeforeExposure(ctx, a.Offer.Hash); err != nil {
+		if err := f.cancelAssetInvoice(ctx); err != nil {
 			f.Errorf("unable to cancel asset invoice: %v", err)
 			return fsm.NoOp
 		}

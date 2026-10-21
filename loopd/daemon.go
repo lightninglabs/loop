@@ -490,6 +490,13 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				d.lnd.NodePubkey)
 		}
 
+		if d.cfg.AssetPeer != "" || d.cfg.AssetBitcoinURL != "" {
+			if err := validateAssetLoopInNode(getInfo, d.cfg.Network,
+				blockHeight); err != nil {
+				return err
+			}
+		}
+
 		infof("Using asset client with version %v", getInfo.Version)
 	}
 
@@ -737,7 +744,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	defer func() {
 		if !assetInitialized && d.assetCleanup != nil {
 			// Startup can fail after managers have started. Join the
-			// asset recovery batch before closing its runtime client.
+			// asset recovery batch before closing the SDK client.
 			d.mainCtxCancel()
 			if staticLoopInDone != nil {
 				<-staticLoopInDone

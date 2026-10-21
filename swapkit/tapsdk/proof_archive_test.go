@@ -42,10 +42,9 @@ func TestProofArchiveRetryUsesExactOutput(t *testing.T) {
 		100, false)
 	raw := bindingRaw(t, p)
 	client := &archiveSDK{file: &sdk.ProofFile{RawProofFile: raw}}
-	cfg := DriverConfig{Wallet: sdk.NewWallet(client, sdk.NetworkRegtest)}
+	wallet := sdk.NewWallet(client, sdk.NetworkRegtest)
 	for range 2 {
-		driver := &Driver{cfg: cfg}
-		require.NoError(t, driver.importProof(t.Context(), raw))
+		require.NoError(t, importProof(t.Context(), wallet, raw))
 	}
 	require.Zero(t, client.imports)
 	require.Equal(t, sdk.AssetRefFromAssetID(sdk.AssetID(p.Asset.ID())),
@@ -58,18 +57,17 @@ func TestProofArchiveRetryUsesExactOutput(t *testing.T) {
 	// import, even when the backend reused the same asset script key.
 	p.AnchorTx.TxIn[0].PreviousOutPoint.Index++
 	client.file = &sdk.ProofFile{RawProofFile: bindingRaw(t, p)}
-	driver := &Driver{cfg: cfg}
-	require.ErrorIs(t, driver.importProof(t.Context(), raw), swapkit.ErrInvalid)
+	require.ErrorIs(t, importProof(t.Context(), wallet, raw), swapkit.ErrInvalid)
 	require.Zero(t, client.imports)
 
 	// A missing archive entry still requires a successful import; an
 	// ambiguous import response is retried through the archive next time.
 	lost := errors.New("lost import response")
 	client.exportErr, client.importErr = errors.New("not found"), lost
-	require.ErrorIs(t, driver.importProof(t.Context(), raw), lost)
+	require.ErrorIs(t, importProof(t.Context(), wallet, raw), lost)
 	require.Equal(t, 1, client.imports)
 	client.exportErr = nil
 	client.file = &sdk.ProofFile{RawProofFile: raw}
-	require.NoError(t, (&Driver{cfg: cfg}).importProof(t.Context(), raw))
+	require.NoError(t, importProof(t.Context(), wallet, raw))
 	require.Equal(t, 1, client.imports)
 }

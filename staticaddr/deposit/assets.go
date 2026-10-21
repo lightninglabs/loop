@@ -13,21 +13,23 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/swapkit"
+	assetkit "github.com/lightninglabs/loop/swapkit/tapsdk"
+	sdk "github.com/lightninglabs/tap-sdk"
 )
 
-// AssetDriver constructs asset transactions; the deposit FSM owns persistence.
-type AssetDriver interface {
-	BuildDeposit(context.Context, swapkit.CreateDepositRequest) (
-		swapkit.Deposit, []byte, error)
-	PublishDeposit(context.Context, swapkit.Deposit, []byte) (
-		swapkit.Deposit, error)
-	BuildDepositRefund(context.Context, swapkit.Deposit) ([]byte, error)
-	PublishDepositRefund(context.Context, swapkit.Deposit, []byte) ([]byte, error)
+// AssetConfig supplies the SDK wallet and chain checks to the deposit FSM.
+// Signing uses the manager's ordinary WalletKit and Signer services.
+type AssetConfig struct {
+	Wallet    *sdk.Wallet
+	Chain     assetkit.Chain
+	FeeSat    uint64
+	MaxFeeSat uint64
+	MinConfs  uint32
 }
 
-// SetAssetDriver installs asset operations before the manager starts.
-func (m *Manager) SetAssetDriver(driver AssetDriver) {
-	m.cfg.AssetDriver = driver
+// ConfigureAssets installs SDK services before deposit recovery starts.
+func (m *Manager) ConfigureAssets(cfg *AssetConfig) {
+	m.cfg.Asset = cfg
 }
 
 // CreateAssetDeposit saves the completed funding package before publication.
@@ -36,7 +38,7 @@ func (m *Manager) SetAssetDriver(driver AssetDriver) {
 func (m *Manager) CreateAssetDeposit(ctx context.Context,
 	request swapkit.CreateDepositRequest) (*Deposit, error) {
 
-	if m.cfg.AssetDriver == nil || request.RequestID == ([32]byte{}) {
+	if m.cfg.Asset == nil || request.RequestID == ([32]byte{}) {
 		return nil, swapkit.ErrInvalid
 	}
 	m.reconcileMu.Lock()
@@ -68,7 +70,7 @@ func (m *Manager) CreateAssetDeposit(ctx context.Context,
 	if !errors.Is(err, ErrDepositNotFound) && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	asset, tx, err := m.cfg.AssetDriver.BuildDeposit(ctx, request)
+	asset, tx, err := m.buildAssetDeposit(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +177,7 @@ func (f *FSM) PublishAssetDepositAction(ctx context.Context,
 		d.Lock()
 		asset, tx := *d.Asset, d.AssetTx
 		d.Unlock()
-		result, err := f.cfg.AssetDriver.PublishDeposit(ctx, asset, tx)
+		result, err := f.publishAssetDeposit(ctx, asset, tx)
 		if err != nil {
 			return err
 		}
@@ -205,7 +207,7 @@ func (f *FSM) publishAssetExpiry(ctx context.Context) fsm.EventType {
 		d.Unlock()
 		if len(tx) == 0 {
 			var err error
-			tx, err = f.cfg.AssetDriver.BuildDepositRefund(ctx, asset)
+			tx, err = f.buildAssetRefund(ctx, asset)
 			if err != nil {
 				return err
 			}
@@ -220,7 +222,7 @@ func (f *FSM) publishAssetExpiry(ctx context.Context) fsm.EventType {
 				return err
 			}
 		}
-		_, err := f.cfg.AssetDriver.PublishDepositRefund(ctx, asset, tx)
+		_, err := f.publishAssetRefund(ctx, asset, tx)
 		return err
 	})
 	if err != nil {

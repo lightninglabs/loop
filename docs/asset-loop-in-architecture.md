@@ -29,19 +29,39 @@ swap initially has an unknown preimage, represented by SQL NULL. It never
 stores a dummy secret. The migration preserves existing Bitcoin records and
 known-preimage uniqueness on SQLite and PostgreSQL.
 
-The SDK adapter receives the current swap's data directly from its FSM. It does
-not reload a journal or save intermediate funding plans. Deposit build methods
-return a complete signed package; the deposit FSM saves it before publication.
-Unsigned and finalized transfers use the SDK's
+The ordinary FSM actions compose the SDK's Build, Commit and publication calls.
+They sign through their existing LND clients and the shared
+`staticaddr/script.CreateMuSig2Session` helper. `swapkit/tapsdk` retains the
+Loop-specific contract and current-chain checks, plus proof recovery from an
+offline peer's observed spend. Its operation contexts hold validated data for
+one action; they own no services, persistence or lifecycle.
+
+The deposit FSM saves a complete signed package before publication. Unsigned
+and finalized transfers use the SDK's
 `CustomAnchorTransferPackage` binary format directly, including its finalized
 anchor PSBT. Finalization binds the proposed package to the approved committed
 digest and verifies the complete witness. There is no second transaction or
 recovery envelope.
 
-Each public transaction operation validates its deposit, negotiated contract
-and proof once, then passes that result to its internal helpers. Chain checks
-remain before and after external proof verification. A later operation or
-restart validates again; no validation result is cached across operations.
+Building actions inspect the negotiated contract and current chain, then rely
+on the SDK builder to verify input proofs. They recheck chain membership before
+committing. Validation-only actions explicitly verify proofs with the same
+chain checks. A later action or restart validates again; no verification result
+is cached across operations.
+
+Native payment calls run in the existing FSM actions, using the ordinary LND
+clients and tapd RPCs. Raw LND calls obtain authentication through
+`RawClientWithMacAuth`; there is no additional connection or payment client.
+Raw invoice and payment messages retain circuit IDs and expiry fields needed
+for accepted-HTLC checks. Shared native-payment helpers in `assets` validate
+native amount, group and circuit evidence using tapd's JSON metadata types.
+
+The client stores the HOLD invoice in the normal `SwapInvoice` field and keeps
+one finalized SDK package as its fallback and claim authority. The server
+saves the generated native `SendPaymentRequest` with its fixed RFQ and
+fee cap before dispatch. Recovery tracks the original hash before sending and
+never obtains another quote for an exposed swap. Accepted circuit evidence
+continues to bind settlement after the channel has closed.
 
 Request IDs locate ordinary records when a caller repeats a completed request.
 They do not create another request lifecycle.
@@ -87,9 +107,10 @@ funding, offer or signing RPC. Incomplete MuSig2 sessions remain ephemeral;
 there is no private signer database or persisted secret nonce.
 
 The experimental schema and transaction encoding are not released formats.
-This revision replaces earlier draft JSON envelopes; databases containing those
-old draft packages must be recreated. Restart recovery is tested for packages
-written by this revision, not upgrades from earlier PR drafts.
+This revision replaces earlier draft transaction/payment wrappers and duplicate
+client fallback fields. Databases containing those draft formats must be
+recreated. Restart recovery is tested for packages written by this revision,
+not upgrades from earlier PR drafts.
 
 ## Validation and remaining work
 

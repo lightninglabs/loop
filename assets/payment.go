@@ -1,60 +1,22 @@
-// Package assetln prepares same-group asset payments without disclosing the
-// payer's preimage. Callers persist payment intent before dispatch and retain
-// their recovery state until both the payment and the on-chain claim resolve.
-package assetln
+package assets
 
 import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/loop/swapkit"
+	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 )
 
 // ErrEvidence means the local node has not proved a safe asset payout. It must
 // never cause a caller to release already exposed claim signatures or locks.
 var ErrEvidence = errors.New("asset payment evidence is not sufficient")
-
-// Terms binds a held payout to its on-chain claim and native-unit limits.
-//
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
-type Terms struct {
-	Hash            [32]byte `json:"Hash"`
-	GroupKey        [33]byte `json:"GroupKey"`
-	Amount          uint64   `json:"Amount"`
-	MaxDebit        uint64   `json:"MaxDebit"`
-	RefundHeight    uint32   `json:"RefundHeight"`
-	RecoveryBlocks  uint32   `json:"RecoveryBlocks"`
-	HoldExpiryDelta uint32   `json:"HoldExpiryDelta"`
-	Deadline        int64    `json:"Deadline"`
-}
-
-// Validate checks immutable terms before any quote or payment is created.
-func (t Terms) Validate(now time.Time) error {
-	key, err := btcec.ParsePubKey(t.GroupKey[:])
-	if err != nil ||
-		!bytes.Equal(key.SerializeCompressed(), t.GroupKey[:]) {
-
-		return fmt.Errorf("invalid canonical group key")
-	}
-	if t.Hash == ([32]byte{}) || t.Amount == 0 || t.MaxDebit < t.Amount ||
-		t.RefundHeight == 0 || t.RecoveryBlocks == 0 ||
-		t.HoldExpiryDelta == 0 || t.Deadline <= now.Unix() {
-
-		return fmt.Errorf("invalid asset payment terms")
-	}
-	if uint64(t.RefundHeight)+uint64(t.RecoveryBlocks)+
-		uint64(t.HoldExpiryDelta) >= math.MaxInt32 {
-
-		return fmt.Errorf("asset payment expiry overflow")
-	}
-	return nil
-}
 
 // Evidence identifies one accepted, locally committed asset HTLC. The first
 // protocol version deliberately excludes multipart and AMP payments.
@@ -70,33 +32,14 @@ type Evidence struct {
 	RFQID        [32]byte `json:"RFQID"`
 }
 
-// channelData and htlcData mirror tapd's RPC JSON contract. Keeping these
-// transport types local avoids coupling the payment API to Bitcoin libraries.
-type channelData struct {
-	GroupKey      string `json:"group_key"`
-	FundingAssets []struct {
-		Genesis struct {
-			AssetID string `json:"asset_id"`
-		} `json:"asset_genesis"`
-	} `json:"funding_assets"`
-}
-
-type htlcData struct {
-	Balances []struct {
-		AssetID string `json:"asset_id"`
-		Amount  uint64 `json:"amount"`
-	} `json:"balances"`
-	RFQID string `json:"rfq_id"`
-}
-
-// nativeAmount binds tapd's decoded HTLC to an authenticated local channel.
+// NativeAmount binds tapd's decoded HTLC to an authenticated local channel.
 // Group placeholders are x-only keys; concrete tranches must occur in that
 // channel's funding assets. Caller data is never sufficient for this check.
-func nativeAmount(group [33]byte, raw, channelRaw []byte) (
+func NativeAmount(group [33]byte, raw, channelRaw []byte) (
 	uint64, [32]byte, error) {
 
 	var id [32]byte
-	var channel channelData
+	var channel rfqmsg.JsonAssetChannel
 	if err := json.Unmarshal(channelRaw, &channel); err != nil {
 		return 0, id, ErrEvidence
 	}
@@ -113,26 +56,29 @@ func nativeAmount(group [33]byte, raw, channelRaw []byte) (
 
 		return 0, id, ErrEvidence
 	}
-	var data htlcData
+	var data rfqmsg.JsonHtlc
 	if err := json.Unmarshal(raw, &data); err != nil ||
 		len(data.Balances) == 0 {
 
 		return 0, id, ErrEvidence
 	}
-	rfq, err := hex.DecodeString(data.RFQID)
+	rfq, err := hex.DecodeString(data.RfqID)
 	if err != nil || len(rfq) != len(id) ||
-		hex.EncodeToString(rfq) != data.RFQID {
+		hex.EncodeToString(rfq) != data.RfqID {
 
 		return 0, id, ErrEvidence
 	}
 	copy(id[:], rfq)
 	allowed := map[string]bool{hex.EncodeToString(group[1:]): true}
 	for _, a := range channel.FundingAssets {
-		allowed[a.Genesis.AssetID] = true
+		allowed[a.AssetGenesis.AssetID] = true
 	}
 	var amount uint64
 	seen := make(map[string]bool)
 	for _, balance := range data.Balances {
+		if balance == nil {
+			return 0, id, ErrEvidence
+		}
 		assetID, err := hex.DecodeString(balance.AssetID)
 		if err != nil || len(assetID) != 32 ||
 			hex.EncodeToString(assetID) != balance.AssetID ||
@@ -150,12 +96,12 @@ func nativeAmount(group [33]byte, raw, channelRaw []byte) (
 
 // Accepted verifies local invoice and channel evidence before client claim
 // signatures may be exposed. It is also safe to repeat after a restart.
-func Accepted(terms Terms, invoice *lnrpc.Invoice,
+func Accepted(offer swapkit.Offer, holdDelta uint32, invoice *lnrpc.Invoice,
 	channels []*lnrpc.Channel, height uint32) (*Evidence, error) {
 
 	if invoice == nil || invoice.State != lnrpc.Invoice_ACCEPTED ||
-		!bytes.Equal(invoice.RHash, terms.Hash[:]) ||
-		height >= terms.RefundHeight {
+		!bytes.Equal(invoice.RHash, offer.Hash[:]) ||
+		height >= offer.Terms.RefundHeight {
 
 		return nil, ErrEvidence
 	}
@@ -173,8 +119,9 @@ func Accepted(terms Terms, invoice *lnrpc.Invoice,
 		}
 		accepted = htlc
 	}
-	minimum := uint64(terms.RefundHeight) + uint64(terms.RecoveryBlocks) +
-		uint64(terms.HoldExpiryDelta)
+	minimum := uint64(offer.Terms.RefundHeight) +
+		uint64(offer.Terms.RecoveryDelta) +
+		uint64(holdDelta)
 	if accepted == nil || accepted.ExpiryHeight <= 0 ||
 		uint64(accepted.ExpiryHeight) <= minimum {
 
@@ -184,16 +131,16 @@ func Accepted(terms Terms, invoice *lnrpc.Invoice,
 		if channel == nil || channel.ChanId != accepted.ChanId {
 			continue
 		}
-		amount, rfq, err := nativeAmount(
-			terms.GroupKey, accepted.CustomChannelData,
+		amount, rfq, err := NativeAmount(
+			offer.Terms.GroupKey, accepted.CustomChannelData,
 			channel.CustomChannelData,
 		)
-		if err != nil || amount != terms.Amount {
+		if err != nil || amount != offer.Terms.PayoutAmount {
 			return nil, ErrEvidence
 		}
 		return &Evidence{
-			Hash:         terms.Hash,
-			GroupKey:     terms.GroupKey,
+			Hash:         offer.Hash,
+			GroupKey:     offer.Terms.GroupKey,
 			Amount:       amount,
 			ChannelID:    accepted.ChanId,
 			HTLCIndex:    accepted.HtlcIndex,
@@ -201,4 +148,57 @@ func Accepted(terms Terms, invoice *lnrpc.Invoice,
 		}, nil
 	}
 	return nil, ErrEvidence
+}
+
+// ValidateInvoice checks the carrier hash, amount and lifetime.
+func ValidateInvoice(offer swapkit.Offer, decoded *lnrpc.PayReq,
+	now time.Time) error {
+
+	if decoded == nil ||
+		decoded.PaymentHash != hex.EncodeToString(offer.Hash[:]) ||
+		decoded.NumMsat <= 0 || decoded.Expiry <= 0 ||
+		decoded.Timestamp > math.MaxInt64-decoded.Expiry ||
+		decoded.Timestamp+decoded.Expiry < offer.Terms.OfferExpiry.Unix() ||
+		decoded.Timestamp+decoded.Expiry <= now.Unix() {
+
+		return ErrEvidence
+	}
+	return nil
+}
+
+// Settled verifies that the previously accepted circuit actually settled.
+// The binding survives a channel close because the acceptance evidence was
+// persisted before exposure. A different circuit or a Bitcoin-only payment
+// cannot authorize the client's cooperative deposit signature.
+func Settled(offer swapkit.Offer, evidence Evidence,
+	invoice *lnrpc.Invoice) (bool, error) {
+
+	if evidence.Hash != offer.Hash || evidence.GroupKey != offer.Terms.GroupKey ||
+		evidence.Amount != offer.Terms.PayoutAmount {
+
+		return false, ErrEvidence
+	}
+	if invoice == nil || !bytes.Equal(invoice.RHash, offer.Hash[:]) {
+		return false, ErrEvidence
+	}
+	if invoice.State != lnrpc.Invoice_SETTLED {
+		return false, nil
+	}
+	count := 0
+	for _, htlc := range invoice.Htlcs {
+		if htlc == nil ||
+			htlc.State == lnrpc.InvoiceHTLCState_CANCELED {
+
+			continue
+		}
+		if htlc.State != lnrpc.InvoiceHTLCState_SETTLED ||
+			htlc.Amp != nil ||
+			htlc.ChanId != evidence.ChannelID ||
+			htlc.HtlcIndex != evidence.HTLCIndex {
+
+			return false, ErrEvidence
+		}
+		count++
+	}
+	return count == 1, nil
 }

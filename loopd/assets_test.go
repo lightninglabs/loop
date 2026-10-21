@@ -1,16 +1,23 @@
 package loopd
 
 import (
+	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -196,4 +203,81 @@ func TestStaticAddressAssetRPCRouting(t *testing.T) {
 		_, err := server.ListStaticAddressDeposits(t.Context(), request)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	}
+}
+
+func TestAssetLoopInNodeChain(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		info  *taprpc.GetInfoResponse
+		valid bool
+	}{
+		{"ready", &taprpc.GetInfoResponse{
+			Network: "regtest", BlockHeight: 100, SyncToChain: true,
+		}, true},
+		{"wrong network", &taprpc.GetInfoResponse{
+			Network: "mainnet", BlockHeight: 100, SyncToChain: true,
+		}, false},
+		{"lagging", &taprpc.GetInfoResponse{
+			Network: "regtest", BlockHeight: 99, SyncToChain: true,
+		}, false},
+		{"unsynced", &taprpc.GetInfoResponse{
+			Network: "regtest", BlockHeight: 100,
+		}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateAssetLoopInNode(test.info, "regtest", 100)
+			if test.valid {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+// TestAssetBitcoinUTXO keeps the mempool gate while using the normal Bitcoin
+// RPC client. Wallet ListUnspent cannot cover these external anchor outputs.
+func TestAssetBitcoinUTXO(t *testing.T) {
+	type request struct {
+		ID     json.RawMessage   `json:"id"`
+		Method string            `json:"method"`
+		Params []json.RawMessage `json:"params"`
+	}
+	calls := make(chan request, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
+		r *http.Request) {
+
+		var call request
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		calls <- call
+		_, _ = fmt.Fprintf(w, `{"id":%s,"result":null,"error":null}`,
+			call.ID)
+	}))
+	defer server.Close()
+	client, err := assetBitcoinRPC(&Config{
+		AssetBitcoinURL:  server.URL,
+		AssetBitcoinUser: "user", AssetBitcoinPassword: "password",
+	})
+	require.NoError(t, err)
+	defer client.Shutdown()
+	point := wire.OutPoint{Index: 3}
+	available, err := assetUnspent(t.Context(), client, point)
+	require.NoError(t, err)
+	require.False(t, available)
+	call := <-calls
+	require.Equal(t, "gettxout", call.Method)
+	require.Equal(t, []json.RawMessage{
+		json.RawMessage(`"` + point.Hash.String() + `"`),
+		json.RawMessage("3"), json.RawMessage("true"),
+	}, call.Params)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	available, err = assetUnspent(ctx, client, point)
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, available)
+	require.Empty(t, calls)
 }

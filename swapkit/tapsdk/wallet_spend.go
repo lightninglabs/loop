@@ -10,11 +10,10 @@ import (
 	sdk "github.com/lightninglabs/tap-sdk"
 )
 
-// rebuildObservedSpend reconstructs either an original deposit refund or an
-// HTLC outcome from the exact mined witness. The SDK checks the Bitcoin
-// witness against the agreed leaf. No wallet key, signing session or broadcast
-// is needed, so this also recovers a proof from a permanently offline peer.
-func (r *Driver) rebuildObservedSpend(ctx context.Context,
+// rebuildObservedSpend reconstructs an SDK transfer from a mined witness.
+// It neither signs a wallet transaction nor broadcasts the observed spend.
+func rebuildObservedSpend(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32,
 	prior sdk.CustomAnchorAssetOutputSummary, inputProof []byte,
 	public [33]byte, spend *swapkit.SwapAnchorSpendInfo, observed *wire.MsgTx) (
 	[]byte, error) {
@@ -24,7 +23,7 @@ func (r *Driver) rebuildObservedSpend(ctx context.Context,
 
 		return nil, swapkit.ErrInvalid
 	}
-	p, err := lastProof(inputProof)
+	p, err := LastProof(inputProof)
 	if err != nil {
 		return nil, err
 	}
@@ -34,17 +33,18 @@ func (r *Driver) rebuildObservedSpend(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	anchor, err := anchorTemplate(p, recipient.Anchor.InternalKey,
+	anchor, err := AnchorTemplate(p, recipient.Anchor.InternalKey,
 		value, spend)
 	if err != nil {
 		return nil, err
 	}
-	pkg, err := r.commit(ctx, customRequest(assetInput(prior, inputProof),
-		recipient, anchor, ScriptSigningPlan(spend, 0)))
+	request := CustomRequest(assetInput(prior, inputProof),
+		recipient, anchor, ScriptSigningPlan(spend, 0))
+	pkg, err := commit(ctx, wallet, chain, minConfs, request)
 	if err != nil {
 		return nil, err
 	}
-	packet, err := decodePSBT(pkg.AnchorPsbt)
+	packet, err := DecodePSBT(pkg.AnchorPsbt)
 	if err != nil {
 		return nil, err
 	}
@@ -65,13 +65,12 @@ func (r *Driver) rebuildObservedSpend(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return r.logAndExport(ctx, final, true)
+	return LogAndExport(ctx, wallet, chain, minConfs, final, true)
 }
 
-// verifyWalletSpend binds every recovery outcome to its agreed issuance,
-// wallet recipient and exact Bitcoin path. The observed witness comes from
-// the current chain rather than the peer's proof, which may omit witnesses.
-func (r *Driver) verifyWalletSpend(ctx context.Context, raw []byte,
+// VerifyWalletSpend checks issuance, wallet recipient and Bitcoin leaf.
+func VerifyWalletSpend(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32, raw []byte,
 	prior sdk.CustomAnchorAssetOutputSummary, public [33]byte,
 	spend *swapkit.SwapAnchorSpendInfo, unspent bool, minHeight uint64) error {
 
@@ -79,7 +78,9 @@ func (r *Driver) verifyWalletSpend(ctx context.Context, raw []byte,
 	if !ok {
 		return swapkit.ErrInvalid
 	}
-	p, err := r.verifyProof(ctx, raw, group, prior.Amount, unspent)
+	p, err := verifyProof(
+		ctx, wallet, chain, minConfs, raw, group, prior.Amount, unspent,
+	)
 	if err != nil {
 		return err
 	}
@@ -100,7 +101,7 @@ func (r *Driver) verifyWalletSpend(ctx context.Context, raw []byte,
 
 		return swapkit.ErrInvalid
 	}
-	block, err := r.cfg.Chain.Block(ctx, p.BlockHeight)
+	block, err := chain.Block(ctx, p.BlockHeight)
 	if err != nil {
 		return err
 	}
@@ -126,13 +127,11 @@ func (r *Driver) verifyWalletSpend(ctx context.Context, raw []byte,
 	return swapkit.ErrInvalid
 }
 
-// spendsLeaf checks policy selection before the SDK or Bitcoin VM verifies the
-// unlocking data. Annexes and alternate leaves cannot authorize an outcome.
 func spendsLeaf(tx *wire.MsgTx, prior sdk.CustomAnchorAssetOutputSummary,
 	spend *swapkit.SwapAnchorSpendInfo) bool {
 
 	if len(tx.TxIn) != 1 || tx.TxIn[0].PreviousOutPoint !=
-		sdkPoint(prior.AnchorOutpoint) {
+		SDKPoint(prior.AnchorOutpoint) {
 
 		return false
 	}

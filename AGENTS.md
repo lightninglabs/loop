@@ -99,10 +99,18 @@ authority, using the existing action-level persistence pattern. Native
 quantities must never enter satoshi fields. Keep asset anchors out of
 Bitcoin-only spend paths throughout consolidation.
 
-SDK transaction operations live in `swapkit/tapsdk` inside the normal Loop
-module. Use the base `swapkit` contracts and SDK transfer packages directly;
-do not duplicate their types or serialization. Validate negotiated policy and
-proofs once per operation, retaining chain checks around proof verification.
-Use existing LND signing and chain services. Never persist secret
-MuSig2 nonces: restart unfinished rounds with fresh nonces for the same
-unsigned package. Tapd owns publication and confirmed proof reconstruction.
+The ordinary deposit and Loop In actions compose native SDK Build/Commit and
+publication calls. `swapkit/tapsdk` contains contract, current-chain and
+observed-spend proof helpers; it must not own a transaction driver or node
+services. Use base `swapkit` contracts and native SDK package serialization.
+Building actions rely on SDK input verification; validation-only actions verify
+explicitly. Keep chain checks around external verification and do not retain
+validation across operations.
+
+Use the ordinary LND clients and shared `staticaddr/script` MuSig2 helper.
+Native payment actions call tapd and authenticated raw LND clients directly;
+shared `assets` helpers only validate group, quantity and circuit evidence.
+The normal `SwapInvoice` stores the HOLD invoice, and one finalized SDK package
+stores client fallback authority. Never persist secret MuSig2 nonces: restart
+unfinished rounds with fresh nonces for the same unsigned package. Tapd owns
+publication and confirmed proof reconstruction.

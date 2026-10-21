@@ -135,7 +135,7 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
-	// The asset driver returns only after its confirmed proof is available.
+	// The asset publication action verifies the confirmed proof.
 	if f.deposit.Asset != nil {
 		return OnExpirySwept
 	}

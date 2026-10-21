@@ -1,98 +1,82 @@
-# Loop asset transaction operations
+# Asset transaction policy helpers
 
-Bitcoin deposit and HTLC contracts live in `github.com/lightninglabs/loop/swapkit`.
-This package connects those contracts to the Taproot Assets SDK and the existing
-LND signer, chain services and tapd wallet. It has no separate contract types,
-transaction format, persistent signer or swap lifecycle.
+The ordinary deposit and static Loop In FSMs own asset transactions. They call
+`github.com/lightninglabs/tap-sdk` directly to build and commit transfers, use
+their existing LND services to sign, and save completed packages before exposing
+signatures or publishing. This package has no driver, client, manager, signer
+service, journal or lifecycle.
 
-## Contracts and SDK packages
+The remaining helpers bind SDK inputs and outputs to Loop's Bitcoin contracts,
+check the current chain, and reconstruct an offline peer's asset proof from its
+observed Bitcoin spend. `DepositContext` and `SwapContext` contain only the data
+validated for the current action. They do not retain services or validation
+across actions or restarts.
+
+## SDK and contract responsibilities
 
 The asset leaf is `OP_TRUE`. Bitcoin enforces the deposit's cooperative MuSig2
-path and client CSV refund, or the HTLC's preimage claim and timeout refund.
-The normal static Loop In uses the V3 CLTV refund policy. Contract scripts,
-control blocks and witness assembly are tested in `swapkit`.
+path and client CSV refund, or the V3 HTLC's preimage claim and CLTV refund.
+Contract scripts, control blocks and witnesses live in the base `swapkit`.
+Small conversion functions populate native SDK request fields.
 
-Use the base contract constructors directly. `AnchorPlan`, `OPTrueOutput`,
-`CooperativeSigningPlan` and `ScriptSigningPlan` only convert those contracts
-into SDK request fields. The SDK builder validates allocations, selects assets,
-constructs commitments and returns digest-bound signing requests. It creates
-unique asset witnesses for each concrete output; never reuse a witness across
-issuances in a fungible group.
+The SDK owns generic proof verification, allocation and commitment construction,
+signing requests, transfer encoding and final Bitcoin witness verification.
+Unsigned and completed transfers use `CustomAnchorTransferPackage.MarshalBinary`
+and `UnmarshalBinary`. Accepting a peer's completed transfer requires the saved
+`CommittedPackageDigest` and `WithFinalAnchorPSBT`; a matching transaction ID or
+self-consistent package alone does not establish authorization.
 
-Unsigned and finalized transfers use `CustomAnchorTransferPackage` directly.
-Persist its `MarshalBinary` bytes and restore them with `UnmarshalBinary`.
-`WithFinalAnchorPSBT` incorporates the final witness into the same package and
-verifies consensus execution. Accepting a peer's finalized transfer also requires
-matching the approved `CommittedPackageDigest`; a valid self-sealed package or
-matching transaction ID alone does not establish authorization. There is no
-separate transaction or recovery envelope.
+For a building action, inspect Loop policy and the current chain, prepare the
+input proof archive, call the native SDK builder, then call `CheckInputsCurrent`
+before committing. SDK Build verifies each input proof once. A validation-only
+action uses `VerifyDeposit` instead. Current-chain checks bracket verification,
+so a reorganization or mempool spend during the SDK call cannot authorize a
+stale input. Never add a cross-operation verification cache.
 
-A public operation validates the negotiated deposit contract and proof once,
-then passes that result to its internal helpers. The checks include asset/group,
-amount, outpoint and Bitcoin policy. Current-chain checks bracket external proof
-verification, so a chain change during that call fails the operation. A later
-operation or restart validates again. SDK package validation and final witness
-verification remain separate requirements.
+Loop also checks the exact asset group, quantity, issuance, script key, Bitcoin
+contract and absence of hidden co-anchored assets. The pinned SDK's passive-asset
+reject policy does not establish that last property for ordinary proof-file
+inputs; `isolatedRoots` reconstructs the complete disclosed asset commitment.
 
-## Signing, publication and proofs
+## Signing and recovery
 
-`Driver` holds existing node-service dependencies. LND owns keys and ephemeral
-MuSig2 sessions. An interrupted signing round starts with fresh nonces for the
-same unsigned package; secret nonces are never persisted. The signing bridge
-translates SDK signing requests to LND calls and applies the returned signatures
-through the SDK.
+The existing static-address MuSig2 helper accepts the complete Taproot root,
+including the asset commitment. FSM actions use normal LND sessions directly.
+An interrupted round starts with fresh nonces for the same unsigned SDK package;
+secret nonces are never persisted. `FinalizeScriptSpend` only translates an SDK
+script signing request into the existing LND signer call and verifies the
+returned witness through the SDK.
 
-`BuildDeposit` and `BuildDepositRefund` return complete signed packages without
-publishing them. The ordinary deposit FSM saves each package on its record
-before publication. The ordinary Loop In record similarly holds its recovery
-package and completed fallback. No extra journal or recovery worker is needed.
+Tapd owns publication and successor-proof reconstruction. Input OP_TRUE keys
+are declared with their exact script tree, and selected input proofs are
+imported when missing. Output registration preserves the native packet's key
+parity and locator so later wallet spends derive the correct key. Proof
+exports use exact issuance, script key and
+outpoint. For an offline peer's already-mined spend, reconstruct the known
+package, verify the observed Bitcoin transaction and witness, and log it with
+broadcasting disabled. Existing LND spend notifications and Bitcoin backend
+UTXO checks provide current-chain evidence.
 
-Before publishing, import selected confirmed input proofs into the publishing
-tapd's archive. External OP_TRUE keys must first be declared with their exact
-script tree and tweak. This lets tapd reconstruct successor proofs; it does not
-give tapd either party's Bitcoin key. Export proofs by exact issuance, script
-key and outpoint, and verify their policy, current chain and spendability.
-
-For an offline peer's already-mined spend, reconstruct the known package, verify
-the exact transaction and witness, and log it with broadcasting disabled. Tapd
-then reconstructs the confirmed successor proof. LND restores spend notices
-from the deposit height hint. A Bitcoin RPC callback supplies the mempool-aware
-UTXO check for anchors outside LND's wallet inventory.
-
-## Execution and restart recovery
-
-The server owns the preimage and execution decision. It prepares the same-group
-asset payout to the client's HOLD invoice. The client independently verifies the
-accepted native HTLC and saves the complete fallback before sending claim
+The server owns the preimage and execution decision. The client verifies the
+same-group native HTLC and saves the completed fallback before returning claim
 authority. The server saves its decision before revealing the preimage. These
-ordering rules belong to the existing FSM actions, not the SDK.
+ordering and restart rules belong to the ordinary FSM actions.
 
-An OP_TRUE ownership proof cannot establish exclusive ownership. Signing requires
-complete verified transfer history and authenticated assignment of the deposit.
-The client retains unilateral recovery if the server does not execute.
+## Validation and development dependency
 
-The experimental database and package encoding are not released formats. This
-revision replaces earlier draft JSON envelopes; recreate databases containing
-those old packages. Restart tests cover packages saved in the current format.
-
-## Development and validation
-
-Prepare the compatible SDK and run tests from the normal Loop module:
+Run `scripts/prepare-tap-sdk.sh`, then test the normal modules:
 
 ```sh
-scripts/prepare-tap-sdk.sh
-go test ./swapkit/... ./staticaddr/... ./assets/assetln ./loopd
+go test ./swapkit/... ./staticaddr/... ./assets ./loopd
 ```
 
-The temporary SDK base is `932b4aa5429b66df2df13fcfac03fc6c6bdf974e`, before the
-split btcd v2 imports. The preparation script applies the generic metadata fixes,
-compressed MuSig2 participant support and current proof rules against Taproot
-Assets v0.8.6. SDK source is not copied into this package. Replace development
-patches with reviewed compatible releases before production.
+The temporary compatible SDK base is
+`932b4aa5429b66df2df13fcfac03fc6c6bdf974e`, before split btcd v2 imports. The
+preparation script applies metadata fixes, compressed MuSig2 participant support
+and proof rules for Taproot Assets v0.8.6. SDK source is not copied here. Replace
+development patches with reviewed compatible releases before production.
 
-Adapter tests cover SDK commitment conversion, finalized-package binding,
-chain freshness and signing. `itest/TestSwapKitDepositLifecycle` exercises the
-SDK lifecycle against tapd. The server's production process tests cover the
-normal client/server flow, controlled execution, restarts and unilateral refunds.
-See [production priorities](../../docs/asset-loop-in-readiness.md) for remaining
-release blockers.
+Earlier PR drafts used transaction/payment wrappers and duplicate fallback
+fields. Recreate databases containing those formats; restart tests cover the
+current native SDK package, payment request and normal SQL records. See
+[production priorities](../../docs/asset-loop-in-readiness.md).

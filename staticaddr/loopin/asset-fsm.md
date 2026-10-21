@@ -23,9 +23,11 @@ stateDiagram-v2
     PaymentReceived --> Succeeded: Normal deposit finalization
 ```
 
-The completed fallback, accepted native HTLC evidence and monitoring state are
-saved together with an explicit checked `UpdateLoopIn` before the client sends
-conditional claim signatures. This is the protocol boundary needed for
+One finalized SDK package holds the fallback and client claim authority. The
+HOLD invoice uses the ordinary `SwapInvoice` field. The completed fallback,
+accepted native HTLC evidence and monitoring state are saved together with an
+explicit checked `UpdateLoopIn` before the client sends conditional claim
+signatures. This is the protocol boundary needed for
 unilateral recovery. Other state changes use the existing FSM persistence
 hook. There are no revision counters or a second set of lifecycle flags.
 

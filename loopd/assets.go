@@ -3,30 +3,24 @@ package loopd
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/lightninglabs/lndclient"
+	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop"
-	"github.com/lightninglabs/loop/assets/assetln"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/loopin"
-	"github.com/lightninglabs/loop/swapkit"
 	assetkit "github.com/lightninglabs/loop/swapkit/tapsdk"
 	sdk "github.com/lightninglabs/tap-sdk"
 	sdkgrpc "github.com/lightninglabs/tap-sdk/grpc"
 	"github.com/lightninglabs/tap-sdk/macaroon"
-	"github.com/lightningnetwork/lnd/keychain"
-	"github.com/lightningnetwork/lnd/lnrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
-	"google.golang.org/grpc"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 )
 
 // assetLoopInConfig rejects partial activation before any funding is possible.
@@ -39,6 +33,7 @@ func assetLoopInConfig(cfg *Config) ([33]byte, bool, error) {
 	backend, err := url.Parse(cfg.AssetBitcoinURL)
 	if cfg.Tapd == nil || !cfg.Tapd.Activate || err != nil ||
 		backend.Host == "" || backend.User != nil ||
+		backend.RawQuery != "" || backend.Fragment != "" ||
 		(backend.Scheme != "http" && backend.Scheme != "https") ||
 		cfg.AssetFeeSat == 0 || cfg.AssetMaxFeeSat < cfg.AssetFeeSat {
 
@@ -59,33 +54,6 @@ func assetLoopInConfig(cfg *Config) ([33]byte, bool, error) {
 	}
 	copy(peer[:], raw)
 	return peer, true, nil
-}
-
-// assetAuthConn adds the existing LND macaroon to raw generated RPC clients.
-type assetAuthConn struct{ services *lndclient.LndServices }
-
-func (c assetAuthConn) Invoke(ctx context.Context, method string,
-	args, reply any, opts ...grpc.CallOption) error {
-
-	ctx, err := c.services.WithMacaroonAuthForService(
-		ctx, lndclient.AdminServiceMac,
-	)
-	if err != nil {
-		return err
-	}
-	return c.services.ClientConn.Invoke(ctx, method, args, reply, opts...)
-}
-
-func (c assetAuthConn) NewStream(ctx context.Context, desc *grpc.StreamDesc,
-	method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-
-	ctx, err := c.services.WithMacaroonAuthForService(
-		ctx, lndclient.AdminServiceMac,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return c.services.ClientConn.NewStream(ctx, desc, method, opts...)
 }
 
 // newAssetConfig connects the kit to the normal node services.
@@ -111,89 +79,97 @@ func (d *Daemon) newAssetConfig(client *loop.Client,
 	if err != nil {
 		return nil, err
 	}
-	httpClient := &http.Client{}
-	if d.cfg.AssetBitcoinTLS != "" {
-		raw, err := os.ReadFile(d.cfg.AssetBitcoinTLS)
-		if err != nil {
-			sdkClient.Close()
-			return nil, err
-		}
-		roots := x509.NewCertPool()
-		if !roots.AppendCertsFromPEM(raw) {
-			sdkClient.Close()
-			return nil, fmt.Errorf("invalid Bitcoin TLS certificate")
-		}
-		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				RootCAs:    roots,
-				MinVersion: tls.VersionTLS12,
-			},
-		}
-	}
-	utxos := &assetkit.BitcoinUTXO{
-		URL:      d.cfg.AssetBitcoinURL,
-		User:     d.cfg.AssetBitcoinUser,
-		Password: d.cfg.AssetBitcoinPassword,
-		Client:   httpClient,
-	}
-	chain := &assetkit.LNDChain{
-		Kit:           d.lnd.ChainKit,
-		Notifier:      d.lnd.ChainNotifier,
-		UnspentOutput: utxos.Unspent,
-	}
-	network := sdk.Network(d.cfg.Network)
-	driver, err := assetkit.NewDriver(assetkit.DriverConfig{
-		Network:    network,
-		SDK:        sdkClient,
-		Wallet:     sdk.NewWallet(sdkClient, network),
-		WalletKit:  d.lnd.WalletKit,
-		Signer:     d.lnd.Signer,
-		Chain:      chain,
-		NodePubkey: d.lnd.NodePubkey,
-		FeeSat:     d.cfg.AssetFeeSat,
-		MaxFeeSat:  d.cfg.AssetMaxFeeSat,
-		MinConfs:   1,
-		Deposit: func(ctx context.Context, point string) (
-			swapkit.Deposit, keychain.KeyLocator, error) {
-
-			params, err := addresses.GetStaticAddressParameters(ctx)
-			if err != nil {
-				return swapkit.Deposit{}, keychain.KeyLocator{}, err
-			}
-			d, err := deposits.AssetDeposit(ctx, point)
-			if err != nil {
-				return swapkit.Deposit{}, keychain.KeyLocator{}, err
-			}
-			if asset := d.AssetSnapshot(); asset != nil {
-				return *asset, params.KeyLocator, nil
-			}
-			return swapkit.Deposit{}, keychain.KeyLocator{},
-				swapkit.ErrInvalid
-		},
-	})
+	bitcoin, err := assetBitcoinRPC(d.cfg)
 	if err != nil {
 		sdkClient.Close()
-		httpClient.CloseIdleConnections()
 		return nil, err
 	}
-	auth := assetAuthConn{services: &d.lnd.LndServices}
+	chain := &assetkit.LNDChain{
+		Kit:      d.lnd.ChainKit,
+		Notifier: d.lnd.ChainNotifier,
+		UnspentOutput: func(ctx context.Context,
+			point wire.OutPoint) (bool, error) {
+
+			return assetUnspent(ctx, bitcoin, point)
+		},
+	}
 	var node [33]byte
 	copy(node[:], d.lnd.NodePubkey[:])
 	cfg := &loopin.AssetConfig{
-		Driver:  driver,
+		AssetConfig: deposit.AssetConfig{
+			Wallet: sdk.NewWallet(sdkClient, sdk.Network(d.cfg.Network)),
+			Chain:  chain, FeeSat: d.cfg.AssetFeeSat,
+			MaxFeeSat: d.cfg.AssetMaxFeeSat, MinConfs: 1,
+		},
 		Address: addresses, Deposits: deposits,
 		Server: loopin.NewAssetServerClient(client.Conn),
-		Receiver: &assetln.Receiver{
-			Assets:    d.assetClient.TaprootAssetChannelsClient,
-			Lightning: lnrpc.NewLightningClient(auth),
-			Invoices:  invoicesrpc.NewInvoicesClient(auth),
-		},
+		Tapd:   d.assetClient.TaprootAssetChannelsClient,
+
 		Owner: sha256.Sum256(node[:]), Peer: peer,
 		FetchL402: client.Server.FetchL402,
 	}
 	d.assetCleanup = func() {
 		sdkClient.Close()
-		httpClient.CloseIdleConnections()
+		bitcoin.Shutdown()
 	}
 	return cfg, nil
+}
+
+// assetBitcoinRPC uses the standard Bitcoin client for external anchor UTXOs.
+// LND wallet transactions cannot prove that these outputs remain unspent.
+func assetBitcoinRPC(cfg *Config) (*rpcclient.Client, error) {
+	backend, err := url.Parse(cfg.AssetBitcoinURL)
+	if err != nil {
+		return nil, err
+	}
+	var certificate []byte
+	if cfg.AssetBitcoinTLS != "" {
+		certificate, err = os.ReadFile(cfg.AssetBitcoinTLS)
+		if err != nil {
+			return nil, err
+		}
+		if !x509.NewCertPool().AppendCertsFromPEM(certificate) {
+			return nil, fmt.Errorf("invalid Bitcoin TLS certificate")
+		}
+	}
+	return rpcclient.New(&rpcclient.ConnConfig{
+		Host: backend.Host + backend.EscapedPath(),
+		User: cfg.AssetBitcoinUser, Pass: cfg.AssetBitcoinPassword,
+		HTTPPostMode: true, DisableTLS: backend.Scheme == "http",
+		Certificates: certificate,
+	}, nil)
+}
+
+// assetUnspent checks external anchors against the UTXO set and mempool.
+// Cancellation stops this operation from proceeding to a signing request.
+func assetUnspent(ctx context.Context, client *rpcclient.Client,
+	point wire.OutPoint) (bool, error) {
+
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	future := client.GetTxOutAsync(&point.Hash, point.Index, true)
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case response := <-future:
+		ready := make(rpcclient.FutureGetTxOutResult, 1)
+		ready <- response
+		out, err := ready.Receive()
+		return out != nil, err
+	}
+}
+
+// validateAssetLoopInNode adds the chain checks needed before restoring asset
+// deposits to the ordinary daemon's tapd identity check.
+func validateAssetLoopInNode(info *taprpc.GetInfoResponse, network string,
+	height uint32) error {
+
+	if info.Network != network {
+		return fmt.Errorf("asset node network mismatch")
+	}
+	if !info.SyncToChain || info.BlockHeight != height {
+		return fmt.Errorf("asset node is not synchronized")
+	}
+	return nil
 }

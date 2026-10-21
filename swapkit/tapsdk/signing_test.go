@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -151,7 +152,7 @@ func signingPackage(t *testing.T) *sdk.CustomAnchorTransferPackage {
 	return complete
 }
 
-func TestSigningRoundXOnlyOutputKey(t *testing.T) {
+func TestLNDSessionXOnlyOutputKey(t *testing.T) {
 	for name, parity := range map[string]byte{"even": 2, "odd": 3} {
 		t.Run(name, func(t *testing.T) {
 			pkg := signingPackage(t)
@@ -160,7 +161,7 @@ func TestSigningRoundXOnlyOutputKey(t *testing.T) {
 			request := requests.MuSig2[0]
 			internal, err := schnorr.ParsePubKey(request.InternalKey[:])
 			require.NoError(t, err)
-			packet, err := decodePSBT(pkg.CommittedAnchorPsbt)
+			packet, err := DecodePSBT(pkg.CommittedAnchorPsbt)
 			require.NoError(t, err)
 
 			// This fixture's MuSig2 input is an external Bitcoin input.
@@ -183,103 +184,100 @@ func TestSigningRoundXOnlyOutputKey(t *testing.T) {
 			input.WitnessUtxo.PkScript, err =
 				txscript.PayToTaprootScript(output)
 			require.NoError(t, err)
-			raw, err := encodePSBT(packet)
+			raw, err := EncodePSBT(packet)
 			require.NoError(t, err)
 			pkg.CommittedAnchorPsbt, pkg.AnchorPsbt = raw, raw
 			pkg, err = pkg.Seal()
 			require.NoError(t, err)
 
 			wallet := signingWallet(t, 2)
-			round, err := NewSigningRound(
-				t.Context(), wallet, keychain.KeyLocator{}, pkg,
-			)
+			round, _, err := newTestSession(t.Context(), wallet, pkg)
 			require.NoError(t, err)
 			require.Equal(t, byte(2),
-				round.session.CombinedKey.SerializeCompressed()[0])
-			round.Close(t.Context())
+				round.CombinedKey.SerializeCompressed()[0])
+			require.NoError(t, wallet.MuSig2Cleanup(t.Context(), round.SessionID))
 
 			wallet.wrongKey = true
-			_, err = NewSigningRound(
-				t.Context(), wallet, keychain.KeyLocator{}, pkg,
-			)
-			require.ErrorIs(t, err, ErrSigningRound)
+			_, _, err = newTestSession(t.Context(), wallet, pkg)
+			require.Error(t, err)
 		})
 	}
 }
 
-func TestFreshSigningRoundsAfterLostReplies(t *testing.T) {
+// newTestSession uses the same ordinary helper as Bitcoin/asset FSM actions.
+func newTestSession(ctx context.Context, signer lndclient.SignerClient,
+	pkg *sdk.CustomAnchorTransferPackage) (*input.MuSig2SessionInfo,
+	sdk.CustomAnchorMuSig2SigningRequest, error) {
+
+	requests, err := pkg.SigningRequests()
+	if err != nil || len(requests.MuSig2) != 1 {
+		return nil, sdk.CustomAnchorMuSig2SigningRequest{}, ErrSigningRequest
+	}
+	request := requests.MuSig2[0]
+	participants := make([][]byte, len(request.Participants))
+	for i := range participants {
+		participants[i] = request.Participants[i][:]
+	}
+	session, err := script.CreateMuSig2Session(ctx, signer, keychain.KeyLocator{},
+		participants, request.TaprootMerkleRoot)
+	return session, request, err
+}
+
+// signTestPackage supplies native LND signing fixtures, not a production
+// session wrapper. Both session objects are discarded on any failed RPC.
+func signTestPackage(ctx context.Context, client, server *sessionWallet,
+	pkg *sdk.CustomAnchorTransferPackage) (*sdk.CustomAnchorTransferPackage, error) {
+
+	c, request, err := newTestSession(ctx, client, pkg)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = client.MuSig2Cleanup(ctx, c.SessionID) }()
+	s, _, err := newTestSession(ctx, server, pkg)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = server.MuSig2Cleanup(ctx, s.SessionID) }()
+	if _, err := server.MuSig2RegisterNonces(ctx, s.SessionID, [][66]byte{c.PublicNonce}); err != nil {
+		return nil, err
+	}
+	partial, err := server.MuSig2Sign(ctx, s.SessionID, request.Sighash, true)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := client.MuSig2RegisterNonces(ctx, c.SessionID, [][66]byte{s.PublicNonce}); err != nil {
+		return nil, err
+	}
+	if _, err := client.MuSig2Sign(ctx, c.SessionID, request.Sighash, false); err != nil {
+		return nil, err
+	}
+	all, signature, err := client.MuSig2CombineSig(ctx, c.SessionID, [][]byte{partial})
+	if err != nil {
+		return nil, err
+	}
+	if !all {
+		return nil, ErrSigningRequest
+	}
+	return pkg.ApplyKeyPathSignature(request.ID, signature)
+}
+
+func TestFreshLNDSessionAfterLostReplies(t *testing.T) {
 	pkg := signingPackage(t)
-	var clientNonce, serverNonce [66]byte
-	var final []byte
-	for _, failure := range []string{
-		"server partial", "client partial", "combine", "persist", "none",
-	} {
+	for _, failure := range []string{"server partial", "client partial", "combine"} {
 		t.Run(failure, func(t *testing.T) {
-			ctx := t.Context()
 			client, server := signingWallet(t, 2), signingWallet(t, 3)
-			c, err := NewSigningRound(ctx, client, keychain.KeyLocator{}, pkg)
-			require.NoError(t, err)
-			defer c.Close(ctx)
-			s, err := NewSigningRound(ctx, server, keychain.KeyLocator{}, pkg)
-			require.NoError(t, err)
-			defer s.Close(ctx)
-			require.NotEqual(t, clientNonce, c.Nonce())
-			require.NotEqual(t, serverNonce, s.Nonce())
-			clientNonce, serverNonce = c.Nonce(), s.Nonce()
 			server.loseSign = failure == "server partial"
-			partial, err := s.Partial(ctx, c.Nonce())
-			if server.loseSign {
-				require.ErrorIs(t, err, errLostSigningReply)
-			} else {
-				require.NoError(t, err)
-			}
-			// The server cannot sign again, even if its RPC reply vanished.
-			_, repeated := s.Partial(ctx, [66]byte{7})
-			require.ErrorIs(t, repeated, ErrSigningRound)
-			_, repeated = server.manager.MuSig2Sign(s.session.SessionID,
-				s.request.Sighash, true)
-			require.Error(t, repeated)
-			if server.loseSign {
-				return
-			}
 			client.loseSign = failure == "client partial"
 			client.loseCombine = failure == "combine"
-			signed, err := c.Finalize(ctx, s.Nonce(), partial)
-			if client.loseSign || client.loseCombine {
-				require.ErrorIs(t, err, errLostSigningReply)
-			} else {
-				require.NoError(t, err)
-				completed := finishSigningFixture(t, signed)
-				require.NoError(t, pkg.VerifyFinalAnchorPSBT(completed))
-				if failure == "none" {
-					// The prior final remains valid although a later round
-					// for exactly this transaction uses different signatures.
-					require.NoError(t, pkg.VerifyFinalAnchorPSBT(final))
-					require.NotEqual(t, final, completed)
-				}
-				final = completed
-			}
-			_, err = c.Finalize(ctx, [66]byte{9}, partial)
-			require.ErrorIs(t, err, ErrSigningRound)
+			_, err := signTestPackage(t.Context(), client, server, pkg)
+			require.ErrorIs(t, err, errLostSigningReply)
+			// Recreated normal LND session managers generate fresh secret nonces;
+			// the persisted unsigned SDK package still fixes the authorization.
+			signed, err := signTestPackage(t.Context(), signingWallet(t, 2), signingWallet(t, 3), pkg)
+			require.NoError(t, err)
+			require.NoError(t, pkg.VerifyFinalAnchorPSBT(finishSigningFixture(t, signed)))
 		})
 	}
-}
-
-func TestInvalidPeerPartialRetiresRound(t *testing.T) {
-	ctx := t.Context()
-	pkg := signingPackage(t)
-	c, err := NewSigningRound(ctx, signingWallet(t, 2),
-		keychain.KeyLocator{}, pkg)
-	require.NoError(t, err)
-	defer c.Close(ctx)
-	s, err := NewSigningRound(ctx, signingWallet(t, 3),
-		keychain.KeyLocator{}, pkg)
-	require.NoError(t, err)
-	defer s.Close(ctx)
-	_, err = c.Finalize(ctx, s.Nonce(), make([]byte, 32))
-	require.Error(t, err)
-	_, err = c.Finalize(ctx, s.Nonce(), make([]byte, 32))
-	require.ErrorIs(t, err, ErrSigningRound)
 }
 
 // finishSigningFixture finalizes all inputs together. The remaining unrelated

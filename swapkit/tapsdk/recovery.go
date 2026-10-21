@@ -12,32 +12,6 @@ import (
 	sdk "github.com/lightninglabs/tap-sdk"
 )
 
-func (r *Driver) ValidateExecution(ctx context.Context,
-	op swapkit.Operation) error {
-
-	if len(op.Claim.Data) == 0 {
-		return swapkit.ErrInvalid
-	}
-	s, err := r.swap(ctx, op)
-	if err != nil {
-		return err
-	}
-	p := s.Deposit.Proof
-	available, err := r.cfg.Chain.Unspent(ctx, p.OutPoint())
-	if err != nil || available {
-		return err
-	}
-	point := sdkPoint(s.Fallback.Outputs[0].AnchorOutpoint)
-	available, err = r.cfg.Chain.Unspent(ctx, point)
-	if err != nil {
-		return err
-	}
-	if !available {
-		return swapkit.ErrPending
-	}
-	return nil
-}
-
 func walletOutput(public [33]byte, family int32, index uint32,
 	ref sdk.AssetRef, amount uint64, value int64) (
 	sdk.CustomAssetOutput, error) {
@@ -77,152 +51,10 @@ func walletOutput(public [33]byte, family int32, index uint32,
 	}, nil
 }
 
-// RecoverClaim uses the client-authorized fallback, then only the server's
-// wallet key and execution preimage. It never needs an online client signer.
-func (r *Driver) RecoverClaim(ctx context.Context,
-	op swapkit.Operation) (swapkit.Resolution, error) {
-
-	if sha256.Sum256(op.Preimage[:]) != op.Offer.Hash {
-		return swapkit.Resolution{}, swapkit.ErrInvalid
-	}
-	s, err := r.swap(ctx, op)
-	if err != nil {
-		return swapkit.Resolution{}, err
-	}
-	if len(op.Claim.Data) == 0 {
-		return swapkit.Resolution{}, swapkit.ErrInvalid
-	}
-	raw, err := r.recoverSpend(ctx, s, false, op.Preimage)
-	return swapkit.Resolution{Claimed: err == nil, Evidence: raw}, err
-}
-
-func (r *Driver) RecoverRefund(ctx context.Context,
-	op swapkit.Operation) ([]byte, error) {
-
-	s, err := r.swap(ctx, op)
-	if err != nil {
-		return nil, err
-	}
-	if len(op.Fallback.Bundle) == 0 {
-		return nil, swapkit.ErrInvalid
-	}
-	height, err := r.cfg.Chain.Height(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if height < op.Offer.Terms.RefundHeight {
-		return nil, swapkit.ErrPending
-	}
-	return r.recoverSpend(ctx, s, true, [32]byte{})
-}
-
-func (r *Driver) recoverSpend(ctx context.Context, s *swapContext,
-	refund bool, preimage [32]byte) ([]byte, error) {
-
-	d := s.Deposit
-	c := d.Contract
-	fallbackProof, err := r.fallbackProof(ctx, s, false)
-	if err != nil {
-		return nil, err
-	}
-	policy, err := htlc(s.Offer, c)
-	if err != nil {
-		return nil, err
-	}
-	out := s.Fallback.Outputs[0]
-	public := c.ServerKey
-	spend, err := policy.SuccessSpend(out.TaprootAssetRoot)
-	if refund {
-		public = c.ClientKey
-		spend, err = policy.TimeoutSpend(out.TaprootAssetRoot)
-	}
-	if err != nil {
-		return nil, err
-	}
-	// Keys and the fee are fixed by the agreed fallback. Rebuilding after
-	// restart therefore has the same unsigned transaction and asset output.
-	fee := c.Output.AnchorValueSat - out.AnchorValueSat
-	if fee <= 0 {
-		return nil, swapkit.ErrInvalid
-	}
-	key := locator(d.Request.KeyFamily, d.Request.KeyIndex)
-	plan, err := r.recoveryPlan(ctx, out, fallbackProof, public, key, spend,
-		uint64(fee))
-	if err != nil {
-		return nil, err
-	}
-	var unlock *[32]byte
-	if !refund {
-		unlock = &preimage
-	}
-	pkg, err := r.commit(ctx, plan)
-	if err != nil {
-		return nil, err
-	}
-	pkg, err = r.signScriptSpend(ctx, pkg, key, unlock)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := r.publish(ctx, pkg)
-	if err != nil {
-		return nil, err
-	}
-	if err := r.verifyOutcome(ctx, s, raw, refund); err != nil {
-		return nil, err
-	}
-	return raw, nil
-}
-
-func (r *Driver) InspectClaim(ctx context.Context,
-	op swapkit.Operation) ([]byte, error) {
-
-	s, err := r.swap(ctx, op)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := resolveOutcomeProof(ctx, op.Evidence,
-		func(ctx context.Context, raw []byte) error {
-			return r.verifyOutcome(ctx, s, raw, false)
-		}, func(ctx context.Context) ([]byte, error) {
-			return r.discoverOutcome(ctx, s, false)
-		})
-	if err != nil {
-		return nil, err
-	}
-	return raw, nil
-}
-
-func (r *Driver) InspectRefund(ctx context.Context,
-	op swapkit.Operation) (swapkit.Resolution, error) {
-
-	s, err := r.swap(ctx, op)
-	if err != nil {
-		return swapkit.Resolution{}, err
-	}
-	raw, err := resolveOutcomeProof(ctx, op.Evidence,
-		func(ctx context.Context, raw []byte) error {
-			return r.verifyRefundOutcome(ctx, s, raw)
-		}, func(ctx context.Context) ([]byte, error) {
-			raw, err := r.discoverOutcome(ctx, s, true)
-			if err == swapkit.ErrPending {
-				return r.discoverOriginalRefund(ctx, s)
-			}
-			return raw, err
-		})
-	if err == swapkit.ErrPending {
-		return swapkit.Resolution{}, nil
-	}
-	if err != nil {
-		return swapkit.Resolution{}, err
-	}
-	return swapkit.Resolution{Refunded: true, Evidence: raw}, nil
-}
-
-// discoverOutcome rebuilds a missing peer proof from the known fallback and
-// its confirmed spend. OP_TRUE makes the asset transition deterministic;
-// the observed Bitcoin signature is copied only after checking the contract.
-// This remains usable when the claiming/refunding peer is offline forever.
-func (r *Driver) discoverOutcome(ctx context.Context, s *swapContext,
+// DiscoverOutcome reconstructs an offline peer's proof from its Bitcoin spend.
+// It verifies the agreed leaf and observed witness before observer logging.
+func DiscoverOutcome(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32, s *SwapContext,
 	refund bool) ([]byte, error) {
 
 	if s.Fallback == nil {
@@ -231,14 +63,14 @@ func (r *Driver) discoverOutcome(ctx context.Context, s *swapContext,
 	d := s.Deposit
 	c := d.Contract
 	out := s.Fallback.Outputs[0]
-	point := sdkPoint(out.AnchorOutpoint)
+	point := SDKPoint(out.AnchorOutpoint)
 	// The server may only have its public partial after a lost reply.
 	// The committed unsigned anchor still fixes the output to watch.
-	anchor, err := decodePSBT(s.Fallback.AnchorPsbt)
+	anchor, err := DecodePSBT(s.Fallback.AnchorPsbt)
 	if err != nil {
 		return nil, err
 	}
-	block, _, err := r.cfg.Chain.Spend(ctx, point,
+	block, _, err := chain.Spend(ctx, point,
 		anchor.UnsignedTx.TxOut[point.Index].PkScript, s.Deposit.Proof.BlockHeight)
 	if err != nil {
 		return nil, err
@@ -247,7 +79,7 @@ func (r *Driver) discoverOutcome(ctx context.Context, s *swapContext,
 	if len(found.TxIn) != 1 || len(found.TxOut) != 1 {
 		return nil, swapkit.ErrInvalid
 	}
-	policy, err := htlc(s.Offer, c)
+	policy, err := HTLC(s.Offer, c)
 	if err != nil {
 		return nil, err
 	}
@@ -263,28 +95,23 @@ func (r *Driver) discoverOutcome(ctx context.Context, s *swapContext,
 	if !spendsLeaf(found, out, spend) {
 		return nil, swapkit.ErrPending
 	}
-	fallbackProof, err := r.fallbackProof(ctx, s, true)
+	fallbackProof, err := FallbackProof(ctx, wallet, chain, minConfs, s, true)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := r.rebuildObservedSpend(ctx, out, fallbackProof, public,
-		spend, found)
+	raw, err := rebuildObservedSpend(
+		ctx, wallet, chain, minConfs, out, fallbackProof, public,
+		spend, found,
+	)
 	if err != nil {
 		return nil, err
 	}
 	return raw, nil
 }
 
-// verifyOutcome requires the agreed asset lineage, the authorized recipient,
-// a currently confirmed Bitcoin spend, and the exact success/refund leaf.
-// Client refund recovery additionally requires the output to remain unspent.
-func (r *Driver) verifyOutcome(ctx context.Context, s *swapContext,
-	raw []byte, refund bool) error {
-
-	return r.verifyOutcomePolicy(ctx, s, raw, refund, refund)
-}
-
-func (r *Driver) verifyOutcomePolicy(ctx context.Context, s *swapContext,
+// VerifyOutcome binds a proof to the agreed claim or timeout Bitcoin path.
+func VerifyOutcome(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32, s *SwapContext,
 	raw []byte, refund, requireUnspent bool) error {
 
 	d := s.Deposit
@@ -302,7 +129,7 @@ func (r *Driver) verifyOutcomePolicy(ctx context.Context, s *swapContext,
 	if refund {
 		pub = c.ClientKey
 	}
-	policy, err := htlc(s.Offer, c)
+	policy, err := HTLC(s.Offer, c)
 	if err != nil {
 		return err
 	}
@@ -313,27 +140,24 @@ func (r *Driver) verifyOutcomePolicy(ctx context.Context, s *swapContext,
 	if err != nil {
 		return err
 	}
-	err = r.verifyWalletSpend(ctx, raw, prior, pub, spend,
+	err = VerifyWalletSpend(ctx, wallet, chain, minConfs, raw, prior, pub, spend,
 		requireUnspent, 0)
 	return err
 }
 
-func (r *Driver) LookupPreimage(ctx context.Context,
-	op swapkit.Operation) (swapkit.PreimageResult, error) {
+// DiscoverPreimage reads only the fixed fallback's current on-chain spend.
+func DiscoverPreimage(ctx context.Context, chain Chain,
+	s *SwapContext) (swapkit.PreimageResult, error) {
 
-	s, err := r.swap(ctx, op)
-	if err != nil {
-		return swapkit.PreimageResult{}, err
-	}
 	if s.Fallback == nil {
 		return swapkit.PreimageResult{}, nil
 	}
-	point := sdkPoint(s.Fallback.Outputs[0].AnchorOutpoint)
-	anchor, err := decodePSBT(s.Fallback.AnchorPsbt)
+	point := SDKPoint(s.Fallback.Outputs[0].AnchorOutpoint)
+	anchor, err := DecodePSBT(s.Fallback.AnchorPsbt)
 	if err != nil {
 		return swapkit.PreimageResult{}, err
 	}
-	block, _, err := r.cfg.Chain.Spend(ctx, point,
+	block, _, err := chain.Spend(ctx, point,
 		anchor.UnsignedTx.TxOut[point.Index].PkScript, s.Deposit.Proof.BlockHeight)
 	if err == swapkit.ErrPending {
 		return swapkit.PreimageResult{}, nil
@@ -346,7 +170,7 @@ func (r *Driver) LookupPreimage(ctx context.Context,
 			continue
 		}
 		for _, element := range input.Witness {
-			if len(element) != 32 || sha256.Sum256(element) != op.Offer.Hash {
+			if len(element) != 32 || sha256.Sum256(element) != s.Offer.Hash {
 				continue
 			}
 			var preimage [32]byte
@@ -357,12 +181,12 @@ func (r *Driver) LookupPreimage(ctx context.Context,
 	return swapkit.PreimageResult{}, nil
 }
 
-// fallbackProof recovers a complete fallback even if the client's final reply
-// was lost: the fixed unsigned transaction identifies its observed witness.
-// A confirmed successor also proves the fallback was mined; importing that
-// lineage must not try to broadcast its already-spent anchor.
-func (r *Driver) fallbackProof(ctx context.Context,
-	s *swapContext, observed bool) ([]byte, error) {
+// FallbackProof locates the fixed fallback and logs its confirmed witness.
+// SDK Build verifies the returned lineage when constructing its successor;
+// validation-only callers verify the complete outcome proof instead.
+func FallbackProof(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32,
+	s *SwapContext, observed bool) ([]byte, error) {
 
 	if s.Fallback == nil {
 		return nil, swapkit.ErrPending
@@ -371,12 +195,12 @@ func (r *Driver) fallbackProof(ctx context.Context,
 	if contract.Output.OPTrueSpend == nil {
 		return nil, swapkit.ErrInvalid
 	}
-	if err := r.declareOPTrue(ctx, contract.Output.ScriptKey,
+	if err := declareOPTrue(ctx, wallet, contract.Output.ScriptKey,
 		contract.Output.OPTrueSpend.WitnessStack()); err != nil {
 		return nil, err
 	}
 	pkg := s.Fallback
-	packet, err := decodePSBT(pkg.AnchorPsbt)
+	packet, err := DecodePSBT(pkg.AnchorPsbt)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +212,7 @@ func (r *Driver) fallbackProof(ctx context.Context,
 			return nil, swapkit.ErrInvalid
 		}
 		point := packet.UnsignedTx.TxIn[0].PreviousOutPoint
-		block, _, err := r.cfg.Chain.Spend(
+		block, _, err := chain.Spend(
 			ctx, point, packet.Inputs[0].WitnessUtxo.PkScript,
 			s.Deposit.Proof.BlockHeight,
 		)
@@ -411,14 +235,14 @@ func (r *Driver) fallbackProof(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		packet, err = decodePSBT(signed.AnchorPsbt)
+		packet, err = DecodePSBT(signed.AnchorPsbt)
 		if err != nil {
 			return nil, err
 		}
 		if err := psbt.MaybeFinalizeAll(packet); err != nil {
 			return nil, err
 		}
-		final, err := encodePSBT(packet)
+		final, err := EncodePSBT(packet)
 		if err != nil {
 			return nil, err
 		}
@@ -427,11 +251,11 @@ func (r *Driver) fallbackProof(ctx context.Context,
 			return nil, err
 		}
 	}
-	raw, err := r.logAndExport(ctx, s.Fallback, observed)
+	raw, err := LogAndExport(ctx, wallet, chain, minConfs, s.Fallback, observed)
 	if err != nil {
 		return nil, err
 	}
-	_, err = r.verifyProof(ctx, raw, s.Offer.Terms.GroupKey,
-		s.Offer.Terms.DepositAmount, false)
-	return raw, err
+	// The next SDK Build verifies this input lineage once. A validation-only
+	// caller verifies its complete outcome proof, including this lineage.
+	return raw, nil
 }

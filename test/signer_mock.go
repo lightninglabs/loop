@@ -3,7 +3,6 @@ package test
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -86,24 +85,42 @@ func (s *mockSigner) DeriveSharedKey(context.Context, *btcec.PublicKey,
 // all signing parties must be provided, including the public key of the local
 // signing key. If nonces of other parties are already known, they can be
 // submitted as well to reduce the number of method calls necessary later on.
-func (s *mockSigner) MuSig2CreateSession(context.Context, input.MuSig2Version,
-	*keychain.KeyLocator, [][]byte, ...lndclient.MuSig2SessionOpts) (
-	*input.MuSig2SessionInfo, error) {
+func (s *mockSigner) MuSig2CreateSession(_ context.Context,
+	version input.MuSig2Version, _ *keychain.KeyLocator, pubkeys [][]byte,
+	opts ...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo, error) {
 
-	const testPubKey = "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
-	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	return MockMuSig2Session(version, pubkeys, opts...)
+}
+
+// MockMuSig2Session derives the actual public aggregate for a test session.
+// Private nonce and signing behavior remain the owning fixture's responsibility.
+func MockMuSig2Session(version input.MuSig2Version, pubkeys [][]byte,
+	opts ...lndclient.MuSig2SessionOpts) (*input.MuSig2SessionInfo, error) {
+
+	keys, err := input.MuSig2ParsePubKeys(version, pubkeys)
 	if err != nil {
 		return nil, err
 	}
-
-	combinedKey, err := schnorr.ParsePubKey(pubKeyBytes)
+	request := &signrpc.MuSig2SessionRequest{}
+	for _, option := range opts {
+		option(request)
+	}
+	tweaks := &input.MuSig2Tweaks{}
+	if request.TaprootTweak != nil {
+		tweaks.TaprootTweak = request.TaprootTweak.ScriptRoot
+		tweaks.TaprootBIP0086Tweak = request.TaprootTweak.KeySpendOnly
+	}
+	combined, err := input.MuSig2CombineKeys(version, keys, true, tweaks)
 	if err != nil {
 		return nil, err
 	}
-
+	// The real signer RPC serializes the combined output as an x-only key.
+	key, err := schnorr.ParsePubKey(schnorr.SerializePubKey(combined.FinalKey))
+	if err != nil {
+		return nil, err
+	}
 	return &input.MuSig2SessionInfo{
-		CombinedKey:   combinedKey,
-		HaveAllNonces: true,
+		CombinedKey: key, HaveAllNonces: true,
 	}, nil
 }
 

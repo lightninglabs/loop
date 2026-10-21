@@ -141,7 +141,10 @@ The normal client supports asset deposit funding, same-group native payouts,
 and recovery through `loop static asset`. See the
 [asset deposit and loop-in guide](staticaddr/loopin/assets.md) for
 configuration, commands, persistent state and the initial one-deposit limit.
-The transaction runtime builds from the separate `swapkit/tapsdk` module.
+The ordinary FSM actions build transfers with Tap SDK, sign through existing
+LND services, and retain their completed packages in the normal SQL records.
+Loop's `swapkit/tapsdk` package supplies Bitcoin contract and proof-policy
+helpers inside the normal Loop module.
 
 Experimental asset Loop In development and release blockers are tracked in
 [the readiness document](docs/asset-loop-in-readiness.md).

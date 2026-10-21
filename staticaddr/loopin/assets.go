@@ -6,35 +6,22 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/loop/assets/assetln"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swapkit"
+	"github.com/lightninglabs/taproot-assets/taprpc/tapchannelrpc"
 )
-
-// AssetDriver supplies transaction operations to the ordinary state machines.
-type AssetDriver interface {
-	deposit.AssetDriver
-	CheckReady(context.Context) error
-	Height(context.Context) (uint32, error)
-	ValidateOffer(context.Context, swapkit.Offer) error
-	PrepareRecovery(context.Context, swapkit.Offer) ([]byte, error)
-	BeginFallback(context.Context, swapkit.Offer, []byte) (
-		*swapkit.FallbackRound, error)
-	LookupPreimage(context.Context, swapkit.Operation) (
-		swapkit.PreimageResult, error)
-	RecoverRefund(context.Context, swapkit.Operation) ([]byte, error)
-}
 
 // AssetConfig supplies asset services to the normal deposit and Loop In FSMs.
 type AssetConfig struct {
-	Driver    AssetDriver
+	deposit.AssetConfig
+
 	Address   *address.Manager
 	Deposits  *deposit.Manager
 	Server    AssetServer
-	Receiver  *assetln.Receiver
+	Tapd      tapchannelrpc.TaprootAssetChannelsClient
 	Owner     [32]byte
 	Peer      [33]byte
 	FetchL402 func(context.Context) error
@@ -51,14 +38,18 @@ func (m *Manager) InitializeAssets(ctx context.Context) error {
 		return nil
 	}
 	cfg := m.cfg.Assets
-	if cfg.Driver == nil || cfg.Address == nil || cfg.Deposits == nil ||
-		cfg.Server == nil || cfg.Receiver == nil || cfg.FetchL402 == nil ||
-		cfg.Owner == ([32]byte{}) || cfg.Peer == ([33]byte{}) {
+	if cfg.Wallet == nil || cfg.Chain == nil || cfg.Address == nil ||
+		cfg.Deposits == nil || cfg.Server == nil || cfg.Tapd == nil ||
+		m.cfg.LndClient == nil || m.cfg.InvoicesClient == nil ||
+		cfg.FetchL402 == nil ||
+		cfg.Owner == ([32]byte{}) || cfg.Peer == ([33]byte{}) ||
+		cfg.FeeSat == 0 || cfg.MaxFeeSat < cfg.FeeSat || cfg.MinConfs == 0 ||
+		m.cfg.Signer == nil || m.cfg.WalletKit == nil {
 
 		return swapkit.ErrInvalid
 	}
-	cfg.Deposits.SetAssetDriver(cfg.Driver)
-	return cfg.Driver.CheckReady(ctx)
+	cfg.Deposits.ConfigureAssets(&cfg.AssetConfig)
+	return nil
 }
 
 // CreateAssetDeposit starts funding through the normal deposit manager.
@@ -78,7 +69,8 @@ func (m *Manager) CreateAssetDeposit(ctx context.Context, id [32]byte,
 	}
 	req := swapkit.CreateDepositRequest{
 		RequestID: id, GroupKey: group, Amount: amount, CSV: params.Expiry,
-		KeyFamily: int32(params.KeyLocator.Family), KeyIndex: params.KeyLocator.Index,
+		KeyFamily: int32(params.KeyLocator.Family),
+		KeyIndex:  params.KeyLocator.Index,
 	}
 	copy(req.ClientKey[:], params.ClientPubkey.SerializeCompressed())
 	copy(req.ServerKey[:], params.ServerPubkey.SerializeCompressed())

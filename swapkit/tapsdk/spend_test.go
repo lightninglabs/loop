@@ -60,22 +60,18 @@ func TestScriptSpendRecovery(t *testing.T) {
 			if lostReply {
 				wallet.failure = lost
 			}
-			r := &Driver{cfg: DriverConfig{Signer: wallet}}
-			signed, err := r.signScriptSpend(t.Context(), tx,
-				keychain.KeyLocator{}, nil)
+			signed, err := FinalizeScriptSpend(t.Context(), wallet, keychain.KeyLocator{}, tx, nil)
 			if lostReply {
 				require.ErrorIs(t, err, lost)
 				require.Nil(t, signed)
-				r = &Driver{cfg: DriverConfig{Signer: wallet}}
-				signed, err = r.signScriptSpend(t.Context(), tx,
-					keychain.KeyLocator{}, nil)
+				signed, err = FinalizeScriptSpend(t.Context(), wallet, keychain.KeyLocator{}, tx, nil)
 			}
 			require.NoError(t, err)
 			final := signed.AnchorPsbt
 			require.NotEmpty(t, final)
 			stored, err := signed.MarshalBinary()
 			require.NoError(t, err)
-			restored, err := decodeFinalPackage(stored)
+			restored, err := DecodeFinalPackage(stored)
 			require.NoError(t, err)
 			require.Equal(t, final, restored.AnchorPsbt)
 			require.Equal(t, signed.CommittedPackageDigest,
@@ -95,12 +91,12 @@ func (declaringRecoveryWallet) DeclareScriptKey(context.Context,
 // TestRecoveryPlanIgnoresChangedFeeConfiguration verifies the transaction that
 // is rebuilt after restart stays identical when operator fee limits change.
 func TestRecoveryPlanIgnoresChangedFeeConfiguration(t *testing.T) {
-	driver, swap, _, _ := bindingOutcome(t, true)
-	var contract depositContract
+	node, swap, _, _ := bindingOutcome(t, true)
+	var contract DepositContract
 	require.NoError(t, json.Unmarshal(swap.Offer.Terms.Contract, &contract))
 	output := swap.Fallback.Outputs[0]
 	output.OPTrueSpend = contract.Output.OPTrueSpend
-	policy, err := htlc(swap.Offer, contract)
+	policy, err := HTLC(swap.Offer, contract)
 	require.NoError(t, err)
 	anchor := AnchorPlan(policy.AnchorPlan())
 	require.Len(t, anchor.Tapscript.TapLeaves, 2)
@@ -114,7 +110,7 @@ func TestRecoveryPlanIgnoresChangedFeeConfiguration(t *testing.T) {
 	script, err := btcec.ParsePubKey(contract.Output.ScriptKey[:])
 	require.NoError(t, err)
 	previous := bindingProof(t, bindingGenesis(), script, internal,
-		&sibling, sdkPoint(contract.Output.AnchorOutpoint), 140, false)
+		&sibling, SDKPoint(contract.Output.AnchorOutpoint), 140, false)
 	previous.AnchorTx.TxOut[0].Value = output.AnchorValueSat
 	previous.BlockHeader.MerkleRoot = previous.AnchorTx.TxHash()
 	output.TaprootAssetRoot, _, err = isolatedRoots(previous)
@@ -123,15 +119,13 @@ func TestRecoveryPlanIgnoresChangedFeeConfiguration(t *testing.T) {
 	require.NoError(t, err)
 	proof := bindingRaw(t, previous)
 	fee := uint64(contract.Output.AnchorValueSat - output.AnchorValueSat)
-	driver.cfg.SDK = declaringRecoveryWallet{}
-	before, err := driver.recoveryPlan(t.Context(), output, proof,
+	node.client = declaringRecoveryWallet{}
+	before, err := RecoveryRequest(t.Context(), node.wallet(), output, proof,
 		contract.ClientKey, keychain.KeyLocator{}, spend, fee)
 	require.NoError(t, err)
-	// Recovery takes its fee from the stored fallback, including after a
-	// fresh driver is built under a lower cap and a higher target fee.
-	restarted := &Driver{cfg: driver.cfg}
-	restarted.cfg.FeeSat, restarted.cfg.MaxFeeSat = 5000, 1
-	after, err := restarted.recoveryPlan(t.Context(), output, proof,
+	// Recovery only accepts the agreed fee. No daemon fee configuration
+	// crosses this API when the same unsigned transfer is rebuilt.
+	after, err := RecoveryRequest(t.Context(), node.wallet(), output, proof,
 		contract.ClientKey, keychain.KeyLocator{}, spend, fee)
 	require.NoError(t, err)
 	require.Equal(t, before, after)

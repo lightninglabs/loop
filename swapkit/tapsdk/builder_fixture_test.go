@@ -25,8 +25,10 @@ var builderFixtureJSON []byte
 type builderFixtureClient struct {
 	sdk.Client
 
-	raw      []byte
-	verified *sdk.VerifyProofResponse
+	raw         []byte
+	verified    *sdk.VerifyProofResponse
+	verifyCalls int
+	afterVerify func()
 }
 
 func (c *builderFixtureClient) VerifyProof(_ context.Context, raw []byte) (
@@ -34,6 +36,10 @@ func (c *builderFixtureClient) VerifyProof(_ context.Context, raw []byte) (
 
 	if !bytes.Equal(c.raw, raw) {
 		return nil, fmt.Errorf("unexpected proof fixture")
+	}
+	c.verifyCalls++
+	if c.afterVerify != nil {
+		c.afterVerify()
 	}
 	return c.verified, nil
 }

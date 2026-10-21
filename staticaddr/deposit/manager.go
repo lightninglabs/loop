@@ -45,8 +45,8 @@ var (
 
 // ManagerConfig holds the configuration for the address manager.
 type ManagerConfig struct {
-	// AssetDriver builds and publishes proof-preserving asset transactions.
-	AssetDriver AssetDriver
+	// Asset supplies SDK services for the optional native asset variant.
+	Asset *AssetConfig
 
 	// LightningClient is used to obtain a chain-synced wallet height for
 	// confirmation-height reconciliation.

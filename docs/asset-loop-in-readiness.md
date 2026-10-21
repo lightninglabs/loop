@@ -14,13 +14,16 @@ the normal FSM ownership, protocol saves, and restart boundaries.
 - Ordinary deposit and static Loop In FSMs, records and startup recovery.
   Asset metadata selects native payment/transaction actions; no separate
   controller, request journal or recovery worker remains.
-- Loop-owned deposit/HTLC contracts and an SDK adapter using normal LND signing
-  and tapd proof publication. Asset leaves use `OP_TRUE`; spending authority
-  remains in the Bitcoin deposit and HTLC scripts.
+- Native SDK Build/Commit calls in the ordinary FSM actions, with existing LND
+  signing and tapd publication. Loop-owned helpers enforce deposit/HTLC policy,
+  current-chain checks and observed-spend proof recovery. Asset leaves use
+  `OP_TRUE`; Bitcoin deposit and HTLC scripts enforce spending authority.
 - Complete signed packages and fallbacks saved before publication or claim
   exposure, tapd proof import, and recovery through the ordinary stores.
-- Same-group native asset HOLD invoices, accepted-HTLC amount/group/expiry
-  validation, and server-controlled preimage release.
+- Same-group native asset HOLD invoices through existing LND/tapd clients,
+  accepted-HTLC amount/group/expiry checks, and server-controlled preimage
+  release. The normal invoice field and one finalized fallback package retain
+  the client data; the server saves the generated payment request before send.
 
 The companion server process suite exercises the normal CLI/daemon flow on
 regtest: server-held execution, restart during publication, unilateral refunds
@@ -49,7 +52,7 @@ optimization; reliable unilateral recovery is a requirement.
 
 The normal Loop and server modules now import the SDK directly. Development
 setup pins the compatible SDK base `932b4aa5429b66df2df13fcfac03fc6c6bdf974e`
-and Taproot Assets v0.8.6. The small SDK compatibility patch includes generic
+and Taproot Assets v0.8.6. The SDK compatibility patch includes generic
 metadata fixes, compressed participant handling and current proof rules.
 The stable tapd checkout needs the merged CLTV fix backported and the existing
 native amount rounding fix. These pins and patches remain release blockers.
@@ -57,4 +60,9 @@ native amount rounding fix. These pins and patches remain release blockers.
 Run the package checks from the normal modules; there is no separate runtime
 build. The server's `make asset-loop-in-production-itest` exercises normal
 client/server processes; `make asset-loop-in-itest` is an alias for that suite.
-The production priorities above still apply after the architecture reduction.
+Unit tests exercise native circuit checks, saved SQL phases, failed critical
+writes and malformed package rejection. Successful signing, proof publication
+and unilateral recovery are checked by the normal-process suite. Earlier PR
+databases using transaction/payment wrappers or duplicate fallback fields must
+be recreated; recovery tests cover the current format. The production
+priorities above still apply after the architecture reduction.

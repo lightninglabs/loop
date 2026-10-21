@@ -11,18 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func originalRefundFixture(t *testing.T) (*Driver, *swapContext,
+func originalRefundFixture(t *testing.T) (*proofNode, *SwapContext,
 	*proof.Proof, *bindingChain) {
 
 	t.Helper()
 	r, s, _, chain := bindingOutcome(t, true)
 	// The server never obtained the client's completed fallback.
 	s.Fallback = nil
-	d, err := r.localDeposit(t.Context(), s.Offer.Terms.DepositOutpoints[0])
+	d := s.Deposit
+	base, err := LastProof(d.Deposit.Proof)
 	require.NoError(t, err)
-	base, err := lastProof(d.Deposit.Proof)
-	require.NoError(t, err)
-	_, spend, err := originalRefundPolicy(d)
+	_, spend, err := OriginalRefundPolicy(d)
 	require.NoError(t, err)
 	key := bindingKey(2)
 	output := txscript.ComputeTaprootKeyNoScript(key.PubKey())
@@ -49,19 +48,11 @@ func originalRefundFixture(t *testing.T) (*Driver, *swapContext,
 
 func TestOriginalCSVRefundWithoutCompletedFallback(t *testing.T) {
 	r, s, p, chain := originalRefundFixture(t)
-	op := swapkit.Operation{Offer: s.Offer, Evidence: bindingRaw(t, p)}
-	result, err := r.InspectRefund(t.Context(), op)
-	require.NoError(t, err)
-	require.True(t, result.Refunded)
-	require.Equal(t, op.Evidence, result.Evidence)
+	raw := bindingRaw(t, p)
+	require.NoError(t, VerifyRefundOutcome(t.Context(), r.wallet(), chain, 1, s, raw))
 	require.Nil(t, s.Fallback)
-
-	// A stored original refund is revalidated just like an HTLC refund.
 	chain.blocks[201].Header.Nonce++
-	r = &Driver{cfg: r.cfg}
-	result, err = r.InspectRefund(t.Context(), op)
-	require.NoError(t, err)
-	require.False(t, result.Refunded)
+	require.ErrorIs(t, VerifyRefundOutcome(t.Context(), r.wallet(), chain, 1, s, raw), swapkit.ErrPending)
 }
 
 func TestOriginalRefundRejectsWrongSpend(t *testing.T) {
@@ -83,39 +74,37 @@ func TestOriginalRefundRejectsWrongSpend(t *testing.T) {
 				p.BlockHeight = 199
 				chain.blocks[199] = bindingBlock(p)
 			}
-			err := r.verifyOriginalRefund(t.Context(), s,
-				bindingRaw(t, p))
+			err := verifyOriginalRefund(t.Context(), r.wallet(), r.chain, 1, s, bindingRaw(t, p), true)
 			require.Error(t, err)
 		})
 	}
 }
 
 func TestDepositContractRejectsIdentitySubstitution(t *testing.T) {
-	r, s, _, _ := bindingOutcome(t, false)
-	d, err := r.localDeposit(t.Context(), s.Offer.Terms.DepositOutpoints[0])
-	require.NoError(t, err)
-	for _, mutate := range []func(*depositContract){
-		func(c *depositContract) { c.Output.IssuanceID[0] ^= 1 },
-		func(c *depositContract) { c.Output.AssetType++ },
-		func(c *depositContract) { c.Output.Amount++ },
+	_, s, _, _ := bindingOutcome(t, false)
+	d := s.Deposit
+	for _, mutate := range []func(*DepositContract){
+		func(c *DepositContract) { c.Output.IssuanceID[0] ^= 1 },
+		func(c *DepositContract) { c.Output.AssetType++ },
+		func(c *DepositContract) { c.Output.Amount++ },
 	} {
-		var c depositContract
+		var c DepositContract
 		require.NoError(t, json.Unmarshal(d.Deposit.Contract, &c))
 		mutate(&c)
-		_, err = r.verifyDepositContract(t.Context(), d.Deposit, c, false)
+		err := checkDepositContract(d.Deposit, c, d.Proof)
 		require.ErrorIs(t, err, swapkit.ErrInvalid)
 	}
 }
 
 func TestServerCanReconcileSpentRefundButClientNeedsSpendability(t *testing.T) {
 	for _, original := range []bool{false, true} {
-		name := "htlc"
+		name := "HTLC"
 		if original {
 			name = "original deposit"
 		}
 		t.Run(name, func(t *testing.T) {
-			var r *Driver
-			var s *swapContext
+			var r *proofNode
+			var s *SwapContext
 			var p *proof.Proof
 			var chain *bindingChain
 			if original {
@@ -125,19 +114,17 @@ func TestServerCanReconcileSpentRefundButClientNeedsSpendability(t *testing.T) {
 			}
 			raw := bindingRaw(t, p)
 			chain.unspent = false
-			err := r.verifyRefundOutcome(t.Context(), s, raw)
+			err := VerifyRefundOutcome(t.Context(), r.wallet(), r.chain, r.minConfs, s, raw)
 			require.NoError(t, err)
 			if original {
-				err = r.verifyOriginalRefund(
-					t.Context(), s, raw,
-				)
+				err = verifyOriginalRefund(t.Context(), r.wallet(), r.chain, 1, s, raw, true)
 			} else {
-				err = r.verifyOutcome(t.Context(), s, raw, true)
+				err = VerifyOutcome(t.Context(), r.wallet(), r.chain, r.minConfs, s, raw, true, true)
 			}
 			require.ErrorIs(t, err, swapkit.ErrPending)
 
 			chain.blocks[p.BlockHeight].Header.Nonce++
-			err = r.verifyRefundOutcome(t.Context(), s, raw)
+			err = VerifyRefundOutcome(t.Context(), r.wallet(), r.chain, r.minConfs, s, raw)
 			require.ErrorIs(t, err, swapkit.ErrPending)
 		})
 	}

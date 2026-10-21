@@ -75,12 +75,11 @@ func TestFundingUsesExactOutpointWithReusedScriptKey(t *testing.T) {
 				100: bindingBlock(first),
 				101: bindingBlock(second),
 			}}}
-	r := &Driver{cfg: DriverConfig{SDK: client, Chain: chain, MinConfs: 1,
-		Wallet: sdk.NewWallet(client, sdk.NetworkRegtest)}}
+	r := &proofNode{client: client, chain: chain, minConfs: 1}
 	request := swapkit.CreateDepositRequest{
 		GroupKey: bindingPub(11), Amount: 1000,
 	}
-	raw, err := r.fundingProof(t.Context(), request)
+	raw, err := FundingProof(t.Context(), r.wallet(), r.chain, r.minConfs, request)
 	require.NoError(t, err)
 	require.Equal(t, bindingRaw(t, second), raw)
 	require.Len(t, client.exports, 2)
@@ -91,12 +90,12 @@ func TestFundingUsesExactOutpointWithReusedScriptKey(t *testing.T) {
 	client.rows = client.rows[1:]
 	client.proofs[*client.rows[0].AnchorOutpoint] = bindingRaw(t, first)
 	chain.spent = wire.OutPoint{}
-	_, err = r.fundingProof(t.Context(), request)
+	_, err = FundingProof(t.Context(), r.wallet(), r.chain, r.minConfs, request)
 	require.ErrorIs(t, err, swapkit.ErrInvalid)
 
 	client.rows[0].AnchorOutpoint = nil
 	client.exports = nil
-	_, err = r.fundingProof(t.Context(), request)
+	_, err = FundingProof(t.Context(), r.wallet(), r.chain, r.minConfs, request)
 	require.ErrorIs(t, err, swapkit.ErrInvalid)
 	require.Empty(t, client.exports)
 }

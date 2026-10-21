@@ -13,12 +13,13 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/loop/assets/assetln"
+	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapkit"
+	assetkit "github.com/lightninglabs/loop/swapkit/tapsdk"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/tapchannelrpc"
@@ -36,7 +37,7 @@ type assetFSMNode struct {
 
 	invoice  *lnrpc.Invoice
 	channels []*lnrpc.Channel
-	terms    assetln.Terms
+	terms    swapkit.Offer
 }
 
 func (n *assetFSMNode) LookupInvoice(context.Context, *lnrpc.PaymentHash,
@@ -57,8 +58,8 @@ func (n *assetFSMNode) DecodePayReq(context.Context, *lnrpc.PayReqString,
 	return &lnrpc.PayReq{
 		PaymentHash: hex.EncodeToString(n.terms.Hash[:]), NumMsat: 100_000,
 		Timestamp: time.Now().Unix(), Expiry: 3600,
-		CltvExpiry: int64(n.terms.RefundHeight - 100 + n.terms.RecoveryBlocks +
-			n.terms.HoldExpiryDelta + 1),
+		CltvExpiry: int64(n.terms.Terms.RefundHeight - 100 + n.terms.Terms.RecoveryDelta +
+			assetHoldExpiryDelta + 1),
 	}, nil
 }
 
@@ -92,7 +93,7 @@ func (i *assetFSMInvoices) CancelInvoice(context.Context,
 type assetFSMTapd struct {
 	tapchannelrpc.TaprootAssetChannelsClient
 
-	terms assetln.Terms
+	terms swapkit.Offer
 }
 
 func (a *assetFSMTapd) AddInvoice(_ context.Context,
@@ -102,50 +103,22 @@ func (a *assetFSMTapd) AddInvoice(_ context.Context,
 	return &tapchannelrpc.AddInvoiceResponse{
 		InvoiceResult: &lnrpc.AddInvoiceResponse{PaymentRequest: "asset invoice"},
 		AcceptedBuyQuote: &rfqrpc.PeerAcceptedBuyQuote{
-			Id: make([]byte, 32), Expiry: uint64(a.terms.Deadline),
-			Peer: hex.EncodeToString(req.PeerPubkey), AssetMaxAmount: a.terms.Amount,
-			AssetSpec: &rfqrpc.AssetSpec{GroupPubKey: a.terms.GroupKey[1:]},
+			Id: make([]byte, 32), Expiry: uint64(a.terms.Terms.OfferExpiry.Unix()),
+			Peer: hex.EncodeToString(req.PeerPubkey), AssetMaxAmount: a.terms.Terms.PayoutAmount,
+			AssetSpec: &rfqrpc.AssetSpec{GroupPubKey: a.terms.Terms.GroupKey[1:]},
 		},
 	}, nil
 }
 
-type assetFSMDriver struct {
-	AssetDriver
+// assetFSMChain only supplies height. Tests use saved SQL phases and never
+// fabricate a successful asset transaction or proof verification.
+type assetFSMChain struct {
+	assetkit.Chain
 
-	height  uint32
-	refunds int
+	height uint32
 }
 
-func (d *assetFSMDriver) Height(context.Context) (uint32, error) {
-	return d.height, nil
-}
-func (*assetFSMDriver) PrepareRecovery(context.Context, swapkit.Offer) (
-	[]byte, error) {
-
-	return []byte("unsigned recovery"), nil
-}
-func (*assetFSMDriver) BeginFallback(context.Context, swapkit.Offer, []byte) (
-	*swapkit.FallbackRound, error) {
-
-	return &swapkit.FallbackRound{
-		Close: func() {},
-		Finalize: func(context.Context, []byte) (swapkit.Fallback, error) {
-			return swapkit.Fallback{Bundle: []byte("complete fallback"),
-				ClaimSignatures: []byte("conditional signatures")}, nil
-		},
-	}, nil
-}
-func (*assetFSMDriver) LookupPreimage(context.Context, swapkit.Operation) (
-	swapkit.PreimageResult, error) {
-
-	return swapkit.PreimageResult{}, nil
-}
-func (d *assetFSMDriver) RecoverRefund(context.Context, swapkit.Operation) (
-	[]byte, error) {
-
-	d.refunds++
-	return []byte("confirmed spendable asset refund"), nil
-}
+func (c *assetFSMChain) Height(context.Context) (uint32, error) { return c.height, nil }
 
 type assetFSMServer struct {
 	AssetServer
@@ -233,7 +206,7 @@ type assetFSMFixture struct {
 	node     *assetFSMNode
 	invoices *assetFSMInvoices
 	server   *assetFSMServer
-	driver   *assetFSMDriver
+	chain    *assetFSMChain
 	preimage [32]byte
 }
 
@@ -245,7 +218,7 @@ func newAssetFSMFixture(t *testing.T) *assetFSMFixture {
 		},
 		preimage: [32]byte{7},
 		server:   &assetFSMServer{},
-		driver:   &assetFSMDriver{height: 100},
+		chain:    &assetFSMChain{height: 100},
 	}
 	var err error
 	f.db, err = loopdb.NewSqliteStore(f.dbConfig, &chaincfg.RegressionNetParams)
@@ -286,7 +259,7 @@ func newAssetFSMFixture(t *testing.T) *assetFSMFixture {
 	}
 	f.swap.SetState(InitHtlcTx)
 	require.NoError(t, f.store.CreateLoopIn(t.Context(), f.swap))
-	termsLN := asset.paymentTerms()
+	termsLN := offer
 	f.node = &assetFSMNode{terms: termsLN, invoice: &lnrpc.Invoice{
 		RHash: offer.Hash[:], State: lnrpc.Invoice_ACCEPTED,
 		Htlcs: []*lnrpc.InvoiceHTLC{{State: lnrpc.InvoiceHTLCState_ACCEPTED,
@@ -299,16 +272,13 @@ func newAssetFSMFixture(t *testing.T) *assetFSMFixture {
 		CustomChannelData: fmt.Appendf(nil,
 			`{"group_key":"%x"}`, group[:])}}}
 	f.invoices = &assetFSMInvoices{node: f.node}
-	f.cfg = &Config{
+	f.cfg = &Config{LndClient: assetLightningService{raw: f.node}, InvoicesClient: assetInvoiceService{raw: f.invoices},
 		Store:          f.store,
 		AddressManager: &mockAddressManager{params: &script.Parameters{}},
 		DepositManager: &assetFSMDeposits{store: deposits},
 		Assets: &AssetConfig{
-			Driver: f.driver, Server: f.server,
-			Receiver: &assetln.Receiver{
-				Lightning: f.node, Invoices: f.invoices,
-				Assets: &assetFSMTapd{terms: termsLN},
-			},
+			AssetConfig: deposit.AssetConfig{Chain: f.chain}, Server: f.server,
+			Tapd: &assetFSMTapd{terms: termsLN},
 		},
 	}
 	return f
@@ -337,21 +307,21 @@ func (f *assetFSMFixture) reopen(t *testing.T) {
 // the invoice and completes without a server claim-proof dependency.
 func TestAssetFSMRestart(t *testing.T) {
 	f := newAssetFSMFixture(t)
-	f.server.prepareFailures = 1
+	f.saveMonitoring(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	f.server.commit = func() {
 		stored, err := f.store.GetLoopInByHash(t.Context(), f.swap.SwapHash)
 		require.NoError(t, err)
 		require.Equal(t, MonitorInvoiceAndHtlcTx, stored.GetState())
-		require.NotEmpty(t, stored.Asset.Fallback.Bundle)
+		require.NotEmpty(t, stored.Asset.Fallback)
 		require.NotNil(t, stored.Asset.Accepted)
 		require.Zero(t, stored.SwapPreimage)
 		cancel()
 	}
 	machine, err := NewFSM(ctx, f.swap, f.cfg, true)
 	require.NoError(t, err)
-	require.NoError(t, machine.SendEvent(ctx, OnHtlcInitiated, nil))
+	require.NoError(t, machine.SendEvent(ctx, OnRecover, nil))
 	require.Equal(t, 1, f.server.commits)
 	f.reopen(t)
 	require.Equal(t, MonitorInvoiceAndHtlcTx, f.swap.GetState())
@@ -363,16 +333,16 @@ func TestAssetFSMRestart(t *testing.T) {
 	require.Equal(t, Succeeded, f.swap.GetState())
 	require.Equal(t, f.preimage, [32]byte(f.swap.SwapPreimage))
 	require.Equal(t, deposit.LoopedIn, f.swap.Deposits[0].GetState())
-	require.Zero(t, f.driver.refunds)
 }
 
 // TestAssetFSMRejectsUnsafePayout ensures native evidence is checked in the
-// actual signing action. An interrupted unexposed swap follows normal abort
-// recovery instead of inventing another request-replay worker.
+// normal monitoring action. Native data changing after restart cannot
+// authorize another submission of stored claim signatures.
 func TestAssetFSMRejectsUnsafePayout(t *testing.T) {
 	for _, kind := range []string{"wrong group", "underpayment", "short expiry"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newAssetFSMFixture(t)
+			f.saveMonitoring(t)
 			switch kind {
 			case "wrong group":
 				_, other := btcec.PrivKeyFromBytes([]byte{2})
@@ -381,7 +351,7 @@ func TestAssetFSMRejectsUnsafePayout(t *testing.T) {
 			case "underpayment":
 				f.node.invoice.Htlcs[0].CustomChannelData = fmt.Appendf(nil,
 					`{"rfq_id":"%064x","balances":[{"asset_id":"%x","amount":999}]}`,
-					1, f.node.terms.GroupKey[1:])
+					1, f.node.terms.Terms.GroupKey[1:])
 			case "short expiry":
 				f.node.invoice.Htlcs[0].ExpiryHeight = 230
 			}
@@ -389,40 +359,33 @@ func TestAssetFSMRejectsUnsafePayout(t *testing.T) {
 			defer cancel()
 			machine, err := NewFSM(ctx, f.swap, f.cfg, true)
 			require.NoError(t, err)
-			require.NoError(t, machine.SendEvent(ctx, OnHtlcInitiated, nil))
+			require.NoError(t, machine.SendEvent(ctx, OnRecover, nil))
 			require.Zero(t, f.server.commits)
 			f.reopen(t)
-			require.Equal(t, SignHtlcTx, f.swap.GetState())
-			machine, err = NewFSM(t.Context(), f.swap, f.cfg, true)
-			require.NoError(t, err)
-			require.NoError(t, machine.SendEvent(t.Context(), OnRecover, nil))
-			f.reopen(t)
-			require.Equal(t, Failed, f.swap.GetState())
-			require.Equal(t, deposit.Deposited, f.swap.Deposits[0].GetState())
+			require.Equal(t, MonitorInvoiceAndHtlcTx, f.swap.GetState())
+			require.Equal(t, deposit.LoopingIn, f.swap.Deposits[0].GetState())
+			require.Zero(t, f.invoices.cancels)
 		})
 	}
 }
 
-// TestAssetFSMRefundAfterRestart keeps exposed deposits in the normal timeout
-// branch and completes only after the driver returns a spendable refund proof.
+// TestAssetFSMRefundAfterRestart rejects malformed persisted packages and
+// retains exposed deposits; the process suite exercises valid refund proofs.
 func TestAssetFSMRefundAfterRestart(t *testing.T) {
 	f := newAssetFSMFixture(t)
-	ctx, cancel := context.WithCancel(t.Context())
+	f.saveMonitoring(t)
+	f.reopen(t)
+	f.chain.height = 200
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	f.server.commit = cancel
 	machine, err := NewFSM(ctx, f.swap, f.cfg, true)
 	require.NoError(t, err)
-	require.NoError(t, machine.SendEvent(ctx, OnHtlcInitiated, nil))
+	require.NoError(t, machine.SendEvent(ctx, OnRecover, nil))
 	f.reopen(t)
-	f.driver.height = 200
-	machine, err = NewFSM(t.Context(), f.swap, f.cfg, true)
-	require.NoError(t, err)
-	require.NoError(t, machine.SendEvent(t.Context(), OnRecover, nil))
-	f.reopen(t)
-	require.Equal(t, HtlcTimeoutSwept, f.swap.GetState())
-	require.Equal(t, deposit.HtlcTimeoutSwept, f.swap.Deposits[0].GetState())
-	require.Equal(t, 1, f.driver.refunds)
-	require.Equal(t, 1, f.invoices.cancels)
+	require.Equal(t, SweepHtlcTimeout, f.swap.GetState())
+	require.Equal(t, deposit.SweepHtlcTimeout, f.swap.Deposits[0].GetState())
+	require.Zero(t, f.invoices.cancels)
+	require.Zero(t, f.server.commits)
 }
 
 type failAssetExposureStore struct {
@@ -442,11 +405,19 @@ func (s failAssetExposureStore) UpdateLoopIn(ctx context.Context,
 // save inside the real action, independently of the informational entry hook.
 func TestAssetFSMCannotExposeWithoutSavedFallback(t *testing.T) {
 	f := newAssetFSMFixture(t)
+	f.swap.SetState(SignHtlcTx)
+	require.NoError(t, f.store.UpdateLoopIn(t.Context(), f.swap))
 	f.cfg.Store = failAssetExposureStore{StaticAddressLoopInStore: f.store}
 	machine, err := NewFSM(t.Context(), f.swap, f.cfg, true)
 	require.NoError(t, err)
-	require.NoError(t, machine.SendEvent(t.Context(), OnHtlcInitiated, nil))
+	require.Error(t, machine.saveAssetFallback(t.Context()))
+	require.Equal(t, SignHtlcTx, f.swap.GetState())
 	require.Zero(t, f.server.commits)
+	f.reopen(t)
+	require.Equal(t, SignHtlcTx, f.swap.GetState())
+	machine, err = NewFSM(t.Context(), f.swap, f.cfg, true)
+	require.NoError(t, err)
+	require.NoError(t, machine.SendEvent(t.Context(), OnRecover, nil))
 	f.reopen(t)
 	require.Equal(t, Failed, f.swap.GetState())
 	require.Equal(t, deposit.Deposited, f.swap.Deposits[0].GetState())
@@ -481,7 +452,6 @@ func TestAssetFSMRecoversDepositTransition(t *testing.T) {
 			f.reopen(t)
 			require.Equal(t, test.final, f.swap.GetState())
 			require.Equal(t, test.depositState, f.swap.Deposits[0].GetState())
-			require.Zero(t, f.driver.refunds)
 		})
 	}
 }
@@ -499,4 +469,17 @@ func TestAssetRequestReplay(t *testing.T) {
 	request.Amount--
 	_, err = manager.initiateAssetLoopIn(t.Context(), request)
 	require.ErrorIs(t, err, swapkit.ErrInvalid)
+}
+
+// saveMonitoring models the already-validated phase persisted by signing.
+// Crypto acceptance is exercised separately with SDK packages and live nodes.
+func (f *assetFSMFixture) saveMonitoring(t *testing.T) {
+	t.Helper()
+	accepted, err := assets.Accepted(f.swap.Asset.Offer, assetHoldExpiryDelta, f.node.invoice, f.node.channels, 100)
+	require.NoError(t, err)
+	f.swap.Asset.Accepted = accepted
+	f.swap.Asset.Fallback = []byte("saved package")
+	f.swap.SwapInvoice = "saved hold invoice"
+	f.swap.SetState(MonitorInvoiceAndHtlcTx)
+	require.NoError(t, f.store.UpdateLoopIn(t.Context(), f.swap))
 }

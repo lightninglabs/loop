@@ -13,10 +13,12 @@ import (
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
+	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightninglabs/taproot-assets/tapsend"
 )
 
-func lastProof(raw []byte) (*proof.Proof, error) {
+// LastProof decodes the final transition in a native asset proof file.
+func LastProof(raw []byte) (*proof.Proof, error) {
 	file, err := proof.DecodeFile(raw)
 	if err != nil {
 		return nil, err
@@ -24,8 +26,6 @@ func lastProof(raw []byte) (*proof.Proof, error) {
 	return file.LastProof()
 }
 
-// isolatedRoots proves absence of additional live assets by reconstructing
-// the entire anchor commitment from one asset and its disclosed alt leaves.
 func isolatedRoots(p *proof.Proof) (sdk.Hash, sdk.Hash, error) {
 	if p == nil || p.InclusionProof.CommitmentProof == nil ||
 		p.InclusionProof.InternalKey == nil {
@@ -64,52 +64,41 @@ func isolatedRoots(p *proof.Proof) (sdk.Hash, sdk.Hash, error) {
 	return sdk.Hash(assets), sdk.Hash(root), nil
 }
 
-func (r *Driver) verifyProof(ctx context.Context, raw []byte,
+// verifyProof checks Loop policy and SDK lineage between current-chain checks.
+func verifyProof(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32, raw []byte,
 	group [33]byte, amount uint64, unspent bool) (*proof.Proof, error) {
 
-	p, err := lastProof(raw)
+	p, err := inspectProof(ctx, chain, minConfs, raw, group, amount, unspent)
 	if err != nil {
 		return nil, err
 	}
-	if p.Asset.GroupKey == nil || p.Asset.Amount != amount ||
-		!bytes.Equal(p.Asset.GroupKey.GroupPubKey.SerializeCompressed(),
-			group[:]) {
-
-		return nil, swapkit.ErrInvalid
-	}
-	if _, _, err := isolatedRoots(p); err != nil {
-		return nil, err
-	}
-	// Classify a relocated tip as pending even if tapd would first reject
-	// the old header. Repeat current-chain checks after full verification
-	// so a slow verifier cannot authorize stale confirmation or UTXO data.
-	if err := r.verifyConfirmation(ctx, p, unspent); err != nil {
-		return nil, err
-	}
-	verified, err := r.cfg.SDK.VerifyProof(ctx, raw)
+	verified, err := wallet.Client().VerifyProof(ctx, raw)
 	if err != nil {
 		return nil, err
 	}
 	if verified == nil || !verified.Valid {
 		return nil, swapkit.ErrInvalid
 	}
-	if err := r.verifyConfirmation(ctx, p, unspent); err != nil {
+	if err := checkConfirmation(ctx, chain, minConfs, p, unspent); err != nil {
 		return nil, err
 	}
 	return p, nil
 }
 
-func (r *Driver) verifyConfirmation(ctx context.Context, p *proof.Proof,
+// checkConfirmation requires current-chain inclusion and optional spendability.
+func checkConfirmation(ctx context.Context, chain Chain,
+	minConfs uint32, p *proof.Proof,
 	unspent bool) error {
 
-	tip, err := r.cfg.Chain.Height(ctx)
+	tip, err := chain.Height(ctx)
 	if err != nil {
 		return err
 	}
-	if tip < p.BlockHeight || tip-p.BlockHeight+1 < r.cfg.MinConfs {
+	if tip < p.BlockHeight || tip-p.BlockHeight+1 < minConfs {
 		return swapkit.ErrPending
 	}
-	block, err := r.cfg.Chain.Block(ctx, p.BlockHeight)
+	block, err := chain.Block(ctx, p.BlockHeight)
 	if err != nil {
 		return err
 	}
@@ -124,7 +113,7 @@ func (r *Driver) verifyConfirmation(ctx context.Context, p *proof.Proof,
 		return swapkit.ErrInvalid
 	}
 	if unspent {
-		available, err := r.cfg.Chain.Unspent(ctx, p.OutPoint())
+		available, err := chain.Unspent(ctx, p.OutPoint())
 		if err != nil {
 			return err
 		}
@@ -135,18 +124,20 @@ func (r *Driver) verifyConfirmation(ctx context.Context, p *proof.Proof,
 	return nil
 }
 
-func decodePSBT(raw []byte) (*psbt.Packet, error) {
+// DecodePSBT reads the native Bitcoin PSBT carried by an SDK transfer.
+func DecodePSBT(raw []byte) (*psbt.Packet, error) {
 	return psbt.NewFromRawBytes(bytes.NewReader(raw), false)
 }
 
-func encodePSBT(p *psbt.Packet) ([]byte, error) {
+// EncodePSBT serializes a native Bitcoin PSBT.
+func EncodePSBT(p *psbt.Packet) ([]byte, error) {
 	var b bytes.Buffer
 	err := p.Serialize(&b)
 	return b.Bytes(), err
 }
 
-// decodePackage uses the SDK's validated native package encoding.
-func decodePackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
+// DecodePackage uses the SDK's validated native transfer encoding.
+func DecodePackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
 	var pkg sdk.CustomAnchorTransferPackage
 	if err := pkg.UnmarshalBinary(raw); err != nil {
 		return nil, err
@@ -154,20 +145,21 @@ func decodePackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
 	return &pkg, nil
 }
 
-func decodeFinalPackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
-	pkg, err := decodePackage(raw)
+// DecodeFinalPackage also verifies the complete Bitcoin witness.
+func DecodeFinalPackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
+	pkg, err := DecodePackage(raw)
 	if err != nil {
 		return nil, err
 	}
 	return pkg.WithFinalAnchorPSBT(pkg.AnchorPsbt)
 }
 
-// bindFinalPackage retains the approved package and accepts only its fully
-// finalized Bitcoin witness. The committed digest binds all SDK metadata.
-func bindFinalPackage(approved *sdk.CustomAnchorTransferPackage,
+// BindFinalPackage accepts only the approved transfer's finalized witness.
+// The SDK committed digest binds transaction metadata and signing policy.
+func BindFinalPackage(approved *sdk.CustomAnchorTransferPackage,
 	raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
 
-	proposed, err := decodePackage(raw)
+	proposed, err := DecodePackage(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -179,18 +171,10 @@ func bindFinalPackage(approved *sdk.CustomAnchorTransferPackage,
 	return approved.WithFinalAnchorPSBT(proposed.AnchorPsbt)
 }
 
-// publish hands the finalized package to tapd, which journals publication and
-// rebuilds confirmed proof files after restart. Export always uses the exact
-// issuance, script key and outpoint, including when a publish reply was lost.
-func (r *Driver) publish(ctx context.Context,
-	pkg *sdk.CustomAnchorTransferPackage) ([]byte, error) {
-
-	return r.logAndExport(ctx, pkg, false)
-}
-
-// logAndExport can also record a peer's already-mined transaction without
-// broadcasting it. The same tapd transfer journal owns both recovery paths.
-func (r *Driver) logAndExport(ctx context.Context,
+// LogAndExport publishes or records an observed transfer through tapd.
+// Exact output locators make retries safe after a lost publication reply.
+func LogAndExport(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32,
 	pkg *sdk.CustomAnchorTransferPackage, observed bool) ([]byte, error) {
 
 	if len(pkg.Inputs) != 1 || len(pkg.Outputs) != 1 ||
@@ -200,7 +184,7 @@ func (r *Driver) logAndExport(ctx context.Context,
 	}
 	out := pkg.Outputs[0]
 	export := func() ([]byte, error) {
-		file, err := r.cfg.Wallet.ExportProofFile(ctx,
+		file, err := wallet.ExportProofFile(ctx,
 			sdk.AssetRefFromAssetID(out.IssuanceID), out.ScriptKey,
 			&out.AnchorOutpoint)
 		if err != nil {
@@ -209,12 +193,12 @@ func (r *Driver) logAndExport(ctx context.Context,
 		if file == nil {
 			return nil, swapkit.ErrInvalid
 		}
-		p, err := lastProof(file.RawProofFile)
+		p, err := LastProof(file.RawProofFile)
 		if err != nil {
 			return nil, err
 		}
 		if sdk.AssetID(p.Asset.ID()) != out.IssuanceID ||
-			p.OutPoint() != sdkPoint(out.AnchorOutpoint) ||
+			p.OutPoint() != SDKPoint(out.AnchorOutpoint) ||
 			!bytes.Equal(p.Asset.ScriptKey.PubKey.SerializeCompressed(),
 				out.ScriptKey[:]) {
 
@@ -222,7 +206,7 @@ func (r *Driver) logAndExport(ctx context.Context,
 		}
 		// The caller verifies the proof with its contract exactly once.
 		// Here a current confirmation distinguishes archive lag from success.
-		if err := r.verifyConfirmation(ctx, p, false); err != nil {
+		if err := checkConfirmation(ctx, chain, minConfs, p, false); err != nil {
 			return nil, err
 		}
 		return file.RawProofFile, nil
@@ -231,12 +215,11 @@ func (r *Driver) logAndExport(ctx context.Context,
 		return raw, nil
 	}
 	if out.OPTrueSpend != nil {
-		if err := r.declareOPTrue(ctx, out.ScriptKey,
-			out.OPTrueSpend.WitnessStack()); err != nil {
+		if err := declareOutput(ctx, wallet, pkg, out); err != nil {
 			return nil, err
 		}
 	}
-	err := r.importProof(ctx, pkg.Inputs[0].ProofSource.Blob)
+	err := importProof(ctx, wallet, pkg.Inputs[0].ProofSource.Blob)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +232,7 @@ func (r *Driver) logAndExport(ctx context.Context,
 			return nil, err
 		}
 	}
-	_, err = r.cfg.Wallet.PublishCustomAnchorTransfer(ctx, pkg, pkg.AnchorPsbt)
+	_, err = wallet.PublishCustomAnchorTransfer(ctx, pkg, pkg.AnchorPsbt)
 	if err != nil {
 		// A lost reply can follow a durable tapd publication. The next
 		// invocation checks the proof archive before retrying the log.
@@ -261,10 +244,48 @@ func (r *Driver) logAndExport(ctx context.Context,
 	return nil, swapkit.ErrPending
 }
 
-// importProof restores missing lineage. Tapd versions that reject duplicate
-// imports still permit retries through the exact proof archive locator.
-func (r *Driver) importProof(ctx context.Context, raw []byte) error {
-	p, err := lastProof(raw)
+// declareOutput retains the native packet's complete key descriptor. A control
+// block alone loses the original key parity and locator, which can replace a
+// wallet-owned key's first stored derivation with the unrelated zero locator.
+func declareOutput(ctx context.Context, wallet *sdk.Wallet,
+	pkg *sdk.CustomAnchorTransferPackage,
+	out sdk.CustomAnchorAssetOutputSummary) error {
+
+	if out.PacketIndex >= uint32(len(pkg.ActiveVirtualPsbts)) {
+		return swapkit.ErrInvalid
+	}
+	packet, err := tappsbt.NewFromRawBytes(bytes.NewReader(
+		pkg.ActiveVirtualPsbts[out.PacketIndex]), false)
+	if err != nil {
+		return err
+	}
+	if out.VirtualOutputIndex >= uint32(len(packet.Outputs)) {
+		return swapkit.ErrInvalid
+	}
+	key := packet.Outputs[out.VirtualOutputIndex].ScriptKey
+	if key.TweakedScriptKey == nil || key.RawKey.PubKey == nil ||
+		!bytes.Equal(key.PubKey.SerializeCompressed(), out.ScriptKey[:]) {
+
+		return swapkit.ErrInvalid
+	}
+	raw, err := sdk.ParsePubKey(key.RawKey.PubKey.SerializeCompressed())
+	if err != nil {
+		return err
+	}
+	_, err = wallet.Client().DeclareScriptKey(ctx, &sdk.DeclareScriptKeyRequest{
+		ScriptKey: sdk.ScriptKey{PubKey: out.ScriptKey, TapTweak: key.Tweak,
+			KeyDesc: sdk.KeyDescriptor{RawKeyBytes: raw,
+				KeyLocator: sdk.KeyLocator{
+					Family: uint32(key.RawKey.Family),
+					Index:  key.RawKey.Index,
+				}}},
+	})
+	return err
+}
+
+// importProof restores lineage missing from tapd's exact-output proof archive.
+func importProof(ctx context.Context, wallet *sdk.Wallet, raw []byte) error {
+	p, err := LastProof(raw)
 	if err != nil {
 		return err
 	}
@@ -274,10 +295,10 @@ func (r *Driver) importProof(ctx context.Context, raw []byte) error {
 	}
 	point := sdk.Outpoint{Txid: sdk.Hash(p.OutPoint().Hash),
 		Index: p.OutPoint().Index}
-	file, err := r.cfg.Wallet.ExportProofFile(ctx,
+	file, err := wallet.ExportProofFile(ctx,
 		sdk.AssetRefFromAssetID(sdk.AssetID(p.Asset.ID())), key, &point)
 	if err == nil && file != nil {
-		existing, err := lastProof(file.RawProofFile)
+		existing, err := LastProof(file.RawProofFile)
 		if err != nil {
 			return err
 		}
@@ -290,12 +311,14 @@ func (r *Driver) importProof(ctx context.Context, raw []byte) error {
 		}
 		return nil
 	}
-	_, err = r.cfg.Wallet.ImportProofFile(ctx,
+	_, err = wallet.ImportProofFile(ctx,
 		&sdk.ProofFile{RawProofFile: raw})
 	return err
 }
 
-func (r *Driver) declareOPTrue(ctx context.Context, scriptKey sdk.PubKey,
+// declareOPTrue registers the exact public asset script tree with tapd.
+func declareOPTrue(ctx context.Context, wallet *sdk.Wallet,
+	scriptKey sdk.PubKey,
 	witness [][]byte) error {
 
 	if len(witness) != 2 ||
@@ -313,7 +336,7 @@ func (r *Driver) declareOPTrue(ctx context.Context, scriptKey sdk.PubKey,
 	if err != nil {
 		return err
 	}
-	_, err = r.cfg.SDK.DeclareScriptKey(ctx, &sdk.DeclareScriptKeyRequest{
+	_, err = wallet.Client().DeclareScriptKey(ctx, &sdk.DeclareScriptKeyRequest{
 		ScriptKey: sdk.ScriptKey{PubKey: scriptKey,
 			KeyDesc:  sdk.KeyDescriptor{RawKeyBytes: internal},
 			TapTweak: control.RootHash(witness[0])},
@@ -321,25 +344,38 @@ func (r *Driver) declareOPTrue(ctx context.Context, scriptKey sdk.PubKey,
 	return err
 }
 
-func sdkPoint(p sdk.Outpoint) wire.OutPoint {
+// SDKPoint converts a native SDK outpoint to the Bitcoin wire type.
+func SDKPoint(p sdk.Outpoint) wire.OutPoint {
 	return wire.OutPoint{Hash: chainhash.Hash(p.Txid), Index: p.Index}
 }
 
-// resolveOutcomeProof verifies a peer hint or independently discovers the
-// outcome. Neither path bypasses current-chain and contract validation.
-func resolveOutcomeProof(ctx context.Context, supplied []byte,
-	verify func(context.Context, []byte) error,
-	discover func(context.Context) ([]byte, error)) ([]byte, error) {
+// checkAsset checks negotiated native quantity and group membership.
+func checkAsset(p *proof.Proof, group [33]byte, amount uint64) error {
+	if p.Asset.GroupKey == nil || p.Asset.Amount != amount ||
+		!bytes.Equal(p.Asset.GroupKey.GroupPubKey.SerializeCompressed(), group[:]) {
 
-	if len(supplied) != 0 {
-		return supplied, verify(ctx, supplied)
+		return swapkit.ErrInvalid
 	}
-	raw, err := discover(ctx)
+	return nil
+}
+
+// inspectProof checks Loop policy and the current chain before SDK Build.
+// SDK Build is responsible for generic proof verification on building paths.
+func inspectProof(ctx context.Context, chain Chain, minConfs uint32, raw []byte,
+	group [33]byte, amount uint64, unspent bool) (*proof.Proof, error) {
+
+	p, err := LastProof(raw)
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) == 0 {
-		return nil, swapkit.ErrPending
+	if err := checkAsset(p, group, amount); err != nil {
+		return nil, err
 	}
-	return raw, verify(ctx, raw)
+	if _, _, err := isolatedRoots(p); err != nil {
+		return nil, err
+	}
+	if err := checkConfirmation(ctx, chain, minConfs, p, unspent); err != nil {
+		return nil, err
+	}
+	return p, nil
 }

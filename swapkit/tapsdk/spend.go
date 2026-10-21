@@ -3,15 +3,13 @@ package tapsdk
 import (
 	"context"
 
-	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
-// recoveryPlan returns a wallet-owned output for either a deposit refund or
-// an HTLC spend.
-func (r *Driver) recoveryPlan(ctx context.Context,
+// RecoveryRequest constructs an SDK refund or claim to the normal wallet key.
+func RecoveryRequest(ctx context.Context, wallet *sdk.Wallet,
 	out sdk.CustomAnchorAssetOutputSummary, inputProof []byte, public [33]byte,
 	key keychain.KeyLocator, spend *swapkit.SwapAnchorSpendInfo, fee uint64) (
 	*sdk.CustomAnchorRequest, error) {
@@ -32,46 +30,22 @@ func (r *Driver) recoveryPlan(ctx context.Context,
 	}
 	// Declare the locator so normal wallet operations can spend the
 	// recovered asset after proof import.
-	_, err = r.cfg.SDK.DeclareScriptKey(ctx, &sdk.DeclareScriptKeyRequest{
+	_, err = wallet.Client().DeclareScriptKey(ctx, &sdk.DeclareScriptKeyRequest{
 		ScriptKey: recipient.Script.External.ScriptKey,
 	})
 	if err != nil {
 		return nil, err
 	}
-	p, err := lastProof(inputProof)
+	p, err := LastProof(inputProof)
 	if err != nil {
 		return nil, err
 	}
-	anchor, err := anchorTemplate(
+	anchor, err := AnchorTemplate(
 		p, recipient.Anchor.InternalKey, value, spend,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return customRequest(assetInput(out, inputProof), recipient, anchor,
+	return CustomRequest(assetInput(out, inputProof), recipient, anchor,
 		ScriptSigningPlan(spend, 0)), nil
-}
-
-// signScriptSpend signs one committed unilateral spend. Its caller owns
-// persistence of the completed transaction before publication.
-func (r *Driver) signScriptSpend(ctx context.Context,
-	pkg *sdk.CustomAnchorTransferPackage, key keychain.KeyLocator,
-	preimage *[32]byte) (*sdk.CustomAnchorTransferPackage, error) {
-
-	final, err := SignScriptPath(ctx, r.cfg.Signer, key, pkg, preimage)
-	if err != nil {
-		return nil, err
-	}
-	packet, err := decodePSBT(final)
-	if err != nil {
-		return nil, err
-	}
-	if err := psbt.MaybeFinalizeAll(packet); err != nil {
-		return nil, err
-	}
-	final, err = encodePSBT(packet)
-	if err != nil {
-		return nil, err
-	}
-	return pkg.WithFinalAnchorPSBT(final)
 }

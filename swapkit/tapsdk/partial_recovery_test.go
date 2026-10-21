@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,20 +42,18 @@ func (s *partialRecoverySDK) DeclareScriptKey(context.Context,
 // proof reconstruction boundary; native tests cover the actual tapd archive.
 func TestPartialFallbackRecoveryDiscovery(t *testing.T) {
 	for _, original := range []bool{false, true} {
-		name := "htlc refund"
+		name := "HTLC refund"
 		if original {
 			name = "original deposit refund"
 		}
 		t.Run(name, func(t *testing.T) {
-			driver, swap, outcome, chain := bindingOutcome(t, true)
+			node, swap, outcome, chain := bindingOutcome(t, true)
 			if original {
-				driver, swap, outcome, chain =
+				node, swap, outcome, chain =
 					originalRefundFixture(t)
 			}
-			deposit, err := driver.localDeposit(t.Context(),
-				swap.Offer.Terms.DepositOutpoints[0])
-			require.NoError(t, err)
-			base, err := lastProof(deposit.Deposit.Proof)
+			deposit := swap.Deposit
+			base, err := LastProof(deposit.Deposit.Proof)
 			require.NoError(t, err)
 
 			// The persisted public package fixes the anchor even
@@ -67,7 +64,7 @@ func TestPartialFallbackRecoveryDiscovery(t *testing.T) {
 			anchor.AddTxOut(wire.NewTxOut(9000, []byte{0x51}))
 			packet, err := psbt.NewFromUnsignedTx(anchor)
 			require.NoError(t, err)
-			raw, err := encodePSBT(packet)
+			raw, err := EncodePSBT(packet)
 			require.NoError(t, err)
 			if original {
 				swap.Fallback =
@@ -82,17 +79,17 @@ func TestPartialFallbackRecoveryDiscovery(t *testing.T) {
 			swap.Fallback.AnchorPsbt = raw
 			prior := &swap.Fallback.Outputs[0]
 			prior.AnchorOutpoint.Txid = sdk.Hash(anchor.TxHash())
-			htlcPoint := sdkPoint(prior.AnchorOutpoint)
+			htlcPoint := SDKPoint(prior.AnchorOutpoint)
 			if !original {
 				outcome.AnchorTx.TxIn[0].PreviousOutPoint = htlcPoint
 			}
 			marker := errors.New("reached proof reconstruction")
-			driver.cfg.SDK = &partialRecoverySDK{
+			node.client = &partialRecoverySDK{
 				bindingSDK: &bindingSDK{valid: true},
 				declared:   marker,
 			}
 			var watched []wire.OutPoint
-			driver.cfg.Chain = &partialRecoveryChain{
+			node.chain = &partialRecoveryChain{
 				bindingChain: chain,
 				spend: func(point wire.OutPoint) (
 					*wire.MsgBlock, uint32, error) {
@@ -105,16 +102,11 @@ func TestPartialFallbackRecoveryDiscovery(t *testing.T) {
 						outcome.BlockHeight, nil
 				},
 			}
-			// Each invocation starts with a fresh, stateless driver.
-			driver = &Driver{cfg: driver.cfg}
-			_, err = driver.discoverOutcome(
-				t.Context(), swap, true,
-			)
+			// Each invocation reuses only the current operation's data.
+			_, err = DiscoverOutcome(t.Context(), node.wallet(), node.chain, node.minConfs, swap, true)
 			if original {
 				require.ErrorIs(t, err, swapkit.ErrPending)
-				_, err = driver.discoverOriginalRefund(
-					t.Context(), swap,
-				)
+				_, err = DiscoverOriginalRefund(t.Context(), node.wallet(), node.chain, node.minConfs, swap)
 				require.Equal(t, []wire.OutPoint{
 					htlcPoint, base.OutPoint(),
 				}, watched)
@@ -168,24 +160,13 @@ func (s *observedRecoverySDK) PublishAndLogTransferWithRequest(
 // used by InspectRefund when a server restarts after its peer's refund mined.
 // Even a complete signed fallback must use observer logging for its lineage.
 func TestObservedSignedFallbackDoesNotRebroadcast(t *testing.T) {
-	driver, swap, outcome, chain := bindingOutcome(t, true)
+	node, swap, outcome, chain := bindingOutcome(t, true)
 	pkg := signingPackage(t)
 	pkg.Publish.SkipAnchorTxBroadcast = false
 	pkg.Publish.ExternalBroadcast = false
 	pkg, err := pkg.Seal()
 	require.NoError(t, err)
-	clientRound, err := NewSigningRound(t.Context(), signingWallet(t, 2),
-		keychain.KeyLocator{}, pkg)
-	require.NoError(t, err)
-	defer clientRound.Close(t.Context())
-	serverRound, err := NewSigningRound(t.Context(), signingWallet(t, 3),
-		keychain.KeyLocator{}, pkg)
-	require.NoError(t, err)
-	defer serverRound.Close(t.Context())
-	partial, err := serverRound.Partial(t.Context(), clientRound.Nonce())
-	require.NoError(t, err)
-	signed, err := clientRound.Finalize(t.Context(), serverRound.Nonce(),
-		partial)
+	signed, err := signTestPackage(t.Context(), signingWallet(t, 2), signingWallet(t, 3), pkg)
 	require.NoError(t, err)
 	fallback, err := pkg.WithFinalAnchorPSBT(finishSigningFixture(t, signed))
 	require.NoError(t, err)
@@ -194,18 +175,18 @@ func TestObservedSignedFallbackDoesNotRebroadcast(t *testing.T) {
 	// Reuse the existing package's fully signed anchor. The chain stub
 	// reports the agreed timeout leaf spending that anchor's asset output.
 	prior := fallback.Outputs[0]
-	var contract depositContract
+	var contract DepositContract
 	require.NoError(t, json.Unmarshal(swap.Offer.Terms.Contract, &contract))
-	policy, err := htlc(swap.Offer, contract)
+	policy, err := HTLC(swap.Offer, contract)
 	require.NoError(t, err)
 	spend, err := policy.TimeoutSpend(prior.TaprootAssetRoot)
 	require.NoError(t, err)
-	point := sdkPoint(prior.AnchorOutpoint)
+	point := SDKPoint(prior.AnchorOutpoint)
 	outcome.AnchorTx.TxIn[0].PreviousOutPoint = point
 	outcome.AnchorTx.TxIn[0].Witness = [][]byte{
 		make([]byte, 64), spend.LeafScript, spend.ControlBlock,
 	}
-	driver.cfg.Chain = &partialRecoveryChain{
+	node.chain = &partialRecoveryChain{
 		bindingChain: chain,
 		spend: func(actual wire.OutPoint) (*wire.MsgBlock, uint32, error) {
 			require.Equal(t, point, actual)
@@ -214,7 +195,7 @@ func TestObservedSignedFallbackDoesNotRebroadcast(t *testing.T) {
 	}
 
 	inputRaw := fallback.Inputs[0].ProofSource.Blob
-	inputProof, err := lastProof(inputRaw)
+	inputProof, err := LastProof(inputRaw)
 	require.NoError(t, err)
 	client := &observedRecoverySDK{
 		partialRecoverySDK: &partialRecoverySDK{
@@ -225,9 +206,8 @@ func TestObservedSignedFallbackDoesNotRebroadcast(t *testing.T) {
 			Index: inputProof.OutPoint().Index},
 		stopErr: errors.New("reached observer log"),
 	}
-	driver.cfg.SDK = client
-	driver.cfg.Wallet = sdk.NewWallet(client, sdk.NetworkRegtest)
-	_, err = driver.discoverOutcome(t.Context(), swap, true)
+	node.client = client
+	_, err = DiscoverOutcome(t.Context(), node.wallet(), node.chain, node.minConfs, swap, true)
 	require.ErrorIs(t, err, client.stopErr)
 	require.NotNil(t, client.logged)
 	require.True(t, client.logged.SkipAnchorTxBroadcast)

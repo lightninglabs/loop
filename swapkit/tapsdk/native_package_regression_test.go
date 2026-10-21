@@ -9,7 +9,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,10 +67,8 @@ func TestProofFreshnessAfterSDKVerification(t *testing.T) {
 			client := &changingProofSDK{change: func() {
 				test.change(chain)
 			}}
-			driver := &Driver{cfg: DriverConfig{
-				SDK: client, Chain: chain, MinConfs: 2,
-			}}
-			verified, err := driver.verifyProof(t.Context(),
+			node := &proofNode{client: client, chain: chain, minConfs: 2}
+			verified, err := verifyProof(t.Context(), node.wallet(), node.chain, node.minConfs,
 				bindingRaw(t, p), bindingPub(11), 1000, true)
 			require.ErrorIs(t, err, swapkit.ErrPending)
 			require.Nil(t, verified)
@@ -87,17 +84,7 @@ func nativeSignedFixture(t *testing.T) (*sdk.CustomAnchorTransferPackage,
 
 	t.Helper()
 	approved := signingPackage(t)
-	client, err := NewSigningRound(t.Context(), signingWallet(t, 2),
-		keychain.KeyLocator{}, approved)
-	require.NoError(t, err)
-	defer client.Close(t.Context())
-	server, err := NewSigningRound(t.Context(), signingWallet(t, 3),
-		keychain.KeyLocator{}, approved)
-	require.NoError(t, err)
-	defer server.Close(t.Context())
-	partial, err := server.Partial(t.Context(), client.Nonce())
-	require.NoError(t, err)
-	signed, err := client.Finalize(t.Context(), server.Nonce(), partial)
+	signed, err := signTestPackage(t.Context(), signingWallet(t, 2), signingWallet(t, 3), approved)
 	require.NoError(t, err)
 	finalized, err := approved.WithFinalAnchorPSBT(
 		finishSigningFixture(t, signed),
@@ -113,7 +100,7 @@ func TestNativeFinalPackageBindsApprovedPolicy(t *testing.T) {
 	approved, finalized := nativeSignedFixture(t)
 	raw, err := finalized.MarshalBinary()
 	require.NoError(t, err)
-	bound, err := bindFinalPackage(approved, raw)
+	bound, err := BindFinalPackage(approved, raw)
 	require.NoError(t, err)
 	require.Equal(t, finalized.PackageDigest, bound.PackageDigest)
 	require.Equal(t, approved.CommittedPackageDigest,
@@ -159,7 +146,7 @@ func TestNativeFinalPackageBindsApprovedPolicy(t *testing.T) {
 			require.NoError(t, err)
 			raw, err := changed.MarshalBinary()
 			require.NoError(t, err)
-			bound, err := bindFinalPackage(approved, raw)
+			bound, err := BindFinalPackage(approved, raw)
 			require.Error(t, err)
 			require.Nil(t, bound)
 		})
@@ -178,14 +165,14 @@ func TestNativeClaimPackageRequiresFinalWitness(t *testing.T) {
 				proposed.AnchorPsbt = proposed.CommittedAnchorPsbt
 			case "invalid witness":
 				proposed = finalized.Clone()
-				packet, err := decodePSBT(proposed.AnchorPsbt)
+				packet, err := DecodePSBT(proposed.AnchorPsbt)
 				require.NoError(t, err)
 				var witness bytes.Buffer
 				require.NoError(t, psbt.WriteTxWitness(
 					&witness, [][]byte{{1}},
 				))
 				packet.Inputs[0].FinalScriptWitness = witness.Bytes()
-				proposed.AnchorPsbt, err = encodePSBT(packet)
+				proposed.AnchorPsbt, err = EncodePSBT(packet)
 				require.NoError(t, err)
 			}
 			proposed, err := proposed.Seal()
@@ -196,7 +183,7 @@ func TestNativeClaimPackageRequiresFinalWitness(t *testing.T) {
 			require.NoError(t, decoded.UnmarshalBinary(raw))
 			require.Equal(t, approved.CommittedPackageDigest,
 				decoded.CommittedPackageDigest)
-			bound, err := bindFinalPackage(approved, raw)
+			bound, err := BindFinalPackage(approved, raw)
 			require.Error(t, err)
 			require.Nil(t, bound)
 		})

@@ -3,7 +3,6 @@ package swapkit
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -127,32 +126,6 @@ type Resolution struct {
 	Evidence []byte `json:"Evidence"`
 }
 
-// Operation carries the fixed inputs to an offer-scoped transaction operation.
-// Each method consumes only its documented fields and must reject mutation of
-// previously persisted signing, transaction or proof intent for this hash.
-//
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
-type Operation struct {
-	Nonce       [66]byte    `json:"Nonce"`
-	Offer       Offer       `json:"Offer"`
-	Preparation Preparation `json:"Preparation"`
-	Bundle      Bundle      `json:"Bundle"`
-	Claim       Claim       `json:"Claim"`
-	Signatures  []byte      `json:"Signatures"`
-	Preimage    [32]byte    `json:"Preimage"`
-	Request     []byte      `json:"Request"`
-	Fallback    Fallback    `json:"Fallback"`
-	Evidence    []byte      `json:"Evidence"`
-}
-
-// Fallback is the client's verified publishable recovery material.
-//
-//nolint:tagliatelle // Preserve the existing recovery and wire format.
-type Fallback struct {
-	Bundle          []byte `json:"Bundle"`
-	ClaimSignatures []byte `json:"ClaimSignatures"`
-}
-
 // PreimageResult distinguishes a verified chain disclosure from no disclosure.
 //
 //nolint:tagliatelle // Preserve the existing recovery and wire format.
@@ -201,10 +174,12 @@ type RefundDepositRequest struct {
 // Complete proofs and packages must fit within the external RPC limit.
 const PublicRPCMaxBytes = 16 << 20
 
-// FallbackRound owns one ephemeral wallet session. An interrupted attempt uses
-// fresh nonces for the same unsigned package; secret nonces stay in LND.
-type FallbackRound struct {
-	Nonce    [66]byte
-	Finalize func(context.Context, []byte) (Fallback, error)
-	Close    func()
+// FallbackSignature binds one public MuSig2 partial to the agreed package.
+//
+//nolint:tagliatelle // Preserve the public signing response encoding.
+type FallbackSignature struct {
+	PackageDigest [32]byte `json:"PackageDigest"`
+	ClientNonce   [66]byte `json:"ClientNonce"`
+	ServerNonce   [66]byte `json:"ServerNonce"`
+	Partial       []byte   `json:"Partial"`
 }

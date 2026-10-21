@@ -208,8 +208,8 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 
 	depositStates := depoFsm.DepositStatesV0()
 	if deposit.Asset != nil {
-		if cfg.AssetDriver == nil {
-			return nil, errors.New("asset deposit driver unavailable")
+		if cfg.Asset == nil {
+			return nil, errors.New("asset deposit services unavailable")
 		}
 		depositStates[fsm.EmptyState] = fsm.State{
 			Transitions: fsm.Transitions{OnStart: PublishAssetDeposit},

@@ -22,7 +22,7 @@ import (
 )
 
 // bindingSDK models successful authenticated tapd proof verification. These
-// tests exercise the driver's additional policy and current-chain checks,
+// tests exercise the Loop contract's additional policy and current-chain checks,
 // which must reject even a cryptographically valid proof for another contract.
 type bindingSDK struct {
 	sdk.Client
@@ -216,9 +216,8 @@ func TestProofRequiresExactPolicyAndCurrentChain(t *testing.T) {
 			if test.mutate != nil {
 				test.mutate(client, chain, p, &group, &amount)
 			}
-			r := &Driver{cfg: DriverConfig{SDK: client, Chain: chain,
-				MinConfs: 2}}
-			_, err := r.verifyProof(t.Context(), bindingRaw(t, p),
+			r := &proofNode{client: client, chain: chain, minConfs: 2}
+			_, err := verifyProof(t.Context(), r.wallet(), r.chain, r.minConfs, bindingRaw(t, p),
 				group, amount, true)
 			if test.name == "valid" {
 				require.NoError(t, err)
@@ -229,7 +228,7 @@ func TestProofRequiresExactPolicyAndCurrentChain(t *testing.T) {
 	}
 }
 
-func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
+func bindingOutcome(t *testing.T, refund bool) (*proofNode, *SwapContext,
 	*proof.Proof, *bindingChain) {
 
 	t.Helper()
@@ -270,7 +269,7 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 	var script sdk.PubKey
 	copy(script[:], assetOutputKey.SerializeCompressed())
 	ref := sdk.AssetRefFromGroupKey(bindingPub(11))
-	c := depositContract{Version: 1, ClientKey: clientKey,
+	c := DepositContract{Version: 1, ClientKey: clientKey,
 		ServerKey: serverKey, CSV: 100,
 		Output: sdk.CustomAnchorAssetOutputSummary{
 			ScriptKey: script, OPTrueSpend: spend, AssetRef: ref,
@@ -284,7 +283,7 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 	contract, err := json.Marshal(c)
 	require.NoError(t, err)
 	preimage := [32]byte{99}
-	s := &swapContext{Offer: swapkit.Offer{Hash: sha256.Sum256(preimage[:]),
+	s := &SwapContext{Offer: swapkit.Offer{Hash: sha256.Sum256(preimage[:]),
 		Terms: swapkit.Terms{Version: 1, GroupKey: bindingPub(11),
 			DepositOutpoints: []string{deposit.OutPoint().String()},
 			DepositAmount:    1000, PayoutAmount: 900,
@@ -300,7 +299,7 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 	s.Fallback = &sdk.CustomAnchorTransferPackage{
 		Outputs: []sdk.CustomAnchorAssetOutputSummary{prior},
 	}
-	policy, err := htlc(s.Offer, c)
+	policy, err := HTLC(s.Offer, c)
 	require.NoError(t, err)
 	path, err := policy.SuccessSpend(prior.TaprootAssetRoot)
 	require.NoError(t, err)
@@ -314,7 +313,7 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 	outputKey, err = schnorr.ParsePubKey(schnorr.SerializePubKey(outputKey))
 	require.NoError(t, err)
 	outcome := bindingProof(t, bindingGenesis(), outputKey,
-		receiver.PubKey(), nil, sdkPoint(prior.AnchorOutpoint),
+		receiver.PubKey(), nil, SDKPoint(prior.AnchorOutpoint),
 		160, false)
 	outcome.AnchorTx.TxIn[0].Sequence = path.Sequence
 	outcome.AnchorTx.LockTime = path.LockTime
@@ -340,20 +339,14 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 		blocks: map[uint32]*wire.MsgBlock{
 			100: bindingBlock(deposit), 160: bindingBlock(outcome),
 		}}
-	cfg := identityConfig(t, 2, sdk.NetworkRegtest)
-	cfg.SDK, cfg.Chain = &bindingSDK{valid: true}, chain
-	d := swapkit.Deposit{Outpoint: deposit.OutPoint().String(),
-		Proof: bindingRaw(t, deposit), Contract: contract,
-		GroupKey: bindingPub(11), Amount: 1000}
-	cfg.Deposit = func(context.Context, string) (swapkit.Deposit,
-		keychain.KeyLocator, error) {
 
-		return d, keychain.KeyLocator{}, nil
-	}
-	r, err := NewDriver(cfg)
+	r := &proofNode{client: &bindingSDK{valid: true}, chain: chain, minConfs: 1}
+	d := swapkit.Deposit{Outpoint: deposit.OutPoint().String(),
+		Proof: bindingRaw(t, deposit), Contract: contract, GroupKey: bindingPub(11), Amount: 1000}
+	s.Deposit, err = LoadDeposit(d, keychain.KeyLocator{})
 	require.NoError(t, err)
-	s.Deposit, err = r.offerDeposit(t.Context(), s.Offer, false)
-	require.NoError(t, err)
+	require.NoError(t, VerifyDeposit(t.Context(), r.wallet(), chain, 1, s.Deposit, false))
+
 	return r, s, outcome, chain
 }
 
@@ -406,7 +399,7 @@ func testOutcomeBinding(t *testing.T, refund bool, mutation string) {
 		chain.blocks[160] = bindingBlock(p)
 		// The wrong recipient still has a coherent asset commitment and
 		// confirmed transaction. The contract gate must reject it.
-		_, err := r.verifyProof(t.Context(), bindingRaw(t, p),
+		_, err := verifyProof(t.Context(), r.wallet(), r.chain, r.minConfs, bindingRaw(t, p),
 			s.Offer.Terms.GroupKey, 1000, refund)
 		require.NoError(t, err)
 	case "reorg":
@@ -414,7 +407,7 @@ func testOutcomeBinding(t *testing.T, refund bool, mutation string) {
 	case "spent refund":
 		chain.unspent = false
 	}
-	err := r.verifyOutcome(t.Context(), s, bindingRaw(t, p), refund)
+	err := VerifyOutcome(t.Context(), r.wallet(), r.chain, r.minConfs, s, bindingRaw(t, p), refund, refund)
 	if mutation == "valid" {
 		require.NoError(t, err)
 	} else {
@@ -425,13 +418,12 @@ func testOutcomeBinding(t *testing.T, refund bool, mutation string) {
 func TestPersistedRefundProofRecheckedAfterReorg(t *testing.T) {
 	r, s, p, chain := bindingOutcome(t, true)
 	raw := bindingRaw(t, p)
-	require.NoError(t, r.verifyOutcome(t.Context(), s, raw, true))
+	require.NoError(t, VerifyOutcome(t.Context(), r.wallet(), r.chain, r.minConfs, s, raw, true, true))
 	stored := append([]byte(nil), raw...)
 
 	// Persisting a proof does not freeze its current-chain validity.
 	chain.blocks[160].Header.Nonce++
-	r = &Driver{cfg: r.cfg}
-	err := r.verifyOutcome(t.Context(), s, stored, true)
+	err := VerifyOutcome(t.Context(), r.wallet(), r.chain, r.minConfs, s, stored, true, true)
 	require.ErrorIs(t, err, swapkit.ErrPending)
 }
 
@@ -441,16 +433,26 @@ func TestReorgClassificationPrecedesSDKVerification(t *testing.T) {
 		100, false)
 	chain := &bindingChain{tip: 101, unspent: true,
 		blocks: map[uint32]*wire.MsgBlock{100: bindingBlock(p)}}
-	r := &Driver{cfg: DriverConfig{SDK: &bindingSDK{valid: false},
-		Chain: chain, MinConfs: 1}}
+	r := &proofNode{client: &bindingSDK{valid: false}, chain: chain, minConfs: 1}
 	chain.blocks[100].Header.Nonce++
-	_, err := r.verifyProof(t.Context(), bindingRaw(t, p),
+	_, err := verifyProof(t.Context(), r.wallet(), r.chain, r.minConfs, bindingRaw(t, p),
 		bindingPub(11), 1000, true)
 	require.ErrorIs(t, err, swapkit.ErrPending)
 
 	// Restoring the chain match never bypasses full SDK verification.
 	chain.blocks[100].Header.Nonce--
-	_, err = r.verifyProof(t.Context(), bindingRaw(t, p),
+	_, err = verifyProof(t.Context(), r.wallet(), r.chain, r.minConfs, bindingRaw(t, p),
 		bindingPub(11), 1000, true)
 	require.ErrorIs(t, err, swapkit.ErrInvalid)
+}
+
+// proofNode holds only test services. Tests call production primitives directly.
+type proofNode struct {
+	client   sdk.Client
+	chain    Chain
+	minConfs uint32
+}
+
+func (n *proofNode) wallet() *sdk.Wallet {
+	return sdk.NewWallet(n.client, sdk.NetworkRegtest)
 }

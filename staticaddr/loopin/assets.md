@@ -65,9 +65,10 @@ original CSV expiry action.
 
 ## Ownership and recovery
 
-The SDK kit lives in Loop and uses the normal LND signer and chain services.
-Tapd publishes transfers and constructs confirmed proofs. There is no
-companion process, private signer database or asset execution journal.
+The ordinary FSM actions build and commit transfers with Tap SDK and sign
+through existing LND services. Loop-owned helpers bind transfers to the
+Bitcoin contracts, check the current chain and recover proofs from observed
+spends. Tapd publishes transfers and constructs confirmed proofs.
 
 The deposit manager stores the final signed funding package on the normal
 `Deposit` before publication. Its FSM publishes and confirms it, then enters
@@ -77,12 +78,14 @@ address summaries show only Bitcoin deposits; use `assets_only` for native
 inventory. Asset deposits' original CSV refund runs in the same expiry states,
 using an asset transaction and proof operation instead.
 
-`StaticAddressLoopIn.Asset` carries the server offer, HOLD invoice, unsigned
-recovery package, complete fallback and accepted asset HTLC evidence. Transfers
-use the SDK binary package format, with the final anchor PSBT inside the package.
-The
-ordinary swap state describes its progress. The client does not initially know
-the server's preimage; the normal SQL preimage field is nullable until learned.
+`StaticAddressLoopIn.Asset` carries the server offer, unsigned recovery
+package, complete fallback and accepted asset HTLC evidence. The HOLD invoice
+uses the ordinary `SwapInvoice` field. The fallback is one finalized SDK
+package, which also supplies the client's conditional claim authority. Transfers
+use the SDK binary package format, with the final anchor PSBT inside the
+package. The ordinary swap state describes its progress. The client does not
+initially know the server's preimage; the normal SQL preimage field is nullable
+until learned.
 
 `InitHtlcTx` obtains the server hash, creates the ordinary swap row and
 reserves its deposit. `SignHtlcTx` creates the same-group HOLD invoice,
@@ -103,7 +106,8 @@ finalization. An unavailable server cannot veto that local path. Reporting the
 refund proof is best effort. Original deposits locked in `LoopingIn` stay
 under the swap FSM's recovery rather than running a competing CSV refund.
 
-Back up the normal Loop database and corresponding LND/tapd state. Earlier
-unshipped controller/request journals are not an upgrade format. See the
+Back up the normal Loop database and corresponding LND/tapd state. Recreate
+databases from earlier PR drafts: their controller journals, transaction/payment
+wrappers and duplicate fallback fields are not supported upgrade formats. See
 [state mapping](asset-fsm.md) and [production priorities](../../docs/asset-loop-in-readiness.md)
 for the remaining release requirements.

@@ -5,7 +5,8 @@ Asset deposits use `deposit.Deposit`, its normal SQL store and `deposit.FSM`.
 Bitcoin anchor value; `SwapHash` and the ordinary state own reservation and
 finality. Bitcoin-only selection excludes typed asset deposits.
 
-Creation builds a complete signed package and saves it in `AssetTx` before
+Creation calls the SDK builder and Commit directly, signs through the normal
+LND services, and saves the completed SDK package in `AssetTx` before
 publication. The initial `PublishAssetDeposit` action publishes through tapd
 and waits for its proof. Startup recovery resumes the action, which retries the
 same package independently of block notification delivery. The completed
