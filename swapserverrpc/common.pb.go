@@ -34,8 +34,9 @@ type HopHint struct {
 	ChanId uint64 `protobuf:"varint,2,opt,name=chan_id,json=chanId,proto3" json:"chan_id,omitempty"`
 	// The base fee of the channel denominated in millisatoshis.
 	FeeBaseMsat uint32 `protobuf:"varint,3,opt,name=fee_base_msat,json=feeBaseMsat,proto3" json:"fee_base_msat,omitempty"`
-	// The fee rate of the channel for sending one satoshi across it denominated in
-	// millionths of a satoshi.
+	//
+	//The fee rate of the channel for sending one satoshi across it denominated in
+	//millionths of a satoshi.
 	FeeProportionalMillionths uint32 `protobuf:"varint,4,opt,name=fee_proportional_millionths,json=feeProportionalMillionths,proto3" json:"fee_proportional_millionths,omitempty"`
 	// The time-lock delta of the channel.
 	CltvExpiryDelta uint32 `protobuf:"varint,5,opt,name=cltv_expiry_delta,json=cltvExpiryDelta,proto3" json:"cltv_expiry_delta,omitempty"`
@@ -110,8 +111,9 @@ func (x *HopHint) GetCltvExpiryDelta() uint32 {
 
 type RouteHint struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A list of hop hints that when chained together can assist in reaching a
-	// specific destination.
+	//
+	//A list of hop hints that when chained together can assist in reaching a
+	//specific destination.
 	HopHints      []*HopHint `protobuf:"bytes,1,rep,name=hop_hints,json=hopHints,proto3" json:"hop_hints,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

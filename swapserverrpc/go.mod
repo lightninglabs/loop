@@ -17,4 +17,4 @@ require (
 // "go mod check" failures in CI.
 replace gonum.org/v1/gonum => github.com/gonum/gonum v0.11.0
 
-go 1.25.12
+go 1.27.3

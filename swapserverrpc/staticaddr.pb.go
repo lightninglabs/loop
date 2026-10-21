@@ -685,27 +685,25 @@ type ServerStaticAddressLoopInRequest struct {
 	// The user agent string that identifies the software running on the user's
 	// side. This can be changed in the user's client software but it _SHOULD_
 	// conform to the following pattern:
-	//
-	//	Agent-Name/semver-version(/additional-info)
-	//
+	//    Agent-Name/semver-version(/additional-info)
 	// Examples:
-	//
-	//	loopd/v0.10.0-beta/commit=3b635821
-	//	litd/v0.2.0-alpha/commit=326d754
-	//	loopd/v0.10.0-beta/commit=3b635823,initiator=easy-autoloop
+	//    loopd/v0.10.0-beta/commit=3b635821
+	//    litd/v0.2.0-alpha/commit=326d754
+	//    loopd/v0.10.0-beta/commit=3b635823,initiator=easy-autoloop
 	UserAgent string `protobuf:"bytes,7,opt,name=user_agent,json=userAgent,proto3" json:"user_agent,omitempty"`
 	// The swap payment timeout allows the user to specify an upper limit for
 	// the amount of time the server is allowed to take to fulfill the off-chain
 	// swap payment. If the timeout is reached the swap will be aborted on the
 	// server side and the client can retry the swap with different parameters.
 	PaymentTimeoutSeconds uint32 `protobuf:"varint,8,opt,name=payment_timeout_seconds,json=paymentTimeoutSeconds,proto3" json:"payment_timeout_seconds,omitempty"`
-	// The optional swap amount in satoshis the client is attempting to swap. If
-	// specified the server will take out this amount from the total value of
-	// provided deposit_outpoints and will send the change back to the static
-	// address. If this results in dust change the server will reject the swap
-	// request. If the amount is not specified the server will use the total amount
-	// of the deposit_outpoints as swap amount without providing an additional
-	// flag - this is to maintain backwards compatibility.
+	//
+	//The optional swap amount in satoshis the client is attempting to swap. If
+	//specified the server will take out this amount from the total value of
+	//provided deposit_outpoints and will send the change back to the static
+	//address. If this results in dust change the server will reject the swap
+	//request. If the amount is not specified the server will use the total amount
+	//of the deposit_outpoints as swap amount without providing an additional
+	//flag - this is to maintain backwards compatibility.
 	Amount uint64 `protobuf:"varint,9,opt,name=amount,proto3" json:"amount,omitempty"`
 	// If set, request the server to use fast publication behavior for this
 	// swap.

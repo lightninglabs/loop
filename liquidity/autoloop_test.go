@@ -1271,7 +1271,7 @@ func TestAutoLoopRecurringBudget(t *testing.T) {
 // involves testing that channels are correctly selected and that the balance
 // target is successfully met.
 func TestEasyAutoloop(t *testing.T) {
-	defer test.Guard(t)
+	defer test.Guard(t)()
 
 	// Decode a dummy p2wkh address to use as the destination address for
 	// the swaps.
@@ -1540,7 +1540,7 @@ func existingInFromRequest(in *loop.LoopInRequest, initTime time.Time,
 // expected. This involves testing that channels are correctly selected and
 // that the balance target is successfully met.
 func TestEasyAssetAutoloop(t *testing.T) {
-	defer test.Guard(t)
+	defer test.Guard(t)()
 
 	// Common variables for asset tests.
 	assetId := [32]byte{0x01}
