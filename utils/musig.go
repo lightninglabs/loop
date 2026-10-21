@@ -4,15 +4,53 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/lightningnetwork/lnd/input"
 )
 
 // MuSig2Sign will create a MuSig2 signature for the passed message using the
-// passed private keys.
-func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
-	pubKeys []*btcec.PublicKey, tweaks *input.MuSig2Tweaks,
-	msg [32]byte) ([]byte, error) {
+// passed raw private keys. Raw keys are interpreted with
+// btcec.PrivKeyFromBytes semantics, which normalize 32-byte inputs modulo the
+// secp256k1 group order instead of rejecting out-of-range values. Keys that
+// normalize to zero (zero itself and the group order) are rejected. It expects
+// at least two signing keys.
+func MuSig2Sign(version input.MuSig2Version, keys [][32]byte,
+	tweaks *input.MuSig2Tweaks, msg [32]byte) ([]byte, error) {
+
+	if len(keys) < 2 {
+		return nil, fmt.Errorf("need at least two signing keys")
+	}
+
+	privKeys := make([]*btcec.PrivateKey, len(keys))
+	pubKeys := make([]*btcec.PublicKey, len(keys))
+
+	// First parse the raw private keys and also create the corresponding
+	// public keys. This preserves the same normalization semantics used
+	// when these raw keys are turned into pubkeys elsewhere in the protocol.
+	for i, key := range keys {
+		privKeys[i], pubKeys[i] = btcec.PrivKeyFromBytes(key[:])
+
+		// PrivKeyFromBytes accepts keys that normalize to zero, which
+		// would otherwise only fail later on, with an error that
+		// depends on the MuSig2 version.
+		if privKeys[i].Key.IsZero() {
+			return nil, fmt.Errorf("signing key %d is zero modulo "+
+				"the group order", i)
+		}
+
+		// MuSig2 v0.4 expects x-only public keys.
+		if version == input.MuSig2Version040 {
+			pubKey := pubKeys[i].SerializeCompressed()
+			xOnlyPubKey, err := schnorr.ParsePubKey(pubKey[1:])
+			if err != nil {
+				return nil, fmt.Errorf("error parsing x-only "+
+					"pubkey: %v", err)
+			}
+
+			pubKeys[i] = xOnlyPubKey
+		}
+	}
 
 	// Next we'll create MuSig2 sessions for each individual private
 	// signing key.
@@ -74,7 +112,7 @@ func MuSig2Sign(version input.MuSig2Version, privKeys []*btcec.PrivateKey,
 	}
 
 	if !haveAllSigs {
-		return nil, fmt.Errorf("combinging MuSig2 signatures " +
+		return nil, fmt.Errorf("combining MuSig2 signatures " +
 			"failed")
 	}
 
