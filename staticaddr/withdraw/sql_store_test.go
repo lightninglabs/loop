@@ -2,11 +2,13 @@ package withdraw
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/stretchr/testify/require"
 )
@@ -83,6 +85,10 @@ func TestSqlStore(t *testing.T) {
 		t, d2.Value, withdrawals[0].Deposits[1].Value,
 	)
 	require.NotEmpty(t, withdrawals[0].InitiationTime)
+	require.Nil(t, withdrawals[0].TxID)
+	require.Zero(t, withdrawals[0].WithdrawnAmount)
+	require.Zero(t, withdrawals[0].ChangeAmount)
+	require.Zero(t, withdrawals[0].ConfirmationHeight)
 
 	err = store.UpdateWithdrawal(
 		ctxb, []*deposit.Deposit{d1, d2}, withdrawalTx, 6, []byte{0x01},
@@ -92,10 +98,57 @@ func TestSqlStore(t *testing.T) {
 	withdrawals, err = store.GetAllWithdrawals(ctxb)
 	require.NoError(t, err)
 	require.Len(t, withdrawals, 1)
-	require.NotEmpty(t, withdrawals[0].TxID)
+	require.NotNil(t, withdrawals[0].TxID)
+	require.Equal(t, withdrawalTx.TxHash(), *withdrawals[0].TxID)
 	require.EqualValues(
 		t, d1.Value+d2.Value-100, withdrawals[0].WithdrawnAmount,
 	)
 	require.EqualValues(t, 100, withdrawals[0].ChangeAmount)
 	require.EqualValues(t, 6, withdrawals[0].ConfirmationHeight)
+}
+
+// TestGetAllWithdrawalsRejectsInvalidTxID verifies that a malformed persisted
+// withdrawal txid is rejected, while pending withdrawals remain readable via
+// NULL values.
+func TestGetAllWithdrawalsRejectsInvalidTxID(t *testing.T) {
+	ctxb := context.Background()
+	testDb := loopdb.NewTestDB(t)
+	defer testDb.Close()
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	store := NewSqlStore(loopdb.NewTypedStore[Querier](testDb), depositStore)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+
+	d := &deposit.Deposit{
+		ID:    depositID,
+		Value: btcutil.Amount(100_000),
+		TimeOutSweepPkScript: []byte{
+			0x00, 0x14, 0x1a, 0x2b, 0x3c, 0x41,
+		},
+	}
+
+	err = depositStore.CreateDeposit(ctxb, d)
+	require.NoError(t, err)
+
+	err = store.CreateWithdrawal(ctxb, []*deposit.Deposit{d})
+	require.NoError(t, err)
+
+	withdrawalID, err := testDb.Queries.GetWithdrawalIDByDepositID(
+		ctxb, d.ID[:],
+	)
+	require.NoError(t, err)
+
+	err = testDb.Queries.UpdateWithdrawal(ctxb, sqlc.UpdateWithdrawalParams{
+		WithdrawalID: withdrawalID,
+		WithdrawalTxID: sql.NullString{
+			String: "abcd",
+			Valid:  true,
+		},
+	})
+	require.NoError(t, err)
+
+	_, err = store.GetAllWithdrawals(ctxb)
+	require.ErrorContains(t, err, "invalid withdrawal txid")
 }
