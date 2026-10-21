@@ -837,11 +837,9 @@ func TestLatestLoopInUpdateIsLastInserted(t *testing.T) {
 	depositID, err := deposit.GetRandomDepositID()
 	require.NoError(t, err)
 	d := &deposit.Deposit{
-		ID: depositID,
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{2},
-			Index: 0,
-		},
+		ID:                   depositID,
+		Hash:                 chainhash.Hash{2},
+		Index:                0,
 		Value:                btcutil.Amount(100_000),
 		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x01},
 	}
@@ -929,11 +927,9 @@ func TestSqlStoreTimesOutsideUTC(t *testing.T) {
 	depositID, err := deposit.GetRandomDepositID()
 	require.NoError(t, err)
 	d := &deposit.Deposit{
-		ID: depositID,
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{1},
-			Index: 0,
-		},
+		ID:                   depositID,
+		Hash:                 chainhash.Hash{1},
+		Index:                0,
 		Value:                btcutil.Amount(100_000),
 		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x01},
 	}

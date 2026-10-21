@@ -4,7 +4,7 @@
 - **Release page:**
   [v0.35.1-beta](https://github.com/lightninglabs/loop/releases/tag/v0.35.1-beta)
 - **Previous release:** [v0.35.0-beta](release-notes-0.35.0.md)
-- **Next release:** [Next release](release-notes-next.md)
+- **Next release:** [v0.35.2-beta](release-notes-0.35.2.md)
 
 #### New Features
 
