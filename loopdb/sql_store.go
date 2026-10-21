@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -586,7 +587,7 @@ func ConvertLoopOutRow(network *chaincfg.Params, row sqlc.GetLoopOutSwapRow,
 		return nil, err
 	}
 
-	destAddress, err := btcutil.DecodeAddress(row.DestAddress, network)
+	destAddress, err := btcaddr.DecodeAddress(row.DestAddress, network)
 	if err != nil {
 		return nil, err
 	}
