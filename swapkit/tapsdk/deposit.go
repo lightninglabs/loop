@@ -279,16 +279,6 @@ func (r *Driver) admit(ctx context.Context,
 	return swapkit.AdmissionResult{DepositAmount: p.Asset.Amount}, nil
 }
 
-func (r *Driver) verifyDeposit(ctx context.Context, d swapkit.Deposit,
-	unspent bool) (*proof.Proof, error) {
-
-	var c depositContract
-	if err := swapkit.Decode(d.Contract, &c); err != nil {
-		return nil, err
-	}
-	return r.verifyDepositContract(ctx, d, c, unspent)
-}
-
 func (r *Driver) verifyDepositContract(ctx context.Context, d swapkit.Deposit,
 	c depositContract, unspent bool) (*proof.Proof, error) {
 

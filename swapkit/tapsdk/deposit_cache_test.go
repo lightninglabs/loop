@@ -44,7 +44,8 @@ func TestDepositInventoryRechecksConfirmation(t *testing.T) {
 			if reorg {
 				chain.blocks[100].Header.Nonce++
 			}
-			p, err := r.verifyDeposit(t.Context(), record.Deposit, false)
+			p, err := r.verifyDepositContract(t.Context(),
+				record.Deposit, record.Contract, false)
 			if reorg {
 				require.ErrorIs(t, err, swapkit.ErrPending)
 				require.Nil(t, p)

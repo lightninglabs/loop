@@ -102,10 +102,7 @@ func TestDepositContractRejectsIdentitySubstitution(t *testing.T) {
 		var c depositContract
 		require.NoError(t, json.Unmarshal(d.Deposit.Contract, &c))
 		mutate(&c)
-		other := d.Deposit
-		other.Contract, err = json.Marshal(c)
-		require.NoError(t, err)
-		_, err = r.verifyDeposit(t.Context(), other, false)
+		_, err = r.verifyDepositContract(t.Context(), d.Deposit, c, false)
 		require.ErrorIs(t, err, swapkit.ErrInvalid)
 	}
 }
