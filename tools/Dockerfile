@@ -3,6 +3,9 @@ FROM golang:1.27.3
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
+# The bind-mounted checkout can belong to the CI runner rather than root.
+RUN git config --global --add safe.directory /build
+
 ENV CGO_ENABLED=0 \
     GOCACHE=/tmp/build/.cache \
     GOMODCACHE=/tmp/build/.modcache \
