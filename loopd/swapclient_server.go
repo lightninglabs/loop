@@ -137,8 +137,8 @@ type staticAddressDepositManager interface {
 	DepositsForOutpoints(context.Context, []string, bool) (
 		[]*deposit.Deposit, error)
 
-	// GetVisibleDeposits returns deposits that should be shown in normal
-	// user-facing views.
+	// GetVisibleDeposits returns Bitcoin deposits for normal lists and
+	// summaries.
 	GetVisibleDeposits(context.Context) ([]*deposit.Deposit, error)
 
 	// GetAllDeposits returns all known deposit records, including historical
@@ -1921,7 +1921,7 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 	}, nil
 }
 
-// ListUnspentDeposits returns a list of utxos behind the static address.
+// ListUnspentDeposits returns Bitcoin UTXOs behind the static address.
 func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	req *looprpc.ListUnspentDepositsRequest) (
 	*looprpc.ListUnspentDepositsResponse, error) {
@@ -1963,7 +1963,7 @@ func (s *swapClientServer) ListUnspentDeposits(ctx context.Context,
 	}
 
 	for _, d := range deposits {
-		if d == nil {
+		if d == nil || d.Asset != nil {
 			continue
 		}
 

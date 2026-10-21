@@ -174,3 +174,58 @@ func TestAssetDepositFSMRestart(t *testing.T) {
 		OnLoopedIn, LoopedIn))
 	waitState(late.ID, string(LoopedIn))
 }
+
+// TestAssetDepositsExcludedFromBitcoinViews checks both startup and recovered
+// cache views without removing native records from the shared deposit store.
+func TestAssetDepositsExcludedFromBitcoinViews(t *testing.T) {
+	store := NewSqlStore(loopdb.NewTestSqliteDB(t).BaseDB)
+	manager := NewManager(&ManagerConfig{Store: store})
+	bitcoin := &Deposit{
+		ID: ID{1}, OutPoint: wire.OutPoint{Index: 1}, Value: 5000,
+		state: Deposited, TimeOutSweepPkScript: []byte{},
+	}
+	finalized := &Deposit{
+		ID: ID{2}, OutPoint: wire.OutPoint{Index: 2}, Value: 6000,
+		state: LoopedIn, TimeOutSweepPkScript: []byte{},
+	}
+	for _, d := range []*Deposit{bitcoin, finalized} {
+		require.NoError(t, store.CreateDeposit(t.Context(), d))
+	}
+	assetStates := []fsm.StateType{
+		PublishAssetDeposit, Deposited, LoopingIn, LoopedIn, Expired,
+	}
+	for i, state := range assetStates {
+		d := &Deposit{
+			ID:       ID{byte(i + 10)},
+			OutPoint: wire.OutPoint{Index: uint32(i + 10)},
+			Value:    1000, state: state, Asset: &swapkit.Deposit{Amount: 100},
+			TimeOutSweepPkScript: []byte{},
+		}
+		require.NoError(t, store.CreateDeposit(t.Context(), d))
+	}
+	for _, recovered := range []bool{false, true} {
+		if recovered {
+			manager.deposits[bitcoin.OutPoint] = bitcoin
+			manager.activeDeposits[bitcoin.OutPoint] = &FSM{}
+		}
+		visible, err := manager.GetVisibleDeposits(t.Context())
+		require.NoError(t, err)
+		require.Len(t, visible, 2)
+		var ids []ID
+		for _, d := range visible {
+			require.Nil(t, d.Asset)
+			ids = append(ids, d.ID)
+		}
+		require.ElementsMatch(t, []ID{bitcoin.ID, finalized.ID}, ids)
+		all, err := manager.GetAllDeposits(t.Context())
+		require.NoError(t, err)
+		require.Len(t, all, 2+len(assetStates))
+	}
+
+	// Existing stale Bitcoin filtering still applies after cache recovery.
+	delete(manager.activeDeposits, bitcoin.OutPoint)
+	visible, err := manager.GetVisibleDeposits(t.Context())
+	require.NoError(t, err)
+	require.Len(t, visible, 1)
+	require.Equal(t, finalized.ID, visible[0].ID)
+}

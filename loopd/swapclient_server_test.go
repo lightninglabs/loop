@@ -27,6 +27,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/swapkit"
 	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
@@ -2550,6 +2551,7 @@ func TestListUnspentDeposits(t *testing.T) {
 	utxoWithdrawn := makeUtxo(2, 2)
 	utxoLoopingIn := makeUtxo(3, 5)
 	utxoConfirmedUnknown := makeUtxo(4, 3)
+	utxoAsset := makeUtxo(5, 5)
 
 	// Helper to build the deposit manager with specific states.
 	buildDepositMgr := func(
@@ -2568,19 +2570,23 @@ func TestListUnspentDeposits(t *testing.T) {
 	}
 
 	// Only known Deposited records are available. Unknown deposits and
-	// known non-Deposited states are excluded.
+	// known non-Deposited states and asset anchors are excluded.
 	t.Run("only known Deposited included",
 		func(t *testing.T) {
 			mock.SetListUnspent([]*lnwallet.Utxo{
 				utxoUnknown, utxoDeposited, utxoWithdrawn,
-				utxoLoopingIn,
+				utxoLoopingIn, utxoAsset,
 			})
 
 			depMgr := buildDepositMgr(map[wire.OutPoint]fsm.StateType{
 				utxoDeposited.OutPoint: deposit.Deposited,
 				utxoWithdrawn.OutPoint: deposit.Withdrawn,
 				utxoLoopingIn.OutPoint: deposit.LoopingIn,
+				utxoAsset.OutPoint:     deposit.Deposited,
 			})
+
+			depMgr.byOutpoint[utxoAsset.OutPoint.String()].Asset =
+				&swapkit.Deposit{Amount: 1000}
 
 			server := &swapClientServer{
 				staticAddressManager: addrMgr,

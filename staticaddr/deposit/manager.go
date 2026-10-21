@@ -1057,9 +1057,9 @@ func (m *Manager) GetAllDeposits(ctx context.Context) ([]*Deposit, error) {
 	return m.cfg.Store.AllDeposits(ctx)
 }
 
-// GetVisibleDeposits returns deposits that should be exposed through normal
-// user-facing views. The database can contain historical Deposited rows whose
-// outpoints are no longer present in lnd's current wallet view, for example
+// GetVisibleDeposits returns Bitcoin deposits for normal lists and summaries.
+// Asset inventory uses GetAllDeposits instead. Historical Deposited rows can
+// have outpoints missing from lnd's current wallet view, for example
 // after replacement or reorg. Once the manager has recovered its live cache,
 // plain Deposited records are only visible while their outpoint is in the
 // active set.
@@ -1075,6 +1075,9 @@ func (m *Manager) GetVisibleDeposits(ctx context.Context) ([]*Deposit, error) {
 	liveCacheReady := len(m.deposits) > 0
 	filtered := make([]*Deposit, 0, len(deposits))
 	for _, d := range deposits {
+		if d.Asset != nil {
+			continue
+		}
 		if liveCacheReady && d.IsInState(Deposited) {
 			if _, ok := m.activeDeposits[d.OutPoint]; !ok {
 				continue

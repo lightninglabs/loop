@@ -72,8 +72,10 @@ companion process, private signer database or asset execution journal.
 The deposit manager stores the final signed funding package on the normal
 `Deposit` before publication. Its FSM publishes and confirms it, then enters
 `Deposited`. Proof-bearing deposits are excluded from Bitcoin selection and
-Bitcoin-only spending actions. Their original CSV refund runs in the same
-expiry states, using an asset transaction and proof operation instead.
+Bitcoin-only spending actions. Default deposit lists, unspent lists and static
+address summaries show only Bitcoin deposits; use `assets_only` for native
+inventory. Asset deposits' original CSV refund runs in the same expiry states,
+using an asset transaction and proof operation instead.
 
 `StaticAddressLoopIn.Asset` carries the server offer, HOLD invoice, unsigned
 recovery package, complete fallback and accepted asset HTLC evidence. The
