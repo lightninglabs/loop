@@ -11,8 +11,8 @@ require (
 	github.com/btcsuite/btcd/txscript/v2 v2.0.0
 	github.com/btcsuite/btcd/wire/v2 v2.0.0
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b
-	github.com/btcsuite/btcwallet v0.18.0
-	github.com/btcsuite/btcwallet/wtxmgr v1.6.0
+	github.com/btcsuite/btcwallet v0.18.1-0.20260903142755-a960541f35ed
+	github.com/btcsuite/btcwallet/wtxmgr v1.6.1-0.20260903142755-a960541f35ed
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/fortytw2/leaktest v1.3.0
@@ -31,7 +31,7 @@ require (
 	github.com/lightningnetwork/lnd v0.21.3-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
-	github.com/lightningnetwork/lnd/queue v1.2.0
+	github.com/lightningnetwork/lnd/queue v1.2.1-0.20260925031608-f2963ce1fd19
 	github.com/lightningnetwork/lnd/ticker v1.1.1
 	github.com/lightningnetwork/lnd/tlv v1.4.0
 	github.com/lightningnetwork/lnd/tor v1.2.0
@@ -123,7 +123,7 @@ require (
 	github.com/lightninglabs/neutrino/cache v1.1.4 // indirect
 	github.com/lightningnetwork/lightning-onion v1.4.0 // indirect
 	github.com/lightningnetwork/lnd/actor v0.0.6 // indirect
-	github.com/lightningnetwork/lnd/fn/v2 v2.0.9 // indirect
+	github.com/lightningnetwork/lnd/fn/v2 v2.0.10-0.20260925031608-f2963ce1fd19 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.5.1 // indirect
 	github.com/lightningnetwork/lnd/sqldb v1.0.13 // indirect
@@ -210,7 +210,7 @@ require (
 
 // We want to format raw bytes as hex instead of base64. The forked version
 // allows us to specify that as an option.
-replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display
+replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.36.11-hex-display
 
 // We are using a fork of the migration library with custom functionality that
 // did not yet make it into the upstream repository.
@@ -238,17 +238,16 @@ replace go.augendre.info/arangolint => github.com/Crocmagnon/arangolint v0.4.0
 
 replace go.augendre.info/fatcontext => github.com/Crocmagnon/fatcontext v0.9.0
 
-go 1.26.0
+go 1.26.8
 
-// This sqldb revision contains lnd's pgx v5 migration, which removes the
-// vulnerable legacy pgx v4/pgproto3 dependency chain. Remove this replacement
-// once the required lnd version includes an sqldb release with that migration.
-replace github.com/lightningnetwork/lnd/sqldb v1.0.13 => github.com/lightningnetwork/lnd/sqldb v1.0.13-0.20260514041430-e9b422f78581
+// Match the fixed lnd snapshot, including its pgx v5 SQL implementation.
+// Remove this replacement once a compatible sqldb release is available.
+replace github.com/lightningnetwork/lnd/sqldb => github.com/lightningnetwork/lnd/sqldb v1.0.13-0.20260925031608-f2963ce1fd19
 
 // Use the btcd v2 migration of v0.8.6, preserving the released RFQ and proof
 // fixes until an upstream v2-compatible release is available.
 // See https://github.com/lightninglabs/taproot-assets/pull/2366.
-replace github.com/lightninglabs/taproot-assets => github.com/hieblmi/taro v0.1.0-alpha.0.20261021105727-9b4c853b36ca
+replace github.com/lightninglabs/taproot-assets => github.com/hieblmi/taro v0.1.0-alpha.0.20261021113806-b47086671590
 
-// Released RPC submodules still require the legacy lnd dependency line.
-replace github.com/lightningnetwork/lnd => github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20260903094101-d66a7c137d32
+// Keep the v2 migration on lnd code retaining the v0.21.4 recovery fixes.
+replace github.com/lightningnetwork/lnd => github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20260925031608-f2963ce1fd19

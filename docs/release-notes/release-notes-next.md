@@ -4,9 +4,10 @@
 
 #### Breaking Changes
 
-* Loop now uses the btcd v2 modules and requires Go 1.26. Projects compiling
+* Loop now uses the btcd v2 modules and requires Go 1.26.8. Projects compiling
   against Loop's exported Go APIs must migrate address, transaction, and
   related types to the corresponding btcd v2 packages.
+  The lnd snapshot retains the v0.21.4 forwarding-response recovery fixes.
   [PR #1199](https://github.com/lightninglabs/loop/pull/1199)
 
 #### Bug Fixes
