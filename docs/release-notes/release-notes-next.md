@@ -35,6 +35,9 @@
 
 #### Maintenance
 
+* Update the root module's `github.com/klauspost/compress` dependency to
+  v1.18.7, including the fix for an out-of-bounds read in `s2.NewDict`.
+
 * `utils.MuSig2Sign` now takes the signers' raw 32-byte private keys and derives their public keys itself, instead of separate private and public key slices. Out-of-range keys are reduced modulo the secp256k1 group order, while keys that reduce to zero and calls with fewer than two signers are rejected. Go callers of this exported helper need to be updated.
 
 #### Contributors (Alphabetical Order)
