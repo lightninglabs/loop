@@ -124,6 +124,9 @@ type StaticAddressLoopIn struct {
 	// LastUpdateTime is the timestamp of the latest persisted state update.
 	LastUpdateTime time.Time
 
+	// LastUpdateID is the id of the latest persisted state update.
+	LastUpdateID int32
+
 	// ConfirmationRiskDecision records the server's persisted decision on
 	// low-confirmation deposit risk.
 	ConfirmationRiskDecision ConfirmationRiskDecision

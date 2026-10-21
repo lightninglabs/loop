@@ -12,6 +12,10 @@
 
 #### Bug Fixes
 
+* Update `github.com/klauspost/compress` to v1.18.7 in the root and
+  `looprpc` modules, including the fix for an out-of-bounds read in
+  `s2.NewDict`.
+
 * A MuSig2 Loop In no longer reveals the internal key of its HTLC to the
   server when the swap invoice is canceled. The key is only shared once the
   invoice is paid.
@@ -35,6 +39,13 @@
   tracked as deposited. An output that disappeared during the refresh could
   previously still be listed, with a stale confirmation count.
 
+* Static address loop-ins now store their times in UTC. On Postgres outside
+  UTC, these times read back shifted, which moved the payment deadline:
+  later east of UTC, and already over west of UTC, so the invoice was
+  cancelled straight away. Times stored before upgrading keep their local
+  time, so a swap's state and `loop monitor` now follow the order in which
+  its updates were stored instead of their times.
+
 #### Maintenance
 
 * `utils.MuSig2Sign` now takes the signers' raw 32-byte private keys and derives their public keys itself, instead of separate private and public key slices. Out-of-range keys are reduced modulo the secp256k1 group order, while keys that reduce to zero and calls with fewer than two signers are rejected. Go callers of this exported helper need to be updated.
@@ -49,5 +60,7 @@
 #### Contributors (Alphabetical Order)
 
 - Boris Nagaev
+- claravanstaden
 - claudell
+- dependabot[bot]
 - Slyghtning

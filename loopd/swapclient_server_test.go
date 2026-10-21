@@ -1150,7 +1150,9 @@ func TestStaticLoopInStatusUpdaterOnchainCost(t *testing.T) {
 
 // TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate protects the
 // monitor race invariant that live static loop-in updates arriving during the
-// initial snapshot are deduplicated without dropping newer progress.
+// initial snapshot are deduplicated without dropping newer progress. Updates
+// are ordered by their ids, not their times: an update stored in local time
+// before the times were stored in UTC can read back later than a newer update.
 func TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate(t *testing.T) {
 	logger := btclog.NewSLogger(
 		btclog.NewDefaultHandler(os.Stdout),
@@ -1162,6 +1164,7 @@ func TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate(t *testing.T)
 	mainCtx, mainCancel := context.WithCancel(t.Context())
 	defer mainCancel()
 	server, staticLoopIn, store := newGenericStaticLoopInServerWithStore(t)
+	staticLoopIn.LastUpdateID = 5
 	server.statusChan = make(chan loop.SwapInfo)
 	server.subscribers = make(map[int]chan<- any)
 	server.mainCtx = mainCtx
@@ -1195,9 +1198,13 @@ func TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate(t *testing.T)
 
 	staticUpdate, err := server.staticAddressLoopInSwapInfo(ctx, staticLoopIn)
 	require.NoError(t, err)
+	require.EqualValues(t, 5, staticUpdate.StaticAddressLoopInUpdateID)
+
+	// An older update with a later time is dropped.
 	staleUpdate := *staticUpdate
-	staleUpdate.State = loopdb.StateInitiated
-	staleUpdate.LastUpdate = staticUpdate.LastUpdate.Add(-time.Second)
+	staleUpdate.StaticAddressLoopInState = loopin.MonitorInvoiceAndHtlcTx
+	staleUpdate.StaticAddressLoopInUpdateID = 4
+	staleUpdate.LastUpdate = staticUpdate.LastUpdate.Add(time.Hour)
 	server.statusChan <- staleUpdate
 
 	server.statusChan <- *staticUpdate
@@ -1211,10 +1218,12 @@ func TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate(t *testing.T)
 		first.GetStaticLoopInState(),
 	)
 
+	// A newer update with an earlier time is sent.
 	nextUpdate := *staticUpdate
 	nextUpdate.State = loopdb.StateSuccess
 	nextUpdate.StaticAddressLoopInState = loopin.Succeeded
-	nextUpdate.LastUpdate = staticUpdate.LastUpdate.Add(time.Second)
+	nextUpdate.StaticAddressLoopInUpdateID = 6
+	nextUpdate.LastUpdate = staticUpdate.LastUpdate.Add(-time.Hour)
 	server.statusChan <- nextUpdate
 
 	second := receiveMonitorUpdate(t, ctx, monitorServer.sent)
@@ -1234,12 +1243,12 @@ func TestMonitorSuppressesStaticAddressLoopInSnapshotLiveDuplicate(t *testing.T)
 // snapshot is treated as stale.
 func TestStaticAddressLoopInHighWaterSuppressesExactDuplicate(t *testing.T) {
 	swapHash := lntypes.Hash{1, 2, 3}
-	lastUpdate := time.Unix(100, 0).UTC()
 	snapshot := loop.SwapInfo{
-		SwapHash:                 swapHash,
-		SwapType:                 swap.TypeStaticAddressLoopIn,
-		LastUpdate:               lastUpdate,
-		StaticAddressLoopInState: loopin.PaymentReceived,
+		SwapHash:                    swapHash,
+		SwapType:                    swap.TypeStaticAddressLoopIn,
+		LastUpdate:                  time.Unix(100, 0).UTC(),
+		StaticAddressLoopInState:    loopin.PaymentReceived,
+		StaticAddressLoopInUpdateID: 5,
 	}
 	highWater := staticAddressLoopInMonitorHighWater([]loop.SwapInfo{
 		snapshot,
@@ -1250,17 +1259,17 @@ func TestStaticAddressLoopInHighWaterSuppressesExactDuplicate(t *testing.T) {
 	require.True(t, isStale)
 }
 
-// TestStaticAddressLoopInHighWaterKeepsSameTimeDifferentState protects the
-// high-water timing invariant that equal timestamps do not hide a distinct
-// static loop-in state transition.
-func TestStaticAddressLoopInHighWaterKeepsSameTimeDifferentState(t *testing.T) {
+// TestStaticAddressLoopInHighWaterKeepsSameIDDifferentState protects the
+// high-water invariant that an equal update id does not hide a distinct static
+// loop-in state transition.
+func TestStaticAddressLoopInHighWaterKeepsSameIDDifferentState(t *testing.T) {
 	swapHash := lntypes.Hash{1, 2, 3}
-	lastUpdate := time.Unix(100, 0).UTC()
 	snapshot := loop.SwapInfo{
-		SwapHash:                 swapHash,
-		SwapType:                 swap.TypeStaticAddressLoopIn,
-		LastUpdate:               lastUpdate,
-		StaticAddressLoopInState: loopin.PaymentReceived,
+		SwapHash:                    swapHash,
+		SwapType:                    swap.TypeStaticAddressLoopIn,
+		LastUpdate:                  time.Unix(100, 0).UTC(),
+		StaticAddressLoopInState:    loopin.PaymentReceived,
+		StaticAddressLoopInUpdateID: 5,
 	}
 	liveUpdate := snapshot
 	liveUpdate.StaticAddressLoopInState = loopin.Succeeded
@@ -1278,18 +1287,18 @@ func TestStaticAddressLoopInHighWaterKeepsSameTimeDifferentState(t *testing.T) {
 // loop-ins and cannot filter generic swap updates.
 func TestStaticAddressLoopInHighWaterSuppressesOlderStaticOnly(t *testing.T) {
 	swapHash := lntypes.Hash{1, 2, 3}
-	lastUpdate := time.Unix(100, 0).UTC()
 	snapshot := loop.SwapInfo{
-		SwapHash:                 swapHash,
-		SwapType:                 swap.TypeStaticAddressLoopIn,
-		LastUpdate:               lastUpdate,
-		StaticAddressLoopInState: loopin.PaymentReceived,
+		SwapHash:                    swapHash,
+		SwapType:                    swap.TypeStaticAddressLoopIn,
+		LastUpdate:                  time.Unix(100, 0).UTC(),
+		StaticAddressLoopInState:    loopin.PaymentReceived,
+		StaticAddressLoopInUpdateID: 5,
 	}
 	highWater := staticAddressLoopInMonitorHighWater([]loop.SwapInfo{
 		snapshot,
 	})
 	olderStatic := snapshot
-	olderStatic.LastUpdate = lastUpdate.Add(-time.Second)
+	olderStatic.StaticAddressLoopInUpdateID = 4
 	olderStatic.StaticAddressLoopInState = loopin.Succeeded
 	nonStatic := olderStatic
 	nonStatic.SwapType = swap.TypeOut
@@ -1301,6 +1310,37 @@ func TestStaticAddressLoopInHighWaterSuppressesOlderStaticOnly(t *testing.T) {
 
 	require.True(t, staticStale)
 	require.False(t, nonStaticStale)
+}
+
+// TestStaticAddressLoopInHighWaterKeepsNewerUpdateWithEarlierTime tests that a
+// live update that is newer than the snapshot isn't treated as stale when it
+// has an earlier time. An update stored in local time before the times were
+// stored in UTC reads back as UTC on Postgres, so east of UTC it can read back
+// later than the next update.
+func TestStaticAddressLoopInHighWaterKeepsNewerUpdateWithEarlierTime(
+	t *testing.T) {
+
+	snapshot := loop.SwapInfo{
+		SwapHash: lntypes.Hash{1, 2, 3},
+		SwapType: swap.TypeStaticAddressLoopIn,
+		LastUpdate: time.Date(
+			2026, 10, 16, 14, 1, 0, 0, time.UTC,
+		),
+		StaticAddressLoopInState:    loopin.PaymentReceived,
+		StaticAddressLoopInUpdateID: 5,
+	}
+	highWater := staticAddressLoopInMonitorHighWater([]loop.SwapInfo{
+		snapshot,
+	})
+
+	liveUpdate := snapshot
+	liveUpdate.LastUpdate = time.Date(2026, 10, 16, 12, 5, 0, 0, time.UTC)
+	liveUpdate.StaticAddressLoopInState = loopin.Succeeded
+	liveUpdate.StaticAddressLoopInUpdateID = 6
+
+	require.False(t, isInitialStaticAddressLoopInStale(
+		highWater, liveUpdate,
+	))
 }
 
 // TestStaticAddressLoopInStatusUpdateDoesNotEnterGenericSwapCache protects the

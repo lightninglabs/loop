@@ -24,10 +24,10 @@ import (
 
 const OutpointSeparator = ";"
 
-// sqlStoreUpdateTime returns the PostgreSQL-compatible timestamp precision used
-// for persisted loop-in update metadata.
+// sqlStoreUpdateTime returns the time for persisted loop-in update metadata, in
+// UTC and with the PostgreSQL-compatible timestamp precision.
 func sqlStoreUpdateTime(clock clock.Clock) time.Time {
-	return clock.Now().Truncate(time.Microsecond)
+	return clock.Now().UTC().Truncate(time.Microsecond)
 }
 
 var (
@@ -55,7 +55,7 @@ type Querier interface {
 	// InsertStaticAddressMetaUpdate inserts metadata about loop-in
 	// updates.
 	InsertStaticAddressMetaUpdate(ctx context.Context,
-		arg sqlc.InsertStaticAddressMetaUpdateParams) error
+		arg sqlc.InsertStaticAddressMetaUpdateParams) (int32, error)
 
 	// UpdateStaticAddressLoopIn updates a loop-in swap.
 	UpdateStaticAddressLoopIn(ctx context.Context,
@@ -253,7 +253,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 	swapArgs := sqlc.InsertSwapParams{
 		SwapHash:         loopIn.SwapHash[:],
 		Preimage:         loopIn.SwapPreimage[:],
-		InitiationTime:   loopIn.InitiationTime,
+		InitiationTime:   loopIn.InitiationTime.UTC(),
 		AmountRequested:  amountRequested,
 		CltvExpiry:       loopIn.HtlcCltvExpiry,
 		MaxSwapFee:       int64(loopIn.MaxSwapFee),
@@ -302,6 +302,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 		UpdateState:     string(loopIn.GetState()),
 	}
 
+	var updateID int32
 	err := s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q Querier) error {
 			err := q.InsertSwap(ctx, swapArgs)
@@ -336,7 +337,11 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 				}
 			}
 
-			return q.InsertStaticAddressMetaUpdate(ctx, updateArgs)
+			updateID, err = q.InsertStaticAddressMetaUpdate(
+				ctx, updateArgs,
+			)
+
+			return err
 		},
 	)
 	if err != nil {
@@ -344,6 +349,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 	}
 
 	loopIn.LastUpdateTime = updateTime
+	loopIn.LastUpdateID = updateID
 
 	return nil
 }
@@ -373,6 +379,7 @@ func (s *SqlStore) UpdateLoopIn(ctx context.Context,
 		UpdateTimestamp: updateTime,
 	}
 
+	var updateID int32
 	err := s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q Querier) error {
 			err := q.UpdateStaticAddressLoopIn(ctx, updateParams)
@@ -380,7 +387,11 @@ func (s *SqlStore) UpdateLoopIn(ctx context.Context,
 				return err
 			}
 
-			return q.InsertStaticAddressMetaUpdate(ctx, updateArgs)
+			updateID, err = q.InsertStaticAddressMetaUpdate(
+				ctx, updateArgs,
+			)
+
+			return err
 		},
 	)
 	if err != nil {
@@ -388,6 +399,7 @@ func (s *SqlStore) UpdateLoopIn(ctx context.Context,
 	}
 
 	loopIn.LastUpdateTime = updateTime
+	loopIn.LastUpdateID = updateID
 
 	return nil
 }
@@ -409,7 +421,7 @@ func (s *SqlStore) RecordStaticAddressRiskDecision(ctx context.Context,
 		SwapHash:                 swapHash[:],
 		ConfirmationRiskDecision: string(decision),
 		ConfirmationRiskDecisionTime: sql.NullTime{
-			Time:  s.clock.Now(),
+			Time:  s.clock.Now().UTC(),
 			Valid: true,
 		},
 	}
@@ -698,6 +710,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		lastUpdate := updates[len(updates)-1]
 		loopIn.SetState(fsm.StateType(lastUpdate.UpdateState))
 		loopIn.LastUpdateTime = lastUpdate.UpdateTimestamp
+		loopIn.LastUpdateID = lastUpdate.ID
 	}
 
 	return loopIn, nil
