@@ -38,7 +38,6 @@ type testActions struct {
 	prepared          int
 	pushes            int
 	settles           int
-	signs             int
 	cancels           int
 	lookupPreimageErr error
 	blockPreimage     bool
@@ -131,17 +130,6 @@ func (a *testActions) SettleInvoice(ctx context.Context, o Offer,
 
 func (a *testActions) InvoiceSettled(context.Context, Offer) (bool, error) {
 	return a.settled, a.settledErr
-}
-
-func (a *testActions) SignCooperative(ctx context.Context, o Offer,
-	request []byte) ([]byte, error) {
-
-	r := a.record(ctx, o)
-	require.Equal(a.t, PaymentReceived, r.State)
-	require.Equal(a.t, request, r.CooperativeRequest)
-	require.True(a.t, a.settled)
-	a.signs++
-	return []byte("cooperative-signature"), nil
 }
 
 func (a *testActions) RecoverRefund(ctx context.Context, o Offer,
@@ -238,8 +226,6 @@ func TestRecoveryPreservesEveryExposureBoundary(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 	f.ready()
-	_, err := f.c.CooperativeSignature(ctx, f.offer.Hash, []byte("sweep"))
-	require.ErrorIs(t, err, ErrState)
 	f.a.pushErr = errUnavailable
 	require.ErrorIs(t, f.c.ExposeClaim(ctx, f.offer.Hash), errUnavailable)
 	f.reopen()
@@ -258,24 +244,6 @@ func TestRecoveryPreservesEveryExposureBoundary(t *testing.T) {
 	require.ErrorIs(t, f.c.Recover(ctx, f.offer.Hash), ErrPending)
 	f.a.settled = true
 	require.NoError(t, f.c.Recover(ctx, f.offer.Hash))
-	f.a.settled = false
-	_, err = f.c.CooperativeSignature(ctx, f.offer.Hash, []byte("sweep"))
-	require.ErrorIs(t, err, ErrPending)
-	require.Zero(t, f.a.signs)
-	f.a.settled = true
-	sig, err := f.c.CooperativeSignature(ctx, f.offer.Hash, []byte("sweep"))
-	require.NoError(t, err)
-	f.reopen()
-	retry, err := f.c.CooperativeSignature(
-		ctx,
-		f.offer.Hash,
-		[]byte("sweep"),
-	)
-	require.NoError(t, err)
-	require.Equal(t, sig, retry)
-	require.Equal(t, 1, f.a.signs)
-	_, err = f.c.CooperativeSignature(ctx, f.offer.Hash, []byte("changed"))
-	require.ErrorIs(t, err, ErrConflict)
 	require.ErrorIs(t, f.c.Cancel(ctx, f.offer.Hash), ErrState)
 	require.ErrorIs(t, f.c.Recover(ctx, f.offer.Hash), ErrPending)
 	require.Zero(t, f.store.releases)

@@ -54,7 +54,7 @@ type Invoice struct {
 type Fallback = swapkit.Fallback
 
 // Record contains private client recovery material. Do not expose it in RPCs.
-// InvoiceIntent and CooperativeRequest never contain private signing nonces.
+// InvoiceIntent never contains private signing nonces.
 //
 //nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Record struct {
@@ -75,8 +75,6 @@ type Record struct {
 	SignaturesExposed     bool              `json:"SignaturesExposed"`
 	Preimage              [32]byte          `json:"Preimage"`
 	HasPreimage           bool              `json:"HasPreimage"`
-	CooperativeRequest    []byte            `json:"CooperativeRequest"`
-	CooperativeSignature  []byte            `json:"CooperativeSignature"`
 	CancellationRequested bool              `json:"CancellationRequested"`
 	RefundEvidence        []byte            `json:"RefundEvidence"`
 	ClaimEvidence         []byte            `json:"ClaimEvidence"`
@@ -113,7 +111,6 @@ type Actions interface {
 	LookupPreimage(context.Context, Offer) ([32]byte, bool, error)
 	SettleInvoice(context.Context, Offer, [32]byte) error
 	InvoiceSettled(context.Context, Offer) (bool, error)
-	SignCooperative(context.Context, Offer, []byte) ([]byte, error)
 	InspectClaim(context.Context, Offer, Fallback) ([]byte, error)
 	RecoverRefund(context.Context, Offer, Fallback) ([]byte, error)
 	CancelInvoice(context.Context, Offer) error

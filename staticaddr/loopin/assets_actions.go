@@ -60,12 +60,6 @@ func (a *assetActions) LookupPreimage(ctx context.Context, o assetexec.Offer) (
 	return result.Preimage, result.Found, err
 }
 
-func (a *assetActions) SignCooperative(context.Context, assetexec.Offer,
-	[]byte) ([]byte, error) {
-
-	return nil, assetexec.ErrPending
-}
-
 func (a *assetActions) InspectClaim(ctx context.Context, o assetexec.Offer,
 	fallback assetexec.Fallback) ([]byte, error) {
 

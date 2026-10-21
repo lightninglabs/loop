@@ -364,65 +364,6 @@ func (c *Controller) settle(ctx context.Context, r *Record) error {
 	return c.save(ctx, r)
 }
 
-// CooperativeSignature signs only after local settlement, with an immutable
-// request committed before signing and the resulting signature before return.
-func (c *Controller) CooperativeSignature(ctx context.Context, hash [32]byte,
-	request []byte) ([]byte, error) {
-
-	unlock, err := c.lock(ctx, hash)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	r, err := c.store.Get(ctx, hash)
-	if err != nil {
-		return nil, err
-	}
-	if (r.State != PaymentReceived && r.State != Succeeded) ||
-		len(request) == 0 {
-
-		return nil, ErrState
-	}
-	if len(r.CooperativeRequest) != 0 &&
-		!bytes.Equal(r.CooperativeRequest, request) {
-
-		return nil, ErrConflict
-	}
-	settled, err := c.actions.InvoiceSettled(ctx, cloneOffer(r.Offer))
-	if err != nil {
-		return nil, err
-	}
-	if !settled {
-		return nil, ErrPending
-	}
-	if len(r.CooperativeSignature) != 0 {
-		return bytes.Clone(r.CooperativeSignature), nil
-	}
-	if r.State == Succeeded {
-		return nil, ErrState
-	}
-	if len(r.CooperativeRequest) == 0 {
-		r.CooperativeRequest = bytes.Clone(request)
-		if err := c.save(ctx, r); err != nil {
-			return nil, err
-		}
-	}
-	signature, err := c.actions.SignCooperative(
-		ctx, cloneOffer(r.Offer), bytes.Clone(request),
-	)
-	if err != nil {
-		return nil, err
-	}
-	if len(signature) == 0 {
-		return nil, ErrInvalid
-	}
-	r.CooperativeSignature = bytes.Clone(signature)
-	if err := c.save(ctx, r); err != nil {
-		return nil, err
-	}
-	return bytes.Clone(signature), nil
-}
-
 // Cancel persists cancellation intent. Once signatures might have escaped,
 // only confirmed refunds with spendable asset proofs allow invoice cancellation
 // or deposit release. Merely reaching the refund height never does so.

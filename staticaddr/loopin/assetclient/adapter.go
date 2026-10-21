@@ -28,11 +28,6 @@ type ClientChainActions interface {
 	BeginFallback(context.Context, assetexec.Offer,
 		[]byte) (*assetexec.FallbackRound, error)
 	LookupPreimage(context.Context, assetexec.Offer) ([32]byte, bool, error)
-	SignCooperative(
-		context.Context,
-		assetexec.Offer,
-		[]byte,
-	) ([]byte, error)
 	InspectClaim(context.Context, assetexec.Offer,
 		assetexec.Fallback) ([]byte, error)
 	RecoverRefund(context.Context, assetexec.Offer,

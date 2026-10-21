@@ -49,9 +49,7 @@ func ValidateRecord(r *Record) error {
 		r.SignaturesExposed && (len(r.ServerFallback) == 0 ||
 			len(r.AcceptedEvidence) == 0) ||
 		r.HasPreimage && (!r.SignaturesExposed ||
-			sha256.Sum256(r.Preimage[:]) != r.Offer.Hash) ||
-		len(r.CooperativeSignature) > 0 &&
-			(len(r.CooperativeRequest) == 0 || !r.HasPreimage) {
+			sha256.Sum256(r.Preimage[:]) != r.Offer.Hash) {
 
 		return ErrInvalid
 	}
@@ -119,8 +117,6 @@ func ValidateUpdate(old, next *Record) error {
 	}
 	for _, pair := range [][2][]byte{
 		{old.AcceptedEvidence, next.AcceptedEvidence},
-		{old.CooperativeRequest, next.CooperativeRequest},
-		{old.CooperativeSignature, next.CooperativeSignature},
 		{old.ClaimEvidence, next.ClaimEvidence},
 	} {
 		if len(pair[0]) > 0 && !bytes.Equal(pair[0], pair[1]) {
