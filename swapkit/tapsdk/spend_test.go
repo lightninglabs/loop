@@ -47,8 +47,7 @@ func TestScriptSpendRecovery(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			tx := scriptPackage(t)
-			tx.Final = nil
-			requests, err := tx.Package.SigningRequests()
+			requests, err := tx.SigningRequests()
 			require.NoError(t, err)
 			require.Len(t, requests.ScriptPath, 1)
 			request := requests.ScriptPath[0]
@@ -62,29 +61,25 @@ func TestScriptSpendRecovery(t *testing.T) {
 				wallet.failure = lost
 			}
 			r := &Driver{cfg: DriverConfig{Signer: wallet}}
-			err = r.signScriptSpend(t.Context(), nil, &tx,
+			signed, err := r.signScriptSpend(t.Context(), tx,
 				keychain.KeyLocator{}, nil)
 			if lostReply {
 				require.ErrorIs(t, err, lost)
-				require.Empty(t, tx.Final)
+				require.Nil(t, signed)
 				r = &Driver{cfg: DriverConfig{Signer: wallet}}
-				err = r.signScriptSpend(t.Context(), nil, &tx,
+				signed, err = r.signScriptSpend(t.Context(), tx,
 					keychain.KeyLocator{}, nil)
 			}
 			require.NoError(t, err)
-			final := tx.Final
+			final := signed.AnchorPsbt
 			require.NotEmpty(t, final)
-			stored, err := json.Marshal(tx)
+			stored, err := signed.MarshalBinary()
 			require.NoError(t, err)
-			tx = transaction{}
-			require.NoError(t, json.Unmarshal(stored, &tx))
-			require.Equal(t, final, tx.Final)
-			r = &Driver{cfg: DriverConfig{Signer: wallet}}
-			calls := wallet.calls
-			err = r.signScriptSpend(t.Context(), nil, &tx,
-				keychain.KeyLocator{}, nil)
+			restored, err := decodeFinalPackage(stored)
 			require.NoError(t, err)
-			require.Equal(t, calls, wallet.calls)
+			require.Equal(t, final, restored.AnchorPsbt)
+			require.Equal(t, signed.CommittedPackageDigest,
+				restored.CommittedPackageDigest)
 		})
 	}
 }
@@ -103,11 +98,11 @@ func TestRecoveryPlanIgnoresChangedFeeConfiguration(t *testing.T) {
 	driver, swap, _, _ := bindingOutcome(t, true)
 	var contract depositContract
 	require.NoError(t, json.Unmarshal(swap.Offer.Terms.Contract, &contract))
-	output := swap.Fallback.Package.Outputs[0]
+	output := swap.Fallback.Outputs[0]
 	output.OPTrueSpend = contract.Output.OPTrueSpend
 	policy, err := htlc(swap.Offer, contract)
 	require.NoError(t, err)
-	anchor := policy.AnchorPlan()
+	anchor := AnchorPlan(policy.AnchorPlan())
 	require.Len(t, anchor.Tapscript.TapLeaves, 2)
 	branch := txscript.NewTapBranch(
 		txscript.NewBaseTapLeaf(anchor.Tapscript.TapLeaves[0].Script),

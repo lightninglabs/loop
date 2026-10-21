@@ -5,6 +5,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
@@ -13,13 +16,39 @@ import (
 
 // scriptPackage loads the public SDK signing fixture. Only tests know the
 // deterministic private key; production always uses the normal LND signer.
-func scriptPackage(t *testing.T) transaction {
+func scriptPackage(t *testing.T) *sdk.CustomAnchorTransferPackage {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/script.package")
 	require.NoError(t, err)
 	var pkg sdk.CustomAnchorTransferPackage
 	require.NoError(t, pkg.UnmarshalBinary(raw))
-	return transaction{Package: &pkg}
+	// The fixture has two independent key-path inputs. Complete those
+	// before exercising the production script signer.
+	requests, err := pkg.SigningRequests()
+	require.NoError(t, err)
+	result := &pkg
+	for i, request := range requests.KeyPath {
+		key := bindingKey([]byte{2, 9}[i])
+		tweaked := txscript.TweakTaprootPrivKey(*key,
+			request.TaprootMerkleRoot)
+		signature, err := schnorr.Sign(tweaked, request.Sighash[:])
+		require.NoError(t, err)
+		result, err = result.ApplyKeyPathSignature(request.ID,
+			signature.Serialize())
+		require.NoError(t, err)
+	}
+	packet, err := decodePSBT(result.AnchorPsbt)
+	require.NoError(t, err)
+	for _, request := range requests.KeyPath {
+		complete, err := psbt.MaybeFinalize(packet, int(request.InputIndex))
+		require.NoError(t, err)
+		require.True(t, complete)
+	}
+	result.AnchorPsbt, err = encodePSBT(packet)
+	require.NoError(t, err)
+	result, err = result.Seal()
+	require.NoError(t, err)
+	return result
 }
 
 func TestOutcomeRelocationWithoutPeer(t *testing.T) {

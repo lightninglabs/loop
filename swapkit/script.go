@@ -2,13 +2,14 @@ package swapkit
 
 import (
 	"github.com/btcsuite/btcd/txscript"
-	"golang.org/x/crypto/ripemd160"
+	"golang.org/x/crypto/ripemd160" //nolint:staticcheck // Bitcoin OP_HASH160.
 )
 
 // HTLCSuccessScript serializes Loop's Bitcoin HTLC success leaf. The key is
 // x-only. This primitive accepts any payment hash, including the zero hash used
 // for fee estimation; funded contract validation belongs to the caller.
 func HTLCSuccessScript(receiver [32]byte, paymentHash Hash) ([]byte, error) {
+	// #nosec G406 -- Bitcoin OP_HASH160 requires RIPEMD160.
 	hash160 := ripemd160.New()
 	_, _ = hash160.Write(paymentHash[:])
 	return txscript.NewScriptBuilder().

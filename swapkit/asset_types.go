@@ -1,4 +1,4 @@
-// Asset protocol data shared by the normal client and server actions.
+// Package swapkit defines asset contracts shared by client and server actions.
 package swapkit
 
 import (
@@ -53,7 +53,8 @@ type Offer struct {
 //
 //nolint:tagliatelle // Preserve the existing recovery and wire format.
 type Registration struct {
-	Owner     [32]byte `json:"Owner"`
+	Owner [32]byte `json:"Owner"`
+	// #nosec G117 -- ClientKey is a public Bitcoin key.
 	ClientKey [33]byte `json:"ClientKey"`
 	ServerKey [33]byte `json:"ServerKey"`
 	CSV       uint32   `json:"CSV"`
@@ -167,6 +168,7 @@ type CreateDepositRequest struct {
 	RequestID [32]byte `json:"RequestID"`
 	GroupKey  [33]byte `json:"GroupKey"`
 	Amount    uint64   `json:"Amount"`
+	// #nosec G117 -- ClientKey is a public Bitcoin key.
 	ClientKey [33]byte `json:"ClientKey"`
 	ServerKey [33]byte `json:"ServerKey"`
 	CSV       uint32   `json:"CSV"`

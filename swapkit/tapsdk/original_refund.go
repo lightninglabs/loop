@@ -2,7 +2,6 @@ package tapsdk
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 
 	"github.com/lightninglabs/loop/swapkit"
@@ -11,13 +10,10 @@ import (
 // originalRefundPolicy is also usable by a server that exposed its partial
 // signature but never received the client's fully signed fallback package.
 func originalRefundPolicy(d *depositRecord) (depositContract,
-	*SwapAnchorSpendInfo, error) {
+	*swapkit.SwapAnchorSpendInfo, error) {
 
-	var c depositContract
-	if err := json.Unmarshal(d.Deposit.Contract, &c); err != nil {
-		return c, nil, err
-	}
-	policy, err := NewDepositKit(DepositKitParams{
+	c := d.Contract
+	policy, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
 		ClientKey: c.ClientKey, ServerKey: c.ServerKey,
 		CSVExpiry: c.CSV,
 	})
@@ -39,14 +35,8 @@ func (r *Driver) verifyOriginalRefund(ctx context.Context, s *swapContext,
 func (r *Driver) verifyOriginalRefundPolicy(ctx context.Context,
 	s *swapContext, raw []byte, requireUnspent bool) error {
 
-	d, err := r.offerDeposit(ctx, s.Offer, false)
-	if err != nil {
-		return err
-	}
-	base, err := lastProof(d.Deposit.Proof)
-	if err != nil {
-		return err
-	}
+	d := s.Deposit
+	base := d.Proof
 	c, spend, err := originalRefundPolicy(d)
 	if err != nil {
 		return err
@@ -62,14 +52,8 @@ func (r *Driver) verifyOriginalRefundPolicy(ctx context.Context,
 func (r *Driver) discoverOriginalRefund(ctx context.Context,
 	s *swapContext) ([]byte, error) {
 
-	d, err := r.offerDeposit(ctx, s.Offer, false)
-	if err != nil {
-		return nil, err
-	}
-	base, err := lastProof(d.Deposit.Proof)
-	if err != nil {
-		return nil, err
-	}
+	d := s.Deposit
+	base := d.Proof
 	c, spend, err := originalRefundPolicy(d)
 	if err != nil {
 		return nil, err
@@ -95,9 +79,6 @@ func (r *Driver) discoverOriginalRefund(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if err := r.verifyOriginalRefundPolicy(ctx, s, raw, false); err != nil {
-		return nil, err
-	}
 	return raw, nil
 }
 
@@ -107,8 +88,14 @@ func (r *Driver) discoverOriginalRefund(ctx context.Context,
 func (r *Driver) verifyRefundOutcome(ctx context.Context, s *swapContext,
 	raw []byte) error {
 
-	if err := r.verifyOutcomePolicy(ctx, s, raw, true, false); err == nil {
-		return nil
+	p, err := lastProof(raw)
+	if err != nil {
+		return err
 	}
-	return r.verifyOriginalRefundPolicy(ctx, s, raw, false)
+	if len(p.AnchorTx.TxIn) == 1 && p.AnchorTx.TxIn[0].PreviousOutPoint ==
+		s.Deposit.Proof.OutPoint() {
+
+		return r.verifyOriginalRefundPolicy(ctx, s, raw, false)
+	}
+	return r.verifyOutcomePolicy(ctx, s, raw, true, false)
 }

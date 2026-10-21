@@ -3,7 +3,6 @@ package tapsdk
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -16,32 +15,19 @@ import (
 func (r *Driver) ValidateExecution(ctx context.Context,
 	op swapkit.Operation) error {
 
-	d, err := r.offerDeposit(ctx, op.Offer, false)
-	if err != nil {
-		return err
-	}
-	p, err := lastProof(d.Deposit.Proof)
-	if err != nil {
-		return err
+	if len(op.Claim.Data) == 0 {
+		return swapkit.ErrInvalid
 	}
 	s, err := r.swap(ctx, op)
 	if err != nil {
 		return err
 	}
-	var claimed transaction
-	if swapkit.Decode(op.Claim.Data, &claimed) != nil ||
-		!equal(claimed, s.Fallback) {
-
-		return swapkit.ErrInvalid
-	}
-	if err := validateFinalTx(s.Fallback); err != nil {
-		return err
-	}
+	p := s.Deposit.Proof
 	available, err := r.cfg.Chain.Unspent(ctx, p.OutPoint())
 	if err != nil || available {
 		return err
 	}
-	point := sdkPoint(s.Fallback.Package.Outputs[0].AnchorOutpoint)
+	point := sdkPoint(s.Fallback.Outputs[0].AnchorOutpoint)
 	available, err = r.cfg.Chain.Unspent(ctx, point)
 	if err != nil {
 		return err
@@ -103,10 +89,7 @@ func (r *Driver) RecoverClaim(ctx context.Context,
 	if err != nil {
 		return swapkit.Resolution{}, err
 	}
-	var claimed transaction
-	if swapkit.Decode(op.Claim.Data, &claimed) != nil ||
-		!equal(claimed, s.Fallback) {
-
+	if len(op.Claim.Data) == 0 {
 		return swapkit.Resolution{}, swapkit.ErrInvalid
 	}
 	raw, err := r.recoverSpend(ctx, s, false, op.Preimage)
@@ -120,10 +103,7 @@ func (r *Driver) RecoverRefund(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	var fallback transaction
-	if swapkit.Decode(op.Fallback.Bundle, &fallback) != nil ||
-		!equal(fallback, s.Fallback) {
-
+	if len(op.Fallback.Bundle) == 0 {
 		return nil, swapkit.ErrInvalid
 	}
 	height, err := r.cfg.Chain.Height(ctx)
@@ -139,18 +119,8 @@ func (r *Driver) RecoverRefund(ctx context.Context,
 func (r *Driver) recoverSpend(ctx context.Context, s *swapContext,
 	refund bool, preimage [32]byte) ([]byte, error) {
 
-	d, err := r.offerDeposit(ctx, s.Offer, false)
-	if err != nil {
-		return nil, err
-	}
-	var c depositContract
-	if err := json.Unmarshal(d.Deposit.Contract, &c); err != nil {
-		return nil, err
-	}
-	if err := r.declareOPTrue(ctx, c.Output.ScriptKey,
-		c.Output.OPTrueSpend.WitnessStack()); err != nil {
-		return nil, err
-	}
+	d := s.Deposit
+	c := d.Contract
 	fallbackProof, err := r.fallbackProof(ctx, s, false)
 	if err != nil {
 		return nil, err
@@ -159,7 +129,7 @@ func (r *Driver) recoverSpend(ctx context.Context, s *swapContext,
 	if err != nil {
 		return nil, err
 	}
-	out := s.Fallback.Package.Outputs[0]
+	out := s.Fallback.Outputs[0]
 	public := c.ServerKey
 	spend, err := policy.SuccessSpend(out.TaprootAssetRoot)
 	if refund {
@@ -185,14 +155,15 @@ func (r *Driver) recoverSpend(ctx context.Context, s *swapContext,
 	if !refund {
 		unlock = &preimage
 	}
-	var tx transaction
-	err = r.signScriptSpend(
-		ctx, plan, &tx, key, unlock,
-	)
+	pkg, err := r.commit(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := r.publish(ctx, tx)
+	pkg, err = r.signScriptSpend(ctx, pkg, key, unlock)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := r.publish(ctx, pkg)
 	if err != nil {
 		return nil, err
 	}
@@ -254,27 +225,21 @@ func (r *Driver) InspectRefund(ctx context.Context,
 func (r *Driver) discoverOutcome(ctx context.Context, s *swapContext,
 	refund bool) ([]byte, error) {
 
-	if s.Fallback.Package == nil {
+	if s.Fallback == nil {
 		return nil, swapkit.ErrPending
 	}
-	d, err := r.offerDeposit(ctx, s.Offer, false)
-	if err != nil {
-		return nil, err
-	}
-	var c depositContract
-	if err := json.Unmarshal(d.Deposit.Contract, &c); err != nil {
-		return nil, err
-	}
-	out := s.Fallback.Package.Outputs[0]
+	d := s.Deposit
+	c := d.Contract
+	out := s.Fallback.Outputs[0]
 	point := sdkPoint(out.AnchorOutpoint)
 	// The server may only have its public partial after a lost reply.
 	// The committed unsigned anchor still fixes the output to watch.
-	anchor, err := decodePSBT(s.Fallback.Package.AnchorPsbt)
+	anchor, err := decodePSBT(s.Fallback.AnchorPsbt)
 	if err != nil {
 		return nil, err
 	}
 	block, _, err := r.cfg.Chain.Spend(ctx, point,
-		anchor.UnsignedTx.TxOut[point.Index].PkScript, s.Since)
+		anchor.UnsignedTx.TxOut[point.Index].PkScript, s.Deposit.Proof.BlockHeight)
 	if err != nil {
 		return nil, err
 	}
@@ -307,10 +272,6 @@ func (r *Driver) discoverOutcome(ctx context.Context, s *swapContext,
 	if err != nil {
 		return nil, err
 	}
-	err = r.verifyOutcomePolicy(ctx, s, raw, refund, false)
-	if err != nil {
-		return nil, err
-	}
 	return raw, nil
 }
 
@@ -326,18 +287,12 @@ func (r *Driver) verifyOutcome(ctx context.Context, s *swapContext,
 func (r *Driver) verifyOutcomePolicy(ctx context.Context, s *swapContext,
 	raw []byte, refund, requireUnspent bool) error {
 
-	d, err := r.offerDeposit(ctx, s.Offer, false)
-	if err != nil {
-		return err
-	}
-	var c depositContract
-	if err := json.Unmarshal(d.Deposit.Contract, &c); err != nil {
-		return err
-	}
-	if s.Fallback.Package == nil {
+	d := s.Deposit
+	c := d.Contract
+	if s.Fallback == nil {
 		return swapkit.ErrPending
 	}
-	prior := s.Fallback.Package.Outputs[0]
+	prior := s.Fallback.Outputs[0]
 	if prior.AssetRef != sdk.AssetRefFromGroupKey(s.Offer.Terms.GroupKey) ||
 		prior.Amount != s.Offer.Terms.DepositAmount {
 
@@ -370,20 +325,16 @@ func (r *Driver) LookupPreimage(ctx context.Context,
 	if err != nil {
 		return swapkit.PreimageResult{}, err
 	}
-	if s.Fallback.Package == nil {
+	if s.Fallback == nil {
 		return swapkit.PreimageResult{}, nil
 	}
-	_, err = r.offerDeposit(ctx, op.Offer, false)
-	if err != nil {
-		return swapkit.PreimageResult{}, err
-	}
-	point := sdkPoint(s.Fallback.Package.Outputs[0].AnchorOutpoint)
-	anchor, err := decodePSBT(s.Fallback.Package.AnchorPsbt)
+	point := sdkPoint(s.Fallback.Outputs[0].AnchorOutpoint)
+	anchor, err := decodePSBT(s.Fallback.AnchorPsbt)
 	if err != nil {
 		return swapkit.PreimageResult{}, err
 	}
 	block, _, err := r.cfg.Chain.Spend(ctx, point,
-		anchor.UnsignedTx.TxOut[point.Index].PkScript, s.Since)
+		anchor.UnsignedTx.TxOut[point.Index].PkScript, s.Deposit.Proof.BlockHeight)
 	if err == swapkit.ErrPending {
 		return swapkit.PreimageResult{}, nil
 	}
@@ -413,13 +364,10 @@ func (r *Driver) LookupPreimage(ctx context.Context,
 func (r *Driver) fallbackProof(ctx context.Context,
 	s *swapContext, observed bool) ([]byte, error) {
 
-	if s.Fallback.Package == nil {
+	if s.Fallback == nil {
 		return nil, swapkit.ErrPending
 	}
-	var contract depositContract
-	if err := json.Unmarshal(s.Offer.Terms.Contract, &contract); err != nil {
-		return nil, err
-	}
+	contract := s.Deposit.Contract
 	if contract.Output.OPTrueSpend == nil {
 		return nil, swapkit.ErrInvalid
 	}
@@ -427,52 +375,63 @@ func (r *Driver) fallbackProof(ctx context.Context,
 		contract.Output.OPTrueSpend.WitnessStack()); err != nil {
 		return nil, err
 	}
-	if len(s.Fallback.Final) > 0 {
-		return r.logAndExport(ctx, s.Fallback, observed)
-	}
-	pkg := s.Fallback.Package
+	pkg := s.Fallback
 	packet, err := decodePSBT(pkg.AnchorPsbt)
 	if err != nil {
 		return nil, err
 	}
-	if len(packet.UnsignedTx.TxIn) != 1 || len(packet.Inputs) != 1 ||
-		packet.Inputs[0].WitnessUtxo == nil {
+	if !packet.IsComplete() {
+		observed = true
+		if len(packet.UnsignedTx.TxIn) != 1 || len(packet.Inputs) != 1 ||
+			packet.Inputs[0].WitnessUtxo == nil {
 
-		return nil, swapkit.ErrInvalid
-	}
-	point := packet.UnsignedTx.TxIn[0].PreviousOutPoint
-	block, _, err := r.cfg.Chain.Spend(
-		ctx, point, packet.Inputs[0].WitnessUtxo.PkScript, s.Since,
-	)
-	if err != nil {
-		return nil, err
-	}
-	tx := spendingTransaction(block, point)
-	if tx == nil || tx.TxHash() != packet.UnsignedTx.TxHash() ||
-		len(tx.TxIn[0].Witness) != 1 {
+			return nil, swapkit.ErrInvalid
+		}
+		point := packet.UnsignedTx.TxIn[0].PreviousOutPoint
+		block, _, err := r.cfg.Chain.Spend(
+			ctx, point, packet.Inputs[0].WitnessUtxo.PkScript,
+			s.Deposit.Proof.BlockHeight,
+		)
+		if err != nil {
+			return nil, err
+		}
+		tx := spendingTransaction(block, point)
+		if tx == nil || tx.TxHash() != packet.UnsignedTx.TxHash() ||
+			len(tx.TxIn[0].Witness) != 1 {
 
-		return nil, swapkit.ErrPending
+			return nil, swapkit.ErrPending
+		}
+		requests, err := pkg.SigningRequests()
+		if err != nil || len(requests.MuSig2) != 1 {
+			return nil, swapkit.ErrInvalid
+		}
+		signed, err := pkg.ApplyKeyPathSignature(
+			requests.MuSig2[0].ID, tx.TxIn[0].Witness[0],
+		)
+		if err != nil {
+			return nil, err
+		}
+		packet, err = decodePSBT(signed.AnchorPsbt)
+		if err != nil {
+			return nil, err
+		}
+		if err := psbt.MaybeFinalizeAll(packet); err != nil {
+			return nil, err
+		}
+		final, err := encodePSBT(packet)
+		if err != nil {
+			return nil, err
+		}
+		s.Fallback, err = pkg.WithFinalAnchorPSBT(final)
+		if err != nil {
+			return nil, err
+		}
 	}
-	requests, err := pkg.SigningRequests()
-	if err != nil || len(requests.MuSig2) != 1 {
-		return nil, swapkit.ErrInvalid
-	}
-	signed, err := pkg.ApplyKeyPathSignature(
-		requests.MuSig2[0].ID, tx.TxIn[0].Witness[0],
-	)
+	raw, err := r.logAndExport(ctx, s.Fallback, observed)
 	if err != nil {
 		return nil, err
 	}
-	packet, err = decodePSBT(signed.AnchorPsbt)
-	if err != nil {
-		return nil, err
-	}
-	if err := psbt.MaybeFinalizeAll(packet); err != nil {
-		return nil, err
-	}
-	s.Fallback.Final, err = encodePSBT(packet)
-	if err != nil {
-		return nil, err
-	}
-	return r.logAndExport(ctx, s.Fallback, true)
+	_, err = r.verifyProof(ctx, raw, s.Offer.Terms.GroupKey,
+		s.Offer.Terms.DepositAmount, false)
+	return raw, err
 }

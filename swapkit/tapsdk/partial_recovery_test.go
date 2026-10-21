@@ -70,7 +70,7 @@ func TestPartialFallbackRecoveryDiscovery(t *testing.T) {
 			raw, err := encodePSBT(packet)
 			require.NoError(t, err)
 			if original {
-				swap.Fallback.Package =
+				swap.Fallback =
 					&sdk.CustomAnchorTransferPackage{
 						Outputs: []sdk.CustomAnchorAssetOutputSummary{{
 							AnchorOutpoint: sdk.Outpoint{
@@ -79,9 +79,8 @@ func TestPartialFallbackRecoveryDiscovery(t *testing.T) {
 						}},
 					}
 			}
-			swap.Fallback.Package.AnchorPsbt = raw
-			swap.Fallback.Final = nil
-			prior := &swap.Fallback.Package.Outputs[0]
+			swap.Fallback.AnchorPsbt = raw
+			prior := &swap.Fallback.Outputs[0]
 			prior.AnchorOutpoint.Txid = sdk.Hash(anchor.TxHash())
 			htlcPoint := sdkPoint(prior.AnchorOutpoint)
 			if !original {
@@ -188,15 +187,13 @@ func TestObservedSignedFallbackDoesNotRebroadcast(t *testing.T) {
 	signed, err := clientRound.Finalize(t.Context(), serverRound.Nonce(),
 		partial)
 	require.NoError(t, err)
-	fallback := transaction{Package: pkg,
-		Final: finishSigningFixture(t, signed)}
-	require.NotEmpty(t, fallback.Final)
-	require.NoError(t, validateFinalTx(fallback))
+	fallback, err := pkg.WithFinalAnchorPSBT(finishSigningFixture(t, signed))
+	require.NoError(t, err)
 	swap.Fallback = fallback
 
 	// Reuse the existing package's fully signed anchor. The chain stub
 	// reports the agreed timeout leaf spending that anchor's asset output.
-	prior := fallback.Package.Outputs[0]
+	prior := fallback.Outputs[0]
 	var contract depositContract
 	require.NoError(t, json.Unmarshal(swap.Offer.Terms.Contract, &contract))
 	policy, err := htlc(swap.Offer, contract)
@@ -216,7 +213,7 @@ func TestObservedSignedFallbackDoesNotRebroadcast(t *testing.T) {
 		},
 	}
 
-	inputRaw := fallback.Package.Inputs[0].ProofSource.Blob
+	inputRaw := fallback.Inputs[0].ProofSource.Blob
 	inputProof, err := lastProof(inputRaw)
 	require.NoError(t, err)
 	client := &observedRecoverySDK{
@@ -235,5 +232,5 @@ func TestObservedSignedFallbackDoesNotRebroadcast(t *testing.T) {
 	require.NotNil(t, client.logged)
 	require.True(t, client.logged.SkipAnchorTxBroadcast)
 	// Logging flags belong to this observation, not the persisted package.
-	require.False(t, fallback.Package.Publish.SkipAnchorTxBroadcast)
+	require.False(t, fallback.Publish.SkipAnchorTxBroadcast)
 }

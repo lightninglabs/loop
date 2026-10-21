@@ -21,7 +21,8 @@ need a persistence redesign to support this protocol.
 | Server secret, payment plan, claim authority and execution decision | Ordinary server `StaticAddressLoopIn` and its optional asset data |
 | Bitcoin keys and ephemeral signing sessions | Existing LND wallet and signer services |
 | Transfer publication, proof archive and proof reconstruction | Tapd through the SDK |
-| OP_TRUE asset outputs and Bitcoin deposit/HTLC policy | Loop-owned `swapkit` and `swapkit/tapsdk` |
+| Bitcoin deposit/HTLC policy | Loop-owned `swapkit` contracts |
+| OP_TRUE asset commitments and transfer packages | SDK custom-anchor builder |
 
 Native asset quantities remain separate from Bitcoin anchor satoshis. A client
 swap initially has an unknown preimage, represented by SQL NULL. It never
@@ -31,6 +32,17 @@ known-preimage uniqueness on SQLite and PostgreSQL.
 The SDK adapter receives the current swap's data directly from its FSM. It does
 not reload a journal or save intermediate funding plans. Deposit build methods
 return a complete signed package; the deposit FSM saves it before publication.
+Unsigned and finalized transfers use the SDK's
+`CustomAnchorTransferPackage` binary format directly, including its finalized
+anchor PSBT. Finalization binds the proposed package to the approved committed
+digest and verifies the complete witness. There is no second transaction or
+recovery envelope.
+
+Each public transaction operation validates its deposit, negotiated contract
+and proof once, then passes that result to its internal helpers. Chain checks
+remain before and after external proof verification. A later operation or
+restart validates again; no validation result is cached across operations.
+
 Request IDs locate ordinary records when a caller repeats a completed request.
 They do not create another request lifecycle.
 
@@ -73,6 +85,11 @@ Before commitment, interrupted initialization may abort and unlock through the
 ordinary error path. The flow does not promise transparent retries of every
 funding, offer or signing RPC. Incomplete MuSig2 sessions remain ephemeral;
 there is no private signer database or persisted secret nonce.
+
+The experimental schema and transaction encoding are not released formats.
+This revision replaces earlier draft JSON envelopes; databases containing those
+old draft packages must be recreated. Restart recovery is tested for packages
+written by this revision, not upgrades from earlier PR drafts.
 
 ## Validation and remaining work
 

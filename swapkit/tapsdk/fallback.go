@@ -4,17 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 )
-
-//nolint:tagliatelle // Preserve existing serialized preparation field names.
-type recoveryRequest struct {
-	Version uint32                           `json:"Version"`
-	Package *sdk.CustomAnchorTransferPackage `json:"Package"`
-}
 
 //nolint:tagliatelle // Preserve existing serialized round field names.
 type serverFallback struct {
@@ -28,39 +23,44 @@ type serverFallback struct {
 // The unsigned package and completed fallback have exactly one durable owner.
 type swapContext struct {
 	Offer    swapkit.Offer
-	Since    uint32
-	Fallback transaction
+	Deposit  *depositRecord
+	Fallback *sdk.CustomAnchorTransferPackage
 }
 
 func (r *Driver) swap(ctx context.Context,
 	op swapkit.Operation) (*swapContext, error) {
 
-	d, err := r.offerDeposit(ctx, op.Offer, false)
+	s, err := r.preparedSwap(ctx, op.Offer,
+		op.Preparation.RecoveryRequest, false)
 	if err != nil {
 		return nil, err
 	}
-	s := &swapContext{Offer: op.Offer, Since: d.Since}
-	if len(op.Preparation.RecoveryRequest) == 0 {
-		return s, nil
-	}
-	req, err := r.validateRecoveryPackage(
-		ctx, op.Offer, op.Preparation.RecoveryRequest, false,
-	)
-	if err != nil {
-		return nil, err
-	}
-	s.Fallback.Package = req.Package
 	raw := op.Fallback.Bundle
 	if len(op.Claim.Data) > 0 {
 		raw = op.Claim.Data
 	}
 	if len(raw) > 0 {
-		var tx transaction
-		if swapkit.Decode(raw, &tx) != nil || !equal(tx.Package, req.Package) {
-			return nil, swapkit.ErrInvalid
+		s.Fallback, err = bindFinalPackage(s.Fallback, raw)
+		if err != nil {
+			return nil, err
 		}
-		s.Fallback = tx
-		if err := validateFinalTx(tx); err != nil {
+	}
+	return s, nil
+}
+
+// preparedSwap verifies the admitted deposit once for this operation. All
+// lower helpers use this context; no validation survives the operation.
+func (r *Driver) preparedSwap(ctx context.Context, offer swapkit.Offer,
+	raw []byte, unspent bool) (*swapContext, error) {
+
+	d, err := r.offerDeposit(ctx, offer, unspent)
+	if err != nil {
+		return nil, err
+	}
+	s := &swapContext{Offer: offer, Deposit: d}
+	if len(raw) > 0 {
+		s.Fallback, err = validateRecoveryPackage(offer, d, raw)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -78,10 +78,11 @@ func (r *Driver) localDeposit(ctx context.Context, point string) (
 	if err := swapkit.Decode(d.Contract, &c); err != nil {
 		return nil, err
 	}
-	return &depositRecord{Deposit: d, Request: swapkit.CreateDepositRequest{
-		ClientKey: c.ClientKey, ServerKey: c.ServerKey, CSV: c.CSV,
-		KeyFamily: int32(key.Family), KeyIndex: key.Index,
-	}}, nil
+	return &depositRecord{Deposit: d, Contract: c,
+		Request: swapkit.CreateDepositRequest{
+			ClientKey: c.ClientKey, ServerKey: c.ServerKey, CSV: c.CSV,
+			KeyFamily: int32(key.Family), KeyIndex: key.Index,
+		}}, nil
 }
 
 func (r *Driver) offerDeposit(ctx context.Context,
@@ -125,7 +126,7 @@ func (r *Driver) offerDeposit(ctx context.Context,
 		d := a.Deposits[0]
 		d.Contract = t.Contract
 		d.Amount, d.GroupKey = t.DepositAmount, t.GroupKey
-		record = &depositRecord{Deposit: d,
+		record = &depositRecord{Deposit: d, Contract: c,
 			Request: swapkit.CreateDepositRequest{
 				ClientKey: c.ClientKey, ServerKey: c.ServerKey,
 				CSV: c.CSV, KeyFamily: a.Registration.KeyFamily,
@@ -144,7 +145,9 @@ func (r *Driver) offerDeposit(ctx context.Context,
 			return nil, swapkit.ErrInvalid
 		}
 	}
-	p, err := r.verifyDeposit(ctx, record.Deposit, unspent)
+	p, err := r.verifyDepositContract(
+		ctx, record.Deposit, record.Contract, unspent,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -153,13 +156,13 @@ func (r *Driver) offerDeposit(ctx context.Context,
 
 		return nil, swapkit.ErrInvalid
 	}
-	record.Since = p.BlockHeight
+	record.Proof = p
 	return record, nil
 }
 
-func htlc(offer swapkit.Offer, c depositContract) (*SwapKit, error) {
-	return NewSwapKit(SwapKitParams{
-		Policy:    SwapHTLCStaticLoopInV3,
+func htlc(offer swapkit.Offer, c depositContract) (*swapkit.SwapKit, error) {
+	return swapkit.NewSwapKit(swapkit.SwapKitParams{
+		Policy:    swapkit.SwapHTLCStaticLoopInV3,
 		SenderKey: c.ClientKey, ReceiverKey: c.ServerKey,
 		SenderInternalKey:   c.ClientKey,
 		ReceiverInternalKey: c.ServerKey,
@@ -177,10 +180,7 @@ func (r *Driver) PrepareRecovery(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	var c depositContract
-	if err := json.Unmarshal(d.Deposit.Contract, &c); err != nil {
-		return nil, err
-	}
+	c := d.Contract
 	policy, err := htlc(offer, c)
 	if err != nil {
 		return nil, err
@@ -189,22 +189,13 @@ func (r *Driver) PrepareRecovery(ctx context.Context,
 	if value < 330+int64(r.cfg.MaxFeeSat) {
 		return nil, swapkit.ErrInvalid
 	}
-	output, err := policy.Output(SwapOutputParams{
+	output := OPTrueOutput(sdk.CustomAssetOutput{
 		ID: "htlc", AssetRef: c.Output.AssetRef,
 		Amount: c.Output.Amount, AnchorValueSat: uint64(value),
-		AssetInternalKey: sdk.KeyDescriptor{RawKeyBytes: c.ClientKey,
-			KeyLocator: sdk.KeyLocator{
-				Family: uint32(d.Request.KeyFamily),
-				Index:  d.Request.KeyIndex,
-			}},
-	})
-	if err != nil {
-		return nil, err
-	}
-	p, err := lastProof(d.Deposit.Proof)
-	if err != nil {
-		return nil, err
-	}
+	}, sdk.KeyDescriptor{RawKeyBytes: c.ClientKey,
+		KeyLocator: sdk.KeyLocator{Family: uint32(d.Request.KeyFamily),
+			Index: d.Request.KeyIndex}}, policy.AnchorPlan())
+	p := d.Proof
 	anchor, err := anchorTemplate(p, output.Anchor.InternalKey, value, nil)
 	if err != nil {
 		return nil, err
@@ -213,13 +204,13 @@ func (r *Driver) PrepareRecovery(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	dk, err := NewDepositKit(DepositKitParams{
+	dk, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
 		ClientKey: c.ClientKey, ServerKey: c.ServerKey, CSVExpiry: c.CSV,
 	})
 	if err != nil {
 		return nil, err
 	}
-	internal := dk.AnchorPlan().InternalKey.PubKey
+	internal := dk.AnchorPlan().InternalKey
 	packet.Inputs[0].TaprootInternalKey = internal[1:]
 	packet.Inputs[0].TaprootMerkleRoot = c.Output.TaprootMerkleRoot[:]
 	anchor, err = encodePSBT(packet)
@@ -227,12 +218,14 @@ func (r *Driver) PrepareRecovery(ctx context.Context,
 		return nil, err
 	}
 	plan := customRequest(assetInput(c.Output, d.Deposit.Proof),
-		output, anchor, dk.CooperativeSigningPlan(0, offer.Hash[:]))
+		output, anchor, CooperativeSigningPlan(
+			dk.CooperativeParticipants(), 0, offer.Hash[:],
+		))
 	pkg, err := r.commit(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(recoveryRequest{Version: 1, Package: pkg})
+	return pkg.MarshalBinary()
 }
 
 func assetInput(out sdk.CustomAnchorAssetOutputSummary,
@@ -248,27 +241,11 @@ func assetInput(out sdk.CustomAnchorAssetOutputSummary,
 	}
 }
 
-func (r *Driver) validateRecovery(ctx context.Context, offer swapkit.Offer,
-	raw []byte) (*recoveryRequest, error) {
+func validateRecoveryPackage(offer swapkit.Offer, d *depositRecord,
+	raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
 
-	return r.validateRecoveryPackage(ctx, offer, raw, true)
-}
-
-func (r *Driver) validateRecoveryPackage(ctx context.Context,
-	offer swapkit.Offer, raw []byte, unspent bool) (*recoveryRequest, error) {
-
-	d, err := r.offerDeposit(ctx, offer, unspent)
+	pkg, err := decodePackage(raw)
 	if err != nil {
-		return nil, err
-	}
-	var request recoveryRequest
-	if swapkit.Decode(raw, &request) != nil || request.Version != 1 ||
-		request.Package == nil {
-
-		return nil, swapkit.ErrInvalid
-	}
-	pkg := request.Package
-	if err := pkg.Validate(); err != nil {
 		return nil, err
 	}
 	requests, err := pkg.SigningRequests()
@@ -284,10 +261,7 @@ func (r *Driver) validateRecoveryPackage(ctx context.Context,
 
 		return nil, swapkit.ErrInvalid
 	}
-	var c depositContract
-	if err := json.Unmarshal(d.Deposit.Contract, &c); err != nil {
-		return nil, err
-	}
+	c := d.Contract
 	in, out := pkg.Inputs[0], pkg.Outputs[0]
 	if !bytes.Equal(in.ProofSource.Blob, d.Deposit.Proof) ||
 		in.AnchorOutpoint != c.Output.AnchorOutpoint ||
@@ -324,40 +298,39 @@ func (r *Driver) validateRecoveryPackage(ctx context.Context,
 
 		return nil, swapkit.ErrInvalid
 	}
-	dk, err := NewDepositKit(DepositKitParams{
+	dk, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
 		ClientKey: c.ClientKey, ServerKey: c.ServerKey,
 		CSVExpiry: c.CSV,
 	})
 	if err != nil {
 		return nil, err
 	}
-	signing := dk.CooperativeSigningPlan(0, offer.Hash[:])
-	if !equal(pkg.SigningPlans[0], signing) {
+	signing := CooperativeSigningPlan(
+		dk.CooperativeParticipants(), 0, offer.Hash[:],
+	)
+	if !reflect.DeepEqual(pkg.SigningPlans[0], signing) {
 		return nil, swapkit.ErrInvalid
 	}
 	if err := out.OPTrueSpend.Validate(out.ScriptKey); err != nil {
 		return nil, err
 	}
-	return &request, nil
+	return pkg, nil
 }
 
 func (r *Driver) BuildFallback(ctx context.Context,
 	op swapkit.Operation) (swapkit.Bundle, error) {
 
-	req, err := r.validateRecovery(ctx, op.Offer,
-		op.Preparation.RecoveryRequest)
+	s, err := r.preparedSwap(ctx, op.Offer,
+		op.Preparation.RecoveryRequest, true)
 	if err != nil {
 		return swapkit.Bundle{}, err
 	}
-	if op.Nonce == ([66]byte{}) {
+	if s.Fallback == nil || op.Nonce == ([66]byte{}) {
 		return swapkit.Bundle{}, swapkit.ErrInvalid
 	}
-	d, err := r.offerDeposit(ctx, op.Offer, true)
-	if err != nil {
-		return swapkit.Bundle{}, err
-	}
+	d := s.Deposit
 	round, err := NewSigningRound(ctx, r.cfg.Signer,
-		locator(d.Request.KeyFamily, d.Request.KeyIndex), req.Package)
+		locator(d.Request.KeyFamily, d.Request.KeyIndex), s.Fallback)
 	if err != nil {
 		return swapkit.Bundle{}, err
 	}
@@ -367,7 +340,7 @@ func (r *Driver) BuildFallback(ctx context.Context,
 		return swapkit.Bundle{}, err
 	}
 	raw, err := json.Marshal(serverFallback{
-		PackageDigest: req.Package.CommittedPackageDigest,
+		PackageDigest: s.Fallback.CommittedPackageDigest,
 		ClientNonce:   op.Nonce, ServerNonce: round.Nonce(),
 		Partial: partial,
 	})
@@ -379,16 +352,16 @@ func (r *Driver) BuildFallback(ctx context.Context,
 func (r *Driver) BeginFallback(ctx context.Context, offer swapkit.Offer,
 	raw []byte) (*swapkit.FallbackRound, error) {
 
-	req, err := r.validateRecovery(ctx, offer, raw)
+	s, err := r.preparedSwap(ctx, offer, raw, true)
 	if err != nil {
 		return nil, err
 	}
-	d, err := r.offerDeposit(ctx, offer, true)
-	if err != nil {
-		return nil, err
+	if s.Fallback == nil {
+		return nil, swapkit.ErrInvalid
 	}
+	d := s.Deposit
 	round, err := NewSigningRound(ctx, r.cfg.Signer,
-		locator(d.Request.KeyFamily, d.Request.KeyIndex), req.Package)
+		locator(d.Request.KeyFamily, d.Request.KeyIndex), s.Fallback)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +373,7 @@ func (r *Driver) BeginFallback(ctx context.Context, offer swapkit.Offer,
 			var b serverFallback
 			if swapkit.Decode(raw, &b) != nil ||
 				b.ClientNonce != round.Nonce() ||
-				b.PackageDigest != req.Package.CommittedPackageDigest {
+				b.PackageDigest != s.Fallback.CommittedPackageDigest {
 
 				return swapkit.Fallback{}, swapkit.ErrInvalid
 			}
@@ -419,12 +392,11 @@ func (r *Driver) BeginFallback(ctx context.Context, offer swapkit.Offer,
 			if err != nil {
 				return swapkit.Fallback{}, err
 			}
-			if err := req.Package.VerifyFinalAnchorPSBT(final); err != nil {
+			completed, err := s.Fallback.WithFinalAnchorPSBT(final)
+			if err != nil {
 				return swapkit.Fallback{}, err
 			}
-			result, err := json.Marshal(transaction{
-				Package: req.Package, Final: final,
-			})
+			result, err := completed.MarshalBinary()
 			return swapkit.Fallback{
 				Bundle: result, ClaimSignatures: result,
 			}, err
@@ -435,25 +407,17 @@ func (r *Driver) BeginFallback(ctx context.Context, offer swapkit.Offer,
 func (r *Driver) VerifyClaim(ctx context.Context,
 	op swapkit.Operation) (swapkit.Claim, error) {
 
-	var request recoveryRequest
-	if swapkit.Decode(op.Preparation.RecoveryRequest, &request) != nil ||
-		request.Version != 1 || request.Package == nil {
-
-		return swapkit.Claim{}, swapkit.ErrInvalid
-	}
-	var proposed transaction
-	if swapkit.Decode(op.Signatures, &proposed) != nil ||
-		proposed.Package == nil ||
-		!equal(proposed.Package, request.Package) {
-
-		return swapkit.Claim{}, swapkit.ErrInvalid
-	}
-	// Any valid final for the fixed transaction is accepted, including a
-	// delayed result from a previous round. Never bind claim authority to
-	// the most recently cached nonce or partial response.
-	if err := validateFinalTx(proposed); err != nil {
+	s, err := r.preparedSwap(ctx, op.Offer,
+		op.Preparation.RecoveryRequest, false)
+	if err != nil {
 		return swapkit.Claim{}, err
 	}
-	raw, err := json.Marshal(proposed)
+	// A delayed final from an earlier nonce round is still valid for the
+	// same committed package. The SDK verifies its complete witness.
+	completed, err := bindFinalPackage(s.Fallback, op.Signatures)
+	if err != nil {
+		return swapkit.Claim{}, err
+	}
+	raw, err := completed.MarshalBinary()
 	return swapkit.Claim{Data: raw}, err
 }

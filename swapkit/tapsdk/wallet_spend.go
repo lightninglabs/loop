@@ -16,7 +16,7 @@ import (
 // is needed, so this also recovers a proof from a permanently offline peer.
 func (r *Driver) rebuildObservedSpend(ctx context.Context,
 	prior sdk.CustomAnchorAssetOutputSummary, inputProof []byte,
-	public [33]byte, spend *SwapAnchorSpendInfo, observed *wire.MsgTx) (
+	public [33]byte, spend *swapkit.SwapAnchorSpendInfo, observed *wire.MsgTx) (
 	[]byte, error) {
 
 	if len(observed.TxIn) != 1 || len(observed.TxOut) != 1 ||
@@ -40,7 +40,7 @@ func (r *Driver) rebuildObservedSpend(ctx context.Context,
 		return nil, err
 	}
 	pkg, err := r.commit(ctx, customRequest(assetInput(prior, inputProof),
-		recipient, anchor, spend.SigningPlan(0)))
+		recipient, anchor, ScriptSigningPlan(spend, 0)))
 	if err != nil {
 		return nil, err
 	}
@@ -61,15 +61,11 @@ func (r *Driver) rebuildObservedSpend(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if prior.OPTrueSpend == nil {
-		return nil, swapkit.ErrInvalid
-	}
-	if err := r.declareOPTrue(ctx, prior.ScriptKey,
-		prior.OPTrueSpend.WitnessStack()); err != nil {
+	final, err = pkg.WithFinalAnchorPSBT(final.AnchorPsbt)
+	if err != nil {
 		return nil, err
 	}
-	return r.logAndExport(ctx, transaction{Package: pkg,
-		Final: final.AnchorPsbt}, true)
+	return r.logAndExport(ctx, final, true)
 }
 
 // verifyWalletSpend binds every recovery outcome to its agreed issuance,
@@ -77,7 +73,7 @@ func (r *Driver) rebuildObservedSpend(ctx context.Context,
 // the current chain rather than the peer's proof, which may omit witnesses.
 func (r *Driver) verifyWalletSpend(ctx context.Context, raw []byte,
 	prior sdk.CustomAnchorAssetOutputSummary, public [33]byte,
-	spend *SwapAnchorSpendInfo, unspent bool, minHeight uint64) error {
+	spend *swapkit.SwapAnchorSpendInfo, unspent bool, minHeight uint64) error {
 
 	group, ok := prior.AssetRef.GroupKey()
 	if !ok {
@@ -133,7 +129,7 @@ func (r *Driver) verifyWalletSpend(ctx context.Context, raw []byte,
 // spendsLeaf checks policy selection before the SDK or Bitcoin VM verifies the
 // unlocking data. Annexes and alternate leaves cannot authorize an outcome.
 func spendsLeaf(tx *wire.MsgTx, prior sdk.CustomAnchorAssetOutputSummary,
-	spend *SwapAnchorSpendInfo) bool {
+	spend *swapkit.SwapAnchorSpendInfo) bool {
 
 	if len(tx.TxIn) != 1 || tx.TxIn[0].PreviousOutPoint !=
 		sdkPoint(prior.AnchorOutpoint) {

@@ -17,7 +17,7 @@ func originalRefundFixture(t *testing.T) (*Driver, *swapContext,
 	t.Helper()
 	r, s, _, chain := bindingOutcome(t, true)
 	// The server never obtained the client's completed fallback.
-	s.Fallback = transaction{}
+	s.Fallback = nil
 	d, err := r.localDeposit(t.Context(), s.Offer.Terms.DepositOutpoints[0])
 	require.NoError(t, err)
 	base, err := lastProof(d.Deposit.Proof)
@@ -54,7 +54,7 @@ func TestOriginalCSVRefundWithoutCompletedFallback(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Refunded)
 	require.Equal(t, op.Evidence, result.Evidence)
-	require.Nil(t, s.Fallback.Package)
+	require.Nil(t, s.Fallback)
 
 	// A stored original refund is revalidated just like an HTLC refund.
 	chain.blocks[201].Header.Nonce++

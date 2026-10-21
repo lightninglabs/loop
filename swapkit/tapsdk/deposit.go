@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"reflect"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -33,9 +34,10 @@ type depositContract struct {
 
 // depositRecord is derived from the normal inventory and address key locator.
 type depositRecord struct {
-	Request swapkit.CreateDepositRequest
-	Deposit swapkit.Deposit
-	Since   uint32
+	Request  swapkit.CreateDepositRequest
+	Deposit  swapkit.Deposit
+	Contract depositContract
+	Proof    *proof.Proof
 }
 
 func locator(family int32, index uint32) keychain.KeyLocator {
@@ -78,7 +80,7 @@ func (r *Driver) BuildDeposit(ctx context.Context,
 	if err != nil {
 		return swapkit.Deposit{}, nil, err
 	}
-	dk, err := NewDepositKit(DepositKitParams{
+	dk, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
 		ClientKey: request.ClientKey,
 		ServerKey: request.ServerKey,
 		CSVExpiry: request.CSV,
@@ -100,14 +102,10 @@ func (r *Driver) BuildDeposit(ctx context.Context,
 		return swapkit.Deposit{}, nil, err
 	}
 	value := 330 + 4*r.cfg.MaxFeeSat
-	output, err := dk.Output(SwapOutputParams{
+	output := OPTrueOutput(sdk.CustomAssetOutput{
 		ID: "deposit", AssetRef: ref, Amount: request.Amount,
-		AnchorValueSat:   value,
-		AssetInternalKey: keys.ScriptKey.KeyDesc,
-	})
-	if err != nil {
-		return swapkit.Deposit{}, nil, err
-	}
+		AnchorValueSat: value,
+	}, keys.ScriptKey.KeyDesc, dk.AnchorPlan())
 	anchor, err := anchorTemplate(p, output.Anchor.InternalKey,
 		int64(value), nil)
 	if err != nil {
@@ -173,7 +171,8 @@ func (r *Driver) BuildDeposit(ctx context.Context,
 	if err != nil {
 		return swapkit.Deposit{}, nil, err
 	}
-	if err := pkg.VerifyFinalAnchorPSBT(final); err != nil {
+	pkg, err = pkg.WithFinalAnchorPSBT(final)
+	if err != nil {
 		return swapkit.Deposit{}, nil, err
 	}
 	out := pkg.Outputs[0]
@@ -184,7 +183,7 @@ func (r *Driver) BuildDeposit(ctx context.Context,
 	if err != nil {
 		return swapkit.Deposit{}, nil, err
 	}
-	raw, err := json.Marshal(transaction{Package: pkg, Final: final})
+	raw, err := pkg.MarshalBinary()
 	if err != nil {
 		return swapkit.Deposit{}, nil, err
 	}
@@ -196,17 +195,16 @@ func (r *Driver) BuildDeposit(ctx context.Context,
 }
 
 // PublishDeposit publishes the saved transaction and returns confirmed asset
-// metadata. It can repeat after a process restart without funding another spend.
+// metadata. Repeating after a restart never funds another spend.
 func (r *Driver) PublishDeposit(ctx context.Context, deposit swapkit.Deposit,
 	signedPackage []byte) (swapkit.Deposit, error) {
 
-	var tx transaction
+	pkg, err := decodeFinalPackage(signedPackage)
 	var contract depositContract
-	if swapkit.Decode(signedPackage, &tx) != nil ||
+	if err != nil ||
 		swapkit.Decode(deposit.Contract, &contract) != nil ||
-		contract.Version != 1 || tx.Package == nil ||
-		len(tx.Package.Outputs) != 1 ||
-		!equal(contract.Output, tx.Package.Outputs[0]) ||
+		contract.Version != 1 || len(pkg.Outputs) != 1 ||
+		!reflect.DeepEqual(contract.Output, pkg.Outputs[0]) ||
 		deposit.Outpoint != sdkPoint(contract.Output.AnchorOutpoint).String() ||
 		deposit.Amount != contract.Output.Amount ||
 		deposit.ValueSat != uint64(contract.Output.AnchorValueSat) {
@@ -217,7 +215,7 @@ func (r *Driver) PublishDeposit(ctx context.Context, deposit swapkit.Deposit,
 	if !grouped || group != deposit.GroupKey {
 		return swapkit.Deposit{}, swapkit.ErrInvalid
 	}
-	raw, err := r.publish(ctx, tx)
+	raw, err := r.publish(ctx, pkg)
 	if err != nil {
 		return swapkit.Deposit{}, err
 	}
@@ -231,7 +229,8 @@ func (r *Driver) PublishDeposit(ctx context.Context, deposit swapkit.Deposit,
 	deposit.Proof = raw
 	deposit.ConfirmationHeight = p.BlockHeight
 	deposit.RefundHeight = p.BlockHeight + contract.CSV
-	if _, err := r.verifyDeposit(ctx, deposit, false); err != nil {
+	_, err = r.verifyDepositContract(ctx, deposit, contract, false)
+	if err != nil {
 		return swapkit.Deposit{}, err
 	}
 	return deposit, nil
@@ -264,7 +263,7 @@ func (r *Driver) admit(ctx context.Context,
 	}
 	d.Contract = a.Contract
 	d.Amount, d.GroupKey = c.Output.Amount, a.GroupKey
-	p, err := r.verifyDeposit(ctx, d, true)
+	p, err := r.verifyDepositContract(ctx, d, c, true)
 	if err != nil {
 		return swapkit.AdmissionResult{}, err
 	}
@@ -284,8 +283,17 @@ func (r *Driver) verifyDeposit(ctx context.Context, d swapkit.Deposit,
 	unspent bool) (*proof.Proof, error) {
 
 	var c depositContract
-	if swapkit.Decode(d.Contract, &c) != nil || c.Version != 1 ||
-		c.Output.OPTrueSpend == nil || c.Output.Amount != d.Amount {
+	if err := swapkit.Decode(d.Contract, &c); err != nil {
+		return nil, err
+	}
+	return r.verifyDepositContract(ctx, d, c, unspent)
+}
+
+func (r *Driver) verifyDepositContract(ctx context.Context, d swapkit.Deposit,
+	c depositContract, unspent bool) (*proof.Proof, error) {
+
+	if c.Version != 1 || c.Output.OPTrueSpend == nil ||
+		c.Output.Amount != d.Amount {
 
 		return nil, swapkit.ErrInvalid
 	}
@@ -315,7 +323,7 @@ func (r *Driver) verifyDeposit(ctx context.Context, d swapkit.Deposit,
 
 		return nil, swapkit.ErrInvalid
 	}
-	dk, err := NewDepositKit(DepositKitParams{
+	dk, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
 		ClientKey: c.ClientKey, ServerKey: c.ServerKey,
 		CSVExpiry: c.CSV,
 	})
@@ -338,7 +346,7 @@ func (r *Driver) verifyDeposit(ctx context.Context, d swapkit.Deposit,
 }
 
 func anchorTemplate(p *proof.Proof, receiver sdk.InternalKey, value int64,
-	spend *SwapAnchorSpendInfo) ([]byte, error) {
+	spend *swapkit.SwapAnchorSpendInfo) ([]byte, error) {
 
 	if value < 330 {
 		return nil, swapkit.ErrInvalid

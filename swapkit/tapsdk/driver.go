@@ -1,9 +1,7 @@
 package tapsdk
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/swapkit"
@@ -89,21 +87,17 @@ func (r *Driver) VerifyAdmission(ctx context.Context, a swapkit.Admission) (
 func (r *Driver) ValidateInvoice(ctx context.Context, offer swapkit.Offer,
 	preparation swapkit.Preparation) error {
 
-	request, err := r.validateRecovery(ctx, offer,
-		preparation.RecoveryRequest)
+	s, err := r.preparedSwap(ctx, offer,
+		preparation.RecoveryRequest, true)
 	if err != nil {
 		return err
 	}
 	// Apply current operator limits only before accepting preparation.
 	// Signing retries and recovery validate the fixed package instead.
-	if request.Package.Funding.ActualFeeSat > r.cfg.MaxFeeSat {
+	if s.Fallback == nil ||
+		s.Fallback.Funding.ActualFeeSat > r.cfg.MaxFeeSat {
+
 		return swapkit.ErrInvalid
 	}
 	return nil
-}
-
-func equal(a, b any) bool {
-	x, xerr := json.Marshal(a)
-	y, yerr := json.Marshal(b)
-	return xerr == nil && yerr == nil && bytes.Equal(x, y)
 }

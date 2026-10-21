@@ -139,7 +139,7 @@ func extractDockerFile(t testing.TB, container,
 		containerPath, "/")+1:]
 
 	var lastErr error
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := range 5 {
 		if attempt > 0 {
 			t.Logf("Retry %d: docker cp %s:%s",
 				attempt, container, containerPath)

@@ -3,10 +3,10 @@ package tapsdk
 import (
 	"bytes"
 	"crypto/sha256"
-	"math"
 	"testing"
 
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightninglabs/taproot-assets/tapsend"
@@ -16,72 +16,43 @@ import (
 // TestSwapKitSigningPlan checks SDK signing metadata and defensive copies.
 // Bitcoin policy vectors and VM execution are covered by the swapkit module.
 func TestSwapKitSigningPlan(t *testing.T) {
-	kit, err := NewSwapKit(swapKitTestParams(t))
+	kit, err := swapkit.NewSwapKit(swapKitTestParams(t))
 	require.NoError(t, err)
-	plan := kit.AnchorPlan()
+	source := kit.AnchorPlan()
+	plan := AnchorPlan(source)
 	expected := bytes.Clone(plan.Tapscript.TapLeaves[0].Script)
 	plan.Tapscript.TapLeaves[0].Script[0] ^= 1
 	require.Equal(t, expected,
-		kit.AnchorPlan().Tapscript.TapLeaves[0].Script)
+		source.Leaves[0])
 
 	context := []byte("unique-signing-round")
-	signing := kit.CooperativeSigningPlan(2, context)
+	signing := CooperativeSigningPlan(
+		kit.CooperativeParticipants(), 2, context,
+	)
 	require.Equal(t, uint32(2), signing.InputIndex)
 	require.NoError(t, validateMuSig2Aggregate(
-		kit.AnchorPlan().InternalKey.PubKey.XOnly(),
+		sdk.PubKey(source.InternalKey).XOnly(),
 		signing.MuSig2.Participants,
 	))
 	context[0] ^= 1
 	require.NotEqual(t, context, signing.MuSig2.SessionContext)
 	signing.MuSig2.Participants[0] = sdk.PubKey{}
 	require.NotEqual(t, signing.MuSig2.Participants,
-		kit.CooperativeSigningPlan(2, nil).MuSig2.Participants)
-}
-
-// TestSwapKitOutput checks OP_TRUE output descriptors, native amount bounds,
-// and defensive copies before passing them to the custom-anchor builder.
-func TestSwapKitOutput(t *testing.T) {
-	kit, err := NewSwapKit(swapKitTestParams(t))
-	require.NoError(t, err)
-	params := SwapOutputParams{
-		ID:       "deposit",
-		AssetRef: sdk.AssetRefFromAssetID(sdk.AssetID{1}),
-		Amount:   1_000, AnchorValueSat: 330,
-		AssetInternalKey: sdk.KeyDescriptor{RawKeyBytes: testKey(t, 3)},
-		ProofDelivery: sdk.CustomAssetProofDelivery{
-			OpaqueMetadata: []byte{1},
-		},
-	}
-	output, err := kit.Output(params)
-	require.NoError(t, err)
-	require.Equal(t, sdk.CustomAssetScriptOPTrue, output.Script.Mode)
-	require.Equal(t, sdk.CustomAssetTimelocks{}, output.Timelocks)
-	require.Equal(t, kit.AnchorPlan(), output.Anchor)
-	params.ProofDelivery.OpaqueMetadata[0] = 2
-	require.Equal(t, []byte{1}, output.ProofDelivery.OpaqueMetadata)
-	params.Amount = math.MaxInt64 + 1
-	_, err = kit.Output(params)
-	require.ErrorContains(t, err, "amount exceeds maximum")
-	params.Amount = 1
-	params.AnchorValueSat = math.MaxInt64 + 1
-	_, err = kit.Output(params)
-	require.ErrorContains(t, err, "amount exceeds maximum")
-	params.AnchorValueSat = 330
-	params.AssetInternalKey = sdk.KeyDescriptor{}
-	_, err = kit.Output(params)
-	require.ErrorContains(t, err, "OP_TRUE internal key")
+		CooperativeSigningPlan(
+			kit.CooperativeParticipants(), 2, nil,
+		).MuSig2.Participants)
 }
 
 // TestSwapKitBuilderCommitments binds the kit's Bitcoin control blocks to the
 // custom-anchor builder's independently assembled asset and policy roots.
 func TestSwapKitBuilderCommitments(t *testing.T) {
 	params := swapKitTestParams(t)
-	legacy, err := NewSwapKit(params)
+	legacy, err := swapkit.NewSwapKit(params)
 	require.NoError(t, err)
-	params.Policy = SwapHTLCStaticLoopInV3
-	v3, err := NewSwapKit(params)
+	params.Policy = swapkit.SwapHTLCStaticLoopInV3
+	v3, err := swapkit.NewSwapKit(params)
 	require.NoError(t, err)
-	deposit, err := NewDepositKit(DepositKitParams{
+	deposit, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
 		ClientKey: params.SenderKey, ServerKey: params.ReceiverKey,
 		CSVExpiry: 144,
 	})
@@ -98,8 +69,8 @@ func TestSwapKitBuilderCommitments(t *testing.T) {
 }
 
 type swapKitOutput interface {
-	Output(SwapOutputParams) (sdk.CustomAssetOutput, error)
-	TimeoutSpend(sdk.Hash) (*SwapAnchorSpendInfo, error)
+	AnchorPlan() swapkit.AnchorPlan
+	TimeoutSpend(swapkit.Hash) (*swapkit.SwapAnchorSpendInfo, error)
 }
 
 func testSwapKitBuilderCommitment(t *testing.T, kit swapKitOutput,
@@ -108,16 +79,9 @@ func testSwapKitBuilderCommitment(t *testing.T, kit swapKitOutput,
 	t.Helper()
 	fixture := newCustomAnchorBuilderFixture(t)
 	original := fixture.request.Outputs[0]
-	output, err := kit.Output(SwapOutputParams{
-		ID: original.ID, AssetRef: original.AssetRef,
-		Amount:            original.Amount,
-		AnchorOutputIndex: original.AnchorOutputIndex,
-		AnchorValueSat:    original.AnchorValueSat,
-		AssetInternalKey: sdk.KeyDescriptor{
-			RawKeyBytes: testKey(t, scalar),
-		},
-	})
-	require.NoError(t, err)
+	output := OPTrueOutput(original, sdk.KeyDescriptor{
+		RawKeyBytes: testKey(t, scalar),
+	}, kit.AnchorPlan())
 	fixture.request.Outputs[0] = output
 	wallet := sdk.NewWallet(fixture.client, sdk.NetworkRegtest)
 	plan, err := wallet.NewCustomAnchorTxBuilder().
@@ -148,7 +112,15 @@ func testSwapKitBuilderCommitment(t *testing.T, kit swapKitOutput,
 	require.NoError(t, err)
 	spend, err := kit.TimeoutSpend(sdk.Hash(root))
 	require.NoError(t, err)
-	require.Equal(t, sdk.Hash(merkle), spend.TaprootMerkleRoot)
+	require.Equal(t, [32]byte(merkle), spend.TaprootMerkleRoot)
+	signing := ScriptSigningPlan(spend, 3)
+	require.Equal(t, uint32(3), signing.InputIndex)
+	require.Equal(t, sdk.Hash(txscript.NewBaseTapLeaf(
+		spend.LeafScript,
+	).TapHash()), signing.ScriptPath.LeafHash)
+	require.Equal(t, []sdk.XOnlyPubKey{
+		sdk.XOnlyPubKey(spend.RequiredSigner),
+	}, signing.ScriptPath.RequiredSigners)
 	control, err := txscript.ParseControlBlock(spend.ControlBlock)
 	require.NoError(t, err)
 	require.NoError(t, txscript.VerifyTaprootLeafCommitment(
@@ -157,13 +129,13 @@ func testSwapKitBuilderCommitment(t *testing.T, kit swapKitOutput,
 	return planned.ScriptKey
 }
 
-func swapKitTestParams(t *testing.T) SwapKitParams {
+func swapKitTestParams(t *testing.T) swapkit.SwapKitParams {
 	t.Helper()
 	sender := testKey(t, 1)
 	receiver := testKey(t, 2)
 	preimage := [32]byte{42}
-	return SwapKitParams{
-		Policy:    SwapHTLCLegacyCSV,
+	return swapkit.SwapKitParams{
+		Policy:    swapkit.SwapHTLCLegacyCSV,
 		SenderKey: sender, ReceiverKey: receiver,
 		SenderInternalKey: sender, ReceiverInternalKey: receiver,
 		PaymentHash: sdk.Hash(sha256.Sum256(preimage[:])),

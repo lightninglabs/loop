@@ -16,14 +16,6 @@ import (
 	"github.com/lightninglabs/taproot-assets/tapsend"
 )
 
-// transaction is persisted before publication; retry never rebuilds it.
-//
-//nolint:tagliatelle // Preserve existing serialized checkpoint field names.
-type transaction struct {
-	Package *sdk.CustomAnchorTransferPackage `json:"Package"`
-	Final   []byte                           `json:"Final"`
-}
-
 func lastProof(raw []byte) (*proof.Proof, error) {
 	file, err := proof.DecodeFile(raw)
 	if err != nil {
@@ -153,42 +145,60 @@ func encodePSBT(p *psbt.Packet) ([]byte, error) {
 	return b.Bytes(), err
 }
 
-func validateFinalTx(tx transaction) error {
-	if tx.Package == nil {
-		return swapkit.ErrInvalid
+// decodePackage uses the SDK's validated native package encoding.
+func decodePackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
+	var pkg sdk.CustomAnchorTransferPackage
+	if err := pkg.UnmarshalBinary(raw); err != nil {
+		return nil, err
 	}
-	if err := tx.Package.VerifyFinalAnchorPSBT(tx.Final); err != nil {
-		return err
-	}
-	packet, err := decodePSBT(tx.Final)
+	return &pkg, nil
+}
+
+func decodeFinalPackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
+	pkg, err := decodePackage(raw)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = psbt.Extract(packet)
-	return err
+	return pkg.WithFinalAnchorPSBT(pkg.AnchorPsbt)
+}
+
+// bindFinalPackage retains the approved package and accepts only its fully
+// finalized Bitcoin witness. The committed digest binds all SDK metadata.
+func bindFinalPackage(approved *sdk.CustomAnchorTransferPackage,
+	raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
+
+	proposed, err := decodePackage(raw)
+	if err != nil {
+		return nil, err
+	}
+	if approved == nil || proposed.CommittedPackageDigest !=
+		approved.CommittedPackageDigest {
+
+		return nil, swapkit.ErrInvalid
+	}
+	return approved.WithFinalAnchorPSBT(proposed.AnchorPsbt)
 }
 
 // publish hands the finalized package to tapd, which journals publication and
 // rebuilds confirmed proof files after restart. Export always uses the exact
 // issuance, script key and outpoint, including when a publish reply was lost.
-func (r *Driver) publish(ctx context.Context, tx transaction) ([]byte, error) {
-	return r.logAndExport(ctx, tx, false)
+func (r *Driver) publish(ctx context.Context,
+	pkg *sdk.CustomAnchorTransferPackage) ([]byte, error) {
+
+	return r.logAndExport(ctx, pkg, false)
 }
 
 // logAndExport can also record a peer's already-mined transaction without
 // broadcasting it. The same tapd transfer journal owns both recovery paths.
-func (r *Driver) logAndExport(ctx context.Context, tx transaction,
-	observed bool) ([]byte, error) {
+func (r *Driver) logAndExport(ctx context.Context,
+	pkg *sdk.CustomAnchorTransferPackage, observed bool) ([]byte, error) {
 
-	if err := validateFinalTx(tx); err != nil {
-		return nil, err
-	}
-	if len(tx.Package.Inputs) != 1 || len(tx.Package.Outputs) != 1 ||
-		len(tx.Package.ProofUpdates) != 1 {
+	if len(pkg.Inputs) != 1 || len(pkg.Outputs) != 1 ||
+		len(pkg.ProofUpdates) != 1 {
 
 		return nil, swapkit.ErrInvalid
 	}
-	out := tx.Package.Outputs[0]
+	out := pkg.Outputs[0]
 	export := func() ([]byte, error) {
 		file, err := r.cfg.Wallet.ExportProofFile(ctx,
 			sdk.AssetRefFromAssetID(out.IssuanceID), out.ScriptKey,
@@ -199,12 +209,7 @@ func (r *Driver) logAndExport(ctx context.Context, tx transaction,
 		if file == nil {
 			return nil, swapkit.ErrInvalid
 		}
-		group, ok := out.AssetRef.GroupKey()
-		if !ok {
-			return nil, swapkit.ErrInvalid
-		}
-		p, err := r.verifyProof(ctx, file.RawProofFile, group,
-			out.Amount, false)
+		p, err := lastProof(file.RawProofFile)
 		if err != nil {
 			return nil, err
 		}
@@ -214,6 +219,11 @@ func (r *Driver) logAndExport(ctx context.Context, tx transaction,
 				out.ScriptKey[:]) {
 
 			return nil, swapkit.ErrInvalid
+		}
+		// The caller verifies the proof with its contract exactly once.
+		// Here a current confirmation distinguishes archive lag from success.
+		if err := r.verifyConfirmation(ctx, p, false); err != nil {
+			return nil, err
 		}
 		return file.RawProofFile, nil
 	}
@@ -226,11 +236,10 @@ func (r *Driver) logAndExport(ctx context.Context, tx transaction,
 			return nil, err
 		}
 	}
-	err := r.importProof(ctx, tx.Package.Inputs[0].ProofSource.Blob)
+	err := r.importProof(ctx, pkg.Inputs[0].ProofSource.Blob)
 	if err != nil {
 		return nil, err
 	}
-	pkg := tx.Package
 	if observed {
 		pkg = pkg.Clone()
 		pkg.Publish.SkipAnchorTxBroadcast = true
@@ -240,7 +249,7 @@ func (r *Driver) logAndExport(ctx context.Context, tx transaction,
 			return nil, err
 		}
 	}
-	_, err = r.cfg.Wallet.PublishCustomAnchorTransfer(ctx, pkg, tx.Final)
+	_, err = r.cfg.Wallet.PublishCustomAnchorTransfer(ctx, pkg, pkg.AnchorPsbt)
 	if err != nil {
 		// A lost reply can follow a durable tapd publication. The next
 		// invocation checks the proof archive before retrying the log.

@@ -186,7 +186,7 @@ func (s *SwapKit) TimeoutSpend(assetRoot Hash) (*SwapAnchorSpendInfo, error) {
 func (s *SwapKit) SuccessWitness(assetRoot Hash, signature []byte,
 	preimage [32]byte) ([][]byte, error) {
 
-	if Hash(sha256.Sum256(preimage[:])) != s.params.PaymentHash {
+	if sha256.Sum256(preimage[:]) != s.params.PaymentHash {
 		return nil, fmt.Errorf("preimage does not match payment hash")
 	}
 	spend, err := s.SuccessSpend(assetRoot)
@@ -296,7 +296,7 @@ func (d *DepositKit) TimeoutWitness(assetRoot Hash,
 	return spend.witness(signature, nil)
 }
 
-// SwapAnchorSpendInfo contains SDK-owned Bitcoin script-path material. Compare
+// SwapAnchorSpendInfo contains Loop-owned Bitcoin script-path material. Compare
 // PkScript with the authenticated prevout before signing. It does not prove
 // issuance, provenance, amount, confirmation, or timelock maturity.
 type SwapAnchorSpendInfo struct {

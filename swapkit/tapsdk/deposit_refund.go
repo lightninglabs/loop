@@ -2,7 +2,7 @@ package tapsdk
 
 import (
 	"context"
-	"encoding/json"
+	"reflect"
 
 	"github.com/lightninglabs/loop/swapkit"
 )
@@ -16,10 +16,10 @@ func (r *Driver) BuildDepositRefund(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if !equal(d.Deposit, deposit) {
+	if !reflect.DeepEqual(d.Deposit, deposit) {
 		return nil, swapkit.ErrInvalid
 	}
-	p, err := r.verifyDeposit(ctx, deposit, true)
+	p, err := r.verifyDepositContract(ctx, deposit, d.Contract, true)
 	if err != nil {
 		return nil, err
 	}
@@ -40,12 +40,16 @@ func (r *Driver) BuildDepositRefund(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	var tx transaction
-	if err := r.signScriptSpend(ctx, plan, &tx,
-		locator(d.Request.KeyFamily, d.Request.KeyIndex), nil); err != nil {
+	pkg, err := r.commit(ctx, plan)
+	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(tx)
+	pkg, err = r.signScriptSpend(ctx, pkg,
+		locator(d.Request.KeyFamily, d.Request.KeyIndex), nil)
+	if err != nil {
+		return nil, err
+	}
+	return pkg.MarshalBinary()
 }
 
 // PublishDepositRefund publishes the deposit FSM's saved CSV spend and verifies
@@ -57,10 +61,10 @@ func (r *Driver) PublishDepositRefund(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if !equal(d.Deposit, deposit) {
+	if !reflect.DeepEqual(d.Deposit, deposit) {
 		return nil, swapkit.ErrInvalid
 	}
-	p, err := r.verifyDeposit(ctx, deposit, false)
+	p, err := r.verifyDepositContract(ctx, deposit, d.Contract, false)
 	if err != nil {
 		return nil, err
 	}
@@ -68,11 +72,11 @@ func (r *Driver) PublishDepositRefund(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	var tx transaction
-	if swapkit.Decode(signedPackage, &tx) != nil {
-		return nil, swapkit.ErrInvalid
+	pkg, err := decodeFinalPackage(signedPackage)
+	if err != nil {
+		return nil, err
 	}
-	raw, err := r.publish(ctx, tx)
+	raw, err := r.publish(ctx, pkg)
 	if err != nil {
 		return nil, err
 	}

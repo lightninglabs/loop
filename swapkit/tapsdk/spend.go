@@ -3,6 +3,7 @@ package tapsdk
 import (
 	"context"
 
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -12,7 +13,7 @@ import (
 // an HTLC spend.
 func (r *Driver) recoveryPlan(ctx context.Context,
 	out sdk.CustomAnchorAssetOutputSummary, inputProof []byte, public [33]byte,
-	key keychain.KeyLocator, spend *SwapAnchorSpendInfo, fee uint64) (
+	key keychain.KeyLocator, spend *swapkit.SwapAnchorSpendInfo, fee uint64) (
 	*sdk.CustomAnchorRequest, error) {
 
 	if out.AnchorValueSat < 330 ||
@@ -48,30 +49,29 @@ func (r *Driver) recoveryPlan(ctx context.Context,
 		return nil, err
 	}
 	return customRequest(assetInput(out, inputProof), recipient, anchor,
-		spend.SigningPlan(0)), nil
+		ScriptSigningPlan(spend, 0)), nil
 }
 
-// signScriptSpend commits and signs one unilateral spend. Its caller owns
+// signScriptSpend signs one committed unilateral spend. Its caller owns
 // persistence of the completed transaction before publication.
 func (r *Driver) signScriptSpend(ctx context.Context,
-	plan *sdk.CustomAnchorRequest, tx *transaction, key keychain.KeyLocator,
-	preimage *[32]byte) error {
+	pkg *sdk.CustomAnchorTransferPackage, key keychain.KeyLocator,
+	preimage *[32]byte) (*sdk.CustomAnchorTransferPackage, error) {
 
-	if tx.Package == nil {
-		pkg, err := r.commit(ctx, plan)
-		if err != nil {
-			return err
-		}
-		tx.Package = pkg
-	}
-	if len(tx.Final) != 0 {
-		return nil
-	}
-	final, err := SignScriptPath(ctx, r.cfg.Signer, key,
-		tx.Package, preimage)
+	final, err := SignScriptPath(ctx, r.cfg.Signer, key, pkg, preimage)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	tx.Final = final
-	return nil
+	packet, err := decodePSBT(final)
+	if err != nil {
+		return nil, err
+	}
+	if err := psbt.MaybeFinalizeAll(packet); err != nil {
+		return nil, err
+	}
+	final, err = encodePSBT(packet)
+	if err != nil {
+		return nil, err
+	}
+	return pkg.WithFinalAnchorPSBT(final)
 }

@@ -234,7 +234,7 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 
 	t.Helper()
 	clientKey, serverKey := bindingPub(2), bindingPub(3)
-	dk, err := NewDepositKit(DepositKitParams{
+	dk, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
 		ClientKey: clientKey, ServerKey: serverKey, CSVExpiry: 100,
 	})
 	require.NoError(t, err)
@@ -261,7 +261,7 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 		txscript.NewBaseTapLeaf(timeout.LeafScript))
 	require.NoError(t, err)
 	anchorPlan := dk.AnchorPlan()
-	internal, err := btcec.ParsePubKey(anchorPlan.InternalKey.PubKey[:])
+	internal, err := btcec.ParsePubKey(anchorPlan.InternalKey[:])
 	require.NoError(t, err)
 	deposit := bindingProof(t, bindingGenesis(), assetOutputKey, internal,
 		sibling, bindingGenesis().FirstPrevOut, 100, false)
@@ -297,7 +297,7 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 		AnchorValueSat: 9000, TaprootAssetRoot: sdk.Hash{42},
 		AnchorOutpoint: sdk.Outpoint{Txid: sdk.Hash{88}},
 	}
-	s.Fallback.Package = &sdk.CustomAnchorTransferPackage{
+	s.Fallback = &sdk.CustomAnchorTransferPackage{
 		Outputs: []sdk.CustomAnchorAssetOutputSummary{prior},
 	}
 	policy, err := htlc(s.Offer, c)
@@ -352,6 +352,8 @@ func bindingOutcome(t *testing.T, refund bool) (*Driver, *swapContext,
 	}
 	r, err := NewDriver(cfg)
 	require.NoError(t, err)
+	s.Deposit, err = r.offerDeposit(t.Context(), s.Offer, false)
+	require.NoError(t, err)
 	return r, s, outcome, chain
 }
 
@@ -387,12 +389,12 @@ func testOutcomeBinding(t *testing.T, refund bool, mutation string) {
 	case "other prevout":
 		p.AnchorTx.TxIn[0].PreviousOutPoint.Index++
 	case "other issuance":
-		s.Fallback.Package.Outputs[0].IssuanceID[0] ^= 1
+		s.Fallback.Outputs[0].IssuanceID[0] ^= 1
 	case "other group":
-		s.Fallback.Package.Outputs[0].AssetRef =
+		s.Fallback.Outputs[0].AssetRef =
 			sdk.AssetRefFromGroupKey(bindingPub(12))
 	case "other amount":
-		s.Fallback.Package.Outputs[0].Amount++
+		s.Fallback.Outputs[0].Amount++
 	case "wrong recipient":
 		old := p
 		p = bindingProof(t, bindingGenesis(), bindingKey(9).PubKey(),

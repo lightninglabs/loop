@@ -381,7 +381,7 @@ func swapKitTestParams(t *testing.T) SwapKitParams {
 		Policy:    SwapHTLCLegacyCSV,
 		SenderKey: sender, ReceiverKey: receiver,
 		SenderInternalKey: sender, ReceiverInternalKey: receiver,
-		PaymentHash: Hash(sha256.Sum256(preimage[:])),
+		PaymentHash: sha256.Sum256(preimage[:]),
 		Expiry:      144,
 	}
 }

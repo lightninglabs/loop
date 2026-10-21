@@ -21,4 +21,7 @@
 
 #### Maintenance
 
+* Use SDK transfer packages directly for asset signing and recovery, with
+  one deposit/proof validation per operation and no duplicate kit wrappers.
+
 #### Contributors (Alphabetical Order)

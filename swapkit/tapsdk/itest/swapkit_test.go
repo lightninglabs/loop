@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/swapkit"
 	loopsdk "github.com/lightninglabs/loop/swapkit/tapsdk"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	sdkharness "github.com/lightninglabs/tap-sdk/itest"
@@ -60,7 +61,7 @@ func testSwapKitDepositLifecycle(t *testing.T, outcome string) {
 	require.NoError(t, err)
 	clientPub := mustCompressedPubKey(t, clientKey.PubKey())
 	serverPub := mustCompressedPubKey(t, serverKey.PubKey())
-	deposit, err := loopsdk.NewDepositKit(loopsdk.DepositKitParams{
+	deposit, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
 		ClientKey: clientPub,
 		ServerKey: serverPub,
 		CSVExpiry: 18,
@@ -70,12 +71,13 @@ func testSwapKitDepositLifecycle(t *testing.T, outcome string) {
 	// The initial asset input remains wallet signed. Both subsequent asset
 	// outputs use fresh OP_TRUE keys, with the policy on their BTC anchors.
 	anchor, value := swapKitAnchorPSBT(
-		t, mintProof, deposit.AnchorPlan().InternalKey, nil,
+		t, mintProof,
+		loopsdk.AnchorPlan(deposit.AnchorPlan()).InternalKey, nil,
 	)
-	depositOutput, err := deposit.Output(swapKitOutputParams(
+	depositOutput := swapKitOutput(
 		t, "deposit", minted.Ref, minted.Asset.Amount, value,
-	))
-	require.NoError(t, err)
+		deposit.AnchorPlan(),
+	)
 	mintAnchorKey := swapKitLastProof(t, mintProof).
 		InclusionProof.InternalKey
 	request := swapKitRequest(
@@ -104,7 +106,7 @@ func testSwapKitDepositLifecycle(t *testing.T, outcome string) {
 	require.NoError(t, output.OPTrueSpend.Validate(output.ScriptKey))
 
 	var (
-		spend          *loopsdk.SwapAnchorSpendInfo
+		spend          *swapkit.SwapAnchorSpendInfo
 		witness        func([]byte) ([][]byte, error)
 		signer         = clientKey
 		receiverWallet = h.AliceWallet
@@ -123,8 +125,8 @@ func testSwapKitDepositLifecycle(t *testing.T, outcome string) {
 		info, err := h.AliceClient.GetInfo(ctx)
 		require.NoError(t, err)
 		preimage := sha256.Sum256([]byte(name))
-		htlc, err := loopsdk.NewSwapKit(loopsdk.SwapKitParams{
-			Policy:      loopsdk.SwapHTLCStaticLoopInV3,
+		htlc, err := swapkit.NewSwapKit(swapkit.SwapKitParams{
+			Policy:      swapkit.SwapHTLCStaticLoopInV3,
 			SenderKey:   clientPub,
 			ReceiverKey: serverPub,
 			SenderInternalKey: mustCompressedPubKey(
@@ -139,20 +141,23 @@ func testSwapKitDepositLifecycle(t *testing.T, outcome string) {
 		require.NoError(t, err)
 
 		anchor, value = swapKitAnchorPSBT(
-			t, inputProof, htlc.AnchorPlan().InternalKey, nil,
+			t, inputProof,
+			loopsdk.AnchorPlan(htlc.AnchorPlan()).InternalKey, nil,
 		)
 		packet := decodeCustomAnchorITestPSBT(t, anchor)
-		depositKey := deposit.AnchorPlan().InternalKey.PubKey
+		depositKey := deposit.AnchorPlan().InternalKey
 		packet.Inputs[0].TaprootInternalKey = depositKey[1:]
 		packet.Inputs[0].TaprootMerkleRoot = output.TaprootMerkleRoot[:]
 		anchor = swapKitSerializePSBT(t, packet)
-		htlcOutput, err := htlc.Output(swapKitOutputParams(
+		htlcOutput := swapKitOutput(
 			t, "htlc", minted.Ref, minted.Asset.Amount, value,
-		))
-		require.NoError(t, err)
+			htlc.AnchorPlan(),
+		)
 		request = swapKitRequest(
 			swapKitInput(output, inputProof), htlcOutput, anchor,
-			deposit.CooperativeSigningPlan(0, []byte(name)),
+			loopsdk.CooperativeSigningPlan(
+				deposit.CooperativeParticipants(), 0, []byte(name),
+			),
 		)
 		sealed = swapKitCommit(t, ctx, h, name+"-htlc", request)
 		signing, err := sealed.SigningRequests()
@@ -223,7 +228,8 @@ func testSwapKitDepositLifecycle(t *testing.T, outcome string) {
 	// the anchor witness against the real committed prevout before publish.
 	receiverKeys, err := receiverWallet.DeriveKeys(ctx)
 	require.NoError(t, err)
-	require.Equal(t, output.TaprootMerkleRoot, spend.TaprootMerkleRoot)
+	require.Equal(t, [32]byte(output.TaprootMerkleRoot),
+		spend.TaprootMerkleRoot)
 	anchor, value = swapKitAnchorPSBT(
 		t, inputProof, receiverKeys.InternalKey, spend,
 	)
@@ -241,7 +247,7 @@ func testSwapKitDepositLifecycle(t *testing.T, outcome string) {
 			Anchor: tapsdk.CustomAnchorOutputPlan{
 				InternalKey: receiverKeys.InternalKey,
 			},
-		}, anchor, spend.SigningPlan(0),
+		}, anchor, loopsdk.ScriptSigningPlan(spend, 0),
 	)
 	sealed = swapKitCommit(t, ctx, h, name+"-claim", request)
 	signing, err := sealed.SigningRequests()
@@ -280,20 +286,20 @@ func testSwapKitDepositLifecycle(t *testing.T, outcome string) {
 	require.Equal(t, minted.Asset.Amount, balance)
 }
 
-// swapKitOutputParams allocates a fresh OP_TRUE key for each policy output.
-func swapKitOutputParams(t testing.TB, id string, ref tapsdk.AssetRef,
-	amount uint64, value int64) loopsdk.SwapOutputParams {
+// swapKitOutput allocates a fresh OP_TRUE key for each policy output.
+func swapKitOutput(t testing.TB, id string, ref tapsdk.AssetRef,
+	amount uint64, value int64,
+	anchor swapkit.AnchorPlan) tapsdk.CustomAssetOutput {
 
 	t.Helper()
 	key, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	return loopsdk.SwapOutputParams{
+	return loopsdk.OPTrueOutput(tapsdk.CustomAssetOutput{
 		ID: id, AssetRef: ref, Amount: amount,
 		AnchorOutputIndex: 0, AnchorValueSat: uint64(value),
-		AssetInternalKey: tapsdk.KeyDescriptor{
-			RawKeyBytes: mustCompressedPubKey(t, key.PubKey()),
-		},
-	}
+	}, tapsdk.KeyDescriptor{
+		RawKeyBytes: mustCompressedPubKey(t, key.PubKey()),
+	}, anchor)
 }
 
 // swapKitInput carries forward the exact proof and OP_TRUE witness.
@@ -313,8 +319,7 @@ func swapKitInput(output tapsdk.CustomAnchorAssetOutputSummary,
 // swapKitRequest requires exact funding without burns or passive assets.
 func swapKitRequest(input tapsdk.CustomAssetInput,
 	output tapsdk.CustomAssetOutput, anchor []byte,
-	signing tapsdk.CustomAnchorInputSigningPlan) (
-	request *tapsdk.CustomAnchorRequest) {
+	signing tapsdk.CustomAnchorInputSigningPlan) *tapsdk.CustomAnchorRequest {
 
 	funding := tapsdk.CustomAnchorFundingPlan{
 		Mode: tapsdk.CustomAnchorFundingCallerFundedExact,
@@ -336,8 +341,7 @@ func swapKitRequest(input tapsdk.CustomAssetInput,
 
 // swapKitCommit verifies the plan before creating its transfer package.
 func swapKitCommit(t testing.TB, ctx context.Context, h *sdkharness.TestHarness,
-	label string, request *tapsdk.CustomAnchorRequest) (
-	sealed *tapsdk.CustomAnchorTransferPackage) {
+	label string, request *tapsdk.CustomAnchorRequest) *tapsdk.CustomAnchorTransferPackage {
 
 	t.Helper()
 	// Confirmed proof selection does not populate the publishing tapd's
@@ -355,7 +359,7 @@ func swapKitCommit(t testing.TB, ctx context.Context, h *sdkharness.TestHarness,
 	require.NoError(t, err)
 	verification := plan.Verification()
 	require.True(t, verification.Valid())
-	sealed, err = plan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
+	sealed, err := plan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
 		Publish: tapsdk.CustomAnchorPublishMetadata{Label: label},
 	})
 	require.NoError(t, err)
@@ -422,7 +426,7 @@ func swapKitLastProof(t testing.TB, file *tapsdk.ProofFile) *proof.Proof {
 // swapKitAnchorPSBT leaves enough of the mint anchor for all three transfers.
 // Each transaction pays 200 sat, retaining a non-dust final output.
 func swapKitAnchorPSBT(t testing.TB, file *tapsdk.ProofFile,
-	receiver tapsdk.InternalKey, spend *loopsdk.SwapAnchorSpendInfo) (
+	receiver tapsdk.InternalKey, spend *swapkit.SwapAnchorSpendInfo) (
 	[]byte, int64) {
 
 	t.Helper()

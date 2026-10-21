@@ -78,7 +78,9 @@ inventory. Asset deposits' original CSV refund runs in the same expiry states,
 using an asset transaction and proof operation instead.
 
 `StaticAddressLoopIn.Asset` carries the server offer, HOLD invoice, unsigned
-recovery package, complete fallback and accepted asset HTLC evidence. The
+recovery package, complete fallback and accepted asset HTLC evidence. Transfers
+use the SDK binary package format, with the final anchor PSBT inside the package.
+The
 ordinary swap state describes its progress. The client does not initially know
 the server's preimage; the normal SQL preimage field is nullable until learned.
 

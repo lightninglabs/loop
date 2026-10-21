@@ -87,12 +87,11 @@ pull request uses the `no-changelog` label instead. This is enforced by CI.
 
 ### Asset static loop-in ownership
 
-`staticaddr/loopin.Manager` currently hosts a separate asset controller and
-recovery batches. This is not yet integration into the existing FSMs. Read
-`docs/asset-loop-in-architecture.md` for the audit and removal plan, and
-`staticaddr/loopin/assets.md` for current behavior. Prefer normal deposit/swap
-records, actions and startup recovery; do not preserve the extra revisions,
-request workflow or worker abstractions merely because draft tests use them.
+Asset deposits and swaps use the ordinary deposit and static Loop In FSMs,
+managers, SQL records and startup recovery. Read
+`docs/asset-loop-in-architecture.md` for ownership and
+`staticaddr/loopin/assets.md` for behavior. Do not add a separate asset
+controller, journal, recovery worker or mirrored lifecycle.
 
 Preserve server-owned execution, accepted native payment checks, signed fallback
 availability and unilateral recovery. Save explicitly before exposing claim
@@ -101,6 +100,9 @@ quantities must never enter satoshi fields. Keep asset anchors out of
 Bitcoin-only spend paths throughout consolidation.
 
 SDK transaction operations live in `swapkit/tapsdk` inside the normal Loop
-module. Use existing LND signing and chain services. Never persist secret
+module. Use the base `swapkit` contracts and SDK transfer packages directly;
+do not duplicate their types or serialization. Validate negotiated policy and
+proofs once per operation, retaining chain checks around proof verification.
+Use existing LND signing and chain services. Never persist secret
 MuSig2 nonces: restart unfinished rounds with fresh nonces for the same
 unsigned package. Tapd owns publication and confirmed proof reconstruction.
