@@ -37,6 +37,7 @@
   toolchain to match. Go 1.27.3 carries the fix for CVE-2026-111943, which
   distrusts a set of intermediate certificates in `crypto/x509`. Release
   binaries are statically linked, so they only pick up the new trust
-  decision when rebuilt with a patched toolchain.
+  decision when rebuilt with a patched toolchain. Update golangci-lint to
+  v2.15.0 for Go 1.27.3 support and regenerate the protobuf bindings.
 
 #### Contributors (Alphabetical Order)

@@ -18,6 +18,7 @@ linters:
     - errorlint
     - exhaustive
     - exhaustruct
+    - exhaustruct_v5
     - forcetypeassert
     - funlen
     - gochecknoglobals
@@ -26,6 +27,7 @@ linters:
     - gocyclo
     - godox
     - gomoddirectives
+    - gomodguard
     - inamedparam
     - interfacebloat
     - intrange
@@ -115,7 +117,9 @@ linters:
       - builtin$
       - examples$
 issues:
-  new-from-rev: 36838cf7f464cf73b0201798063b2caffeae4250
+  # Baseline existing findings when upgrading the Go 1.27 analyzers.
+  # Report new findings in changes after this master revision.
+  new-from-rev: ee9219dd134ae0ac72702fe2ac49364917330ae2
 formatters:
   enable:
     - gofmt

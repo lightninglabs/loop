@@ -128,27 +128,33 @@ func (SwapType) EnumDescriptor() ([]byte, []int) {
 type SwapState int32
 
 const (
-	// INITIATED is the initial state of a swap. At that point, the initiation
-	// call to the server has been made and the payment process has been started
-	// for the swap and prepayment invoices.
+	//
+	//INITIATED is the initial state of a swap. At that point, the initiation
+	//call to the server has been made and the payment process has been started
+	//for the swap and prepayment invoices.
 	SwapState_INITIATED SwapState = 0
-	// PREIMAGE_REVEALED is reached when the sweep tx publication is first
-	// attempted. From that point on, we should consider the preimage to no
-	// longer be secret and we need to do all we can to get the sweep confirmed.
-	// This state will mostly coalesce with StateHtlcConfirmed, except in the
-	// case where we wait for fees to come down before we sweep.
+	//
+	//PREIMAGE_REVEALED is reached when the sweep tx publication is first
+	//attempted. From that point on, we should consider the preimage to no
+	//longer be secret and we need to do all we can to get the sweep confirmed.
+	//This state will mostly coalesce with StateHtlcConfirmed, except in the
+	//case where we wait for fees to come down before we sweep.
 	SwapState_PREIMAGE_REVEALED SwapState = 1
-	// HTLC_PUBLISHED is reached when the htlc tx has been published in a loop in
-	// swap.
+	//
+	//HTLC_PUBLISHED is reached when the htlc tx has been published in a loop in
+	//swap.
 	SwapState_HTLC_PUBLISHED SwapState = 2
-	// SUCCESS is the final swap state that is reached when the sweep tx has
-	// the required confirmation depth.
+	//
+	//SUCCESS is the final swap state that is reached when the sweep tx has
+	//the required confirmation depth.
 	SwapState_SUCCESS SwapState = 3
-	// FAILED is the final swap state for a failed swap with or without loss of
-	// the swap amount.
+	//
+	//FAILED is the final swap state for a failed swap with or without loss of
+	//the swap amount.
 	SwapState_FAILED SwapState = 4
-	// INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
-	// paid, but we are still waiting for the htlc spend to confirm.
+	//
+	//INVOICE_SETTLED is reached when the swap invoice in a loop in swap has been
+	//paid, but we are still waiting for the htlc spend to confirm.
 	SwapState_INVOICE_SETTLED SwapState = 5
 )
 
@@ -202,38 +208,48 @@ func (SwapState) EnumDescriptor() ([]byte, []int) {
 type FailureReason int32
 
 const (
-	// FAILURE_REASON_NONE is set when the swap did not fail, it is either in
-	// progress or succeeded.
+	//
+	//FAILURE_REASON_NONE is set when the swap did not fail, it is either in
+	//progress or succeeded.
 	FailureReason_FAILURE_REASON_NONE FailureReason = 0
-	// FAILURE_REASON_OFFCHAIN indicates that a loop out failed because it wasn't
-	// possible to find a route for one or both off chain payments that met the fee
-	// and timelock limits required.
+	//
+	//FAILURE_REASON_OFFCHAIN indicates that a loop out failed because it wasn't
+	//possible to find a route for one or both off chain payments that met the fee
+	//and timelock limits required.
 	FailureReason_FAILURE_REASON_OFFCHAIN FailureReason = 1
-	// FAILURE_REASON_TIMEOUT indicates that the swap failed because on chain htlc
-	// did not confirm before its expiry, or it confirmed too late for us to reveal
-	// our preimage and claim.
+	//
+	//FAILURE_REASON_TIMEOUT indicates that the swap failed because on chain htlc
+	//did not confirm before its expiry, or it confirmed too late for us to reveal
+	//our preimage and claim.
 	FailureReason_FAILURE_REASON_TIMEOUT FailureReason = 2
-	// FAILURE_REASON_SWEEP_TIMEOUT indicates that a loop out permanently failed
-	// because the on chain htlc wasn't swept before the server revoked the
-	// htlc.
+	//
+	//FAILURE_REASON_SWEEP_TIMEOUT indicates that a loop out permanently failed
+	//because the on chain htlc wasn't swept before the server revoked the
+	//htlc.
 	FailureReason_FAILURE_REASON_SWEEP_TIMEOUT FailureReason = 3
-	// FAILURE_REASON_INSUFFICIENT_VALUE indicates that a loop out has failed
-	// because the on chain htlc had a lower value than requested.
+	//
+	//FAILURE_REASON_INSUFFICIENT_VALUE indicates that a loop out has failed
+	//because the on chain htlc had a lower value than requested.
 	FailureReason_FAILURE_REASON_INSUFFICIENT_VALUE FailureReason = 4
-	// FAILURE_REASON_TEMPORARY indicates that a swap cannot continue due to an
-	// internal error. Manual intervention such as a restart is required.
+	//
+	//FAILURE_REASON_TEMPORARY indicates that a swap cannot continue due to an
+	//internal error. Manual intervention such as a restart is required.
 	FailureReason_FAILURE_REASON_TEMPORARY FailureReason = 5
-	// FAILURE_REASON_INCORRECT_AMOUNT indicates that a loop in permanently failed
-	// because the amount extended by an external loop in htlc is insufficient.
+	//
+	//FAILURE_REASON_INCORRECT_AMOUNT indicates that a loop in permanently failed
+	//because the amount extended by an external loop in htlc is insufficient.
 	FailureReason_FAILURE_REASON_INCORRECT_AMOUNT FailureReason = 6
-	// FAILURE_REASON_ABANDONED indicates that a swap permanently failed because
-	// the client manually abandoned the swap.
+	//
+	//FAILURE_REASON_ABANDONED indicates that a swap permanently failed because
+	//the client manually abandoned the swap.
 	FailureReason_FAILURE_REASON_ABANDONED FailureReason = 7
-	// FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE indicates that a swap
-	// wasn't published due to insufficient confirmed balance.
+	//
+	//FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE indicates that a swap
+	//wasn't published due to insufficient confirmed balance.
 	FailureReason_FAILURE_REASON_INSUFFICIENT_CONFIRMED_BALANCE FailureReason = 8
-	// FAILURE_REASON_INCORRECT_HTLC_AMT_SWEPT indicates that a swap
-	// wasn't published due to insufficient confirmed balance.
+	//
+	//FAILURE_REASON_INCORRECT_HTLC_AMT_SWEPT indicates that a swap
+	//wasn't published due to insufficient confirmed balance.
 	FailureReason_FAILURE_REASON_INCORRECT_HTLC_AMT_SWEPT FailureReason = 9
 )
 
@@ -295,9 +311,11 @@ func (FailureReason) EnumDescriptor() ([]byte, []int) {
 type LoopInSource int32
 
 const (
-	// Use the legacy wallet-funded loop-in flow.
+	//
+	//Use the legacy wallet-funded loop-in flow.
 	LoopInSource_LOOP_IN_SOURCE_WALLET LoopInSource = 0
-	// Use deposited static-address funds for loop-in autoloops.
+	//
+	//Use deposited static-address funds for loop-in autoloops.
 	LoopInSource_LOOP_IN_SOURCE_STATIC_ADDRESS LoopInSource = 1
 )
 
@@ -390,49 +408,64 @@ type AutoReason int32
 
 const (
 	AutoReason_AUTO_REASON_UNKNOWN AutoReason = 0
-	// Budget not started indicates that we do not recommend any swaps because
-	// the start time for our budget has not arrived yet.
+	//
+	//Budget not started indicates that we do not recommend any swaps because
+	//the start time for our budget has not arrived yet.
 	AutoReason_AUTO_REASON_BUDGET_NOT_STARTED AutoReason = 1
-	// Sweep fees indicates that the estimated fees to sweep swaps are too high
-	// right now.
+	//
+	//Sweep fees indicates that the estimated fees to sweep swaps are too high
+	//right now.
 	AutoReason_AUTO_REASON_SWEEP_FEES AutoReason = 2
-	// Budget elapsed indicates that the autoloop budget for the period has been
-	// elapsed.
+	//
+	//Budget elapsed indicates that the autoloop budget for the period has been
+	//elapsed.
 	AutoReason_AUTO_REASON_BUDGET_ELAPSED AutoReason = 3
-	// In flight indicates that the limit on in-flight automatically dispatched
-	// swaps has already been reached.
+	//
+	//In flight indicates that the limit on in-flight automatically dispatched
+	//swaps has already been reached.
 	AutoReason_AUTO_REASON_IN_FLIGHT AutoReason = 4
-	// Swap fee indicates that the server fee for a specific swap is too high.
+	//
+	//Swap fee indicates that the server fee for a specific swap is too high.
 	AutoReason_AUTO_REASON_SWAP_FEE AutoReason = 5
-	// Miner fee indicates that the miner fee for a specific swap is to high.
+	//
+	//Miner fee indicates that the miner fee for a specific swap is to high.
 	AutoReason_AUTO_REASON_MINER_FEE AutoReason = 6
-	// Prepay indicates that the prepay fee for a specific swap is too high.
+	//
+	//Prepay indicates that the prepay fee for a specific swap is too high.
 	AutoReason_AUTO_REASON_PREPAY AutoReason = 7
-	// Failure backoff indicates that a swap has recently failed for this target,
-	// and the backoff period has not yet passed.
+	//
+	//Failure backoff indicates that a swap has recently failed for this target,
+	//and the backoff period has not yet passed.
 	AutoReason_AUTO_REASON_FAILURE_BACKOFF AutoReason = 8
-	// Loop out indicates that a loop out swap is currently utilizing the channel,
-	// so it is not eligible.
+	//
+	//Loop out indicates that a loop out swap is currently utilizing the channel,
+	//so it is not eligible.
 	AutoReason_AUTO_REASON_LOOP_OUT AutoReason = 9
-	// Loop In indicates that a loop in swap is currently in flight for the peer,
-	// so it is not eligible.
+	//
+	//Loop In indicates that a loop in swap is currently in flight for the peer,
+	//so it is not eligible.
 	AutoReason_AUTO_REASON_LOOP_IN AutoReason = 10
-	// Liquidity ok indicates that a target meets the liquidity balance expressed
-	// in its rule, so no swap is needed.
+	//
+	//Liquidity ok indicates that a target meets the liquidity balance expressed
+	//in its rule, so no swap is needed.
 	AutoReason_AUTO_REASON_LIQUIDITY_OK AutoReason = 11
-	// Budget insufficient indicates that we cannot perform a swap because we do
-	// not have enough pending budget available. This differs from budget elapsed,
-	// because we still have some budget available, but we have allocated it to
-	// other swaps.
+	//
+	//Budget insufficient indicates that we cannot perform a swap because we do
+	//not have enough pending budget available. This differs from budget elapsed,
+	//because we still have some budget available, but we have allocated it to
+	//other swaps.
 	AutoReason_AUTO_REASON_BUDGET_INSUFFICIENT AutoReason = 12
-	// Fee insufficient indicates that the fee estimate for a swap is higher than
-	// the portion of total swap amount that we allow fees to consume.
+	//
+	//Fee insufficient indicates that the fee estimate for a swap is higher than
+	//the portion of total swap amount that we allow fees to consume.
 	AutoReason_AUTO_REASON_FEE_INSUFFICIENT AutoReason = 13
-	// No static loop-in candidate indicates that static loop-in autoloop was
-	// selected, but no full-deposit static candidate fit the rule.
+	//
+	//No static loop-in candidate indicates that static loop-in autoloop was
+	//selected, but no full-deposit static candidate fit the rule.
 	AutoReason_AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE AutoReason = 14
-	// Custom channel data indicates that the target channel carries custom
-	// channel data and is excluded from the standard autoloop planner.
+	//
+	//Custom channel data indicates that the target channel carries custom
+	//channel data and is excluded from the standard autoloop planner.
 	AutoReason_AUTO_REASON_CUSTOM_CHANNEL_DATA AutoReason = 15
 )
 
@@ -506,44 +539,57 @@ func (AutoReason) EnumDescriptor() ([]byte, []int) {
 type DepositState int32
 
 const (
-	// UNKNOWN_STATE is the default state of a deposit.
+	//
+	//UNKNOWN_STATE is the default state of a deposit.
 	DepositState_UNKNOWN_STATE DepositState = 0
-	// DEPOSITED indicates that the deposit has been sufficiently confirmed on
-	// chain.
+	//
+	//DEPOSITED indicates that the deposit has been sufficiently confirmed on
+	//chain.
 	DepositState_DEPOSITED DepositState = 1
-	// WITHDRAWING indicates that the deposit is currently being withdrawn. It
-	// flips to WITHDRAWN once the withdrawal transaction has been sufficiently
-	// confirmed.
+	//
+	//WITHDRAWING indicates that the deposit is currently being withdrawn. It
+	//flips to WITHDRAWN once the withdrawal transaction has been sufficiently
+	//confirmed.
 	DepositState_WITHDRAWING DepositState = 2
-	// WITHDRAWN indicates that the deposit has been withdrawn.
+	//
+	//WITHDRAWN indicates that the deposit has been withdrawn.
 	DepositState_WITHDRAWN DepositState = 3
-	// LOOPING_IN indicates that the deposit is currently being used in a static
-	// address loop-in swap.
+	//
+	//LOOPING_IN indicates that the deposit is currently being used in a static
+	//address loop-in swap.
 	DepositState_LOOPING_IN DepositState = 4
-	// LOOPED_IN indicates that the deposit was used in a static address loop-in
-	// swap.
+	//
+	//LOOPED_IN indicates that the deposit was used in a static address loop-in
+	//swap.
 	DepositState_LOOPED_IN DepositState = 5
-	// SWEEP_HTLC_TIMEOUT indicates that the deposit is part of an active loop-in
-	// of which the respective htlc was published by the server and the timeout
-	// path has opened up for the client to sweep.
+	//
+	//SWEEP_HTLC_TIMEOUT indicates that the deposit is part of an active loop-in
+	//of which the respective htlc was published by the server and the timeout
+	//path has opened up for the client to sweep.
 	DepositState_SWEEP_HTLC_TIMEOUT DepositState = 6
-	// HTLC_TIMEOUT_SWEPT indicates that the timeout path of the htlc has been
-	// swept by the client.
+	//
+	//HTLC_TIMEOUT_SWEPT indicates that the timeout path of the htlc has been
+	//swept by the client.
 	DepositState_HTLC_TIMEOUT_SWEPT DepositState = 7
-	// PUBLISH_EXPIRED indicates that the deposit has expired and the sweep
-	// transaction has been published.
+	//
+	//PUBLISH_EXPIRED indicates that the deposit has expired and the sweep
+	//transaction has been published.
 	DepositState_PUBLISH_EXPIRED DepositState = 8
-	// WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep
-	// transaction has not yet been sufficiently confirmed.
+	//
+	//WAIT_FOR_EXPIRY_SWEEP indicates that the deposit has expired and the sweep
+	//transaction has not yet been sufficiently confirmed.
 	DepositState_WAIT_FOR_EXPIRY_SWEEP DepositState = 9
-	// EXPIRED indicates that the deposit has expired and the sweep transaction
-	// has been sufficiently confirmed.
+	//
+	//EXPIRED indicates that the deposit has expired and the sweep transaction
+	//has been sufficiently confirmed.
 	DepositState_EXPIRED DepositState = 10
-	// OPENING_CHANNEL indicates that the channel open in which the deposit was
-	// used is in progress.
+	//
+	//OPENING_CHANNEL indicates that the channel open in which the deposit was
+	//used is in progress.
 	DepositState_OPENING_CHANNEL DepositState = 11
-	// CHANNEL_PUBLISHED indicates that the channel open was finalized and
-	// published and that it should be managed from lnd from now on.
+	//
+	//CHANNEL_PUBLISHED indicates that the channel open was finalized and
+	//published and that it should be managed from lnd from now on.
 	DepositState_CHANNEL_PUBLISHED DepositState = 12
 )
 
@@ -611,36 +657,40 @@ func (DepositState) EnumDescriptor() ([]byte, []int) {
 type OnchainCostStatus int32
 
 const (
-	// The on-chain cost is unknown and zero. This is also the value if the
-	// daemon doesn't report the on-chain cost.
 	//
-	// For a deposit, the client wallet doesn't know the fee of its funding
-	// transaction, for example because an external wallet funded it or because
-	// the wallet doesn't have the transaction. Once a daemon that reports the
-	// on-chain cost has set this status for a deposit, it doesn't change.
+	//The on-chain cost is unknown and zero. This is also the value if the
+	//daemon doesn't report the on-chain cost.
 	//
-	// For a static loop-in, either the swap wasn't paid and its htlc hasn't
-	// timed out, for example because it is still pending or failed before its
-	// htlc timeout sweep was published, or none of its deposits count for it,
-	// or the funding fee of none of its deposits is known, for example because
-	// they were all funded by an external wallet. A pending swap can still get
-	// a cost once it is paid or its htlc times out.
+	//For a deposit, the client wallet doesn't know the fee of its funding
+	//transaction, for example because an external wallet funded it or because
+	//the wallet doesn't have the transaction. Once a daemon that reports the
+	//on-chain cost has set this status for a deposit, it doesn't change.
+	//
+	//For a static loop-in, either the swap wasn't paid and its htlc hasn't
+	//timed out, for example because it is still pending or failed before its
+	//htlc timeout sweep was published, or none of its deposits count for it,
+	//or the funding fee of none of its deposits is known, for example because
+	//they were all funded by an external wallet. A pending swap can still get
+	//a cost once it is paid or its htlc times out.
 	OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN OnchainCostStatus = 0
-	// The funding fees of some of a swap's deposits are known, and cost_onchain
-	// only includes those. The others are left out, for example a deposit
-	// funded by an external wallet. cost_onchain can be zero if the known
-	// deposits are change, which costs nothing.
+	//
+	//The funding fees of some of a swap's deposits are known, and cost_onchain
+	//only includes those. The others are left out, for example a deposit
+	//funded by an external wallet. cost_onchain can be zero if the known
+	//deposits are change, which costs nothing.
 	OnchainCostStatus_ONCHAIN_COST_STATUS_PARTIAL OnchainCostStatus = 1
-	// The funding fees of all deposits are known and included in the cost.
-	// Fees of the htlc timeout path are never included. For a deposit, its
-	// cost is known.
+	//
+	//The funding fees of all deposits are known and included in the cost.
+	//Fees of the htlc timeout path are never included. For a deposit, its
+	//cost is known.
 	OnchainCostStatus_ONCHAIN_COST_STATUS_COMPLETE OnchainCostStatus = 2
-	// The on-chain cost hasn't been determined yet. loopd looks it up within
-	// about 10 seconds of finding a deposit, and keeps trying while lnd isn't
-	// synced to the chain or the lookup fails. For a deposit, cost_onchain is
-	// zero. For a static loop-in, the cost of a deposit the swap spent hasn't
-	// been determined yet, and cost_onchain only includes the deposits whose
-	// funding fee is known so far.
+	//
+	//The on-chain cost hasn't been determined yet. loopd looks it up within
+	//about 10 seconds of finding a deposit, and keeps trying while lnd isn't
+	//synced to the chain or the lookup fails. For a deposit, cost_onchain is
+	//zero. For a static loop-in, the cost of a deposit the swap spent hasn't
+	//been determined yet, and cost_onchain only includes the deposits whose
+	//funding fee is known so far.
 	OnchainCostStatus_ONCHAIN_COST_STATUS_PENDING OnchainCostStatus = 3
 )
 
@@ -690,17 +740,29 @@ func (OnchainCostStatus) EnumDescriptor() ([]byte, []int) {
 type StaticAddressLoopInSwapState int32
 
 const (
+	//
 	StaticAddressLoopInSwapState_UNKNOWN_STATIC_ADDRESS_SWAP_STATE StaticAddressLoopInSwapState = 0
+	//
 	StaticAddressLoopInSwapState_INIT_HTLC StaticAddressLoopInSwapState = 1
+	//
 	StaticAddressLoopInSwapState_SIGN_HTLC_TX StaticAddressLoopInSwapState = 2
+	//
 	StaticAddressLoopInSwapState_MONITOR_INVOICE_HTLC_TX StaticAddressLoopInSwapState = 3
+	//
 	StaticAddressLoopInSwapState_PAYMENT_RECEIVED StaticAddressLoopInSwapState = 4
+	//
 	StaticAddressLoopInSwapState_SWEEP_STATIC_ADDRESS_HTLC_TIMEOUT StaticAddressLoopInSwapState = 5
+	//
 	StaticAddressLoopInSwapState_MONITOR_HTLC_TIMEOUT_SWEEP StaticAddressLoopInSwapState = 6
+	//
 	StaticAddressLoopInSwapState_HTLC_STATIC_ADDRESS_TIMEOUT_SWEPT StaticAddressLoopInSwapState = 7
+	//
 	StaticAddressLoopInSwapState_SUCCEEDED StaticAddressLoopInSwapState = 8
+	//
 	StaticAddressLoopInSwapState_SUCCEEDED_TRANSITIONING_FAILED StaticAddressLoopInSwapState = 9
+	//
 	StaticAddressLoopInSwapState_UNLOCK_DEPOSITS StaticAddressLoopInSwapState = 10
+	//
 	StaticAddressLoopInSwapState_FAILED_STATIC_ADDRESS_SWAP StaticAddressLoopInSwapState = 11
 )
 
@@ -863,8 +925,9 @@ func (x *StaticOpenChannelRequest) GetOpenChannelRequest() *lnrpc.OpenChannelReq
 
 type StaticOpenChannelResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The outpoint of the channel opening transaction in the format
-	// "txid:output_index".
+	//
+	//The outpoint of the channel opening transaction in the format
+	//"txid:output_index".
 	ChannelOpenOutpoint string `protobuf:"bytes,1,opt,name=channel_open_outpoint,json=channelOpenOutpoint,proto3" json:"channel_open_outpoint,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -981,97 +1044,118 @@ func (*StopDaemonResponse) Descriptor() ([]byte, []int) {
 
 type LoopOutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Requested swap amount in sat. This does not include the swap and miner fee.
+	//
+	//Requested swap amount in sat. This does not include the swap and miner fee.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// Base58 encoded destination address for the swap.
+	//
+	//Base58 encoded destination address for the swap.
 	Dest string `protobuf:"bytes,2,opt,name=dest,proto3" json:"dest,omitempty"`
-	// Maximum off-chain fee in sat that may be paid for swap payment to the
-	// server. This limit is applied during path finding. Typically this value is
-	// taken from the response of the GetQuote call.
+	//
+	//Maximum off-chain fee in sat that may be paid for swap payment to the
+	//server. This limit is applied during path finding. Typically this value is
+	//taken from the response of the GetQuote call.
 	MaxSwapRoutingFee int64 `protobuf:"varint,3,opt,name=max_swap_routing_fee,json=maxSwapRoutingFee,proto3" json:"max_swap_routing_fee,omitempty"`
-	// Maximum off-chain fee in sat that may be paid for the prepay to the server.
-	// This limit is applied during path finding. Typically this value is taken
-	// from the response of the GetQuote call.
+	//
+	//Maximum off-chain fee in sat that may be paid for the prepay to the server.
+	//This limit is applied during path finding. Typically this value is taken
+	//from the response of the GetQuote call.
 	MaxPrepayRoutingFee int64 `protobuf:"varint,4,opt,name=max_prepay_routing_fee,json=maxPrepayRoutingFee,proto3" json:"max_prepay_routing_fee,omitempty"`
-	// Maximum we are willing to pay the server for the swap. This value is not
-	// disclosed in the swap initiation call, but if the server asks for a
-	// higher fee, we abort the swap. Typically this value is taken from the
-	// response of the GetQuote call. It includes the prepay amount.
+	//
+	//Maximum we are willing to pay the server for the swap. This value is not
+	//disclosed in the swap initiation call, but if the server asks for a
+	//higher fee, we abort the swap. Typically this value is taken from the
+	//response of the GetQuote call. It includes the prepay amount.
 	MaxSwapFee int64 `protobuf:"varint,5,opt,name=max_swap_fee,json=maxSwapFee,proto3" json:"max_swap_fee,omitempty"`
-	// Maximum amount of the swap fee that may be charged as a prepayment.
+	//
+	//Maximum amount of the swap fee that may be charged as a prepayment.
 	MaxPrepayAmt int64 `protobuf:"varint,6,opt,name=max_prepay_amt,json=maxPrepayAmt,proto3" json:"max_prepay_amt,omitempty"`
-	// Maximum in on-chain fees that we are willing to spend. If we want to
-	// sweep the on-chain htlc and the fee estimate turns out higher than this
-	// value, we cancel the swap. If the fee estimate is lower, we publish the
-	// sweep tx.
 	//
-	// If the sweep tx is not confirmed, we are forced to ratchet up fees until it
-	// is swept. Possibly even exceeding max_miner_fee if we get close to the htlc
-	// timeout. Because the initial publication revealed the preimage, we have no
-	// other choice. The server may already have pulled the off-chain htlc. Only
-	// when the fee becomes higher than the swap amount, we can only wait for fees
-	// to come down and hope - if we are past the timeout - that the server is not
-	// publishing the revocation.
+	//Maximum in on-chain fees that we are willing to spend. If we want to
+	//sweep the on-chain htlc and the fee estimate turns out higher than this
+	//value, we cancel the swap. If the fee estimate is lower, we publish the
+	//sweep tx.
 	//
-	// max_miner_fee is typically taken from the response of the GetQuote call.
+	//If the sweep tx is not confirmed, we are forced to ratchet up fees until it
+	//is swept. Possibly even exceeding max_miner_fee if we get close to the htlc
+	//timeout. Because the initial publication revealed the preimage, we have no
+	//other choice. The server may already have pulled the off-chain htlc. Only
+	//when the fee becomes higher than the swap amount, we can only wait for fees
+	//to come down and hope - if we are past the timeout - that the server is not
+	//publishing the revocation.
+	//
+	//max_miner_fee is typically taken from the response of the GetQuote call.
 	MaxMinerFee int64 `protobuf:"varint,7,opt,name=max_miner_fee,json=maxMinerFee,proto3" json:"max_miner_fee,omitempty"`
-	// Deprecated, use outgoing_chan_set. The channel to loop out, the channel
-	// to loop out is selected based on the lowest routing fee for the swap
-	// payment to the server.
+	//
+	//Deprecated, use outgoing_chan_set. The channel to loop out, the channel
+	//to loop out is selected based on the lowest routing fee for the swap
+	//payment to the server.
 	//
 	// Deprecated: Marked as deprecated in client.proto.
 	LoopOutChannel uint64 `protobuf:"varint,8,opt,name=loop_out_channel,json=loopOutChannel,proto3" json:"loop_out_channel,omitempty"`
-	// A restriction on the channel set that may be used to loop out. The actual
-	// channel(s) that will be used are selected based on the lowest routing fee
-	// for the swap payment to the server.
+	//
+	//A restriction on the channel set that may be used to loop out. The actual
+	//channel(s) that will be used are selected based on the lowest routing fee
+	//for the swap payment to the server.
 	OutgoingChanSet []uint64 `protobuf:"varint,11,rep,packed,name=outgoing_chan_set,json=outgoingChanSet,proto3" json:"outgoing_chan_set,omitempty"`
-	// The number of blocks from the on-chain HTLC's confirmation height that it
-	// should be swept within.
+	//
+	//The number of blocks from the on-chain HTLC's confirmation height that it
+	//should be swept within.
 	SweepConfTarget int32 `protobuf:"varint,9,opt,name=sweep_conf_target,json=sweepConfTarget,proto3" json:"sweep_conf_target,omitempty"`
-	// The number of confirmations that we require for the on chain htlc that will
-	// be published by the server before we reveal the preimage.
+	//
+	//The number of confirmations that we require for the on chain htlc that will
+	//be published by the server before we reveal the preimage.
 	HtlcConfirmations int32 `protobuf:"varint,13,opt,name=htlc_confirmations,json=htlcConfirmations,proto3" json:"htlc_confirmations,omitempty"`
-	// The latest time (in unix seconds) we allow the server to wait before
-	// publishing the HTLC on chain. Setting this to a larger value will give the
-	// server the opportunity to batch multiple swaps together, and wait for
-	// low-fee periods before publishing the HTLC, potentially resulting in a
-	// lower total swap fee.
+	//
+	//The latest time (in unix seconds) we allow the server to wait before
+	//publishing the HTLC on chain. Setting this to a larger value will give the
+	//server the opportunity to batch multiple swaps together, and wait for
+	//low-fee periods before publishing the HTLC, potentially resulting in a
+	//lower total swap fee.
 	SwapPublicationDeadline uint64 `protobuf:"varint,10,opt,name=swap_publication_deadline,json=swapPublicationDeadline,proto3" json:"swap_publication_deadline,omitempty"`
-	// An optional label for this swap. This field is limited to 500 characters
-	// and may not start with the prefix [reserved], which is used to tag labels
-	// produced by the daemon.
+	//
+	//An optional label for this swap. This field is limited to 500 characters
+	//and may not start with the prefix [reserved], which is used to tag labels
+	//produced by the daemon.
 	Label string `protobuf:"bytes,12,opt,name=label,proto3" json:"label,omitempty"`
-	// An optional identification string that will be appended to the user agent
-	// string sent to the server to give information about the usage of loop. This
-	// initiator part is meant for user interfaces to add their name to give the
-	// full picture of the binary used (loopd, LiT) and the method used for
-	// triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
+	//
+	//An optional identification string that will be appended to the user agent
+	//string sent to the server to give information about the usage of loop. This
+	//initiator part is meant for user interfaces to add their name to give the
+	//full picture of the binary used (loopd, LiT) and the method used for
+	//triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
 	Initiator string `protobuf:"bytes,14,opt,name=initiator,proto3" json:"initiator,omitempty"`
-	// An alternative destination address source for the swap. This field
-	// represents the name of the account in the backing lnd instance.
-	// Refer to lnd's wallet import functions for reference.
+	//
+	//An alternative destination address source for the swap. This field
+	//represents the name of the account in the backing lnd instance.
+	//Refer to lnd's wallet import functions for reference.
 	Account string `protobuf:"bytes,15,opt,name=account,proto3" json:"account,omitempty"`
-	// The address type of the account specified in the account field.
+	//
+	//The address type of the account specified in the account field.
 	AccountAddrType AddressType `protobuf:"varint,16,opt,name=account_addr_type,json=accountAddrType,proto3,enum=looprpc.AddressType" json:"account_addr_type,omitempty"`
-	// A flag indicating whether the defined destination address does not belong to
-	// the wallet. This is used to flag whether this loop out swap could have its
-	// associated sweep batched.
+	//
+	//A flag indicating whether the defined destination address does not belong to
+	//the wallet. This is used to flag whether this loop out swap could have its
+	//associated sweep batched.
 	IsExternalAddr bool `protobuf:"varint,17,opt,name=is_external_addr,json=isExternalAddr,proto3" json:"is_external_addr,omitempty"`
-	// The reservations to use for the swap. If this field is set, loop will try
-	// to use the instant out flow using the given reservations. If the
-	// reservations are not sufficient, the swap will fail. The swap amount must
-	// be equal to the sum of the amounts of the reservations.
+	//
+	//The reservations to use for the swap. If this field is set, loop will try
+	//to use the instant out flow using the given reservations. If the
+	//reservations are not sufficient, the swap will fail. The swap amount must
+	//be equal to the sum of the amounts of the reservations.
 	ReservationIds [][]byte `protobuf:"bytes,18,rep,name=reservation_ids,json=reservationIds,proto3" json:"reservation_ids,omitempty"`
-	// The timeout in seconds to use for off-chain payments. Note that the swap
-	// payment is attempted multiple times where each attempt will set this value
-	// as the timeout for the payment.
+	//
+	//The timeout in seconds to use for off-chain payments. Note that the swap
+	//payment is attempted multiple times where each attempt will set this value
+	//as the timeout for the payment.
 	PaymentTimeout uint32 `protobuf:"varint,19,opt,name=payment_timeout,json=paymentTimeout,proto3" json:"payment_timeout,omitempty"`
-	// The optional asset information to use for the swap. If set, the swap will
-	// be paid in the specified asset using the provided edge node. An Asset client
-	// must be connected to the loop client to use this feature.
+	//
+	//The optional asset information to use for the swap. If set, the swap will
+	//be paid in the specified asset using the provided edge node. An Asset client
+	//must be connected to the loop client to use this feature.
 	AssetInfo *AssetLoopOutRequest `protobuf:"bytes,20,opt,name=asset_info,json=assetInfo,proto3" json:"asset_info,omitempty"`
-	// The optional RFQ information to use for the swap. If set, the swap will
-	// use the provided RFQs to pay for the swap invoice.
+	//
+	//The optional RFQ information to use for the swap. If set, the swap will
+	//use the provided RFQs to pay for the swap invoice.
 	AssetRfqInfo  *AssetRfqInfo `protobuf:"bytes,21,opt,name=asset_rfq_info,json=assetRfqInfo,proto3" json:"asset_rfq_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1257,42 +1341,52 @@ func (x *LoopOutRequest) GetAssetRfqInfo() *AssetRfqInfo {
 
 type LoopInRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Requested swap amount in sat. This does not include the swap and miner
-	// fee.
-	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// Maximum we are willing to pay the server for the swap. This value is not
-	// disclosed in the swap initiation call, but if the server asks for a
-	// higher fee, we abort the swap. Typically this value is taken from the
-	// response of the GetQuote call.
-	MaxSwapFee int64 `protobuf:"varint,2,opt,name=max_swap_fee,json=maxSwapFee,proto3" json:"max_swap_fee,omitempty"`
-	// Maximum in on-chain fees that we are willing to spend. If we want to
-	// publish the on-chain htlc and the fee estimate turns out higher than this
-	// value, we cancel the swap.
 	//
-	// max_miner_fee is typically taken from the response of the GetQuote call.
+	//Requested swap amount in sat. This does not include the swap and miner
+	//fee.
+	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
+	//
+	//Maximum we are willing to pay the server for the swap. This value is not
+	//disclosed in the swap initiation call, but if the server asks for a
+	//higher fee, we abort the swap. Typically this value is taken from the
+	//response of the GetQuote call.
+	MaxSwapFee int64 `protobuf:"varint,2,opt,name=max_swap_fee,json=maxSwapFee,proto3" json:"max_swap_fee,omitempty"`
+	//
+	//Maximum in on-chain fees that we are willing to spend. If we want to
+	//publish the on-chain htlc and the fee estimate turns out higher than this
+	//value, we cancel the swap.
+	//
+	//max_miner_fee is typically taken from the response of the GetQuote call.
 	MaxMinerFee int64 `protobuf:"varint,3,opt,name=max_miner_fee,json=maxMinerFee,proto3" json:"max_miner_fee,omitempty"`
-	// The last hop to use for the loop in swap. If empty, the last hop is selected
-	// based on the lowest routing fee for the swap payment from the server.
+	//
+	//The last hop to use for the loop in swap. If empty, the last hop is selected
+	//based on the lowest routing fee for the swap payment from the server.
 	LastHop []byte `protobuf:"bytes,4,opt,name=last_hop,json=lastHop,proto3" json:"last_hop,omitempty"`
-	// If external_htlc is true, we expect the htlc to be published by an external
-	// actor.
+	//
+	//If external_htlc is true, we expect the htlc to be published by an external
+	//actor.
 	ExternalHtlc bool `protobuf:"varint,5,opt,name=external_htlc,json=externalHtlc,proto3" json:"external_htlc,omitempty"`
-	// The number of blocks that the on chain htlc should confirm within.
+	//
+	//The number of blocks that the on chain htlc should confirm within.
 	HtlcConfTarget int32 `protobuf:"varint,6,opt,name=htlc_conf_target,json=htlcConfTarget,proto3" json:"htlc_conf_target,omitempty"`
-	// An optional label for this swap. This field is limited to 500 characters
-	// and may not be one of the reserved values in loop/labels Reserved list.
+	//
+	//An optional label for this swap. This field is limited to 500 characters
+	//and may not be one of the reserved values in loop/labels Reserved list.
 	Label string `protobuf:"bytes,7,opt,name=label,proto3" json:"label,omitempty"`
-	// An optional identification string that will be appended to the user agent
-	// string sent to the server to give information about the usage of loop. This
-	// initiator part is meant for user interfaces to add their name to give the
-	// full picture of the binary used (loopd, LiT) and the method used for
-	// triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
+	//
+	//An optional identification string that will be appended to the user agent
+	//string sent to the server to give information about the usage of loop. This
+	//initiator part is meant for user interfaces to add their name to give the
+	//full picture of the binary used (loopd, LiT) and the method used for
+	//triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
 	Initiator string `protobuf:"bytes,8,opt,name=initiator,proto3" json:"initiator,omitempty"`
-	// Optional route hints to reach the destination through private channels.
+	//
+	//Optional route hints to reach the destination through private channels.
 	RouteHints []*swapserverrpc.RouteHint `protobuf:"bytes,9,rep,name=route_hints,json=routeHints,proto3" json:"route_hints,omitempty"`
-	// Private indicates whether the destination node should be considered
-	// private. In which case, loop will generate hophints to assist with
-	// probing and payment.
+	//
+	//Private indicates whether the destination node should be considered
+	//private. In which case, loop will generate hophints to assist with
+	//probing and payment.
 	Private       bool `protobuf:"varint,10,opt,name=private,proto3" json:"private,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1400,27 +1494,31 @@ func (x *LoopInRequest) GetPrivate() bool {
 
 type SwapResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Swap identifier to track status in the update stream that is returned from
-	// the Start() call. Currently this is the hash that locks the htlcs.
-	// DEPRECATED: To make the API more consistent, this field is deprecated in
-	// favor of id_bytes and will be removed in a future release.
+	//
+	//Swap identifier to track status in the update stream that is returned from
+	//the Start() call. Currently this is the hash that locks the htlcs.
+	//DEPRECATED: To make the API more consistent, this field is deprecated in
+	//favor of id_bytes and will be removed in a future release.
 	//
 	// Deprecated: Marked as deprecated in client.proto.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Swap identifier to track status in the update stream that is returned from
-	// the Start() call. Currently this is the hash that locks the htlcs.
+	//
+	//Swap identifier to track status in the update stream that is returned from
+	//the Start() call. Currently this is the hash that locks the htlcs.
 	IdBytes []byte `protobuf:"bytes,3,opt,name=id_bytes,json=idBytes,proto3" json:"id_bytes,omitempty"`
-	// DEPRECATED. This field stores the address of the onchain htlc, but
-	// depending on the request, the semantics are different.
-	// - For internal loop-in htlc_address contains the address of the
-	// native segwit (P2WSH) htlc.
-	// /    - For loop-out htlc_address always contains the native segwit (P2WSH)
-	// htlc address.
+	//
+	//DEPRECATED. This field stores the address of the onchain htlc, but
+	//depending on the request, the semantics are different.
+	//- For internal loop-in htlc_address contains the address of the
+	//native segwit (P2WSH) htlc.
+	///    - For loop-out htlc_address always contains the native segwit (P2WSH)
+	//htlc address.
 	//
 	// Deprecated: Marked as deprecated in client.proto.
 	HtlcAddress string `protobuf:"bytes,2,opt,name=htlc_address,json=htlcAddress,proto3" json:"htlc_address,omitempty"`
-	// The native segwit address of the on-chain htlc.
-	// Used for both loop-in and loop-out.
+	//
+	//The native segwit address of the on-chain htlc.
+	//Used for both loop-in and loop-out.
 	HtlcAddressP2Wsh string `protobuf:"bytes,5,opt,name=htlc_address_p2wsh,json=htlcAddressP2wsh,proto3" json:"htlc_address_p2wsh,omitempty"`
 	// The address of the v3 (taproot) htlc. Used for both loop-in and loop-out.
 	HtlcAddressP2Tr string `protobuf:"bytes,7,opt,name=htlc_address_p2tr,json=htlcAddressP2tr,proto3" json:"htlc_address_p2tr,omitempty"`
@@ -1542,38 +1640,47 @@ func (*MonitorRequest) Descriptor() ([]byte, []int) {
 
 type SwapStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Requested swap amount in sat. This does not include the swap and miner
-	// fee.
+	//
+	//Requested swap amount in sat. This does not include the swap and miner
+	//fee.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// Swap identifier to track status in the update stream that is returned from
-	// the Start() call. Currently this is the hash that locks the htlcs.
-	// DEPRECATED: To make the API more consistent, this field is deprecated in
-	// favor of id_bytes and will be removed in a future release.
+	//
+	//Swap identifier to track status in the update stream that is returned from
+	//the Start() call. Currently this is the hash that locks the htlcs.
+	//DEPRECATED: To make the API more consistent, this field is deprecated in
+	//favor of id_bytes and will be removed in a future release.
 	//
 	// Deprecated: Marked as deprecated in client.proto.
 	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	// Swap identifier to track status in the update stream that is returned from
-	// the Start() call. Currently this is the hash that locks the htlcs.
+	//
+	//Swap identifier to track status in the update stream that is returned from
+	//the Start() call. Currently this is the hash that locks the htlcs.
 	IdBytes []byte `protobuf:"bytes,11,opt,name=id_bytes,json=idBytes,proto3" json:"id_bytes,omitempty"`
-	// The type of the swap.
+	//
+	//The type of the swap.
 	Type SwapType `protobuf:"varint,3,opt,name=type,proto3,enum=looprpc.SwapType" json:"type,omitempty"`
-	// Generic loop-in/loop-out state for swaps.
+	//
+	//Generic loop-in/loop-out state for swaps.
 	State SwapState `protobuf:"varint,4,opt,name=state,proto3,enum=looprpc.SwapState" json:"state,omitempty"`
 	// Types that are valid to be assigned to StaticLoopInStateOptional:
 	//
 	//	*SwapStatus_StaticLoopInState
 	StaticLoopInStateOptional isSwapStatus_StaticLoopInStateOptional `protobuf_oneof:"static_loop_in_state_optional"`
-	// A failure reason for the swap, only set if the swap has failed.
+	//
+	//A failure reason for the swap, only set if the swap has failed.
 	FailureReason FailureReason `protobuf:"varint,14,opt,name=failure_reason,json=failureReason,proto3,enum=looprpc.FailureReason" json:"failure_reason,omitempty"`
-	// Initiation time of the swap.
+	//
+	//Initiation time of the swap.
 	InitiationTime int64 `protobuf:"varint,5,opt,name=initiation_time,json=initiationTime,proto3" json:"initiation_time,omitempty"`
-	// Initiation time of the swap.
+	//
+	//Initiation time of the swap.
 	LastUpdateTime int64 `protobuf:"varint,6,opt,name=last_update_time,json=lastUpdateTime,proto3" json:"last_update_time,omitempty"`
-	// DEPRECATED:  This field stores the address of the onchain htlc.
-	// - For internal loop-in htlc_address contains the address of the
-	// native segwit (P2WSH) htlc.
-	// - For loop-out htlc_address always contains the native segwit (P2WSH)
-	// htlc address.
+	//
+	//DEPRECATED:  This field stores the address of the onchain htlc.
+	//- For internal loop-in htlc_address contains the address of the
+	//native segwit (P2WSH) htlc.
+	//- For loop-out htlc_address always contains the native segwit (P2WSH)
+	//htlc address.
 	//
 	// Deprecated: Marked as deprecated in client.proto.
 	HtlcAddress string `protobuf:"bytes,7,opt,name=htlc_address,json=htlcAddress,proto3" json:"htlc_address,omitempty"`
@@ -1785,7 +1892,8 @@ type isSwapStatus_StaticLoopInStateOptional interface {
 }
 
 type SwapStatus_StaticLoopInState struct {
-	// Static address loop-in FSM state when type is STATIC_LOOP_IN.
+	//
+	//Static address loop-in FSM state when type is STATIC_LOOP_IN.
 	StaticLoopInState StaticAddressLoopInSwapState `protobuf:"varint,20,opt,name=static_loop_in_state,json=staticLoopInState,proto3,enum=looprpc.StaticAddressLoopInSwapState,oneof"`
 }
 
@@ -1946,7 +2054,8 @@ func (x *ListSwapsFilter) GetStartTimestampNs() int64 {
 
 type ListSwapsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The list of all currently known swaps and their status.
+	//
+	//The list of all currently known swaps and their status.
 	Swaps []*SwapStatus `protobuf:"bytes,1,rep,name=swaps,proto3" json:"swaps,omitempty"`
 	// Timestamp to use for paging start_timestamp_ns.
 	NextStartTime int64 `protobuf:"varint,2,opt,name=next_start_time,json=nextStartTime,proto3" json:"next_start_time,omitempty"`
@@ -2355,8 +2464,9 @@ func (x *PublishFailed) GetError() string {
 
 type SwapInfoRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The swap identifier which currently is the hash that locks the HTLCs. When
-	// using REST, this field must be encoded as URL safe base64.
+	//
+	//The swap identifier which currently is the hash that locks the HTLCs. When
+	//using REST, this field must be encoded as URL safe base64.
 	Id            []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2437,9 +2547,11 @@ func (*TermsRequest) Descriptor() ([]byte, []int) {
 
 type InTermsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Minimum swap amount (sat)
+	//
+	//Minimum swap amount (sat)
 	MinSwapAmount int64 `protobuf:"varint,5,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
-	// Maximum swap amount (sat)
+	//
+	//Maximum swap amount (sat)
 	MaxSwapAmount int64 `protobuf:"varint,6,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2491,9 +2603,11 @@ func (x *InTermsResponse) GetMaxSwapAmount() int64 {
 
 type OutTermsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Minimum swap amount (sat)
+	//
+	//Minimum swap amount (sat)
 	MinSwapAmount int64 `protobuf:"varint,5,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
-	// Maximum swap amount (sat)
+	//
+	//Maximum swap amount (sat)
 	MaxSwapAmount int64 `protobuf:"varint,6,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
 	// The minimally accepted cltv delta of the on-chain htlc.
 	MinCltvDelta int32 `protobuf:"varint,8,opt,name=min_cltv_delta,json=minCltvDelta,proto3" json:"min_cltv_delta,omitempty"`
@@ -2563,51 +2677,62 @@ func (x *OutTermsResponse) GetMaxCltvDelta() int32 {
 
 type QuoteRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The amount to swap in satoshis. In the loop-in case this can either be taken
-	// from the connected lnd wallet or coin-selected from static address deposits.
-	// This is controlled by the select_deposits flag. If deposit_outpoints are
-	// specified, the coins are taken out of that.
+	//
+	//The amount to swap in satoshis. In the loop-in case this can either be taken
+	//from the connected lnd wallet or coin-selected from static address deposits.
+	//This is controlled by the select_deposits flag. If deposit_outpoints are
+	//specified, the coins are taken out of that.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// The confirmation target that should be used either for the sweep of the
-	// on-chain HTLC broadcast by the swap server in the case of a Loop Out, or for
-	// the confirmation of the on-chain HTLC broadcast by the swap client in the
-	// case of a Loop In.
+	//
+	//The confirmation target that should be used either for the sweep of the
+	//on-chain HTLC broadcast by the swap server in the case of a Loop Out, or for
+	//the confirmation of the on-chain HTLC broadcast by the swap client in the
+	//case of a Loop In.
 	ConfTarget int32 `protobuf:"varint,2,opt,name=conf_target,json=confTarget,proto3" json:"conf_target,omitempty"`
-	// If external_htlc is true, we expect the htlc to be published by an external
-	// actor.
+	//
+	//If external_htlc is true, we expect the htlc to be published by an external
+	//actor.
 	ExternalHtlc bool `protobuf:"varint,3,opt,name=external_htlc,json=externalHtlc,proto3" json:"external_htlc,omitempty"`
-	// The latest time (in unix seconds) we allow the server to wait before
-	// publishing the HTLC on chain. Setting this to a larger value will give the
-	// server the opportunity to batch multiple swaps together, and wait for
-	// low-fee periods before publishing the HTLC, potentially resulting in a
-	// lower total swap fee. This only has an effect on loop out quotes.
+	//
+	//The latest time (in unix seconds) we allow the server to wait before
+	//publishing the HTLC on chain. Setting this to a larger value will give the
+	//server the opportunity to batch multiple swaps together, and wait for
+	//low-fee periods before publishing the HTLC, potentially resulting in a
+	//lower total swap fee. This only has an effect on loop out quotes.
 	SwapPublicationDeadline uint64 `protobuf:"varint,4,opt,name=swap_publication_deadline,json=swapPublicationDeadline,proto3" json:"swap_publication_deadline,omitempty"`
-	// Optionally the client can specify the last hop pubkey when requesting a
-	// loop-in quote. This is useful to get better off-chain routing fee from the
-	// server.
+	//
+	//Optionally the client can specify the last hop pubkey when requesting a
+	//loop-in quote. This is useful to get better off-chain routing fee from the
+	//server.
 	LoopInLastHop []byte `protobuf:"bytes,5,opt,name=loop_in_last_hop,json=loopInLastHop,proto3" json:"loop_in_last_hop,omitempty"`
-	// Optional route hints to reach the destination through private channels.
+	//
+	//Optional route hints to reach the destination through private channels.
 	LoopInRouteHints []*swapserverrpc.RouteHint `protobuf:"bytes,6,rep,name=loop_in_route_hints,json=loopInRouteHints,proto3" json:"loop_in_route_hints,omitempty"`
-	// Private indicates whether the destination node should be considered
-	// private. In which case, loop will generate hophints to assist with
-	// probing and payment.
+	//
+	//Private indicates whether the destination node should be considered
+	//private. In which case, loop will generate hophints to assist with
+	//probing and payment.
 	Private bool `protobuf:"varint,7,opt,name=private,proto3" json:"private,omitempty"`
-	// Static address deposit outpoints that will be quoted for. This option only
-	// pertains to loop in swaps. If the amt field is set as well the respective
-	// partial amount will be swapped. Cannot be used in conjunction with
-	// auto_select_deposits.
+	//
+	//Static address deposit outpoints that will be quoted for. This option only
+	//pertains to loop in swaps. If the amt field is set as well the respective
+	//partial amount will be swapped. Cannot be used in conjunction with
+	//auto_select_deposits.
 	DepositOutpoints []string `protobuf:"bytes,8,rep,name=deposit_outpoints,json=depositOutpoints,proto3" json:"deposit_outpoints,omitempty"`
-	// The optional asset information to use for the swap. If set, the quote will
-	// be returned in the specified asset.
+	//
+	//The optional asset information to use for the swap. If set, the quote will
+	//be returned in the specified asset.
 	AssetInfo *AssetLoopOutRequest `protobuf:"bytes,9,opt,name=asset_info,json=assetInfo,proto3" json:"asset_info,omitempty"`
-	// In the legacy loop-in case this field must be set to false.
-	// If set to true, the swap amount will be automatically selected from the
-	// static address deposits. If set to true, deposit_outpoints must be empty.
-	// This option only pertains to loop in swaps.
+	//
+	//In the legacy loop-in case this field must be set to false.
+	//If set to true, the swap amount will be automatically selected from the
+	//static address deposits. If set to true, deposit_outpoints must be empty.
+	//This option only pertains to loop in swaps.
 	AutoSelectDeposits bool `protobuf:"varint,10,opt,name=auto_select_deposits,json=autoSelectDeposits,proto3" json:"auto_select_deposits,omitempty"`
-	// If set to true the server will immediately publish the swap in exchange for
-	// a higher fee. This can be useful if the client expects change from a swap.
-	// Note that this feature is only available for static address loop in swaps.
+	//
+	//If set to true the server will immediately publish the swap in exchange for
+	//a higher fee. This can be useful if the client expects change from a swap.
+	//Note that this feature is only available for static address loop in swaps.
 	Fast          bool `protobuf:"varint,11,opt,name=fast,proto3" json:"fast,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2722,22 +2847,27 @@ func (x *QuoteRequest) GetFast() bool {
 
 type InQuoteResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The fee that the swap server is charging for the swap.
+	//
+	//The fee that the swap server is charging for the swap.
 	SwapFeeSat int64 `protobuf:"varint,1,opt,name=swap_fee_sat,json=swapFeeSat,proto3" json:"swap_fee_sat,omitempty"`
-	// An estimate of the on-chain fee that needs to be paid to publish the HTLC
-	// If a miner fee of 0 is returned, it means the external_htlc flag was set for
-	// a loop in and the fee estimation was skipped. If a miner fee of -1 is
-	// returned, it means lnd's wallet tried to estimate the fee but was unable to
-	// create a sample estimation transaction because not enough funds are
-	// available. An information message should be shown to the user in this case.
+	//
+	//An estimate of the on-chain fee that needs to be paid to publish the HTLC
+	//If a miner fee of 0 is returned, it means the external_htlc flag was set for
+	//a loop in and the fee estimation was skipped. If a miner fee of -1 is
+	//returned, it means lnd's wallet tried to estimate the fee but was unable to
+	//create a sample estimation transaction because not enough funds are
+	//available. An information message should be shown to the user in this case.
 	HtlcPublishFeeSat int64 `protobuf:"varint,3,opt,name=htlc_publish_fee_sat,json=htlcPublishFeeSat,proto3" json:"htlc_publish_fee_sat,omitempty"`
-	// On-chain cltv expiry delta
+	//
+	//On-chain cltv expiry delta
 	CltvDelta int32 `protobuf:"varint,5,opt,name=cltv_delta,json=cltvDelta,proto3" json:"cltv_delta,omitempty"`
-	// The confirmation target to be used to publish the on-chain HTLC.
+	//
+	//The confirmation target to be used to publish the on-chain HTLC.
 	ConfTarget int32 `protobuf:"varint,6,opt,name=conf_target,json=confTarget,proto3" json:"conf_target,omitempty"`
-	// If the quote request was for a static address loop in and only contained
-	// deposit outpoints the quote response will return the total amount of the
-	// selected deposits.
+	//
+	//If the quote request was for a static address loop in and only contained
+	//deposit outpoints the quote response will return the total amount of the
+	//selected deposits.
 	QuotedAmt     int64 `protobuf:"varint,7,opt,name=quoted_amt,json=quotedAmt,proto3" json:"quoted_amt,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2810,22 +2940,29 @@ func (x *InQuoteResponse) GetQuotedAmt() int64 {
 
 type OutQuoteResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The fee that the swap server is charging for the swap.
+	//
+	//The fee that the swap server is charging for the swap.
 	SwapFeeSat int64 `protobuf:"varint,1,opt,name=swap_fee_sat,json=swapFeeSat,proto3" json:"swap_fee_sat,omitempty"`
-	// The part of the swap fee that is requested as a prepayment.
+	//
+	//The part of the swap fee that is requested as a prepayment.
 	PrepayAmtSat int64 `protobuf:"varint,2,opt,name=prepay_amt_sat,json=prepayAmtSat,proto3" json:"prepay_amt_sat,omitempty"`
-	// An estimate of the on-chain fee that needs to be paid to sweep the HTLC for
-	// a loop out.
+	//
+	//An estimate of the on-chain fee that needs to be paid to sweep the HTLC for
+	//a loop out.
 	HtlcSweepFeeSat int64 `protobuf:"varint,3,opt,name=htlc_sweep_fee_sat,json=htlcSweepFeeSat,proto3" json:"htlc_sweep_fee_sat,omitempty"`
-	// The node pubkey where the swap payment needs to be paid
-	// to. This can be used to test connectivity before initiating the swap.
+	//
+	//The node pubkey where the swap payment needs to be paid
+	//to. This can be used to test connectivity before initiating the swap.
 	SwapPaymentDest []byte `protobuf:"bytes,4,opt,name=swap_payment_dest,json=swapPaymentDest,proto3" json:"swap_payment_dest,omitempty"`
-	// On-chain cltv expiry delta
+	//
+	//On-chain cltv expiry delta
 	CltvDelta int32 `protobuf:"varint,5,opt,name=cltv_delta,json=cltvDelta,proto3" json:"cltv_delta,omitempty"`
-	// The confirmation target to be used for the sweep of the on-chain HTLC.
+	//
+	//The confirmation target to be used for the sweep of the on-chain HTLC.
 	ConfTarget int32 `protobuf:"varint,6,opt,name=conf_target,json=confTarget,proto3" json:"conf_target,omitempty"`
-	// If the request was for an asset swap, the quote will return the rfq ids
-	// that will be used to pay for the swap and prepay invoices.
+	//
+	//If the request was for an asset swap, the quote will return the rfq ids
+	//that will be used to pay for the swap and prepay invoices.
 	AssetRfqInfo  *AssetRfqInfo `protobuf:"bytes,7,opt,name=asset_rfq_info,json=assetRfqInfo,proto3" json:"asset_rfq_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2912,11 +3049,14 @@ func (x *OutQuoteResponse) GetAssetRfqInfo() *AssetRfqInfo {
 
 type ProbeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The amount to probe.
+	//
+	//The amount to probe.
 	Amt int64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// Optional last hop of the route to probe.
+	//
+	//Optional last hop of the route to probe.
 	LastHop []byte `protobuf:"bytes,2,opt,name=last_hop,json=lastHop,proto3" json:"last_hop,omitempty"`
-	// Optional route hints to reach the destination through private channels.
+	//
+	//Optional route hints to reach the destination through private channels.
 	RouteHints    []*swapserverrpc.RouteHint `protobuf:"bytes,3,rep,name=route_hints,json=routeHints,proto3" json:"route_hints,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3047,7 +3187,8 @@ func (*TokensRequest) Descriptor() ([]byte, []int) {
 
 type TokensResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// List of all tokens the daemon knows of, including old/expired tokens.
+	//
+	//List of all tokens the daemon knows of, including old/expired tokens.
 	Tokens        []*L402Token `protobuf:"bytes,1,rep,name=tokens,proto3" json:"tokens,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3164,26 +3305,35 @@ func (*FetchL402TokenResponse) Descriptor() ([]byte, []int) {
 
 type L402Token struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The base macaroon that was baked by the auth server.
+	//
+	//The base macaroon that was baked by the auth server.
 	BaseMacaroon []byte `protobuf:"bytes,1,opt,name=base_macaroon,json=baseMacaroon,proto3" json:"base_macaroon,omitempty"`
-	// The payment hash of the payment that was paid to obtain the token.
+	//
+	//The payment hash of the payment that was paid to obtain the token.
 	PaymentHash []byte `protobuf:"bytes,2,opt,name=payment_hash,json=paymentHash,proto3" json:"payment_hash,omitempty"`
-	// The preimage of the payment hash, knowledge of this is proof that the
-	// payment has been paid. If the preimage is set to all zeros, this means the
-	// payment is still pending and the token is not yet fully valid.
+	//
+	//The preimage of the payment hash, knowledge of this is proof that the
+	//payment has been paid. If the preimage is set to all zeros, this means the
+	//payment is still pending and the token is not yet fully valid.
 	PaymentPreimage []byte `protobuf:"bytes,3,opt,name=payment_preimage,json=paymentPreimage,proto3" json:"payment_preimage,omitempty"`
-	// The amount of millisatoshis that was paid to get the token.
+	//
+	//The amount of millisatoshis that was paid to get the token.
 	AmountPaidMsat int64 `protobuf:"varint,4,opt,name=amount_paid_msat,json=amountPaidMsat,proto3" json:"amount_paid_msat,omitempty"`
-	// The amount of millisatoshis paid in routing fee to pay for the token.
+	//
+	//The amount of millisatoshis paid in routing fee to pay for the token.
 	RoutingFeePaidMsat int64 `protobuf:"varint,5,opt,name=routing_fee_paid_msat,json=routingFeePaidMsat,proto3" json:"routing_fee_paid_msat,omitempty"`
-	// The creation time of the token as UNIX timestamp in seconds.
+	//
+	//The creation time of the token as UNIX timestamp in seconds.
 	TimeCreated int64 `protobuf:"varint,6,opt,name=time_created,json=timeCreated,proto3" json:"time_created,omitempty"`
-	// Indicates whether the token is expired or still valid.
+	//
+	//Indicates whether the token is expired or still valid.
 	Expired bool `protobuf:"varint,7,opt,name=expired,proto3" json:"expired,omitempty"`
-	// Identifying attribute of this token in the store. Currently represents the
-	// file name of the token where it's stored on the file system.
+	//
+	//Identifying attribute of this token in the store. Currently represents the
+	//file name of the token where it's stored on the file system.
 	StorageName string `protobuf:"bytes,8,opt,name=storage_name,json=storageName,proto3" json:"storage_name,omitempty"`
-	// The l402 ID of the token.
+	//
+	//The l402 ID of the token.
 	Id            string `protobuf:"bytes,9,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3284,15 +3434,20 @@ func (x *L402Token) GetId() string {
 
 type LoopStats struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Number of currently pending swaps.
+	//
+	//Number of currently pending swaps.
 	PendingCount uint64 `protobuf:"varint,1,opt,name=pending_count,json=pendingCount,proto3" json:"pending_count,omitempty"`
-	// Number of succeeded swaps.
+	//
+	//Number of succeeded swaps.
 	SuccessCount uint64 `protobuf:"varint,2,opt,name=success_count,json=successCount,proto3" json:"success_count,omitempty"`
-	// Number failed swaps.
+	//
+	//Number failed swaps.
 	FailCount uint64 `protobuf:"varint,3,opt,name=fail_count,json=failCount,proto3" json:"fail_count,omitempty"`
-	// The sum of all pending swap amounts.
+	//
+	//The sum of all pending swap amounts.
 	SumPendingAmt int64 `protobuf:"varint,4,opt,name=sum_pending_amt,json=sumPendingAmt,proto3" json:"sum_pending_amt,omitempty"`
-	// The sum of all succeeded swap amounts.
+	//
+	//The sum of all succeeded swap amounts.
 	SumSucceededAmt int64 `protobuf:"varint,5,opt,name=sum_succeeded_amt,json=sumSucceededAmt,proto3" json:"sum_succeeded_amt,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -3401,25 +3556,34 @@ func (*GetInfoRequest) Descriptor() ([]byte, []int) {
 
 type GetInfoResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The current daemon version.
+	//
+	//The current daemon version.
 	Version string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
-	// The network the daemon is running on.
+	//
+	//The network the daemon is running on.
 	Network string `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
-	// Host and port of the loopd grpc server.
+	//
+	//Host and port of the loopd grpc server.
 	RpcListen string `protobuf:"bytes,3,opt,name=rpc_listen,json=rpcListen,proto3" json:"rpc_listen,omitempty"`
-	// Host and port of the loopd rest server.
+	//
+	//Host and port of the loopd rest server.
 	RestListen string `protobuf:"bytes,4,opt,name=rest_listen,json=restListen,proto3" json:"rest_listen,omitempty"`
-	// Loop's macaroon path that clients use to talk to the daemon.
+	//
+	//Loop's macaroon path that clients use to talk to the daemon.
 	MacaroonPath string `protobuf:"bytes,5,opt,name=macaroon_path,json=macaroonPath,proto3" json:"macaroon_path,omitempty"`
-	// Loop's tls cert path
+	//
+	//Loop's tls cert path
 	TlsCertPath string `protobuf:"bytes,6,opt,name=tls_cert_path,json=tlsCertPath,proto3" json:"tls_cert_path,omitempty"`
-	// Statistics about loop outs.
+	//
+	//Statistics about loop outs.
 	LoopOutStats *LoopStats `protobuf:"bytes,7,opt,name=loop_out_stats,json=loopOutStats,proto3" json:"loop_out_stats,omitempty"`
-	// Statistics about loop ins.
+	//
+	//Statistics about loop ins.
 	LoopInStats *LoopStats `protobuf:"bytes,8,opt,name=loop_in_stats,json=loopInStats,proto3" json:"loop_in_stats,omitempty"`
-	// The Git commit hash the Loop binary build was based on. If the build had
-	// uncommited changes, this field will contain the most recent commit hash,
-	// suffixed by "-dirty".
+	//
+	//The Git commit hash the Loop binary build was based on. If the build had
+	//uncommited changes, this field will contain the most recent commit hash,
+	//suffixed by "-dirty".
 	CommitHash    string `protobuf:"bytes,9,opt,name=commit_hash,json=commitHash,proto3" json:"commit_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3556,106 +3720,134 @@ func (*GetLiquidityParamsRequest) Descriptor() ([]byte, []int) {
 
 type LiquidityParameters struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A set of liquidity rules that describe the desired liquidity balance.
+	//
+	//A set of liquidity rules that describe the desired liquidity balance.
 	Rules []*LiquidityRule `protobuf:"bytes,1,rep,name=rules,proto3" json:"rules,omitempty"`
-	// The parts per million of swap amount that is allowed to be allocated to swap
-	// fees. This value is applied across swap categories and may not be set in
-	// conjunction with sweep fee rate, swap fee ppm, routing fee ppm, prepay
-	// routing, max prepay and max miner fee.
+	//
+	//The parts per million of swap amount that is allowed to be allocated to swap
+	//fees. This value is applied across swap categories and may not be set in
+	//conjunction with sweep fee rate, swap fee ppm, routing fee ppm, prepay
+	//routing, max prepay and max miner fee.
 	FeePpm uint64 `protobuf:"varint,16,opt,name=fee_ppm,json=feePpm,proto3" json:"fee_ppm,omitempty"`
-	// The limit we place on our estimated sweep cost for a swap in sat/vByte. If
-	// the estimated fee for our sweep transaction within the specified
-	// confirmation target is above this value, we will not suggest any swaps.
+	//
+	//The limit we place on our estimated sweep cost for a swap in sat/vByte. If
+	//the estimated fee for our sweep transaction within the specified
+	//confirmation target is above this value, we will not suggest any swaps.
 	SweepFeeRateSatPerVbyte uint64 `protobuf:"varint,2,opt,name=sweep_fee_rate_sat_per_vbyte,json=sweepFeeRateSatPerVbyte,proto3" json:"sweep_fee_rate_sat_per_vbyte,omitempty"`
-	// The maximum fee paid to the server for facilitating the swap, expressed
-	// as parts per million of the swap volume.
+	//
+	//The maximum fee paid to the server for facilitating the swap, expressed
+	//as parts per million of the swap volume.
 	MaxSwapFeePpm uint64 `protobuf:"varint,3,opt,name=max_swap_fee_ppm,json=maxSwapFeePpm,proto3" json:"max_swap_fee_ppm,omitempty"`
-	// The maximum fee paid to route the swap invoice off chain, expressed as
-	// parts per million of the volume being routed.
+	//
+	//The maximum fee paid to route the swap invoice off chain, expressed as
+	//parts per million of the volume being routed.
 	MaxRoutingFeePpm uint64 `protobuf:"varint,4,opt,name=max_routing_fee_ppm,json=maxRoutingFeePpm,proto3" json:"max_routing_fee_ppm,omitempty"`
-	// The maximum fee paid to route the prepay invoice off chain, expressed as
-	// parts per million of the volume being routed.
+	//
+	//The maximum fee paid to route the prepay invoice off chain, expressed as
+	//parts per million of the volume being routed.
 	MaxPrepayRoutingFeePpm uint64 `protobuf:"varint,5,opt,name=max_prepay_routing_fee_ppm,json=maxPrepayRoutingFeePpm,proto3" json:"max_prepay_routing_fee_ppm,omitempty"`
-	// The maximum no-show penalty in satoshis paid for a swap.
+	//
+	//The maximum no-show penalty in satoshis paid for a swap.
 	MaxPrepaySat uint64 `protobuf:"varint,6,opt,name=max_prepay_sat,json=maxPrepaySat,proto3" json:"max_prepay_sat,omitempty"`
-	// The maximum miner fee we will pay to sweep the swap on chain. Note that we
-	// will not suggest a swap if the estimate is above the sweep limit set by
-	// these parameters, and we use the current fee estimate to sweep on chain so
-	// this value is only a cap placed on the amount we spend on fees in the case
-	// where the swap needs to be claimed on chain, but fees have suddenly spiked.
+	//
+	//The maximum miner fee we will pay to sweep the swap on chain. Note that we
+	//will not suggest a swap if the estimate is above the sweep limit set by
+	//these parameters, and we use the current fee estimate to sweep on chain so
+	//this value is only a cap placed on the amount we spend on fees in the case
+	//where the swap needs to be claimed on chain, but fees have suddenly spiked.
 	MaxMinerFeeSat uint64 `protobuf:"varint,7,opt,name=max_miner_fee_sat,json=maxMinerFeeSat,proto3" json:"max_miner_fee_sat,omitempty"`
-	// The number of blocks from the on-chain HTLC's confirmation height that it
-	// should be swept within.
+	//
+	//The number of blocks from the on-chain HTLC's confirmation height that it
+	//should be swept within.
 	SweepConfTarget int32 `protobuf:"varint,8,opt,name=sweep_conf_target,json=sweepConfTarget,proto3" json:"sweep_conf_target,omitempty"`
-	// The amount of time we require pass since a channel was part of a failed
-	// swap due to off chain payment failure until it will be considered for swap
-	// suggestions again, expressed in seconds.
+	//
+	//The amount of time we require pass since a channel was part of a failed
+	//swap due to off chain payment failure until it will be considered for swap
+	//suggestions again, expressed in seconds.
 	FailureBackoffSec uint64 `protobuf:"varint,9,opt,name=failure_backoff_sec,json=failureBackoffSec,proto3" json:"failure_backoff_sec,omitempty"`
-	// Set to true to enable automatic dispatch of swaps. All swaps will be limited
-	// to the fee categories set by these parameters, and total expenditure will
-	// be limited to the autoloop budget.
+	//
+	//Set to true to enable automatic dispatch of swaps. All swaps will be limited
+	//to the fee categories set by these parameters, and total expenditure will
+	//be limited to the autoloop budget.
 	Autoloop bool `protobuf:"varint,10,opt,name=autoloop,proto3" json:"autoloop,omitempty"`
-	// The total budget for automatically dispatched swaps since the budget start
-	// time, expressed in satoshis.
+	//
+	//The total budget for automatically dispatched swaps since the budget start
+	//time, expressed in satoshis.
 	AutoloopBudgetSat uint64 `protobuf:"varint,11,opt,name=autoloop_budget_sat,json=autoloopBudgetSat,proto3" json:"autoloop_budget_sat,omitempty"`
-	// Deprecated, use autoloop_budget_refresh_period_sec. The start time for
-	// autoloop budget, expressed as a unix timestamp in seconds. If this value is
-	// 0, the budget will be applied for all automatically dispatched swaps. Swaps
-	// that were completed before this date will not be included in budget
-	// calculations.
+	//
+	//Deprecated, use autoloop_budget_refresh_period_sec. The start time for
+	//autoloop budget, expressed as a unix timestamp in seconds. If this value is
+	//0, the budget will be applied for all automatically dispatched swaps. Swaps
+	//that were completed before this date will not be included in budget
+	//calculations.
 	//
 	// Deprecated: Marked as deprecated in client.proto.
 	AutoloopBudgetStartSec uint64 `protobuf:"varint,12,opt,name=autoloop_budget_start_sec,json=autoloopBudgetStartSec,proto3" json:"autoloop_budget_start_sec,omitempty"`
-	// The maximum number of automatically dispatched swaps that we allow to be in
-	// flight at any point in time.
+	//
+	//The maximum number of automatically dispatched swaps that we allow to be in
+	//flight at any point in time.
 	AutoMaxInFlight uint64 `protobuf:"varint,13,opt,name=auto_max_in_flight,json=autoMaxInFlight,proto3" json:"auto_max_in_flight,omitempty"`
-	// The minimum amount, expressed in satoshis, that the autoloop client will
-	// dispatch a swap for. This value is subject to the server-side limits
-	// specified by the LoopOutTerms endpoint.
+	//
+	//The minimum amount, expressed in satoshis, that the autoloop client will
+	//dispatch a swap for. This value is subject to the server-side limits
+	//specified by the LoopOutTerms endpoint.
 	MinSwapAmount uint64 `protobuf:"varint,14,opt,name=min_swap_amount,json=minSwapAmount,proto3" json:"min_swap_amount,omitempty"`
-	// The maximum amount, expressed in satoshis, that the autoloop client will
-	// dispatch a swap for. This value is subject to the server-side limits
-	// specified by the LoopOutTerms endpoint.
+	//
+	//The maximum amount, expressed in satoshis, that the autoloop client will
+	//dispatch a swap for. This value is subject to the server-side limits
+	//specified by the LoopOutTerms endpoint.
 	MaxSwapAmount uint64 `protobuf:"varint,15,opt,name=max_swap_amount,json=maxSwapAmount,proto3" json:"max_swap_amount,omitempty"`
-	// The confirmation target for loop in on-chain htlcs.
+	//
+	//The confirmation target for loop in on-chain htlcs.
 	HtlcConfTarget int32 `protobuf:"varint,17,opt,name=htlc_conf_target,json=htlcConfTarget,proto3" json:"htlc_conf_target,omitempty"`
-	// The destination address to use for autoloop loop outs. Set to "default" in
-	// order to revert to default behavior.
+	//
+	//The destination address to use for autoloop loop outs. Set to "default" in
+	//order to revert to default behavior.
 	AutoloopDestAddress string `protobuf:"bytes,18,opt,name=autoloop_dest_address,json=autoloopDestAddress,proto3" json:"autoloop_dest_address,omitempty"`
-	// The period over which the autoloop budget is refreshed, expressed in
-	// seconds.
+	//
+	//The period over which the autoloop budget is refreshed, expressed in
+	//seconds.
 	AutoloopBudgetRefreshPeriodSec uint64 `protobuf:"varint,19,opt,name=autoloop_budget_refresh_period_sec,json=autoloopBudgetRefreshPeriodSec,proto3" json:"autoloop_budget_refresh_period_sec,omitempty"`
-	// The time at which the autoloop budget was last refreshed, expressed as a
-	// UNIX timestamp in seconds.
+	//
+	//The time at which the autoloop budget was last refreshed, expressed as a
+	//UNIX timestamp in seconds.
 	AutoloopBudgetLastRefresh uint64 `protobuf:"varint,20,opt,name=autoloop_budget_last_refresh,json=autoloopBudgetLastRefresh,proto3" json:"autoloop_budget_last_refresh,omitempty"`
-	// Set to true to enable easy autoloop. If set, all channel/peer rules will be
-	// overridden and the client will automatically dispatch swaps in order to meet
-	// the configured local balance target size. Currently only loop out is
-	// supported, meaning that easy autoloop can only reduce the funds that are
-	// held as balance in channels.
+	//
+	//Set to true to enable easy autoloop. If set, all channel/peer rules will be
+	//overridden and the client will automatically dispatch swaps in order to meet
+	//the configured local balance target size. Currently only loop out is
+	//supported, meaning that easy autoloop can only reduce the funds that are
+	//held as balance in channels.
 	EasyAutoloop bool `protobuf:"varint,21,opt,name=easy_autoloop,json=easyAutoloop,proto3" json:"easy_autoloop,omitempty"`
-	// The local balance target size, expressed in satoshis. This is used by easy
-	// autoloop to determine how much liquidity should be maintained in channels.
+	//
+	//The local balance target size, expressed in satoshis. This is used by easy
+	//autoloop to determine how much liquidity should be maintained in channels.
 	EasyAutoloopLocalTargetSat uint64 `protobuf:"varint,22,opt,name=easy_autoloop_local_target_sat,json=easyAutoloopLocalTargetSat,proto3" json:"easy_autoloop_local_target_sat,omitempty"`
-	// An alternative destination address source for the swap. This field
-	// represents the name of the account in the backing lnd instance.
-	// Refer to lnd's wallet import functions for reference.
+	//
+	//An alternative destination address source for the swap. This field
+	//represents the name of the account in the backing lnd instance.
+	//Refer to lnd's wallet import functions for reference.
 	Account string `protobuf:"bytes,23,opt,name=account,proto3" json:"account,omitempty"`
-	// The address type of the account specified in the account field.
+	//
+	//The address type of the account specified in the account field.
 	AccountAddrType AddressType `protobuf:"varint,24,opt,name=account_addr_type,json=accountAddrType,proto3,enum=looprpc.AddressType" json:"account_addr_type,omitempty"`
-	// A map of asset parameters to use for swaps. The key is the asset id and the
-	// value is the parameters to use for swaps in that asset.
+	//
+	//A map of asset parameters to use for swaps. The key is the asset id and the
+	//value is the parameters to use for swaps in that asset.
 	EasyAssetParams map[string]*EasyAssetAutoloopParams `protobuf:"bytes,25,rep,name=easy_asset_params,json=easyAssetParams,proto3" json:"easy_asset_params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	//
 	// Set to true to enable fast swap publication. If set, the server will
 	// publish the HTLC immediately after receiving the swap request. This
 	// setting has direct implications on the swap fees, as fast swaps may
 	// not be able to be batched with other swaps.
 	FastSwapPublication bool `protobuf:"varint,26,opt,name=fast_swap_publication,json=fastSwapPublication,proto3" json:"fast_swap_publication,omitempty"`
-	// A list of peers (their public keys) that should be excluded from the easy
-	// autoloop run. If set, channels connected to these peers won't be
-	// considered for easy autoloop swaps.
+	//
+	//A list of peers (their public keys) that should be excluded from the easy
+	//autoloop run. If set, channels connected to these peers won't be
+	//considered for easy autoloop swaps.
 	EasyAutoloopExcludedPeers [][]byte `protobuf:"bytes,27,rep,name=easy_autoloop_excluded_peers,json=easyAutoloopExcludedPeers,proto3" json:"easy_autoloop_excluded_peers,omitempty"`
-	// Selects which source autoloop uses for loop-in rules.
+	//
+	//Selects which source autoloop uses for loop-in rules.
 	LoopInSource  LoopInSource `protobuf:"varint,28,opt,name=loop_in_source,json=loopInSource,proto3,enum=looprpc.LoopInSource" json:"loop_in_source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3890,14 +4082,16 @@ func (x *LiquidityParameters) GetLoopInSource() LoopInSource {
 
 type EasyAssetAutoloopParams struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Set to true to enable easy autoloop for this asset. If set the client will
-	// automatically dispatch swaps in order to meet the configured local balance
-	// target size. Currently only loop out is supported, meaning that easy
-	// autoloop can only reduce the funds that are held as balance in channels.
+	//
+	//Set to true to enable easy autoloop for this asset. If set the client will
+	//automatically dispatch swaps in order to meet the configured local balance
+	//target size. Currently only loop out is supported, meaning that easy
+	//autoloop can only reduce the funds that are held as balance in channels.
 	Enabled bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	// The local balance target size, expressed in the asset's base units. This is
-	// used by easy autoloop to determine how much liquidity should be maintained
-	// in channels.
+	//
+	//The local balance target size, expressed in the asset's base units. This is
+	//used by easy autoloop to determine how much liquidity should be maintained
+	//in channels.
 	LocalTargetAssetAmt uint64 `protobuf:"varint,2,opt,name=local_target_asset_amt,json=localTargetAssetAmt,proto3" json:"local_target_asset_amt,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -3949,24 +4143,29 @@ func (x *EasyAssetAutoloopParams) GetLocalTargetAssetAmt() uint64 {
 
 type LiquidityRule struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The short channel ID of the channel that this rule should be applied to.
-	// This field may not be set when the pubkey field is set.
+	//
+	//The short channel ID of the channel that this rule should be applied to.
+	//This field may not be set when the pubkey field is set.
 	ChannelId uint64 `protobuf:"varint,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
 	// The type of swap that will be dispatched for this rule.
 	SwapType SwapType `protobuf:"varint,6,opt,name=swap_type,json=swapType,proto3,enum=looprpc.SwapType" json:"swap_type,omitempty"`
-	// The public key of the peer that this rule should be applied to. This field
-	// may not be set when the channel id field is set.
+	//
+	//The public key of the peer that this rule should be applied to. This field
+	//may not be set when the channel id field is set.
 	Pubkey []byte `protobuf:"bytes,5,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
-	// Type indicates the type of rule that this message rule represents. Setting
-	// this value will determine which fields are used in the message. The comments
-	// on each field in this message will be prefixed with the LiquidityRuleType
-	// they belong to.
+	//
+	//Type indicates the type of rule that this message rule represents. Setting
+	//this value will determine which fields are used in the message. The comments
+	//on each field in this message will be prefixed with the LiquidityRuleType
+	//they belong to.
 	Type LiquidityRuleType `protobuf:"varint,2,opt,name=type,proto3,enum=looprpc.LiquidityRuleType" json:"type,omitempty"`
-	// THRESHOLD: The percentage of total capacity that incoming capacity should
-	// not drop beneath.
+	//
+	//THRESHOLD: The percentage of total capacity that incoming capacity should
+	//not drop beneath.
 	IncomingThreshold uint32 `protobuf:"varint,3,opt,name=incoming_threshold,json=incomingThreshold,proto3" json:"incoming_threshold,omitempty"`
-	// THRESHOLD: The percentage of total capacity that outgoing capacity should
-	// not drop beneath.
+	//
+	//THRESHOLD: The percentage of total capacity that outgoing capacity should
+	//not drop beneath.
 	OutgoingThreshold uint32 `protobuf:"varint,4,opt,name=outgoing_threshold,json=outgoingThreshold,proto3" json:"outgoing_threshold,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -4046,10 +4245,11 @@ func (x *LiquidityRule) GetOutgoingThreshold() uint32 {
 
 type SetLiquidityParamsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Parameters is the desired new set of parameters for the liquidity management
-	// subsystem. Note that the current set of parameters will be completely
-	// overwritten by the parameters provided (if they are valid), so the full set
-	// of parameters should be provided for each call.
+	//
+	//Parameters is the desired new set of parameters for the liquidity management
+	//subsystem. Note that the current set of parameters will be completely
+	//overwritten by the parameters provided (if they are valid), so the full set
+	//of parameters should be provided for each call.
 	Parameters    *LiquidityParameters `protobuf:"bytes,1,opt,name=parameters,proto3" json:"parameters,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4166,11 +4366,14 @@ func (*SuggestSwapsRequest) Descriptor() ([]byte, []int) {
 
 type Disqualified struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The short channel ID of the channel that was excluded from our suggestions.
+	//
+	//The short channel ID of the channel that was excluded from our suggestions.
 	ChannelId uint64 `protobuf:"varint,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
-	// The public key of the peer that was excluded from our suggestions.
+	//
+	//The public key of the peer that was excluded from our suggestions.
 	Pubkey []byte `protobuf:"bytes,3,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
-	// The reason that we excluded the channel from the our suggestions.
+	//
+	//The reason that we excluded the channel from the our suggestions.
 	Reason        AutoReason `protobuf:"varint,2,opt,name=reason,proto3,enum=looprpc.AutoReason" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4229,14 +4432,18 @@ func (x *Disqualified) GetReason() AutoReason {
 
 type SuggestSwapsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The set of recommended loop outs.
+	//
+	//The set of recommended loop outs.
 	LoopOut []*LoopOutRequest `protobuf:"bytes,1,rep,name=loop_out,json=loopOut,proto3" json:"loop_out,omitempty"`
-	// The set of recommended loop in swaps
+	//
+	//The set of recommended loop in swaps
 	LoopIn []*LoopInRequest `protobuf:"bytes,3,rep,name=loop_in,json=loopIn,proto3" json:"loop_in,omitempty"`
-	// The set of recommended static-address loop in swaps.
+	//
+	//The set of recommended static-address loop in swaps.
 	StaticLoopIn []*StaticAddressLoopInRequest `protobuf:"bytes,4,rep,name=static_loop_in,json=staticLoopIn,proto3" json:"static_loop_in,omitempty"`
-	// Disqualified contains the set of channels that swaps are not recommended
-	// for.
+	//
+	//Disqualified contains the set of channels that swaps are not recommended
+	//for.
 	Disqualified  []*Disqualified `protobuf:"bytes,2,rep,name=disqualified,proto3" json:"disqualified,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4302,12 +4509,14 @@ func (x *SuggestSwapsResponse) GetDisqualified() []*Disqualified {
 
 type AbandonSwapRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The swap identifier which currently is the hash that locks the HTLCs. When
-	// using REST, this field must be encoded as URL safe base64.
+	//
+	//The swap identifier which currently is the hash that locks the HTLCs. When
+	//using REST, this field must be encoded as URL safe base64.
 	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// A flag that tries to ensure that the client understands that they are
-	// risking loss of funds by abandoning a swap. This could happen if an
-	// abandoned swap would wait on a timeout sweep by the client.
+	//
+	//A flag that tries to ensure that the client understands that they are
+	//risking loss of funds by abandoning a swap. This could happen if an
+	//abandoned swap would wait on a timeout sweep by the client.
 	IKnowWhatIAmDoing bool `protobuf:"varint,2,opt,name=i_know_what_i_am_doing,json=iKnowWhatIAmDoing,proto3" json:"i_know_what_i_am_doing,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -4431,7 +4640,8 @@ func (*ListReservationsRequest) Descriptor() ([]byte, []int) {
 
 type ListReservationsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The list of all currently known reservations and their status.
+	//
+	//The list of all currently known reservations and their status.
 	Reservations  []*ClientReservation `protobuf:"bytes,1,rep,name=reservations,proto3" json:"reservations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4476,17 +4686,23 @@ func (x *ListReservationsResponse) GetReservations() []*ClientReservation {
 
 type ClientReservation struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The reservation id that identifies this reservation.
+	//
+	//The reservation id that identifies this reservation.
 	ReservationId []byte `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	// The state the reservation is in.
+	//
+	//The state the reservation is in.
 	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
-	// The amount that the reservation is for.
+	//
+	//The amount that the reservation is for.
 	Amount uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
-	// The transaction id of the reservation.
+	//
+	//The transaction id of the reservation.
 	TxId string `protobuf:"bytes,4,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
-	// The vout of the reservation.
+	//
+	//The vout of the reservation.
 	Vout uint32 `protobuf:"varint,5,opt,name=vout,proto3" json:"vout,omitempty"`
-	// The expiry of the reservation.
+	//
+	//The expiry of the reservation.
 	Expiry        uint32 `protobuf:"varint,6,opt,name=expiry,proto3" json:"expiry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4566,14 +4782,17 @@ func (x *ClientReservation) GetExpiry() uint32 {
 
 type InstantOutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The reservations to use for the swap.
+	//
+	//The reservations to use for the swap.
 	ReservationIds [][]byte `protobuf:"bytes,1,rep,name=reservation_ids,json=reservationIds,proto3" json:"reservation_ids,omitempty"`
-	// A restriction on the channel set that may be used to loop out. The actual
-	// channel(s) that will be used are selected based on the lowest routing fee
-	// for the swap payment to the server.
+	//
+	//A restriction on the channel set that may be used to loop out. The actual
+	//channel(s) that will be used are selected based on the lowest routing fee
+	//for the swap payment to the server.
 	OutgoingChanSet []uint64 `protobuf:"varint,2,rep,packed,name=outgoing_chan_set,json=outgoingChanSet,proto3" json:"outgoing_chan_set,omitempty"`
-	// An optional address to sweep the onchain funds to. If not set, the funds
-	// will be swept to the wallet's internal address.
+	//
+	//An optional address to sweep the onchain funds to. If not set, the funds
+	//will be swept to the wallet's internal address.
 	DestAddr string `protobuf:"bytes,3,opt,name=dest_addr,json=destAddr,proto3" json:"dest_addr,omitempty"`
 	// Types that are valid to be assigned to MaxSwapFee:
 	//
@@ -4655,9 +4874,10 @@ type isInstantOutRequest_MaxSwapFee interface {
 }
 
 type InstantOutRequest_MaxSwapFeeSat struct {
-	// The maximum off-chain swap fee that may be charged for the swap. This
-	// field must be set. An explicitly set value of zero rejects any
-	// positive swap fee.
+	//
+	//The maximum off-chain swap fee that may be charged for the swap. This
+	//field must be set. An explicitly set value of zero rejects any
+	//positive swap fee.
 	MaxSwapFeeSat int64 `protobuf:"varint,4,opt,name=max_swap_fee_sat,json=maxSwapFeeSat,proto3,oneof"`
 }
 
@@ -4665,11 +4885,14 @@ func (*InstantOutRequest_MaxSwapFeeSat) isInstantOutRequest_MaxSwapFee() {}
 
 type InstantOutResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The hash of the swap preimage.
+	//
+	//The hash of the swap preimage.
 	InstantOutHash []byte `protobuf:"bytes,1,opt,name=instant_out_hash,json=instantOutHash,proto3" json:"instant_out_hash,omitempty"`
-	// The transaction id of the sweep transaction.
+	//
+	//The transaction id of the sweep transaction.
 	SweepTxId string `protobuf:"bytes,2,opt,name=sweep_tx_id,json=sweepTxId,proto3" json:"sweep_tx_id,omitempty"`
-	// The state of the swap.
+	//
+	//The state of the swap.
 	State         string `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4728,14 +4951,17 @@ func (x *InstantOutResponse) GetState() string {
 
 type InstantOutQuoteRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The amount to swap in satoshis.
+	//
+	//The amount to swap in satoshis.
 	Amt uint64 `protobuf:"varint,1,opt,name=amt,proto3" json:"amt,omitempty"`
-	// Deprecated: use 'reservation_ids' instead.
-	// The amount of reservations to use for the swap.
+	//
+	//Deprecated: use 'reservation_ids' instead.
+	//The amount of reservations to use for the swap.
 	//
 	// Deprecated: Marked as deprecated in client.proto.
 	NumReservations int32 `protobuf:"varint,2,opt,name=num_reservations,json=numReservations,proto3" json:"num_reservations,omitempty"`
-	// The reservations to use for the swap.
+	//
+	//The reservations to use for the swap.
 	ReservationIds [][]byte `protobuf:"bytes,3,rep,name=reservation_ids,json=reservationIds,proto3" json:"reservation_ids,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -4795,10 +5021,12 @@ func (x *InstantOutQuoteRequest) GetReservationIds() [][]byte {
 
 type InstantOutQuoteResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The fee that the swap service is charging for the swap.
+	//
+	//The fee that the swap service is charging for the swap.
 	ServiceFeeSat int64 `protobuf:"varint,1,opt,name=service_fee_sat,json=serviceFeeSat,proto3" json:"service_fee_sat,omitempty"`
-	// The estimated on-chain fee that needs to be paid to publish the Sweepless
-	// Sweep.
+	//
+	//The estimated on-chain fee that needs to be paid to publish the Sweepless
+	//Sweep.
 	SweepFeeSat   int64 `protobuf:"varint,2,opt,name=sweep_fee_sat,json=sweepFeeSat,proto3" json:"sweep_fee_sat,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4886,7 +5114,8 @@ func (*ListInstantOutsRequest) Descriptor() ([]byte, []int) {
 
 type ListInstantOutsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The list of all currently known instant out swaps and their status.
+	//
+	//The list of all currently known instant out swaps and their status.
 	Swaps         []*InstantOut `protobuf:"bytes,1,rep,name=swaps,proto3" json:"swaps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4931,15 +5160,20 @@ func (x *ListInstantOutsResponse) GetSwaps() []*InstantOut {
 
 type InstantOut struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The swap hash that identifies this swap.
+	//
+	//The swap hash that identifies this swap.
 	SwapHash []byte `protobuf:"bytes,1,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
-	// The state the swap is in.
+	//
+	//The state the swap is in.
 	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
-	// The amount of the swap.
+	//
+	//The amount of the swap.
 	Amount uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
-	// The used reservations for the swap.
+	//
+	//The used reservations for the swap.
 	ReservationIds [][]byte `protobuf:"bytes,4,rep,name=reservation_ids,json=reservationIds,proto3" json:"reservation_ids,omitempty"`
-	// The sweep transaction id of the swap.
+	//
+	//The sweep transaction id of the swap.
 	SweepTxId     string `protobuf:"bytes,5,opt,name=sweep_tx_id,json=sweepTxId,proto3" json:"sweep_tx_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5012,7 +5246,8 @@ func (x *InstantOut) GetSweepTxId() string {
 
 type NewStaticAddressRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The client's public key for the 2-of-2 MuSig2 taproot static address.
+	//
+	//The client's public key for the 2-of-2 MuSig2 taproot static address.
 	ClientKey     []byte `protobuf:"bytes,1,opt,name=client_key,json=clientKey,proto3" json:"client_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5057,9 +5292,11 @@ func (x *NewStaticAddressRequest) GetClientKey() []byte {
 
 type NewStaticAddressResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The taproot static address.
+	//
+	//The taproot static address.
 	Address string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
-	// The CSV expiry of the static address.
+	//
+	//The CSV expiry of the static address.
 	Expiry        uint32 `protobuf:"varint,2,opt,name=expiry,proto3" json:"expiry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5111,10 +5348,12 @@ func (x *NewStaticAddressResponse) GetExpiry() uint32 {
 
 type ListUnspentDepositsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The number of minimum confirmations a utxo must have to be listed.
+	//
+	//The number of minimum confirmations a utxo must have to be listed.
 	MinConfs int32 `protobuf:"varint,1,opt,name=min_confs,json=minConfs,proto3" json:"min_confs,omitempty"`
-	// The number of maximum confirmations a utxo may have to be listed. A zero
-	// value indicates that there is no maximum.
+	//
+	//The number of maximum confirmations a utxo may have to be listed. A zero
+	//value indicates that there is no maximum.
 	MaxConfs      int32 `protobuf:"varint,2,opt,name=max_confs,json=maxConfs,proto3" json:"max_confs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5166,7 +5405,8 @@ func (x *ListUnspentDepositsRequest) GetMaxConfs() int32 {
 
 type ListUnspentDepositsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A list of utxos behind the static address.
+	//
+	//A list of utxos behind the static address.
 	Utxos         []*Utxo `protobuf:"bytes,1,rep,name=utxos,proto3" json:"utxos,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5211,13 +5451,17 @@ func (x *ListUnspentDepositsResponse) GetUtxos() []*Utxo {
 
 type Utxo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The static address of the utxo.
+	//
+	//The static address of the utxo.
 	StaticAddress string `protobuf:"bytes,1,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
-	// The value of the unspent coin in satoshis.
+	//
+	//The value of the unspent coin in satoshis.
 	AmountSat int64 `protobuf:"varint,2,opt,name=amount_sat,json=amountSat,proto3" json:"amount_sat,omitempty"`
-	// The outpoint in the form txid:index.
+	//
+	//The outpoint in the form txid:index.
 	Outpoint string `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
-	// The number of confirmations for the Utxo.
+	//
+	//The number of confirmations for the Utxo.
 	Confirmations int64 `protobuf:"varint,4,opt,name=confirmations,proto3" json:"confirmations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5283,19 +5527,24 @@ func (x *Utxo) GetConfirmations() int64 {
 
 type WithdrawDepositsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The outpoints of the deposits to withdraw.
+	//
+	//The outpoints of the deposits to withdraw.
 	Outpoints []*lnrpc.OutPoint `protobuf:"bytes,1,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
-	// If set to true, all deposits will be withdrawn.
+	//
+	//If set to true, all deposits will be withdrawn.
 	All bool `protobuf:"varint,2,opt,name=all,proto3" json:"all,omitempty"`
-	// The address to withdraw the funds to.
+	//
+	//The address to withdraw the funds to.
 	DestAddr string `protobuf:"bytes,3,opt,name=dest_addr,json=destAddr,proto3" json:"dest_addr,omitempty"`
-	// The fee rate in sat/vbyte to use for the withdrawal transaction.
+	//
+	//The fee rate in sat/vbyte to use for the withdrawal transaction.
 	SatPerVbyte int64 `protobuf:"varint,4,opt,name=sat_per_vbyte,json=satPerVbyte,proto3" json:"sat_per_vbyte,omitempty"`
-	// The amount in satoshis that should be withdrawn from the selected deposits.
-	// If there is change, it will be sent back to the static address. The fees for
-	// the transaction are taken from the change output. If the change is below
-	// the dust limit, there won't be a change output and the dust goes towards
-	// fees.
+	//
+	//The amount in satoshis that should be withdrawn from the selected deposits.
+	//If there is change, it will be sent back to the static address. The fees for
+	//the transaction are taken from the change output. If the change is below
+	//the dust limit, there won't be a change output and the dust goes towards
+	//fees.
 	Amount        int64 `protobuf:"varint,5,opt,name=amount,proto3" json:"amount,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5368,9 +5617,11 @@ func (x *WithdrawDepositsRequest) GetAmount() int64 {
 
 type WithdrawDepositsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The transaction hash of the withdrawal transaction.
+	//
+	//The transaction hash of the withdrawal transaction.
 	WithdrawalTxHash string `protobuf:"bytes,1,opt,name=withdrawal_tx_hash,json=withdrawalTxHash,proto3" json:"withdrawal_tx_hash,omitempty"`
-	// The destination address of the withdrawal transaction.
+	//
+	//The destination address of the withdrawal transaction.
 	Address       string `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5422,9 +5673,11 @@ func (x *WithdrawDepositsResponse) GetAddress() string {
 
 type ListStaticAddressDepositsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Filters the list of all stored deposits by deposit state.
+	//
+	//Filters the list of all stored deposits by deposit state.
 	StateFilter DepositState `protobuf:"varint,1,opt,name=state_filter,json=stateFilter,proto3,enum=looprpc.DepositState" json:"state_filter,omitempty"`
-	// Filters the list of all stored deposits by the outpoint.
+	//
+	//Filters the list of all stored deposits by the outpoint.
 	Outpoints     []string `protobuf:"bytes,2,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5476,7 +5729,8 @@ func (x *ListStaticAddressDepositsRequest) GetOutpoints() []string {
 
 type ListStaticAddressDepositsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A list of all deposits that match the filtered state.
+	//
+	//A list of all deposits that match the filtered state.
 	FilteredDeposits []*Deposit `protobuf:"bytes,1,rep,name=filtered_deposits,json=filteredDeposits,proto3" json:"filtered_deposits,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -5557,7 +5811,8 @@ func (*ListStaticAddressWithdrawalRequest) Descriptor() ([]byte, []int) {
 
 type ListStaticAddressWithdrawalResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A list of all static address withdrawals.
+	//
+	//A list of all static address withdrawals.
 	Withdrawals   []*StaticAddressWithdrawal `protobuf:"bytes,1,rep,name=withdrawals,proto3" json:"withdrawals,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5638,7 +5893,8 @@ func (*ListStaticAddressSwapsRequest) Descriptor() ([]byte, []int) {
 
 type ListStaticAddressSwapsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A list of all swaps known static address loop-in swaps.
+	//
+	//A list of all swaps known static address loop-in swaps.
 	Swaps         []*StaticAddressLoopInSwap `protobuf:"bytes,1,rep,name=swaps,proto3" json:"swaps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5719,25 +5975,35 @@ func (*StaticAddressSummaryRequest) Descriptor() ([]byte, []int) {
 
 type StaticAddressSummaryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The static address of the client.
+	//
+	//The static address of the client.
 	StaticAddress string `protobuf:"bytes,1,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
-	// The CSV expiry of the static address.
+	//
+	//The CSV expiry of the static address.
 	RelativeExpiryBlocks uint64 `protobuf:"varint,2,opt,name=relative_expiry_blocks,json=relativeExpiryBlocks,proto3" json:"relative_expiry_blocks,omitempty"`
-	// The total number of deposits.
+	//
+	//The total number of deposits.
 	TotalNumDeposits uint32 `protobuf:"varint,3,opt,name=total_num_deposits,json=totalNumDeposits,proto3" json:"total_num_deposits,omitempty"`
-	// The total value of unconfirmed deposits.
+	//
+	//The total value of unconfirmed deposits.
 	ValueUnconfirmedSatoshis int64 `protobuf:"varint,4,opt,name=value_unconfirmed_satoshis,json=valueUnconfirmedSatoshis,proto3" json:"value_unconfirmed_satoshis,omitempty"`
-	// The total value of confirmed deposits.
+	//
+	//The total value of confirmed deposits.
 	ValueDepositedSatoshis int64 `protobuf:"varint,5,opt,name=value_deposited_satoshis,json=valueDepositedSatoshis,proto3" json:"value_deposited_satoshis,omitempty"`
-	// The total value of all expired deposits.
+	//
+	//The total value of all expired deposits.
 	ValueExpiredSatoshis int64 `protobuf:"varint,6,opt,name=value_expired_satoshis,json=valueExpiredSatoshis,proto3" json:"value_expired_satoshis,omitempty"`
-	// The total value of all deposits that have been withdrawn.
+	//
+	//The total value of all deposits that have been withdrawn.
 	ValueWithdrawnSatoshis int64 `protobuf:"varint,7,opt,name=value_withdrawn_satoshis,json=valueWithdrawnSatoshis,proto3" json:"value_withdrawn_satoshis,omitempty"`
-	// The total value of all loop-ins that have been finalized.
+	//
+	//The total value of all loop-ins that have been finalized.
 	ValueLoopedInSatoshis int64 `protobuf:"varint,8,opt,name=value_looped_in_satoshis,json=valueLoopedInSatoshis,proto3" json:"value_looped_in_satoshis,omitempty"`
-	// The total value of all htlc timeout sweeps that the client swept.
+	//
+	//The total value of all htlc timeout sweeps that the client swept.
 	ValueHtlcTimeoutSweepsSatoshis int64 `protobuf:"varint,9,opt,name=value_htlc_timeout_sweeps_satoshis,json=valueHtlcTimeoutSweepsSatoshis,proto3" json:"value_htlc_timeout_sweeps_satoshis,omitempty"`
-	// The total value of all deposits that have been used for channel openings.
+	//
+	//The total value of all deposits that have been used for channel openings.
 	ValueChannelsOpened int64 `protobuf:"varint,10,opt,name=value_channels_opened,json=valueChannelsOpened,proto3" json:"value_channels_opened,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -5845,41 +6111,50 @@ func (x *StaticAddressSummaryResponse) GetValueChannelsOpened() int64 {
 
 type Deposit struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The identifier of the deposit.
-	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// The state of the deposit.
-	State DepositState `protobuf:"varint,2,opt,name=state,proto3,enum=looprpc.DepositState" json:"state,omitempty"`
-	// The outpoint of the deposit in format txid:index.
-	Outpoint string `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
-	// The value of the deposit in satoshis.
-	Value int64 `protobuf:"varint,4,opt,name=value,proto3" json:"value,omitempty"`
-	// The block height at which the deposit was confirmed.
-	ConfirmationHeight int64 `protobuf:"varint,5,opt,name=confirmation_height,json=confirmationHeight,proto3" json:"confirmation_height,omitempty"`
-	// The number of blocks that are left until the deposit cannot be used for a
-	// loop-in swap anymore.
-	BlocksUntilExpiry int64 `protobuf:"varint,6,opt,name=blocks_until_expiry,json=blocksUntilExpiry,proto3" json:"blocks_until_expiry,omitempty"`
-	// The swap hash of the swap that this deposit is part of. This field is only
-	// set if the deposit is part of a loop-in swap.
-	SwapHash []byte `protobuf:"bytes,7,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
-	// The on-chain cost of the deposit in satoshis: its share of the fee of the
-	// transaction that funded it. The fee is split by value across the
-	// transaction's deposit outputs, so if the transaction also paid someone
-	// else, its whole fee is charged to the deposits. Change that a partial
-	// loop-in or withdrawal sent back to the static address costs nothing.
-	// loopd determines the cost within about 10 seconds of finding the deposit,
-	// also before the deposit confirms, and reports it as pending until then.
 	//
-	// To add up the on-chain cost of deposits, only use the deposits of
-	// ListStaticAddressDeposits. The deposits of a swap or withdrawal can
-	// include deposits that another swap or withdrawal also lists, for example
-	// deposits that a failed swap gave back.
+	//The identifier of the deposit.
+	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	//
+	//The state of the deposit.
+	State DepositState `protobuf:"varint,2,opt,name=state,proto3,enum=looprpc.DepositState" json:"state,omitempty"`
+	//
+	//The outpoint of the deposit in format txid:index.
+	Outpoint string `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
+	//
+	//The value of the deposit in satoshis.
+	Value int64 `protobuf:"varint,4,opt,name=value,proto3" json:"value,omitempty"`
+	//
+	//The block height at which the deposit was confirmed.
+	ConfirmationHeight int64 `protobuf:"varint,5,opt,name=confirmation_height,json=confirmationHeight,proto3" json:"confirmation_height,omitempty"`
+	//
+	//The number of blocks that are left until the deposit cannot be used for a
+	//loop-in swap anymore.
+	BlocksUntilExpiry int64 `protobuf:"varint,6,opt,name=blocks_until_expiry,json=blocksUntilExpiry,proto3" json:"blocks_until_expiry,omitempty"`
+	//
+	//The swap hash of the swap that this deposit is part of. This field is only
+	//set if the deposit is part of a loop-in swap.
+	SwapHash []byte `protobuf:"bytes,7,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
+	//
+	//The on-chain cost of the deposit in satoshis: its share of the fee of the
+	//transaction that funded it. The fee is split by value across the
+	//transaction's deposit outputs, so if the transaction also paid someone
+	//else, its whole fee is charged to the deposits. Change that a partial
+	//loop-in or withdrawal sent back to the static address costs nothing.
+	//loopd determines the cost within about 10 seconds of finding the deposit,
+	//also before the deposit confirms, and reports it as pending until then.
+	//
+	//To add up the on-chain cost of deposits, only use the deposits of
+	//ListStaticAddressDeposits. The deposits of a swap or withdrawal can
+	//include deposits that another swap or withdrawal also lists, for example
+	//deposits that a failed swap gave back.
 	CostOnchain int64 `protobuf:"varint,8,opt,name=cost_onchain,json=costOnchain,proto3" json:"cost_onchain,omitempty"`
-	// Whether cost_onchain is known: ONCHAIN_COST_STATUS_COMPLETE if the client
-	// wallet knows the fee of the deposit's funding transaction,
-	// ONCHAIN_COST_STATUS_UNKNOWN if it doesn't, for example for a deposit
-	// funded by an external wallet, or ONCHAIN_COST_STATUS_PENDING if the cost
-	// hasn't been determined yet. The cost of a single deposit is never
-	// partial.
+	//
+	//Whether cost_onchain is known: ONCHAIN_COST_STATUS_COMPLETE if the client
+	//wallet knows the fee of the deposit's funding transaction,
+	//ONCHAIN_COST_STATUS_UNKNOWN if it doesn't, for example for a deposit
+	//funded by an external wallet, or ONCHAIN_COST_STATUS_PENDING if the cost
+	//hasn't been determined yet. The cost of a single deposit is never
+	//partial.
 	CostOnchainStatus OnchainCostStatus `protobuf:"varint,9,opt,name=cost_onchain_status,json=costOnchainStatus,proto3,enum=looprpc.OnchainCostStatus" json:"cost_onchain_status,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -5980,19 +6255,25 @@ func (x *Deposit) GetCostOnchainStatus() OnchainCostStatus {
 
 type StaticAddressWithdrawal struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The transaction id of the withdrawal transaction.
+	//
+	//The transaction id of the withdrawal transaction.
 	TxId string `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
-	// The selected deposits that is withdrawn from.
+	//
+	//The selected deposits that is withdrawn from.
 	Deposits []*Deposit `protobuf:"bytes,2,rep,name=deposits,proto3" json:"deposits,omitempty"`
-	// The sum of the deposit values that was selected for withdrawal.
+	//
+	//The sum of the deposit values that was selected for withdrawal.
 	TotalDepositAmountSatoshis int64 `protobuf:"varint,3,opt,name=total_deposit_amount_satoshis,json=totalDepositAmountSatoshis,proto3" json:"total_deposit_amount_satoshis,omitempty"`
-	// The actual amount that was withdrawn from the selected deposits. This value
-	// represents the sum of selected deposit values minus tx fees minus optional
-	// change output.
+	//
+	//The actual amount that was withdrawn from the selected deposits. This value
+	//represents the sum of selected deposit values minus tx fees minus optional
+	//change output.
 	WithdrawnAmountSatoshis int64 `protobuf:"varint,4,opt,name=withdrawn_amount_satoshis,json=withdrawnAmountSatoshis,proto3" json:"withdrawn_amount_satoshis,omitempty"`
-	// An optional change.
+	//
+	//An optional change.
 	ChangeAmountSatoshis int64 `protobuf:"varint,5,opt,name=change_amount_satoshis,json=changeAmountSatoshis,proto3" json:"change_amount_satoshis,omitempty"`
-	// The confirmation block height of the withdrawal transaction.
+	//
+	//The confirmation block height of the withdrawal transaction.
 	ConfirmationHeight uint32 `protobuf:"varint,6,opt,name=confirmation_height,json=confirmationHeight,proto3" json:"confirmation_height,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -6072,40 +6353,52 @@ func (x *StaticAddressWithdrawal) GetConfirmationHeight() uint32 {
 
 type StaticAddressLoopInSwap struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The swap hash of the swap. It represents the unique identifier of the swap.
+	//
+	//The swap hash of the swap. It represents the unique identifier of the swap.
 	SwapHash []byte `protobuf:"bytes,1,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
+	//
 	DepositOutpoints []string `protobuf:"bytes,2,rep,name=deposit_outpoints,json=depositOutpoints,proto3" json:"deposit_outpoints,omitempty"`
+	//
 	State StaticAddressLoopInSwapState `protobuf:"varint,3,opt,name=state,proto3,enum=looprpc.StaticAddressLoopInSwapState" json:"state,omitempty"`
-	// The swap amount of the swap. It is the sum of the values of the deposit
-	// outpoints that were used for this swap.
+	//
+	//The swap amount of the swap. It is the sum of the values of the deposit
+	//outpoints that were used for this swap.
 	SwapAmountSatoshis int64 `protobuf:"varint,4,opt,name=swap_amount_satoshis,json=swapAmountSatoshis,proto3" json:"swap_amount_satoshis,omitempty"`
-	// The invoiced swap amount. It is the swap amount minus the quoted server
-	// fees.
+	//
+	//The invoiced swap amount. It is the swap amount minus the quoted server
+	//fees.
 	PaymentRequestAmountSatoshis int64 `protobuf:"varint,5,opt,name=payment_request_amount_satoshis,json=paymentRequestAmountSatoshis,proto3" json:"payment_request_amount_satoshis,omitempty"`
-	// The deposits that were used for this swap.
+	//
+	//The deposits that were used for this swap.
 	Deposits []*Deposit `protobuf:"bytes,6,rep,name=deposits,proto3" json:"deposits,omitempty"`
-	// Initiation time of the swap.
+	//
+	//Initiation time of the swap.
 	InitiationTime int64 `protobuf:"varint,7,opt,name=initiation_time,json=initiationTime,proto3" json:"initiation_time,omitempty"`
-	// Last update time of the swap.
+	//
+	//Last update time of the swap.
 	LastUpdateTime int64 `protobuf:"varint,8,opt,name=last_update_time,json=lastUpdateTime,proto3" json:"last_update_time,omitempty"`
-	// Swap server cost.
+	//
+	//Swap server cost.
 	CostServer int64 `protobuf:"varint,9,opt,name=cost_server,json=costServer,proto3" json:"cost_server,omitempty"`
-	// On-chain cost: the sum of the on-chain costs of the deposits the swap
-	// spent, see Deposit.cost_onchain. A deposit's whole fee share counts for
-	// the swap that spends it, also if the swap only loops in part of it, and
-	// its change costs nothing. A swap that wasn't paid but whose htlc spent
-	// its deposits has this cost once its htlc timed out, also if it failed
-	// after publishing its htlc timeout sweep, but the fees of the htlc and its
-	// timeout sweep are not included. Any other failed swap reports an unknown
-	// cost. In the rare case that a swap takes back deposits that a later swap
-	// had already taken, their cost is reported for the later swap if it was
-	// paid, and otherwise for neither swap. Don't add this cost to the cost of
-	// the swap's deposits: it includes them, and can be lower than their sum,
-	// for example if the swap failed or still waits for its payment.
+	//
+	//On-chain cost: the sum of the on-chain costs of the deposits the swap
+	//spent, see Deposit.cost_onchain. A deposit's whole fee share counts for
+	//the swap that spends it, also if the swap only loops in part of it, and
+	//its change costs nothing. A swap that wasn't paid but whose htlc spent
+	//its deposits has this cost once its htlc timed out, also if it failed
+	//after publishing its htlc timeout sweep, but the fees of the htlc and its
+	//timeout sweep are not included. Any other failed swap reports an unknown
+	//cost. In the rare case that a swap takes back deposits that a later swap
+	//had already taken, their cost is reported for the later swap if it was
+	//paid, and otherwise for neither swap. Don't add this cost to the cost of
+	//the swap's deposits: it includes them, and can be lower than their sum,
+	//for example if the swap failed or still waits for its payment.
 	CostOnchain int64 `protobuf:"varint,10,opt,name=cost_onchain,json=costOnchain,proto3" json:"cost_onchain,omitempty"`
-	// Off-chain routing fees.
+	//
+	//Off-chain routing fees.
 	CostOffchain int64 `protobuf:"varint,11,opt,name=cost_offchain,json=costOffchain,proto3" json:"cost_offchain,omitempty"`
-	// Whether cost_onchain is unknown, partial, complete or pending.
+	//
+	//Whether cost_onchain is unknown, partial, complete or pending.
 	CostOnchainStatus OnchainCostStatus `protobuf:"varint,12,opt,name=cost_onchain_status,json=costOnchainStatus,proto3,enum=looprpc.OnchainCostStatus" json:"cost_onchain_status,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -6227,48 +6520,57 @@ func (x *StaticAddressLoopInSwap) GetCostOnchainStatus() OnchainCostStatus {
 
 type StaticAddressLoopInRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The outpoints of the deposits to loop-in.
+	//
+	//The outpoints of the deposits to loop-in.
 	Outpoints []string `protobuf:"bytes,1,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
-	// Maximum satoshis we are willing to pay the server for the swap. This value
-	// is not disclosed in the swap initiation call, but if the server asks for a
-	// higher fee, we abort the swap. Typically this value is taken from the
-	// response of the GetQuote call.
+	//
+	//Maximum satoshis we are willing to pay the server for the swap. This value
+	//is not disclosed in the swap initiation call, but if the server asks for a
+	//higher fee, we abort the swap. Typically this value is taken from the
+	//response of the GetQuote call.
 	MaxSwapFeeSatoshis int64 `protobuf:"varint,2,opt,name=max_swap_fee_satoshis,json=maxSwapFeeSatoshis,proto3" json:"max_swap_fee_satoshis,omitempty"`
-	// Optionally the client can specify the last hop pubkey when requesting a
-	// loop-in quote. This is useful to get better off-chain routing fee from the
-	// server.
+	//
+	//Optionally the client can specify the last hop pubkey when requesting a
+	//loop-in quote. This is useful to get better off-chain routing fee from the
+	//server.
 	LastHop []byte `protobuf:"bytes,3,opt,name=last_hop,json=lastHop,proto3" json:"last_hop,omitempty"`
-	// An optional label for this swap. This field is limited to 500 characters and
-	// may not be one of the reserved values in loop/labels Reserved list.
+	//
+	//An optional label for this swap. This field is limited to 500 characters and
+	//may not be one of the reserved values in loop/labels Reserved list.
 	Label string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
-	// An optional identification string that will be appended to the user agent
-	// string sent to the server to give information about the usage of loop. This
-	// initiator part is meant for user interfaces to add their name to give the
-	// full picture of the binary used (loopd, LiT) and the method used for
-	// triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
+	//
+	//An optional identification string that will be appended to the user agent
+	//string sent to the server to give information about the usage of loop. This
+	//initiator part is meant for user interfaces to add their name to give the
+	//full picture of the binary used (loopd, LiT) and the method used for
+	//triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
 	Initiator string `protobuf:"bytes,5,opt,name=initiator,proto3" json:"initiator,omitempty"`
-	// Optional route hints to reach the destination through private channels.
+	//
+	//Optional route hints to reach the destination through private channels.
 	RouteHints []*swapserverrpc.RouteHint `protobuf:"bytes,6,rep,name=route_hints,json=routeHints,proto3" json:"route_hints,omitempty"`
-	// Private indicates whether the destination node should be considered private.
-	// In which case, loop will generate hop hints to assist with probing and
-	// payment.
+	//
+	//Private indicates whether the destination node should be considered private.
+	//In which case, loop will generate hop hints to assist with probing and
+	//payment.
 	Private bool `protobuf:"varint,7,opt,name=private,proto3" json:"private,omitempty"`
-	// The swap payment timeout allows the user to specify an upper limit for the
-	// amount of time the server is allowed to take to fulfill the off-chain swap
-	// payment. If the timeout is reached the swap will be aborted on the server
-	// side and the client can retry the swap with different parameters.
+	//
+	//The swap payment timeout allows the user to specify an upper limit for the
+	//amount of time the server is allowed to take to fulfill the off-chain swap
+	//payment. If the timeout is reached the swap will be aborted on the server
+	//side and the client can retry the swap with different parameters.
 	PaymentTimeoutSeconds uint32 `protobuf:"varint,8,opt,name=payment_timeout_seconds,json=paymentTimeoutSeconds,proto3" json:"payment_timeout_seconds,omitempty"`
-	// The optional swap amount the client is attempting to swap. It can be
-	// provided in combination with the outpoints or separately. If provided with
-	// outpoints the client takes out this amount from the sum of provided
-	// outpoints and sends the change back to the static address. If the amount is
-	// provided without outpoints, the client will select deposits automatically.
-	// The coin selection strategy is simplified by sorting all available deposits
-	// in descending order by amount, and equal amounts in ascending order of
-	// blocks until expiry, and then selecting the largest deposits first until the
-	// amount is reached. The change will be sent back to the static address. If a
-	// subset of outpoints suffice to cover the specified amount the swap will be
-	// canceled to allow the user to safe on transaction fees.
+	//
+	//The optional swap amount the client is attempting to swap. It can be
+	//provided in combination with the outpoints or separately. If provided with
+	//outpoints the client takes out this amount from the sum of provided
+	//outpoints and sends the change back to the static address. If the amount is
+	//provided without outpoints, the client will select deposits automatically.
+	//The coin selection strategy is simplified by sorting all available deposits
+	//in descending order by amount, and equal amounts in ascending order of
+	//blocks until expiry, and then selecting the largest deposits first until the
+	//amount is reached. The change will be sent back to the static address. If a
+	//subset of outpoints suffice to cover the specified amount the swap will be
+	//canceled to allow the user to safe on transaction fees.
 	Amount int64 `protobuf:"varint,9,opt,name=amount,proto3" json:"amount,omitempty"`
 	// If set, request the server to use fast publication behavior.
 	Fast          bool `protobuf:"varint,10,opt,name=fast,proto3" json:"fast,omitempty"`
@@ -6378,44 +6680,59 @@ func (x *StaticAddressLoopInRequest) GetFast() bool {
 
 type StaticAddressLoopInResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The swap hash that identifies this swap.
+	//
+	//The swap hash that identifies this swap.
 	SwapHash []byte `protobuf:"bytes,1,opt,name=swap_hash,json=swapHash,proto3" json:"swap_hash,omitempty"`
-	// The state the swap is in.
+	//
+	//The state the swap is in.
 	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
-	// The amount of the swap.
+	//
+	//The amount of the swap.
 	Amount uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
-	// The htlc cltv expiry height of the swap.
+	//
+	//The htlc cltv expiry height of the swap.
 	HtlcCltv int32 `protobuf:"varint,4,opt,name=htlc_cltv,json=htlcCltv,proto3" json:"htlc_cltv,omitempty"`
-	// The quoted swap fee in satoshis.
+	//
+	//The quoted swap fee in satoshis.
 	QuotedSwapFeeSatoshis int64 `protobuf:"varint,5,opt,name=quoted_swap_fee_satoshis,json=quotedSwapFeeSatoshis,proto3" json:"quoted_swap_fee_satoshis,omitempty"`
-	// The maximum total swap fee the client is willing to pay for the swap.
+	//
+	//The maximum total swap fee the client is willing to pay for the swap.
 	MaxSwapFeeSatoshis int64 `protobuf:"varint,6,opt,name=max_swap_fee_satoshis,json=maxSwapFeeSatoshis,proto3" json:"max_swap_fee_satoshis,omitempty"`
-	// The block height at which the swap was initiated.
+	//
+	//The block height at which the swap was initiated.
 	InitiationHeight uint32 `protobuf:"varint,7,opt,name=initiation_height,json=initiationHeight,proto3" json:"initiation_height,omitempty"`
-	// The static address protocol version.
+	//
+	//The static address protocol version.
 	ProtocolVersion string `protobuf:"bytes,8,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
-	// An optional label for this swap.
+	//
+	//An optional label for this swap.
 	Label string `protobuf:"bytes,9,opt,name=label,proto3" json:"label,omitempty"`
-	// An optional identification string that will be appended to the user agent
-	// string sent to the server to give information about the usage of loop. This
-	// initiator part is meant for user interfaces to add their name to give the
-	// full picture of the binary used (loopd, LiT) and the method used for
-	// triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
+	//
+	//An optional identification string that will be appended to the user agent
+	//string sent to the server to give information about the usage of loop. This
+	//initiator part is meant for user interfaces to add their name to give the
+	//full picture of the binary used (loopd, LiT) and the method used for
+	//triggering the swap (loop CLI, autolooper, LiT UI, other 3rd party UI).
 	Initiator string `protobuf:"bytes,10,opt,name=initiator,proto3" json:"initiator,omitempty"`
-	// The swap payment timeout allows the user to specify an upper limit for the
-	// amount of time the server is allowed to take to fulfill the off-chain swap
-	// payment. If the timeout is reached the swap will be aborted on the server
-	// side and the client can retry the swap with different parameters.
+	//
+	//The swap payment timeout allows the user to specify an upper limit for the
+	//amount of time the server is allowed to take to fulfill the off-chain swap
+	//payment. If the timeout is reached the swap will be aborted on the server
+	//side and the client can retry the swap with different parameters.
 	PaymentTimeoutSeconds uint32 `protobuf:"varint,11,opt,name=payment_timeout_seconds,json=paymentTimeoutSeconds,proto3" json:"payment_timeout_seconds,omitempty"`
-	// The deposits that are used for this swap.
+	//
+	//The deposits that are used for this swap.
 	UsedDeposits []*Deposit `protobuf:"bytes,12,rep,name=used_deposits,json=usedDeposits,proto3" json:"used_deposits,omitempty"`
-	// The amount that is being swapped (may be less than total deposit value if
-	// change is returned).
+	//
+	//The amount that is being swapped (may be less than total deposit value if
+	//change is returned).
 	SwapAmount uint64 `protobuf:"varint,13,opt,name=swap_amount,json=swapAmount,proto3" json:"swap_amount,omitempty"`
-	// The change amount that will be returned to the static address.
+	//
+	//The change amount that will be returned to the static address.
 	Change int64 `protobuf:"varint,14,opt,name=change,proto3" json:"change,omitempty"`
-	// If set, indicates that the server was requested to use fast publication
-	// behavior.
+	//
+	//If set, indicates that the server was requested to use fast publication
+	//behavior.
 	Fast          bool `protobuf:"varint,15,opt,name=fast,proto3" json:"fast,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -6558,18 +6875,22 @@ func (x *StaticAddressLoopInResponse) GetFast() bool {
 
 type AssetLoopOutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The asset id to use to pay for the swap invoice. If set an
-	// asset client is needed to set to be able to pay the invoice.
+	//
+	//The asset id to use to pay for the swap invoice. If set an
+	//asset client is needed to set to be able to pay the invoice.
 	AssetId []byte `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	// The node identity public key of the peer to ask for a quote for sending out
-	// the assets and converting them to satoshis. This must be specified if
-	// an asset id is set.
+	//
+	//The node identity public key of the peer to ask for a quote for sending out
+	//the assets and converting them to satoshis. This must be specified if
+	//an asset id is set.
 	AssetEdgeNode []byte `protobuf:"bytes,2,opt,name=asset_edge_node,json=assetEdgeNode,proto3" json:"asset_edge_node,omitempty"`
-	// An optional maximum multiplier for the rfq rate. If not set, the default
-	// will be 1.1. This means if we request a loop out quote for 1 BTC, the off
-	// chain cost will be at most 1.1 BTC.
+	//
+	//An optional maximum multiplier for the rfq rate. If not set, the default
+	//will be 1.1. This means if we request a loop out quote for 1 BTC, the off
+	//chain cost will be at most 1.1 BTC.
 	MaxLimitMultiplier float64 `protobuf:"fixed64,3,opt,name=max_limit_multiplier,json=maxLimitMultiplier,proto3" json:"max_limit_multiplier,omitempty"`
-	// An optional expiry unix timestamp for when the rfq quote should expire.
+	//
+	//An optional expiry unix timestamp for when the rfq quote should expire.
 	Expiry        int64 `protobuf:"varint,4,opt,name=expiry,proto3" json:"expiry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -6635,21 +6956,28 @@ func (x *AssetLoopOutRequest) GetExpiry() int64 {
 
 type AssetRfqInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The Prepay RFQ ID to use to pay for the prepay invoice.
+	//
+	//The Prepay RFQ ID to use to pay for the prepay invoice.
 	PrepayRfqId []byte `protobuf:"bytes,1,opt,name=prepay_rfq_id,json=prepayRfqId,proto3" json:"prepay_rfq_id,omitempty"`
-	// The maximum asset amt we'll pay for the prepay payment. This includes the
-	// max limit multiplier that was set in the request.
+	//
+	//The maximum asset amt we'll pay for the prepay payment. This includes the
+	//max limit multiplier that was set in the request.
 	MaxPrepayAssetAmt uint64 `protobuf:"varint,2,opt,name=max_prepay_asset_amt,json=maxPrepayAssetAmt,proto3" json:"max_prepay_asset_amt,omitempty"`
-	// The asset to BTC conversion rate for the prepay invoice.
+	//
+	//The asset to BTC conversion rate for the prepay invoice.
 	PrepayAssetRate *FixedPoint `protobuf:"bytes,6,opt,name=prepay_asset_rate,json=prepayAssetRate,proto3" json:"prepay_asset_rate,omitempty"`
-	// The Swap RFQ ID to use to pay for the swap invoice.
+	//
+	//The Swap RFQ ID to use to pay for the swap invoice.
 	SwapRfqId []byte `protobuf:"bytes,3,opt,name=swap_rfq_id,json=swapRfqId,proto3" json:"swap_rfq_id,omitempty"`
-	// The maximum asset amt we'll pay for the swap payment. This includes the
-	// max limit multiplier that was set in the request.
+	//
+	//The maximum asset amt we'll pay for the swap payment. This includes the
+	//max limit multiplier that was set in the request.
 	MaxSwapAssetAmt uint64 `protobuf:"varint,4,opt,name=max_swap_asset_amt,json=maxSwapAssetAmt,proto3" json:"max_swap_asset_amt,omitempty"`
-	// The asset to BTC conversion rate for the swap invoice.
+	//
+	//The asset to BTC conversion rate for the swap invoice.
 	SwapAssetRate *FixedPoint `protobuf:"bytes,7,opt,name=swap_asset_rate,json=swapAssetRate,proto3" json:"swap_asset_rate,omitempty"`
-	// The name of the asset to swap.
+	//
+	//The name of the asset to swap.
 	AssetName     string `protobuf:"bytes,5,opt,name=asset_name,json=assetName,proto3" json:"asset_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -6815,11 +7143,14 @@ func (x *FixedPoint) GetScale() uint32 {
 
 type AssetLoopOutInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The asset id that was used to pay for the swap invoice.
+	//
+	//The asset id that was used to pay for the swap invoice.
 	AssetId string `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	// The human readable name of the asset.
+	//
+	//The human readable name of the asset.
 	AssetName string `protobuf:"bytes,2,opt,name=asset_name,json=assetName,proto3" json:"asset_name,omitempty"`
-	// The total asset offchain cost of the swap.
+	//
+	//The total asset offchain cost of the swap.
 	AssetCostOffchain uint64 `protobuf:"varint,3,opt,name=asset_cost_offchain,json=assetCostOffchain,proto3" json:"asset_cost_offchain,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache

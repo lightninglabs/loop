@@ -19,130 +19,132 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SwapClientClient interface {
 	// loop: `out`
-	// LoopOut initiates an loop out swap with the given parameters. The call
-	// returns after the swap has been set up with the swap server. From that
-	// point onwards, progress can be tracked via the SwapStatus stream that is
-	// returned from Monitor().
+	//LoopOut initiates an loop out swap with the given parameters. The call
+	//returns after the swap has been set up with the swap server. From that
+	//point onwards, progress can be tracked via the SwapStatus stream that is
+	//returned from Monitor().
 	LoopOut(ctx context.Context, in *LoopOutRequest, opts ...grpc.CallOption) (*SwapResponse, error)
 	// loop: `in`
-	// LoopIn initiates a loop in swap with the given parameters. The call
-	// returns after the swap has been set up with the swap server. From that
-	// point onwards, progress can be tracked via the SwapStatus stream
-	// that is returned from Monitor().
+	//LoopIn initiates a loop in swap with the given parameters. The call
+	//returns after the swap has been set up with the swap server. From that
+	//point onwards, progress can be tracked via the SwapStatus stream
+	//that is returned from Monitor().
 	LoopIn(ctx context.Context, in *LoopInRequest, opts ...grpc.CallOption) (*SwapResponse, error)
 	// loop: `monitor`
-	// Monitor will return a stream of swap updates for currently active swaps.
+	//Monitor will return a stream of swap updates for currently active swaps.
 	Monitor(ctx context.Context, in *MonitorRequest, opts ...grpc.CallOption) (SwapClient_MonitorClient, error)
 	// loop: `listswaps`
-	// ListSwaps returns a list of all currently known swaps and their current
-	// status.
+	//ListSwaps returns a list of all currently known swaps and their current
+	//status.
 	ListSwaps(ctx context.Context, in *ListSwapsRequest, opts ...grpc.CallOption) (*ListSwapsResponse, error)
 	// loop: `sweephtlc`
-	// SweepHtlc spends a swap HTLC output via either the preimage success path
-	// or the cooperative key path, using stored or stateless recovery data.
+	//SweepHtlc spends a swap HTLC output via either the preimage success path
+	//or the cooperative key path, using stored or stateless recovery data.
 	SweepHtlc(ctx context.Context, in *SweepHtlcRequest, opts ...grpc.CallOption) (*SweepHtlcResponse, error)
 	// loop: `swapinfo`
-	// SwapInfo returns all known details about a single swap.
+	//SwapInfo returns all known details about a single swap.
 	SwapInfo(ctx context.Context, in *SwapInfoRequest, opts ...grpc.CallOption) (*SwapStatus, error)
 	// loop: `abandonswap`
-	// AbandonSwap allows the client to abandon a swap.
+	//AbandonSwap allows the client to abandon a swap.
 	AbandonSwap(ctx context.Context, in *AbandonSwapRequest, opts ...grpc.CallOption) (*AbandonSwapResponse, error)
 	// loop: `terms`
-	// LoopOutTerms returns the terms that the server enforces for a loop out swap.
+	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*OutTermsResponse, error)
 	// loop: `quote`
-	// LoopOutQuote returns a quote for a loop out swap with the provided
-	// parameters.
+	//LoopOutQuote returns a quote for a loop out swap with the provided
+	//parameters.
 	LoopOutQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*OutQuoteResponse, error)
 	// loop: `terms`
-	// GetTerms returns the terms that the server enforces for swaps.
+	//GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(ctx context.Context, in *TermsRequest, opts ...grpc.CallOption) (*InTermsResponse, error)
 	// loop: `quote`
-	// GetQuote returns a quote for a swap with the provided parameters.
+	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*InQuoteResponse, error)
-	// Probe asks he sever to probe the route to us to have a better upfront
-	// estimate about routing fees when loopin-in.
+	//
+	//Probe asks he sever to probe the route to us to have a better upfront
+	//estimate about routing fees when loopin-in.
 	Probe(ctx context.Context, in *ProbeRequest, opts ...grpc.CallOption) (*ProbeResponse, error)
 	// loop: `listauth`
-	// GetL402Tokens returns all L402 tokens the daemon ever paid for.
+	//GetL402Tokens returns all L402 tokens the daemon ever paid for.
 	GetL402Tokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
-	// Deprecated: use GetL402Tokens.
-	// This API is provided to maintain backward compatibility with gRPC clients
-	// (e.g. `loop listauth`, Terminal Web, RTL).
-	// Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
-	// but this does not affect binary encoding, so we can use type L402Token here.
+	//
+	//Deprecated: use GetL402Tokens.
+	//This API is provided to maintain backward compatibility with gRPC clients
+	//(e.g. `loop listauth`, Terminal Web, RTL).
+	//Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
+	//but this does not affect binary encoding, so we can use type L402Token here.
 	GetLsatTokens(ctx context.Context, in *TokensRequest, opts ...grpc.CallOption) (*TokensResponse, error)
 	// loop: `fetchl402`
-	// FetchL402Token fetches an L402 token from the server, this is required in
-	// order to receive reservation notifications from the server.
+	//FetchL402Token fetches an L402 token from the server, this is required in
+	//order to receive reservation notifications from the server.
 	FetchL402Token(ctx context.Context, in *FetchL402TokenRequest, opts ...grpc.CallOption) (*FetchL402TokenResponse, error)
 	// loop: `getinfo`
-	// GetInfo gets basic information about the loop daemon.
+	//GetInfo gets basic information about the loop daemon.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
 	// loop: `stop`
-	// StopDaemon instructs the daemon to shut down gracefully.
+	//StopDaemon instructs the daemon to shut down gracefully.
 	StopDaemon(ctx context.Context, in *StopDaemonRequest, opts ...grpc.CallOption) (*StopDaemonResponse, error)
 	// loop: `getparams`
-	// GetLiquidityParams gets the parameters that the daemon's liquidity manager
-	// is currently configured with. This may be nil if nothing is configured.
-	// [EXPERIMENTAL]: endpoint is subject to change.
+	//GetLiquidityParams gets the parameters that the daemon's liquidity manager
+	//is currently configured with. This may be nil if nothing is configured.
+	//[EXPERIMENTAL]: endpoint is subject to change.
 	GetLiquidityParams(ctx context.Context, in *GetLiquidityParamsRequest, opts ...grpc.CallOption) (*LiquidityParameters, error)
 	// loop: `setparams`
-	// SetLiquidityParams sets a new set of parameters for the daemon's liquidity
-	// manager. Note that the full set of parameters must be provided, because
-	// this call fully overwrites our existing parameters.
-	// [EXPERIMENTAL]: endpoint is subject to change.
+	//SetLiquidityParams sets a new set of parameters for the daemon's liquidity
+	//manager. Note that the full set of parameters must be provided, because
+	//this call fully overwrites our existing parameters.
+	//[EXPERIMENTAL]: endpoint is subject to change.
 	SetLiquidityParams(ctx context.Context, in *SetLiquidityParamsRequest, opts ...grpc.CallOption) (*SetLiquidityParamsResponse, error)
 	// loop: `suggestswaps`
-	// SuggestSwaps returns a list of recommended swaps based on the current
-	// state of your node's channels and it's liquidity manager parameters.
-	// Note that only loop out suggestions are currently supported.
-	// [EXPERIMENTAL]: endpoint is subject to change.
+	//SuggestSwaps returns a list of recommended swaps based on the current
+	//state of your node's channels and it's liquidity manager parameters.
+	//Note that only loop out suggestions are currently supported.
+	//[EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(ctx context.Context, in *SuggestSwapsRequest, opts ...grpc.CallOption) (*SuggestSwapsResponse, error)
 	// loop: `listreservations`
-	// ListReservations returns a list of all reservations the server opened to us.
+	//ListReservations returns a list of all reservations the server opened to us.
 	ListReservations(ctx context.Context, in *ListReservationsRequest, opts ...grpc.CallOption) (*ListReservationsResponse, error)
 	// loop: `instantout`
-	// InstantOut initiates an instant out swap with the given parameters.
+	//InstantOut initiates an instant out swap with the given parameters.
 	InstantOut(ctx context.Context, in *InstantOutRequest, opts ...grpc.CallOption) (*InstantOutResponse, error)
 	// loop: `instantoutquote`
-	// InstantOutQuote returns a quote for an instant out swap with the provided
-	// parameters.
+	//InstantOutQuote returns a quote for an instant out swap with the provided
+	//parameters.
 	InstantOutQuote(ctx context.Context, in *InstantOutQuoteRequest, opts ...grpc.CallOption) (*InstantOutQuoteResponse, error)
 	// loop: `listinstantouts`
-	// ListInstantOuts returns a list of all currently known instant out swaps and
-	// their current status.
+	//ListInstantOuts returns a list of all currently known instant out swaps and
+	//their current status.
 	ListInstantOuts(ctx context.Context, in *ListInstantOutsRequest, opts ...grpc.CallOption) (*ListInstantOutsResponse, error)
 	// loop: `static newstaticaddress`
-	// NewStaticAddress requests a new static address for loop-ins from the server.
+	//NewStaticAddress requests a new static address for loop-ins from the server.
 	NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
-	// ListUnspentDeposits returns a list of utxos deposited at a static address.
+	//ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error)
 	// loop:`static withdraw`
-	// WithdrawDeposits withdraws a selection or all deposits of a static address.
+	//WithdrawDeposits withdraws a selection or all deposits of a static address.
 	WithdrawDeposits(ctx context.Context, in *WithdrawDepositsRequest, opts ...grpc.CallOption) (*WithdrawDepositsResponse, error)
 	// loop:`listdeposits`
-	// ListStaticAddressDeposits returns a list of filtered static address
-	// deposits.
+	//ListStaticAddressDeposits returns a list of filtered static address
+	//deposits.
 	ListStaticAddressDeposits(ctx context.Context, in *ListStaticAddressDepositsRequest, opts ...grpc.CallOption) (*ListStaticAddressDepositsResponse, error)
 	// loop:`listwithdrawals`
-	// ListStaticAddressWithdrawals returns a list of static address withdrawals.
+	//ListStaticAddressWithdrawals returns a list of static address withdrawals.
 	ListStaticAddressWithdrawals(ctx context.Context, in *ListStaticAddressWithdrawalRequest, opts ...grpc.CallOption) (*ListStaticAddressWithdrawalResponse, error)
 	// loop:`listswaps`
-	// ListStaticAddressSwaps returns a list of filtered static address
-	// swaps.
+	//ListStaticAddressSwaps returns a list of filtered static address
+	//swaps.
 	ListStaticAddressSwaps(ctx context.Context, in *ListStaticAddressSwapsRequest, opts ...grpc.CallOption) (*ListStaticAddressSwapsResponse, error)
 	// loop:`static summary`
-	// GetStaticAddressSummary returns a summary of static address related
-	// statistics.
+	//GetStaticAddressSummary returns a summary of static address related
+	//statistics.
 	GetStaticAddressSummary(ctx context.Context, in *StaticAddressSummaryRequest, opts ...grpc.CallOption) (*StaticAddressSummaryResponse, error)
 	// loop:`static in`
-	// StaticAddressLoopIn initiates a static address loop-in swap.
+	//StaticAddressLoopIn initiates a static address loop-in swap.
 	StaticAddressLoopIn(ctx context.Context, in *StaticAddressLoopInRequest, opts ...grpc.CallOption) (*StaticAddressLoopInResponse, error)
 	// loop:`static openchannel`
-	// StaticOpenChannel opens a channel funded by selected static address
-	// deposits.
+	//StaticOpenChannel opens a channel funded by selected static address
+	//deposits.
 	StaticOpenChannel(ctx context.Context, in *StaticOpenChannelRequest, opts ...grpc.CallOption) (*StaticOpenChannelResponse, error)
 }
 
@@ -479,130 +481,132 @@ func (c *swapClientClient) StaticOpenChannel(ctx context.Context, in *StaticOpen
 // for forward compatibility
 type SwapClientServer interface {
 	// loop: `out`
-	// LoopOut initiates an loop out swap with the given parameters. The call
-	// returns after the swap has been set up with the swap server. From that
-	// point onwards, progress can be tracked via the SwapStatus stream that is
-	// returned from Monitor().
+	//LoopOut initiates an loop out swap with the given parameters. The call
+	//returns after the swap has been set up with the swap server. From that
+	//point onwards, progress can be tracked via the SwapStatus stream that is
+	//returned from Monitor().
 	LoopOut(context.Context, *LoopOutRequest) (*SwapResponse, error)
 	// loop: `in`
-	// LoopIn initiates a loop in swap with the given parameters. The call
-	// returns after the swap has been set up with the swap server. From that
-	// point onwards, progress can be tracked via the SwapStatus stream
-	// that is returned from Monitor().
+	//LoopIn initiates a loop in swap with the given parameters. The call
+	//returns after the swap has been set up with the swap server. From that
+	//point onwards, progress can be tracked via the SwapStatus stream
+	//that is returned from Monitor().
 	LoopIn(context.Context, *LoopInRequest) (*SwapResponse, error)
 	// loop: `monitor`
-	// Monitor will return a stream of swap updates for currently active swaps.
+	//Monitor will return a stream of swap updates for currently active swaps.
 	Monitor(*MonitorRequest, SwapClient_MonitorServer) error
 	// loop: `listswaps`
-	// ListSwaps returns a list of all currently known swaps and their current
-	// status.
+	//ListSwaps returns a list of all currently known swaps and their current
+	//status.
 	ListSwaps(context.Context, *ListSwapsRequest) (*ListSwapsResponse, error)
 	// loop: `sweephtlc`
-	// SweepHtlc spends a swap HTLC output via either the preimage success path
-	// or the cooperative key path, using stored or stateless recovery data.
+	//SweepHtlc spends a swap HTLC output via either the preimage success path
+	//or the cooperative key path, using stored or stateless recovery data.
 	SweepHtlc(context.Context, *SweepHtlcRequest) (*SweepHtlcResponse, error)
 	// loop: `swapinfo`
-	// SwapInfo returns all known details about a single swap.
+	//SwapInfo returns all known details about a single swap.
 	SwapInfo(context.Context, *SwapInfoRequest) (*SwapStatus, error)
 	// loop: `abandonswap`
-	// AbandonSwap allows the client to abandon a swap.
+	//AbandonSwap allows the client to abandon a swap.
 	AbandonSwap(context.Context, *AbandonSwapRequest) (*AbandonSwapResponse, error)
 	// loop: `terms`
-	// LoopOutTerms returns the terms that the server enforces for a loop out swap.
+	//LoopOutTerms returns the terms that the server enforces for a loop out swap.
 	LoopOutTerms(context.Context, *TermsRequest) (*OutTermsResponse, error)
 	// loop: `quote`
-	// LoopOutQuote returns a quote for a loop out swap with the provided
-	// parameters.
+	//LoopOutQuote returns a quote for a loop out swap with the provided
+	//parameters.
 	LoopOutQuote(context.Context, *QuoteRequest) (*OutQuoteResponse, error)
 	// loop: `terms`
-	// GetTerms returns the terms that the server enforces for swaps.
+	//GetTerms returns the terms that the server enforces for swaps.
 	GetLoopInTerms(context.Context, *TermsRequest) (*InTermsResponse, error)
 	// loop: `quote`
-	// GetQuote returns a quote for a swap with the provided parameters.
+	//GetQuote returns a quote for a swap with the provided parameters.
 	GetLoopInQuote(context.Context, *QuoteRequest) (*InQuoteResponse, error)
-	// Probe asks he sever to probe the route to us to have a better upfront
-	// estimate about routing fees when loopin-in.
+	//
+	//Probe asks he sever to probe the route to us to have a better upfront
+	//estimate about routing fees when loopin-in.
 	Probe(context.Context, *ProbeRequest) (*ProbeResponse, error)
 	// loop: `listauth`
-	// GetL402Tokens returns all L402 tokens the daemon ever paid for.
+	//GetL402Tokens returns all L402 tokens the daemon ever paid for.
 	GetL402Tokens(context.Context, *TokensRequest) (*TokensResponse, error)
-	// Deprecated: use GetL402Tokens.
-	// This API is provided to maintain backward compatibility with gRPC clients
-	// (e.g. `loop listauth`, Terminal Web, RTL).
-	// Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
-	// but this does not affect binary encoding, so we can use type L402Token here.
+	//
+	//Deprecated: use GetL402Tokens.
+	//This API is provided to maintain backward compatibility with gRPC clients
+	//(e.g. `loop listauth`, Terminal Web, RTL).
+	//Type LsatToken used by GetLsatTokens in the past was renamed to L402Token,
+	//but this does not affect binary encoding, so we can use type L402Token here.
 	GetLsatTokens(context.Context, *TokensRequest) (*TokensResponse, error)
 	// loop: `fetchl402`
-	// FetchL402Token fetches an L402 token from the server, this is required in
-	// order to receive reservation notifications from the server.
+	//FetchL402Token fetches an L402 token from the server, this is required in
+	//order to receive reservation notifications from the server.
 	FetchL402Token(context.Context, *FetchL402TokenRequest) (*FetchL402TokenResponse, error)
 	// loop: `getinfo`
-	// GetInfo gets basic information about the loop daemon.
+	//GetInfo gets basic information about the loop daemon.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
 	// loop: `stop`
-	// StopDaemon instructs the daemon to shut down gracefully.
+	//StopDaemon instructs the daemon to shut down gracefully.
 	StopDaemon(context.Context, *StopDaemonRequest) (*StopDaemonResponse, error)
 	// loop: `getparams`
-	// GetLiquidityParams gets the parameters that the daemon's liquidity manager
-	// is currently configured with. This may be nil if nothing is configured.
-	// [EXPERIMENTAL]: endpoint is subject to change.
+	//GetLiquidityParams gets the parameters that the daemon's liquidity manager
+	//is currently configured with. This may be nil if nothing is configured.
+	//[EXPERIMENTAL]: endpoint is subject to change.
 	GetLiquidityParams(context.Context, *GetLiquidityParamsRequest) (*LiquidityParameters, error)
 	// loop: `setparams`
-	// SetLiquidityParams sets a new set of parameters for the daemon's liquidity
-	// manager. Note that the full set of parameters must be provided, because
-	// this call fully overwrites our existing parameters.
-	// [EXPERIMENTAL]: endpoint is subject to change.
+	//SetLiquidityParams sets a new set of parameters for the daemon's liquidity
+	//manager. Note that the full set of parameters must be provided, because
+	//this call fully overwrites our existing parameters.
+	//[EXPERIMENTAL]: endpoint is subject to change.
 	SetLiquidityParams(context.Context, *SetLiquidityParamsRequest) (*SetLiquidityParamsResponse, error)
 	// loop: `suggestswaps`
-	// SuggestSwaps returns a list of recommended swaps based on the current
-	// state of your node's channels and it's liquidity manager parameters.
-	// Note that only loop out suggestions are currently supported.
-	// [EXPERIMENTAL]: endpoint is subject to change.
+	//SuggestSwaps returns a list of recommended swaps based on the current
+	//state of your node's channels and it's liquidity manager parameters.
+	//Note that only loop out suggestions are currently supported.
+	//[EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(context.Context, *SuggestSwapsRequest) (*SuggestSwapsResponse, error)
 	// loop: `listreservations`
-	// ListReservations returns a list of all reservations the server opened to us.
+	//ListReservations returns a list of all reservations the server opened to us.
 	ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error)
 	// loop: `instantout`
-	// InstantOut initiates an instant out swap with the given parameters.
+	//InstantOut initiates an instant out swap with the given parameters.
 	InstantOut(context.Context, *InstantOutRequest) (*InstantOutResponse, error)
 	// loop: `instantoutquote`
-	// InstantOutQuote returns a quote for an instant out swap with the provided
-	// parameters.
+	//InstantOutQuote returns a quote for an instant out swap with the provided
+	//parameters.
 	InstantOutQuote(context.Context, *InstantOutQuoteRequest) (*InstantOutQuoteResponse, error)
 	// loop: `listinstantouts`
-	// ListInstantOuts returns a list of all currently known instant out swaps and
-	// their current status.
+	//ListInstantOuts returns a list of all currently known instant out swaps and
+	//their current status.
 	ListInstantOuts(context.Context, *ListInstantOutsRequest) (*ListInstantOutsResponse, error)
 	// loop: `static newstaticaddress`
-	// NewStaticAddress requests a new static address for loop-ins from the server.
+	//NewStaticAddress requests a new static address for loop-ins from the server.
 	NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
-	// ListUnspentDeposits returns a list of utxos deposited at a static address.
+	//ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error)
 	// loop:`static withdraw`
-	// WithdrawDeposits withdraws a selection or all deposits of a static address.
+	//WithdrawDeposits withdraws a selection or all deposits of a static address.
 	WithdrawDeposits(context.Context, *WithdrawDepositsRequest) (*WithdrawDepositsResponse, error)
 	// loop:`listdeposits`
-	// ListStaticAddressDeposits returns a list of filtered static address
-	// deposits.
+	//ListStaticAddressDeposits returns a list of filtered static address
+	//deposits.
 	ListStaticAddressDeposits(context.Context, *ListStaticAddressDepositsRequest) (*ListStaticAddressDepositsResponse, error)
 	// loop:`listwithdrawals`
-	// ListStaticAddressWithdrawals returns a list of static address withdrawals.
+	//ListStaticAddressWithdrawals returns a list of static address withdrawals.
 	ListStaticAddressWithdrawals(context.Context, *ListStaticAddressWithdrawalRequest) (*ListStaticAddressWithdrawalResponse, error)
 	// loop:`listswaps`
-	// ListStaticAddressSwaps returns a list of filtered static address
-	// swaps.
+	//ListStaticAddressSwaps returns a list of filtered static address
+	//swaps.
 	ListStaticAddressSwaps(context.Context, *ListStaticAddressSwapsRequest) (*ListStaticAddressSwapsResponse, error)
 	// loop:`static summary`
-	// GetStaticAddressSummary returns a summary of static address related
-	// statistics.
+	//GetStaticAddressSummary returns a summary of static address related
+	//statistics.
 	GetStaticAddressSummary(context.Context, *StaticAddressSummaryRequest) (*StaticAddressSummaryResponse, error)
 	// loop:`static in`
-	// StaticAddressLoopIn initiates a static address loop-in swap.
+	//StaticAddressLoopIn initiates a static address loop-in swap.
 	StaticAddressLoopIn(context.Context, *StaticAddressLoopInRequest) (*StaticAddressLoopInResponse, error)
 	// loop:`static openchannel`
-	// StaticOpenChannel opens a channel funded by selected static address
-	// deposits.
+	//StaticOpenChannel opens a channel funded by selected static address
+	//deposits.
 	StaticOpenChannel(context.Context, *StaticOpenChannelRequest) (*StaticOpenChannelResponse, error)
 	mustEmbedUnimplementedSwapClientServer()
 }

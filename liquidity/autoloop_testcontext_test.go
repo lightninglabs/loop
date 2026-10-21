@@ -163,13 +163,24 @@ func newAutoloopTestCtx(t *testing.T, parameters Parameters,
 
 			return <-testCtx.quotes, nil
 		},
-		LoopOut: func(_ context.Context,
+		LoopOut: func(ctx context.Context,
 			req *loop.OutRequest) (*loop.LoopOutSwapInfo,
 			error) {
 
-			testCtx.outRequest <- req
+			select {
+			case testCtx.outRequest <- req:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 
-			return <-testCtx.loopOut, nil
+			// Easy autoloop tests can stop after checking the request.
+			// Let cancellation release the pending mock response.
+			select {
+			case response := <-testCtx.loopOut:
+				return response, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		},
 		LoopInQuote: func(_ context.Context,
 			req *loop.LoopInQuoteRequest) (*loop.LoopInQuote, error) {
