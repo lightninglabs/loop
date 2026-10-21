@@ -902,3 +902,40 @@ func TestReconcileReplacementDepositCreatesNewDeposit(t *testing.T) {
 		t, "UpdateDeposit", mock.Anything, mock.Anything,
 	)
 }
+
+// TestTransitionDepositsUsesActiveDeposits verifies that a transition applies
+// to the manager's own deposit object even if the caller passes a copy, and
+// that repeating an applied transition succeeds.
+func TestTransitionDepositsUsesActiveDeposits(t *testing.T) {
+	testContext := newManagerTestContext(t)
+	manager := testContext.manager
+
+	outpoint := wire.OutPoint{Hash: chainhash.Hash{21}, Index: 1}
+	active := &Deposit{
+		OutPoint:           outpoint,
+		ConfirmationHeight: 3,
+	}
+	active.SetState(LoopingIn)
+	depositFsm, err := NewFSM(
+		t.Context(), active, manager.cfg, manager.finalizedDepositChan,
+		true,
+	)
+	require.NoError(t, err)
+	manager.mu.Lock()
+	manager.deposits[outpoint] = active
+	manager.activeDeposits[outpoint] = depositFsm
+	manager.mu.Unlock()
+
+	// A copy loaded from the store is still in the old state.
+	stale := &Deposit{OutPoint: outpoint}
+	stale.SetState(LoopingIn)
+
+	for range 2 {
+		err = manager.TransitionDeposits(
+			t.Context(), []*Deposit{stale}, OnSweepingHtlcTimeout,
+			SweepHtlcTimeout,
+		)
+		require.NoError(t, err)
+		require.Equal(t, SweepHtlcTimeout, active.GetState())
+	}
+}

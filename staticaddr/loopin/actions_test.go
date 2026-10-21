@@ -695,9 +695,8 @@ func TestMonitorInvoiceAndHtlcTxShutdownDoesNotUnlock(t *testing.T) {
 		State: invoices.ContractOpen,
 	})
 
-	depositMgr := &recordingDepositManager{
-		transitionChan: make(chan depositTransition, 1),
-	}
+	depositMgr := newRecordingDepositManager(loopIn.Deposits...)
+	depositMgr.transitionChan = make(chan depositTransition, 1)
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
 			params: &script.Parameters{
@@ -1068,9 +1067,8 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 				ServerStaticLoopInRiskAcceptedNotification, 1,
 		),
 	}
-	depositMgr := &recordingDepositManager{
-		transitionChan: make(chan depositTransition, 1),
-	}
+	depositMgr := newRecordingDepositManager(loopIn.Deposits...)
+	depositMgr.transitionChan = make(chan depositTransition, 1)
 
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
@@ -1694,9 +1692,8 @@ func TestMonitorInvoiceAndHtlcTxRecoversAcceptedRiskDecision(t *testing.T) {
 		State: invoices.ContractOpen,
 	})
 
-	depositMgr := &recordingDepositManager{
-		transitionChan: make(chan depositTransition, 1),
-	}
+	depositMgr := newRecordingDepositManager(loopIn.Deposits...)
+	depositMgr.transitionChan = make(chan depositTransition, 1)
 
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
@@ -1795,9 +1792,8 @@ func TestMonitorInvoiceAndHtlcTxRecoversRejectedRiskDecision(t *testing.T) {
 		State: invoices.ContractOpen,
 	})
 
-	depositMgr := &recordingDepositManager{
-		transitionChan: make(chan depositTransition, 1),
-	}
+	depositMgr := newRecordingDepositManager(loopIn.Deposits...)
+	depositMgr.transitionChan = make(chan depositTransition, 1)
 
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
@@ -2586,7 +2582,7 @@ func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
 		State: invoices.ContractOpen,
 	})
 
-	depositMgr := &recordingDepositManager{}
+	depositMgr := newRecordingDepositManager(loopIn.Deposits...)
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
 			params: &script.Parameters{
@@ -2719,10 +2715,14 @@ func TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits(t *testing.T) 
 	f.loopIn.HtlcCltvExpiry = mockLnd.Height
 
 	firstDeposit := f.loopIn.Deposits[0]
-	secondDeposit := &deposit.Deposit{Value: 300_000}
+	secondDeposit := &deposit.Deposit{
+		OutPoint: wire.OutPoint{Index: 1},
+		Value:    300_000,
+	}
 	firstDeposit.SetState(deposit.LoopingIn)
 	secondDeposit.SetState(deposit.LoopingIn)
 	f.loopIn.Deposits = append(f.loopIn.Deposits, secondDeposit)
+	depositMgr.active[secondDeposit.OutPoint] = secondDeposit
 
 	attempts := 0
 	depositMgr.transition = func(deposits []*deposit.Deposit,
@@ -2903,9 +2903,8 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 	}
 	loopIn.SetState(MonitorInvoiceAndHtlcTx)
 
-	depositMgr := &recordingDepositManager{
-		transitionChan: make(chan depositTransition, 1),
-	}
+	depositMgr := newRecordingDepositManager(loopIn.Deposits...)
+	depositMgr.transitionChan = make(chan depositTransition, 1)
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
 			params: &script.Parameters{
@@ -3264,7 +3263,7 @@ func TestUnlockDepositsActionCancelsInvoice(t *testing.T) {
 		Value: 200_000,
 	}
 	swapHash := lntypes.Hash{0x44, 0x55}
-	depositMgr := &recordingDepositManager{}
+	depositMgr := newRecordingDepositManager(dep)
 
 	f := &FSM{
 		StateMachine: &fsm.StateMachine{},
@@ -3300,16 +3299,18 @@ func TestUnlockDepositsActionCancelsInvoice(t *testing.T) {
 // TestUnlockDepositsActionReportsTransitionError ensures the unlock path
 // preserves the real deposit transition failure for callers that need to log it.
 func TestUnlockDepositsActionReportsTransitionError(t *testing.T) {
-	depositMgr := &recordingDepositManager{
-		err: errors.New("transition failed"),
+	dep := &deposit.Deposit{
+		Value: 200_000,
 	}
+	depositMgr := newRecordingDepositManager(dep)
+	depositMgr.err = errors.New("transition failed")
 	f := &FSM{
 		StateMachine: &fsm.StateMachine{},
 		cfg: &Config{
 			DepositManager: depositMgr,
 		},
 		loopIn: &StaticAddressLoopIn{
-			Deposits: []*deposit.Deposit{{Value: 200_000}},
+			Deposits: []*deposit.Deposit{dep},
 		},
 	}
 
@@ -3404,8 +3405,15 @@ type depositTransition struct {
 	state    fsm.StateType
 }
 
+// recordingDepositManager records deposit transitions. Like the real deposit
+// manager, it owns its deposit objects: a transition looks the deposits up by
+// outpoint and updates the manager's own objects, not the ones passed in, and
+// DepositsForOutpoints returns copies, like a store read.
 type recordingDepositManager struct {
 	noopDepositManager
+
+	// active holds the manager's own deposit objects by outpoint.
+	active map[wire.OutPoint]*deposit.Deposit
 
 	err         error
 	errs        []error
@@ -3417,7 +3425,22 @@ type recordingDepositManager struct {
 	states         []fsm.StateType
 }
 
+// newRecordingDepositManager returns a recordingDepositManager that owns the
+// given deposit objects.
+func newRecordingDepositManager(
+	deposits ...*deposit.Deposit) *recordingDepositManager {
+
+	active := make(map[wire.OutPoint]*deposit.Deposit, len(deposits))
+	for _, d := range deposits {
+		active[d.OutPoint] = d
+	}
+
+	return &recordingDepositManager{active: active}
+}
+
 // TransitionDeposits records the transition and returns the configured error.
+// Like the real manager, it applies the transition to its own deposit objects
+// with the outpoints of the given deposits.
 func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	deposits []*deposit.Deposit, event fsm.EventType,
 	state fsm.StateType) error {
@@ -3435,9 +3458,26 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	if r.transitionChan != nil {
 		r.transitionChan <- transition
 	}
+
+	activeDeposits := make([]*deposit.Deposit, 0, len(deposits))
+	for i, d := range deposits {
+		if d == nil {
+			return fmt.Errorf("nil deposit at index %d", i)
+		}
+
+		activeDeposit, ok := r.active[d.OutPoint]
+		if !ok {
+			return fmt.Errorf("deposit %v not found in active "+
+				"deposits", d.OutPoint)
+		}
+
+		activeDeposits = append(activeDeposits, activeDeposit)
+	}
+
 	switch {
 	case r.transition != nil:
-		if err := r.transition(deposits, event, state); err != nil {
+		err := r.transition(activeDeposits, event, state)
+		if err != nil {
 			return err
 		}
 
@@ -3452,13 +3492,50 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 		return r.err
 	}
 
-	for _, d := range deposits {
-		if d != nil {
-			d.SetState(state)
-		}
+	for _, d := range activeDeposits {
+		d.SetState(state)
 	}
 
 	return nil
+}
+
+// DepositsForOutpoints returns copies of the manager's own deposit objects,
+// like the real manager, which reads the deposits from the store.
+func (r *recordingDepositManager) DepositsForOutpoints(_ context.Context,
+	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
+
+	if r.depositsForOutpoints != nil {
+		r.depositsForOutpoints(outpoints, ignoreUnknown)
+	}
+
+	deposits := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		op, err := wire.NewOutPointFromString(outpoint)
+		if err != nil {
+			return nil, err
+		}
+
+		d, ok := r.active[*op]
+		if !ok {
+			if ignoreUnknown {
+				continue
+			}
+
+			return nil, deposit.ErrDepositNotFound
+		}
+
+		storeCopy := &deposit.Deposit{
+			OutPoint:           d.OutPoint,
+			ID:                 d.ID,
+			Value:              d.Value,
+			ConfirmationHeight: d.GetConfirmationHeight(),
+		}
+		storeCopy.SetState(d.GetState())
+
+		deposits = append(deposits, storeCopy)
+	}
+
+	return deposits, nil
 }
 
 type recordingRiskStore struct {
@@ -3575,4 +3652,140 @@ func (s *initHtlcTestServer) PushStaticAddressHtlcSigs(context.Context,
 ) (*swapserverrpc.PushStaticAddressHtlcSigsResponse, error) {
 
 	return &swapserverrpc.PushStaticAddressHtlcSigsResponse{}, nil
+}
+
+// TestLegacyConfirmationFallbackKeepsLiveDeposits verifies that refreshing the
+// confirmation heights for the legacy fallback reads fresh store copies but
+// keeps the loop-in's own deposit objects. The deposit state machines update
+// those objects; replacing them with copies made later state checks fail
+// forever.
+func TestLegacyConfirmationFallbackKeepsLiveDeposits(t *testing.T) {
+	outpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{15},
+		Index: 0,
+	}
+	live := &deposit.Deposit{OutPoint: outpoint}
+	live.SetState(deposit.LoopingIn)
+	storeCopy := &deposit.Deposit{
+		OutPoint:           outpoint,
+		ConfirmationHeight: 10,
+	}
+	storeCopy.SetState(deposit.LoopingIn)
+
+	f := &FSM{
+		cfg: &Config{
+			DepositManager: &noopDepositManager{
+				deposits: []*deposit.Deposit{storeCopy},
+			},
+		},
+		loopIn: &StaticAddressLoopIn{
+			DepositOutpoints: []string{outpoint.String()},
+			Deposits:         []*deposit.Deposit{live},
+		},
+	}
+
+	// The fresh copy is confirmed deeply enough.
+	reached := f.shouldStartLegacyConfirmationFallback(
+		t.Context(), int32(10+deposit.MinConfs),
+	)
+	require.True(t, reached)
+
+	// The loop-in still refers to the live deposit object.
+	require.Len(t, f.loopIn.Deposits, 1)
+	require.Same(t, live, f.loopIn.Deposits[0])
+}
+
+// TestMonitorInvoiceAndHtlcTxSweepsTimeoutAfterLegacyRefresh verifies that an
+// unpaid HTLC still moves to the timeout sweep after the legacy confirmation
+// fallback reloaded the selected deposits. The deposit manager transitions its
+// own deposit objects, so the monitor only sees the transition if the loop-in
+// kept them instead of the reloaded copies.
+func TestMonitorInvoiceAndHtlcTxSweepsTimeoutAfterLegacyRefresh(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{29, 30, 31}
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
+		mockLnd.LndServices.Invoices,
+	)
+	f.loopIn.HtlcCltvExpiry = mockLnd.Height
+	f.loopIn.PaymentTimeoutSeconds = 1
+
+	// The selected deposit is confirmed deeply enough for the legacy
+	// fallback, which reloads it and starts the payment deadline.
+	liveDeposit := f.loopIn.Deposits[0]
+	liveDeposit.SetState(deposit.LoopingIn)
+	confirmationHeight := int64(mockLnd.Height) - deposit.MinConfs + 1
+	liveDeposit.ConfirmationHeight = confirmationHeight
+	f.loopIn.DepositOutpoints = []string{liveDeposit.OutPoint.String()}
+
+	reloaded := make(chan struct{}, 1)
+	depositMgr.depositsForOutpoints = func([]string, bool) {
+		select {
+		case reloaded <- struct{}{}:
+
+		default:
+		}
+	}
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	var confRegistration *test.ConfRegistration
+	select {
+	case confRegistration = <-mockLnd.RegisterConfChannel:
+
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+
+	select {
+	case <-reloaded:
+
+	case <-ctx.Done():
+		t.Fatalf("deposits were not reloaded: %v", ctx.Err())
+	}
+
+	// The HTLC confirms and the payment deadline passes without payment,
+	// which locks the deposits for the timeout sweep.
+	confRegistration.ConfChan <- nil
+
+	select {
+	case transition := <-depositMgr.transitionChan:
+		require.Equal(t, deposit.SweepHtlcTimeout, transition.state)
+
+	case <-ctx.Done():
+		t.Fatalf("deposits were not locked for timeout sweeping: %v",
+			ctx.Err())
+	}
+
+	// Once the HTLC times out, the swap sweeps it back.
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height+1))
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, OnSweepHtlcTimeout, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Same(t, liveDeposit, f.loopIn.Deposits[0])
+	require.True(t, liveDeposit.IsInState(deposit.SweepHtlcTimeout))
 }

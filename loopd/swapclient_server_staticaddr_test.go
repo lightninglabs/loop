@@ -264,7 +264,11 @@ func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {
 
 	addrMgr, lnd := newTestStaticAddressContext(t, 10)
 	server := &swapClientServer{
-		depositManager:       newTestDepositManager(locked),
+		depositManager: &listUnspentDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				locked.OutPoint.String(): locked,
+			},
+		},
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
 	}
@@ -273,6 +277,7 @@ func TestGetLoopInQuoteRejectsUnavailableSelectedDeposit(t *testing.T) {
 		DepositOutpoints: []string{locked.OutPoint.String()},
 	})
 	require.ErrorContains(t, err, "is not currently available")
+	require.ErrorContains(t, err, locked.OutPoint.String())
 }
 
 // TestGetLoopInQuoteRejectsExpiringSelectedDeposit verifies manual quote
@@ -294,7 +299,11 @@ func TestGetLoopInQuoteRejectsExpiringSelectedDeposit(t *testing.T) {
 
 	addrMgr, lnd := newTestStaticAddressContext(t, 10)
 	server := &swapClientServer{
-		depositManager:       newTestDepositManager(expiring),
+		depositManager: &listUnspentDepositManager{
+			byOutpoint: map[string]*deposit.Deposit{
+				expiring.OutPoint.String(): expiring,
+			},
+		},
 		staticAddressManager: addrMgr,
 		lnd:                  &lnd.LndServices,
 	}
@@ -329,8 +338,11 @@ func TestGetLoopInQuoteAllowsFreshSelectedDeposit(t *testing.T) {
 
 	quoter := &staticAddrTestLoopInQuoter{}
 	addrMgr, lnd := newTestStaticAddressContext(t, staticAddrExpiry)
+	depMgr := &listUnspentDepositManager{byOutpoint: map[string]*deposit.Deposit{
+		fresh.OutPoint.String(): fresh,
+	}}
 	server := &swapClientServer{
-		depositManager:       newTestDepositManager(fresh),
+		depositManager:       depMgr,
 		staticAddressManager: addrMgr,
 		loopInQuoter:         quoter,
 		lnd:                  &lnd.LndServices,
@@ -344,4 +356,27 @@ func TestGetLoopInQuoteAllowsFreshSelectedDeposit(t *testing.T) {
 	require.NotNil(t, quoter.request)
 	require.Equal(t, fresh.Value, quoter.request.Amount)
 	require.EqualValues(t, 1, quoter.request.NumDeposits)
+	require.Equal(t, 1, depMgr.activeLookupCalls)
+	require.Zero(t, depMgr.recordLookupCalls)
+	require.Zero(t, depMgr.visibleLookupCalls)
+
+	// A rejected selection names the deposit that is not available. A
+	// duplicate selection only fails as a whole.
+	unknown := wire.OutPoint{Hash: chainhash.Hash{99}}.String()
+	duplicate := []string{fresh.OutPoint.String(), fresh.OutPoint.String()}
+	for _, invalid := range []struct {
+		outpoints []string
+		err       string
+	}{
+		{outpoints: duplicate, err: "outpoints must be unique"},
+		{outpoints: []string{unknown}, err: "deposit " + unknown},
+		{outpoints: []string{"invalid"}, err: "deposit invalid"},
+	} {
+		quoter.request = nil
+		_, err := server.GetLoopInQuote(t.Context(), &looprpc.QuoteRequest{
+			DepositOutpoints: invalid.outpoints,
+		})
+		require.ErrorContains(t, err, invalid.err)
+		require.Nil(t, quoter.request)
+	}
 }
