@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	assettest "github.com/lightninglabs/loop/assets/internal/test"
 	"github.com/lightninglabs/loop/assets/sweep"
 	"github.com/lightninglabs/taproot-assets/asset"

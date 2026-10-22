@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/assets/htlc"
 	"github.com/lightninglabs/loop/assets/internal/policy"
 	"github.com/lightninglabs/taproot-assets/address"

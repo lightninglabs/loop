@@ -3,7 +3,7 @@ package policy
 import (
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/stretchr/testify/require"
 )

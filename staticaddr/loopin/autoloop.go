@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightningnetwork/lnd/routing/route"
