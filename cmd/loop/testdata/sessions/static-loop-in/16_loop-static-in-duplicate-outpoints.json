@@ -30,7 +30,7 @@
         "payload": {
           "state_filter": "DEPOSITED",
           "outpoints": [],
-          "skip_funding_tx_labels": false
+          "skip_funding_tx_labels": true
         }
       }
     },

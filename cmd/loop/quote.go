@@ -144,7 +144,8 @@ func depositAmount(ctx context.Context, client looprpc.SwapClientClient,
 
 	addressSummary, err := client.ListStaticAddressDeposits(
 		ctx, &looprpc.ListStaticAddressDepositsRequest{
-			Outpoints: depositOutpoints,
+			Outpoints:           depositOutpoints,
+			SkipFundingTxLabels: true,
 		},
 	)
 	if err != nil {
