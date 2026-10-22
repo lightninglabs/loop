@@ -3,6 +3,7 @@ package loopin
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -23,8 +24,8 @@ import (
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
-	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
+	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -64,8 +65,8 @@ type Config struct {
 	// LndClient is used to add invoices and select hop hints.
 	LndClient lndclient.LightningClient
 
-	// TxOutChecker checks that selected deposits are still available before
-	// the client gives the server HTLC signatures.
+	// TxOutChecker checks selected deposits before signing and confirms that
+	// original inputs are still available before releasing an unfunded swap.
 	TxOutChecker TxOutChecker
 
 	// InvoicesClient is used to subscribe to invoice settlements and
@@ -344,17 +345,6 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		return err
 	}
 
-	addressParams, err := m.cfg.AddressManager.
-		GetStaticAddressParameters(ctx)
-	if err != nil {
-		return err
-	}
-
-	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return err
-	}
-
 	ignoreUnknownOutpoints := false
 	deposits, err := m.cfg.DepositManager.DepositsForOutpoints(
 		ctx, loopIn.DepositOutpoints, ignoreUnknownOutpoints,
@@ -376,7 +366,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	// If the user selected an amount that is less than the total deposit
 	// amount we'll check that the server sends us the correct change amount
 	// back to our static address.
-	err = m.checkChange(ctx, sweepTx, addressParams)
+	err = m.checkChange(ctx, sweepTx)
 	if err != nil {
 		return err
 	}
@@ -396,8 +386,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 	// The server supplies prevouts for the full batch, but deposit values
 	// and scripts signed by this client must match local wallet state.
 	err = validateSigningPrevouts(
-		req.DepositToNonces, deposits, addressParams.PkScript,
-		prevoutMap,
+		req.DepositToNonces, deposits, prevoutMap,
 	)
 	if err != nil {
 		return err
@@ -416,8 +405,18 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		map[string]*swapserverrpc.ClientSweeplessSigningInfo,
 		len(req.DepositToNonces),
 	)
+	depositMap := make(map[string]*deposit.Deposit, len(deposits))
+	for _, d := range deposits {
+		depositMap[d.String()] = d
+	}
 
 	for depositOutpoint, nonce := range req.DepositToNonces {
+		d, ok := depositMap[depositOutpoint]
+		if !ok {
+			return fmt.Errorf("deposit %v not found in loop-in",
+				depositOutpoint)
+		}
+
 		taprootSigHash, err := txscript.CalcTaprootSignatureHash(
 			sigHashes, txscript.SigHashDefault,
 			sweepPacket.UnsignedTx,
@@ -436,7 +435,7 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 		}
 
 		musig2Session, err := staticutil.CreateMusig2Session(
-			ctx, m.cfg.Signer, addressParams, staticAddress,
+			ctx, m.cfg.Signer, d,
 		)
 		if err != nil {
 			return err
@@ -561,7 +560,7 @@ func validateSweepPrevouts(sweepTx *wire.MsgTx,
 // validateSigningPrevouts verifies locally known values and scripts for each
 // deposit the server asks this client to sign.
 func validateSigningPrevouts(depositToNonces map[string][]byte,
-	deposits []*deposit.Deposit, depositPkScript []byte,
+	deposits []*deposit.Deposit,
 	prevoutMap map[wire.OutPoint]*wire.TxOut) error {
 
 	depositsByOutpoint := make(map[string]*deposit.Deposit, len(deposits))
@@ -592,7 +591,14 @@ func validateSigningPrevouts(depositToNonces map[string][]byte,
 			return fmt.Errorf("signing prevout %v value mismatch",
 				currentDeposit.OutPoint)
 		}
-		if !bytes.Equal(prevout.PkScript, depositPkScript) {
+		if currentDeposit.AddressParams == nil {
+			return fmt.Errorf("missing static address parameters for "+
+				"signing prevout %v", currentDeposit.OutPoint)
+		}
+		if !bytes.Equal(
+			prevout.PkScript, currentDeposit.AddressParams.PkScript,
+		) {
+
 			return fmt.Errorf("signing prevout %v script mismatch",
 				currentDeposit.OutPoint)
 		}
@@ -601,12 +607,11 @@ func validateSigningPrevouts(depositToNonces map[string][]byte,
 	return nil
 }
 
-// checkChange ensures that the server sends us the correct change amount
-// back to our static address. An edge case arises if a batch contains two
-// swaps with identical change outputs. The client needs to ensure that any
-// swap referenced by the inputs has a respective change output in the batch.
+// checkChange ensures that the server sends us the correct change amount back
+// to our static addresses. The server consolidates change by output script, so
+// we mirror that behavior when calculating the expected outputs for a batch.
 func (m *Manager) checkChange(ctx context.Context,
-	sweepTx *wire.MsgTx, changeAddr *script.Parameters) error {
+	sweepTx *wire.MsgTx) error {
 
 	prevOuts := make([]string, len(sweepTx.TxIn))
 	for i, in := range sweepTx.TxIn {
@@ -631,42 +636,66 @@ func (m *Manager) checkChange(ctx context.Context,
 		return err
 	}
 
-	var expectedChange btcutil.Amount
+	expectedChanges := make(map[string]*wire.TxOut)
 	for swapHash := range swapHashes {
 		loopIn, err := m.cfg.Store.GetLoopInByHash(ctx, swapHash)
 		if err != nil {
 			return err
 		}
 
-		totalDepositAmount := loopIn.TotalDepositAmount()
-		changeAmt := totalDepositAmount - loopIn.SelectedAmount
-		if changeAmt > 0 && changeAmt < totalDepositAmount {
-			log.Debugf("expected change output to our "+
-				"static address, total_deposit_amount=%v, "+
-				"selected_amount=%v, "+
-				"expected_change_amount=%v ",
-				totalDepositAmount, loopIn.SelectedAmount,
-				changeAmt)
+		changeAmt := loopIn.ExpectedChangeAmount()
+		if changeAmt == 0 {
+			continue
+		}
 
-			expectedChange += changeAmt
+		if loopIn.ChangeAddressParams == nil {
+			return fmt.Errorf("missing change address for swap %x",
+				swapHash[:])
+		}
+
+		log.Debugf("expected change output to static address, "+
+			"swap_hash=%x, selected_amount=%v, "+
+			"expected_change_amount=%v", swapHash[:],
+			loopIn.SelectedAmount, changeAmt)
+
+		pkScript := loopIn.ChangeAddressParams.PkScript
+		scriptKey := string(pkScript)
+		expectedChange, ok := expectedChanges[scriptKey]
+		if ok {
+			expectedChange.Value += int64(changeAmt)
+			continue
+		}
+
+		expectedChanges[scriptKey] = &wire.TxOut{
+			Value:    int64(changeAmt),
+			PkScript: bytes.Clone(pkScript),
 		}
 	}
 
-	if expectedChange == 0 {
+	if len(expectedChanges) == 0 {
 		return nil
 	}
 
-	for _, out := range sweepTx.TxOut {
-		if out.Value == int64(expectedChange) &&
-			bytes.Equal(out.PkScript, changeAddr.PkScript) {
+	for _, expected := range expectedChanges {
+		var found bool
+		for _, out := range sweepTx.TxOut {
+			if out.Value == expected.Value &&
+				bytes.Equal(out.PkScript, expected.PkScript) {
 
-			// We found the expected change output.
-			return nil
+				found = true
+				break
+			}
 		}
+
+		if found {
+			continue
+		}
+
+		return fmt.Errorf("couldn't find expected change of %v "+
+			"satoshis sent to static address", expected.Value)
 	}
 
-	return fmt.Errorf("couldn't find expected change of %v "+
-		"satoshis sent to our static address", expectedChange)
+	return nil
 }
 
 // recover stars a loop-in state machine for each non-final loop-in to pick up
@@ -674,12 +703,16 @@ func (m *Manager) checkChange(ctx context.Context,
 func (m *Manager) recoverLoopIns(ctx context.Context) error {
 	log.Infof("Recovering static address loop-ins...")
 
-	// Recover loop-ins.
-	// Recover pending static address loop-ins.
+	// Reconcile locks before starting recovered FSMs or admitting new swaps.
+	// Initialization persists the deposit lock before it creates a swap, so
+	// a crash can leave LoopingIn deposits with no recoverable owner.
 	pendingLoopIns, err := m.cfg.Store.GetStaticAddressLoopInSwapsByStates(
 		ctx, PendingStates,
 	)
 	if err != nil {
+		return err
+	}
+	if err := m.reconcileLoopInDeposits(ctx, pendingLoopIns); err != nil {
 		return err
 	}
 
@@ -695,20 +728,6 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 			log.Errorf("one or more deposits are not active")
 		} else {
 			loopIn.Deposits = activeDeposits
-		}
-
-		loopIn.AddressParams, err =
-			m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-
-		if err != nil {
-			return err
-		}
-
-		loopIn.Address, err = m.cfg.AddressManager.GetStaticAddress(
-			ctx,
-		)
-		if err != nil {
-			return err
 		}
 
 		// Create a state machine for a given loop-in.
@@ -728,6 +747,133 @@ func (m *Manager) recoverLoopIns(ctx context.Context) error {
 		}()
 	}
 
+	return nil
+}
+
+// reconcileLoopInDeposits repairs initialization and final-state persistence
+// gaps. A legacy keep-first migration can map a reused deposit to an older
+// failed swap. Before releasing such a lock, consult live swap snapshots;
+// arbitrary completed historical snapshots must not reclaim reused deposits.
+func (m *Manager) reconcileLoopInDeposits(ctx context.Context,
+	loopIns []*StaticAddressLoopIn) error {
+
+	deposits, err := m.cfg.DepositManager.GetActiveDepositsInState(
+		deposit.LoopingIn,
+	)
+	if err != nil {
+		return err
+	}
+	active := make(map[wire.OutPoint]struct{}, len(deposits))
+	for _, d := range deposits {
+		active[d.OutPoint] = struct{}{}
+	}
+	owners := make(map[lntypes.Hash]*StaticAddressLoopIn)
+	claims := make(map[wire.OutPoint]map[lntypes.Hash]LoopInClaim)
+	indexClaims := func(swaps []LoopInClaim) error {
+		for _, claim := range swaps {
+			for _, encoded := range claim.DepositOutpoints {
+				outpoint, err := wire.NewOutPointFromString(encoded)
+				if err != nil {
+					return fmt.Errorf("invalid recovery outpoint for "+
+						"swap %v: %w", claim.SwapHash, err)
+				}
+				if _, ok := active[*outpoint]; !ok {
+					continue
+				}
+				if claims[*outpoint] == nil {
+					claims[*outpoint] = make(map[lntypes.Hash]LoopInClaim)
+				}
+				claims[*outpoint][claim.SwapHash] = claim
+			}
+		}
+		return nil
+	}
+	pendingClaims := make([]LoopInClaim, 0, len(loopIns))
+	for _, swap := range loopIns {
+		owners[swap.SwapHash] = swap
+		pendingClaims = append(pendingClaims, LoopInClaim{
+			SwapHash: swap.SwapHash, State: swap.GetState(),
+			DepositOutpoints: swap.DepositOutpoints,
+		})
+	}
+	if err := indexClaims(pendingClaims); err != nil {
+		return err
+	}
+	loadedPaidClaims := false
+	for _, d := range deposits {
+		if !d.IsInState(deposit.LoopingIn) {
+			continue
+		}
+		event, target := fsm.OnError, deposit.Deposited
+		var owner *StaticAddressLoopIn
+		if d.SwapHash != nil {
+			var cached bool
+			owner, cached = owners[*d.SwapHash]
+			if !cached {
+				owner, err = m.cfg.Store.GetLoopInByHash(ctx, *d.SwapHash)
+				if err != nil && !errors.Is(err, sql.ErrNoRows) &&
+					!errors.Is(err, ErrLoopInNotFound) {
+
+					return fmt.Errorf("unable to recover deposit owner: %w", err)
+				}
+				owners[*d.SwapHash] = owner
+			}
+		}
+		var ownerState fsm.StateType
+		var ownerHash lntypes.Hash
+		if owner != nil {
+			ownerState, ownerHash = owner.GetState(), owner.SwapHash
+		}
+
+		// Normal current mappings remain authoritative, including retries
+		// whose older swap still monitors its already canceled invoice.
+		atRisk := owner == nil || ownerState == Failed ||
+			ownerState == HtlcTimeoutSwept
+		if atRisk {
+			if !loadedPaidClaims {
+				paidClaims, err := m.cfg.Store.
+					GetPaidStaticAddressLoopInClaims(ctx)
+				if err != nil {
+					return err
+				}
+				if err := indexClaims(paidClaims); err != nil {
+					return err
+				}
+				loadedPaidClaims = true
+			}
+			candidates := claims[d.OutPoint]
+			if len(candidates) > 1 {
+				return fmt.Errorf("ambiguous live owners for "+
+					"loop-in deposit %v", d.OutPoint)
+			}
+			for _, candidate := range candidates {
+				ownerState, ownerHash = candidate.State, candidate.SwapHash
+			}
+		}
+		if ownerState != fsm.EmptyState {
+			switch ownerState {
+			case Succeeded, SucceededTransitioningFailed, PaymentReceived:
+				event, target = deposit.OnLoopedIn, deposit.LoopedIn
+			default:
+				if slices.Contains(PendingStates, ownerState) {
+					if err := m.cfg.DepositManager.RestoreLoopInClaim(
+						ctx, []*deposit.Deposit{d}, ownerHash,
+					); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+		}
+		log.Infof("Reconciling recovered loop-in deposit %v to %v",
+			d.OutPoint, target)
+		if err := m.cfg.DepositManager.TransitionDeposits(
+			ctx, []*deposit.Deposit{d}, event, target,
+		); err != nil {
+			return fmt.Errorf("unable to reconcile deposit %v: %w",
+				d.OutPoint, err)
+		}
+	}
 	return nil
 }
 
@@ -807,16 +953,8 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 		// too close to the HTLC timeout. Automatic selection already
 		// filters those deposits, so manual outpoint selection must
 		// enforce the same rule before quoting and initiating a swap.
-		params, err := m.cfg.AddressManager.
-			GetStaticAddressParameters(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve static "+
-				"address parameters: %w", err)
-		}
-
 		err = ValidateDepositsSwappable(
-			selectedDeposits, params.Expiry,
-			m.currentHeight.Load(),
+			selectedDeposits, m.currentHeight.Load(),
 		)
 		if err != nil {
 			return nil, err
@@ -832,19 +970,8 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 				"deposits: %w", err)
 		}
 
-		// TODO(hieblmi): add params to deposit for multi-address
-		//      support.
-		params, err := m.cfg.AddressManager.GetStaticAddressParameters(
-			ctx,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve static "+
-				"address parameters: %w", err)
-		}
-
 		selectedDeposits, err = SelectDeposits(
-			req.SelectedAmount, allDeposits, params.Expiry,
-			m.currentHeight.Load(),
+			req.SelectedAmount, allDeposits, m.currentHeight.Load(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to select deposits: %w",
@@ -929,6 +1056,9 @@ func (m *Manager) initiateLoopIn(ctx context.Context,
 	}
 
 	swap := &StaticAddressLoopIn{
+		ProtocolVersion: version.AddressProtocolVersion(
+			version.CurrentRPCProtocolVersion(),
+		),
 		SelectedAmount: req.SelectedAmount,
 		// Copy into a nil slice so the swap owns a stable snapshot
 		// instead of aliasing the caller's selectedOutpoints slice.
@@ -1024,15 +1154,21 @@ func (m *Manager) activeDepositsForLoopIn(loopIn *StaticAddressLoopIn) (
 // leaving a dust change. It returns an error if the sum of deposits minus dust
 // is less than the requested amount.
 func SelectDeposits(targetAmount btcutil.Amount,
-	unfilteredDeposits []*deposit.Deposit, csvExpiry uint32,
-	blockHeight uint32) ([]*deposit.Deposit, error) {
+	unfilteredDeposits []*deposit.Deposit, blockHeight uint32) (
+	[]*deposit.Deposit, error) {
 
 	// Filter out deposits that are too close to expiry to be swapped.
 	var deposits []*deposit.Deposit
 	for _, d := range unfilteredDeposits {
 		confirmationHeight := d.GetConfirmationHeight()
+		if d.AddressParams == nil {
+			return nil, fmt.Errorf("missing static address parameters "+
+				"for deposit %s", d.OutPoint.String())
+		}
+
 		if !IsSwappable(
-			uint32(confirmationHeight), blockHeight, csvExpiry,
+			uint32(confirmationHeight), blockHeight,
+			d.AddressParams.Expiry,
 		) {
 
 			log.Debugf("Skipping deposit %s as it expires before "+
@@ -1059,11 +1195,11 @@ func SelectDeposits(targetAmount btcutil.Amount,
 		if deposits[i].Value == deposits[j].Value {
 			iExp := blocksUntilDepositExpiry(
 				uint32(iConfirmationHeight), blockHeight,
-				csvExpiry,
+				deposits[i].AddressParams.Expiry,
 			)
 			jExp := blocksUntilDepositExpiry(
 				uint32(jConfirmationHeight), blockHeight,
-				csvExpiry,
+				deposits[j].AddressParams.Expiry,
 			)
 
 			return iExp < jExp
@@ -1109,21 +1245,27 @@ func IsSwappable(confirmationHeight, blockHeight, csvExpiry uint32) bool {
 
 // ValidateDepositsSwappable verifies that selected deposits still have enough
 // timeout runway to back a static-address loop-in HTLC.
-func ValidateDepositsSwappable(deposits []*deposit.Deposit, csvExpiry uint32,
+func ValidateDepositsSwappable(deposits []*deposit.Deposit,
 	blockHeight uint32) error {
 
-	for _, deposit := range deposits {
-		confirmationHeight := deposit.GetConfirmationHeight()
+	for _, d := range deposits {
+		if d.AddressParams == nil {
+			return fmt.Errorf("missing static address parameters for "+
+				"deposit %s", d.OutPoint.String())
+		}
+
+		confirmationHeight := d.GetConfirmationHeight()
 		if confirmationHeight <= 0 {
 			continue
 		}
 
 		swappable := IsSwappable(
-			uint32(confirmationHeight), blockHeight, csvExpiry,
+			uint32(confirmationHeight), blockHeight,
+			d.AddressParams.Expiry,
 		)
 		if !swappable {
 			return fmt.Errorf("deposit %s expires before htlc",
-				deposit.OutPoint)
+				d.OutPoint)
 		}
 	}
 

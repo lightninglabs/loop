@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/require"
@@ -54,22 +55,44 @@ func newOnchainCostStore(t *testing.T) *SqlStore {
 
 // newOnchainCostManager returns a manager that looks up transactions with the
 // given getter and gets lnd's info from the given client.
-func newOnchainCostManager(store Store, getter *fakeTxGetter,
+func newOnchainCostManager(t *testing.T, store *SqlStore, getter *fakeTxGetter,
 	lightningClient LightningClient) *Manager {
+
+	t.Helper()
+
+	addrParams := newOnchainCostAddress(t, store)
+	addressManager := new(mockAddressManager)
+	addressManager.On("GetParameters", testStaticPkScript).Return(addrParams)
+	addressManager.On("GetParameters", testOtherPkScript).Return(nil)
+
+	otherParams := *addrParams
+	otherParams.ID = 0
+	otherParams.PkScript = testStaticPkScript2
+	otherParams.KeyLocator.Index++
+	addressStore := address.NewSqlStore(store.baseDB)
+	require.NoError(t, addressStore.CreateStaticAddress(t.Context(), &otherParams))
+	otherID, err := addressStore.GetStaticAddressID(
+		t.Context(), otherParams.PkScript,
+	)
+	require.NoError(t, err)
+	otherParams.ID = otherID
+	addressManager.On("GetParameters", testStaticPkScript2).Return(&otherParams)
 
 	return NewManager(&ManagerConfig{
 		LightningClient: lightningClient,
+		AddressManager:  addressManager,
 		Store:           store,
 		WalletKit:       &txGetterWalletKit{getter: getter},
 	})
 }
 
 // storeDeposit stores the given deposit, as if it had been found before.
-func storeDeposit(t *testing.T, store Store, d *Deposit) {
+func storeDeposit(t *testing.T, store *SqlStore, d *Deposit) {
 	t.Helper()
 
 	d.SetState(Deposited)
 	d.TimeOutSweepPkScript = []byte{0x00, 0x14, 0x01}
+	d.AddressParams = newOnchainCostAddress(t, store)
 	require.NoError(t, store.CreateDeposit(t.Context(), d))
 }
 
@@ -191,7 +214,7 @@ func TestDetermineOnchainCosts(t *testing.T) {
 				lightningClient = unsynced
 			}
 			m := newOnchainCostManager(
-				store, getter, lightningClient,
+				t, store, getter, lightningClient,
 			)
 
 			storeDeposit(t, store, earlier)
@@ -215,6 +238,30 @@ func TestDetermineOnchainCosts(t *testing.T) {
 	}
 }
 
+// TestDetermineOnchainCostsIncrementalDiscovery checks that a retained deposit
+// is charged its final share before a sibling to another address is retained.
+func TestDetermineOnchainCostsIncrementalDiscovery(t *testing.T) {
+	tx := fundingTx(1, otherOut(500_000), staticOut(100_000),
+		staticOut2(100_000))
+	getter := newFakeTxGetter(walletTx(tx, 1_001, true))
+	store := newOnchainCostStore(t)
+	m := newOnchainCostManager(t, store, getter,
+		syncedTestLightningClient(100))
+
+	first, err := m.createNewDeposit(t.Context(), utxoOf(tx, 1), 0)
+	require.NoError(t, err)
+	m.determineOnchainCosts(t.Context())
+	require.Equal(t, knownCost(501), storedCost(t, store, first))
+
+	second, err := m.createNewDeposit(t.Context(), utxoOf(tx, 2), 0)
+	require.NoError(t, err)
+	m.determineOnchainCosts(t.Context())
+	require.Equal(t, knownCost(501), storedCost(t, store, first))
+	require.Equal(t, knownCost(500), storedCost(t, store, second))
+	require.Equal(t, btcutil.Amount(1_001),
+		first.GetOnchainCost().Amount+second.GetOnchainCost().Amount)
+}
+
 // TestDetermineOnchainCostsOneLookupPerTx tests that the deposits of one
 // funding transaction look it up once and share its fee.
 func TestDetermineOnchainCostsOneLookupPerTx(t *testing.T) {
@@ -227,7 +274,7 @@ func TestDetermineOnchainCostsOneLookupPerTx(t *testing.T) {
 		walletTx(txSiblings, 1_200, true), walletTx(txOther, 700, true),
 	)
 	m := newOnchainCostManager(
-		newOnchainCostStore(t), getter, syncedTestLightningClient(100),
+		t, newOnchainCostStore(t), getter, syncedTestLightningClient(100),
 	)
 
 	utxos := []*lnwallet.Utxo{
@@ -262,7 +309,7 @@ func TestDetermineOnchainCostsRetry(t *testing.T) {
 	getter := newFakeTxGetter(walletTx(txWallet, 1_200, true))
 	getter.errs[txFailing.TxHash()] = errors.New("wallet unavailable")
 	m := newOnchainCostManager(
-		store, getter, syncedTestLightningClient(100),
+		t, store, getter, syncedTestLightningClient(100),
 	)
 
 	// Both deposits were found while lnd wasn't synced, and one already
@@ -366,8 +413,9 @@ func TestDetermineOnchainCostsNotDetermined(t *testing.T) {
 			}
 			getter := newFakeTxGetter(walletTx(tx, 1_200, true))
 			m := newOnchainCostManager(
-				store, getter, tc.lightningClient,
+				t, sqlStore, getter, tc.lightningClient,
 			)
+			m.cfg.Store = store
 
 			d := depositOf(tx, 0)
 			storeDeposit(t, sqlStore, d)

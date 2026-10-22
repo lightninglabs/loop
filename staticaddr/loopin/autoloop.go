@@ -42,18 +42,13 @@ func (m *Manager) PrepareAutoloopLoopIn(ctx context.Context,
 		return nil, 0, false, err
 	}
 
-	params, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, 0, false, err
-	}
-
 	excluded := make(map[string]struct{}, len(excludedOutpoints))
 	for _, outpoint := range excludedOutpoints {
 		excluded[outpoint] = struct{}{}
 	}
 
 	selectedDeposits, err := selectNoChangeDeposits(
-		maxAmount, minAmount, allDeposits, params.Expiry,
+		maxAmount, minAmount, allDeposits,
 		m.currentHeight.Load(), excluded,
 	)
 	if err != nil {
@@ -91,11 +86,11 @@ func (m *Manager) PrepareAutoloopLoopIn(ctx context.Context,
 // full value stays within the requested range. The selector never creates
 // change, so the returned set's total is the actual swap amount.
 func selectNoChangeDeposits(maxAmount, minAmount btcutil.Amount,
-	unfilteredDeposits []*deposit.Deposit, csvExpiry, blockHeight uint32,
+	unfilteredDeposits []*deposit.Deposit, blockHeight uint32,
 	excludedOutpoints map[string]struct{}) ([]*deposit.Deposit, error) {
 
 	return selectNoChangeDepositsWithMemoryBudget(
-		maxAmount, minAmount, unfilteredDeposits, csvExpiry,
+		maxAmount, minAmount, unfilteredDeposits,
 		blockHeight, excludedOutpoints, autoloopDPMaxMemoryBytes,
 	)
 }

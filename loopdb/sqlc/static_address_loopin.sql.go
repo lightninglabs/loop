@@ -45,11 +45,20 @@ func (q *Queries) DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([
 
 const depositsForSwapHash = `-- name: DepositsForSwapHash :many
 SELECT
-    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.onchain_cost, d.onchain_cost_known,
+    d.id, d.deposit_id, d.tx_hash, d.out_index, d.amount, d.confirmation_height, d.timeout_sweep_pk_script, d.expiry_sweep_txid, d.finalized_withdrawal_tx, d.swap_hash, d.onchain_cost, d.onchain_cost_known, d.static_address_id,
+    sa.client_pubkey     client_pubkey,
+    sa.server_pubkey     server_pubkey,
+    sa.expiry            expiry,
+    sa.client_key_family client_key_family,
+    sa.client_key_index  client_key_index,
+    sa.pkscript          pkscript,
+    sa.protocol_version  protocol_version,
+    sa.initiation_height initiation_height,
     u.update_state,
     u.update_timestamp
 FROM
     deposits d
+        LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
         LEFT JOIN
     deposit_updates u ON u.id = (
         SELECT id
@@ -75,6 +84,15 @@ type DepositsForSwapHashRow struct {
 	SwapHash              []byte
 	OnchainCost           int64
 	OnchainCostKnown      sql.NullBool
+	StaticAddressID       sql.NullInt32
+	ClientPubkey          []byte
+	ServerPubkey          []byte
+	Expiry                sql.NullInt32
+	ClientKeyFamily       sql.NullInt32
+	ClientKeyIndex        sql.NullInt32
+	Pkscript              []byte
+	ProtocolVersion       sql.NullInt32
+	InitiationHeight      sql.NullInt32
 	UpdateState           sql.NullString
 	UpdateTimestamp       sql.NullTime
 }
@@ -101,6 +119,15 @@ func (q *Queries) DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]D
 			&i.SwapHash,
 			&i.OnchainCost,
 			&i.OnchainCostKnown,
+			&i.StaticAddressID,
+			&i.ClientPubkey,
+			&i.ServerPubkey,
+			&i.Expiry,
+			&i.ClientKeyFamily,
+			&i.ClientKeyIndex,
+			&i.Pkscript,
+			&i.ProtocolVersion,
+			&i.InitiationHeight,
 			&i.UpdateState,
 			&i.UpdateTimestamp,
 		); err != nil {
@@ -157,17 +184,76 @@ func (q *Queries) GetLoopInSwapUpdates(ctx context.Context, swapHash []byte) ([]
 	return items, nil
 }
 
+const getPaidStaticAddressLoopInClaims = `-- name: GetPaidStaticAddressLoopInClaims :many
+SELECT
+    s.swap_hash,
+    s.deposit_outpoints,
+    u.update_state
+FROM
+    static_address_swaps s
+        JOIN
+    static_address_swap_updates u ON u.id = (
+        SELECT MAX(id)
+        FROM static_address_swap_updates
+        WHERE swap_hash = s.swap_hash
+    )
+WHERE
+    u.update_state IN ('Succeeded', 'SucceededTransitioningFailed')
+`
+
+type GetPaidStaticAddressLoopInClaimsRow struct {
+	SwapHash         []byte
+	DepositOutpoints string
+	UpdateState      string
+}
+
+// Startup only needs ownership metadata for paid terminal swaps, without
+// fetching each swap's deposit rows, keys and update history.
+func (q *Queries) GetPaidStaticAddressLoopInClaims(ctx context.Context) ([]GetPaidStaticAddressLoopInClaimsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPaidStaticAddressLoopInClaims)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPaidStaticAddressLoopInClaimsRow
+	for rows.Next() {
+		var i GetPaidStaticAddressLoopInClaimsRow
+		if err := rows.Scan(&i.SwapHash, &i.DepositOutpoints, &i.UpdateState); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getStaticAddressLoopInSwap = `-- name: GetStaticAddressLoopInSwap :one
 SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.fast, static_address_swaps.confirmation_risk_decision, static_address_swaps.confirmation_risk_decision_time,
-    htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
+    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.fast, static_address_swaps.confirmation_risk_decision, static_address_swaps.confirmation_risk_decision_time, static_address_swaps.change_static_address_id, static_address_swaps.funding_txs,
+    htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index,
+    change_address.client_pubkey     change_client_pubkey,
+    change_address.server_pubkey     change_server_pubkey,
+    change_address.expiry            change_expiry,
+    change_address.client_key_family change_client_key_family,
+    change_address.client_key_index  change_client_key_index,
+    change_address.pkscript          change_pkscript,
+    change_address.protocol_version  change_protocol_version,
+    change_address.initiation_height change_initiation_height
 FROM
     swaps
         JOIN
     static_address_swaps ON swaps.swap_hash = static_address_swaps.swap_hash
         JOIN
     htlc_keys ON swaps.swap_hash = htlc_keys.swap_hash
+        LEFT JOIN
+    static_addresses change_address
+        ON static_address_swaps.change_static_address_id = change_address.id
 WHERE
         swaps.swap_hash = $1
 `
@@ -198,6 +284,8 @@ type GetStaticAddressLoopInSwapRow struct {
 	Fast                         bool
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
+	ChangeStaticAddressID        sql.NullInt32
+	FundingTxs                   []byte
 	SwapHash_3                   []byte
 	SenderScriptPubkey           []byte
 	ReceiverScriptPubkey         []byte
@@ -205,6 +293,14 @@ type GetStaticAddressLoopInSwapRow struct {
 	ReceiverInternalPubkey       []byte
 	ClientKeyFamily              int32
 	ClientKeyIndex               int32
+	ChangeClientPubkey           []byte
+	ChangeServerPubkey           []byte
+	ChangeExpiry                 sql.NullInt32
+	ChangeClientKeyFamily        sql.NullInt32
+	ChangeClientKeyIndex         sql.NullInt32
+	ChangePkscript               []byte
+	ChangeProtocolVersion        sql.NullInt32
+	ChangeInitiationHeight       sql.NullInt32
 }
 
 func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byte) (GetStaticAddressLoopInSwapRow, error) {
@@ -236,6 +332,8 @@ func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byt
 		&i.Fast,
 		&i.ConfirmationRiskDecision,
 		&i.ConfirmationRiskDecisionTime,
+		&i.ChangeStaticAddressID,
+		&i.FundingTxs,
 		&i.SwapHash_3,
 		&i.SenderScriptPubkey,
 		&i.ReceiverScriptPubkey,
@@ -243,6 +341,14 @@ func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byt
 		&i.ReceiverInternalPubkey,
 		&i.ClientKeyFamily,
 		&i.ClientKeyIndex,
+		&i.ChangeClientPubkey,
+		&i.ChangeServerPubkey,
+		&i.ChangeExpiry,
+		&i.ChangeClientKeyFamily,
+		&i.ChangeClientKeyIndex,
+		&i.ChangePkscript,
+		&i.ChangeProtocolVersion,
+		&i.ChangeInitiationHeight,
 	)
 	return i, err
 }
@@ -250,14 +356,25 @@ func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byt
 const getStaticAddressLoopInSwapsByStates = `-- name: GetStaticAddressLoopInSwapsByStates :many
 SELECT
     swaps.id, swaps.swap_hash, swaps.preimage, swaps.initiation_time, swaps.amount_requested, swaps.cltv_expiry, swaps.max_miner_fee, swaps.max_swap_fee, swaps.initiation_height, swaps.protocol_version, swaps.label,
-    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.fast, static_address_swaps.confirmation_risk_decision, static_address_swaps.confirmation_risk_decision_time,
-    htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index
+    static_address_swaps.id, static_address_swaps.swap_hash, static_address_swaps.swap_invoice, static_address_swaps.last_hop, static_address_swaps.payment_timeout_seconds, static_address_swaps.quoted_swap_fee_satoshis, static_address_swaps.deposit_outpoints, static_address_swaps.htlc_tx_fee_rate_sat_kw, static_address_swaps.htlc_timeout_sweep_tx_id, static_address_swaps.htlc_timeout_sweep_address, static_address_swaps.selected_amount, static_address_swaps.fast, static_address_swaps.confirmation_risk_decision, static_address_swaps.confirmation_risk_decision_time, static_address_swaps.change_static_address_id, static_address_swaps.funding_txs,
+    htlc_keys.swap_hash, htlc_keys.sender_script_pubkey, htlc_keys.receiver_script_pubkey, htlc_keys.sender_internal_pubkey, htlc_keys.receiver_internal_pubkey, htlc_keys.client_key_family, htlc_keys.client_key_index,
+    change_address.client_pubkey     change_client_pubkey,
+    change_address.server_pubkey     change_server_pubkey,
+    change_address.expiry            change_expiry,
+    change_address.client_key_family change_client_key_family,
+    change_address.client_key_index  change_client_key_index,
+    change_address.pkscript          change_pkscript,
+    change_address.protocol_version  change_protocol_version,
+    change_address.initiation_height change_initiation_height
 FROM
     swaps
         JOIN
     static_address_swaps ON swaps.swap_hash = static_address_swaps.swap_hash
         JOIN
     htlc_keys ON swaps.swap_hash = htlc_keys.swap_hash
+        LEFT JOIN
+    static_addresses change_address
+        ON static_address_swaps.change_static_address_id = change_address.id
         JOIN
     static_address_swap_updates u ON swaps.swap_hash = u.swap_hash
         -- This subquery picks the latest update for each swap_hash by id, not
@@ -300,6 +417,8 @@ type GetStaticAddressLoopInSwapsByStatesRow struct {
 	Fast                         bool
 	ConfirmationRiskDecision     string
 	ConfirmationRiskDecisionTime sql.NullTime
+	ChangeStaticAddressID        sql.NullInt32
+	FundingTxs                   []byte
 	SwapHash_3                   []byte
 	SenderScriptPubkey           []byte
 	ReceiverScriptPubkey         []byte
@@ -307,6 +426,14 @@ type GetStaticAddressLoopInSwapsByStatesRow struct {
 	ReceiverInternalPubkey       []byte
 	ClientKeyFamily              int32
 	ClientKeyIndex               int32
+	ChangeClientPubkey           []byte
+	ChangeServerPubkey           []byte
+	ChangeExpiry                 sql.NullInt32
+	ChangeClientKeyFamily        sql.NullInt32
+	ChangeClientKeyIndex         sql.NullInt32
+	ChangePkscript               []byte
+	ChangeProtocolVersion        sql.NullInt32
+	ChangeInitiationHeight       sql.NullInt32
 }
 
 func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dollar_1 sql.NullString) ([]GetStaticAddressLoopInSwapsByStatesRow, error) {
@@ -344,6 +471,8 @@ func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dolla
 			&i.Fast,
 			&i.ConfirmationRiskDecision,
 			&i.ConfirmationRiskDecisionTime,
+			&i.ChangeStaticAddressID,
+			&i.FundingTxs,
 			&i.SwapHash_3,
 			&i.SenderScriptPubkey,
 			&i.ReceiverScriptPubkey,
@@ -351,6 +480,14 @@ func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dolla
 			&i.ReceiverInternalPubkey,
 			&i.ClientKeyFamily,
 			&i.ClientKeyIndex,
+			&i.ChangeClientPubkey,
+			&i.ChangeServerPubkey,
+			&i.ChangeExpiry,
+			&i.ChangeClientKeyFamily,
+			&i.ChangeClientKeyIndex,
+			&i.ChangePkscript,
+			&i.ChangeProtocolVersion,
+			&i.ChangeInitiationHeight,
 		); err != nil {
 			return nil, err
 		}
@@ -377,7 +514,9 @@ INSERT INTO static_address_swaps (
     htlc_tx_fee_rate_sat_kw,
     htlc_timeout_sweep_tx_id,
     htlc_timeout_sweep_address,
-    fast
+    fast,
+    change_static_address_id,
+    funding_txs
 ) VALUES (
     $1,
     $2,
@@ -389,7 +528,9 @@ INSERT INTO static_address_swaps (
     $8,
     $9,
     $10,
-    $11
+    $11,
+    $12,
+    $13
 )
 `
 
@@ -405,6 +546,8 @@ type InsertStaticAddressLoopInParams struct {
 	HtlcTimeoutSweepTxID    sql.NullString
 	HtlcTimeoutSweepAddress string
 	Fast                    bool
+	ChangeStaticAddressID   sql.NullInt32
+	FundingTxs              []byte
 }
 
 func (q *Queries) InsertStaticAddressLoopIn(ctx context.Context, arg InsertStaticAddressLoopInParams) error {
@@ -420,6 +563,8 @@ func (q *Queries) InsertStaticAddressLoopIn(ctx context.Context, arg InsertStati
 		arg.HtlcTimeoutSweepTxID,
 		arg.HtlcTimeoutSweepAddress,
 		arg.Fast,
+		arg.ChangeStaticAddressID,
+		arg.FundingTxs,
 	)
 	return err
 }

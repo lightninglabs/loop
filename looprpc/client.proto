@@ -162,11 +162,22 @@ service SwapClient {
     rpc ListInstantOuts (ListInstantOutsRequest)
         returns (ListInstantOutsResponse);
 
-    /* loop: `static newstaticaddress`
-    NewStaticAddress requests a new static address for loop-ins from the server.
+    /* loop: `static new`
+    NewStaticAddress derives a fresh static receive address on every request.
+    This RPC never funds the address. Use FundStaticAddress to deposit funds.
+    The CLI's static new and static deposit commands use this RPC. Only static
+    deposit prints lncli instructions for funding the returned address.
     */
     rpc NewStaticAddress (NewStaticAddressRequest)
         returns (NewStaticAddressResponse);
+
+    /*
+    FundStaticAddress funds a new or existing static address from the lnd
+    wallet. Requires wallet:fund in addition to swap:execute and loop:in, or an
+    explicit URI permission for this RPC.
+    */
+    rpc FundStaticAddress (FundStaticAddressRequest)
+        returns (FundStaticAddressResponse);
 
     /* loop: `static listunspentdeposits`
     ListUnspentDeposits returns a list of utxos deposited at a static address.
@@ -1802,18 +1813,43 @@ message NewStaticAddressRequest {
     The client's public key for the 2-of-2 MuSig2 taproot static address.
     */
     bytes client_key = 1;
+
+    // Reserved for the funding field from the unreleased combined RPC.
+    reserved 2;
+    reserved "send_coins_request";
 }
 
 message NewStaticAddressResponse {
-    /*
-    The taproot static address.
-    */
+    // The newly derived taproot static address.
     string address = 1;
 
-    /*
-    The CSV expiry of the static address.
-    */
+    // The CSV expiry of the static address in blocks.
     uint32 expiry = 2;
+
+    // Reserved for the funding field from the unreleased combined RPC.
+    reserved 3;
+    reserved "send_coins_response";
+}
+
+message FundStaticAddressRequest {
+    /*
+    Required. The funding request passed to lnd's SendCoins API. If addr is
+    empty, loopd creates and funds a fresh static address. If addr is set, it
+    must be an existing static address known to loopd. Set either a positive
+    amount or send_all, but not both.
+    */
+    lnrpc.SendCoinsRequest send_coins_request = 1;
+}
+
+message FundStaticAddressResponse {
+    // The new or existing taproot static address receiving the funds.
+    string address = 1;
+
+    // The CSV expiry of the static address in blocks.
+    uint32 expiry = 2;
+
+    // The response from lnd's SendCoins API for the funding transaction.
+    lnrpc.SendCoinsResponse send_coins_response = 3;
 }
 
 message ListUnspentDepositsRequest {
@@ -1945,12 +1981,15 @@ message StaticAddressSummaryRequest {
 
 message StaticAddressSummaryResponse {
     /*
-    The static address of the client.
+    Deprecated: The legacy/root static address anchoring derived addresses.
+    New deposits should use fresh addresses returned by NewStaticAddress; this
+    address must not be treated as the current receive address.
     */
-    string static_address = 1;
+    string static_address = 1 [deprecated = true];
 
     /*
-    The CSV expiry of the static address.
+    The shared CSV delay in blocks inherited by all static addresses derived
+    from the legacy/root address.
     */
     uint64 relative_expiry_blocks = 2;
 
@@ -2138,6 +2177,11 @@ message Deposit {
     partial.
     */
     OnchainCostStatus cost_onchain_status = 9;
+
+    /*
+    The static address that the deposit was sent to.
+    */
+    string static_address = 10;
 }
 
 message StaticAddressWithdrawal {

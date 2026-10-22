@@ -89,12 +89,12 @@ type autoloopDPTable struct {
 // an explicit budget. Tests use this entry point to force the scaling path and
 // to exercise hard budget failures deterministically.
 func selectNoChangeDepositsWithMemoryBudget(maxAmount, minAmount btcutil.Amount,
-	unfilteredDeposits []*deposit.Deposit, csvExpiry, blockHeight uint32,
+	unfilteredDeposits []*deposit.Deposit, blockHeight uint32,
 	excludedOutpoints map[string]struct{},
 	maxMemoryBytes int) ([]*deposit.Deposit, error) {
 
 	eligibleDeposits, eligibleTotal := filterAutoloopCandidateDeposits(
-		maxAmount, unfilteredDeposits, csvExpiry, blockHeight,
+		maxAmount, unfilteredDeposits, blockHeight,
 		excludedOutpoints,
 	)
 	if len(eligibleDeposits) == 0 || eligibleTotal < minAmount {
@@ -219,7 +219,7 @@ func selectNoChangeDepositsWithMemoryBudget(maxAmount, minAmount btcutil.Amount,
 // in a full-deposit static autoloop suggestion and sorts the remainder in the
 // order used by the expiry comparisons.
 func filterAutoloopCandidateDeposits(maxAmount btcutil.Amount,
-	unfilteredDeposits []*deposit.Deposit, csvExpiry, blockHeight uint32,
+	unfilteredDeposits []*deposit.Deposit, blockHeight uint32,
 	excludedOutpoints map[string]struct{}) (
 	[]autoloopCandidateDeposit, btcutil.Amount) {
 
@@ -234,6 +234,10 @@ func filterAutoloopCandidateDeposits(maxAmount btcutil.Amount,
 			continue
 		}
 
+		if candidateDeposit.AddressParams == nil {
+			continue
+		}
+		csvExpiry := candidateDeposit.AddressParams.Expiry
 		confirmationHeight := candidateDeposit.GetConfirmationHeight()
 		swappable := IsSwappable(
 			uint32(confirmationHeight), blockHeight, csvExpiry,

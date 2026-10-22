@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
@@ -81,12 +82,16 @@ type Manager struct {
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
-	// reconcileMu serializes deposit reconciliation so new deposits are
-	// discovered and retained exactly once per outpoint.
+	// reconcileMu serializes startup recovery and deposit reconciliation so
+	// new deposits are discovered and retained exactly once per outpoint.
 	reconcileMu sync.Mutex
 
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
+
+	// loopInOwners includes claims made before a swap is stored. Access uses
+	// mu so an old swap cannot release a newer, not-yet-persisted claim.
+	loopInOwners map[wire.OutPoint]lntypes.Hash
 
 	// deposits contain all the deposits that have ever been made to the
 	// static address. This field is used to store and recover deposits. It
@@ -113,6 +118,7 @@ func NewManager(cfg *ManagerConfig) *Manager {
 	return &Manager{
 		cfg:                  cfg,
 		activeDeposits:       make(map[wire.OutPoint]*FSM),
+		loopInOwners:         make(map[wire.OutPoint]lntypes.Hash),
 		deposits:             make(map[wire.OutPoint]*Deposit),
 		finalizedDepositChan: make(chan wire.OutPoint),
 	}
@@ -247,6 +253,9 @@ func (m *Manager) notifyActiveDeposits(ctx context.Context,
 // recoverDeposits recovers static address parameters, previous deposits and
 // state machines from the database and starts the deposit notifier.
 func (m *Manager) recoverDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Infof("Recovering static address parameters and deposits...")
 
 	// Recover deposits.
@@ -286,6 +295,9 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 
 		m.mu.Lock()
 		m.activeDeposits[d.OutPoint] = fsm
+		if d.SwapHash != nil && d.IsInState(LoopingIn) {
+			m.loopInOwners[d.OutPoint] = *d.SwapHash
+		}
 		m.mu.Unlock()
 	}
 
@@ -386,7 +398,10 @@ func (m *Manager) determineOnchainCosts(ctx context.Context) {
 	}
 
 	costs, lookupErr := onchainCosts(
-		ctx, m.cfg.WalletKit, m.isKnownDeposit, pending,
+		ctx, m.cfg.WalletKit, m.isKnownDeposit,
+		func(pkScript []byte) bool {
+			return m.cfg.AddressManager.GetParameters(pkScript) != nil
+		}, pending,
 	)
 
 	byID := make(map[ID]OnchainCost, len(costs))
@@ -594,6 +609,16 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		return nil, err
 	}
 
+	addressParams := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if addressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters "+
+			"for deposit %v", utxo.OutPoint)
+	}
+	if addressParams.ID <= 0 {
+		return nil, fmt.Errorf("missing static address ID for deposit %v",
+			utxo.OutPoint)
+	}
+
 	// Get the sweep pk script.
 	addr, err := m.cfg.WalletKit.NextAddr(
 		ctx, lnwallet.DefaultAccountName,
@@ -612,6 +637,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
@@ -619,6 +645,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		Value:                utxo.Value,
 		ConfirmationHeight:   confirmationHeight,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        addressParams,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
@@ -773,6 +800,7 @@ func (m *Manager) syncActiveDeposits(ctx context.Context,
 			}
 
 			delete(m.activeDeposits, outpoint)
+			delete(m.loopInOwners, outpoint)
 			toDeactivate = append(toDeactivate, deactivatedDeposit{
 				outpoint: outpoint,
 				fsm:      fsm,
@@ -979,6 +1007,9 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	// The state machines update the manager's deposit objects without
 	// locking them for these events, so lock exactly those objects.
 	lockedDeposits := lockDeposits(activeDeposits)
+	if expectedFinalState == Deposited {
+		defer m.forgetReleasedLoopInOwners(activeDeposits)
+	}
 	defer unlockDeposits(lockedDeposits)
 	for _, deposit := range activeDeposits {
 		if deposit.isInFinalStateNoLock() {
@@ -1006,6 +1037,146 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 		}
 	}
 
+	return nil
+}
+
+// forgetReleasedLoopInOwners also covers startup's orphan reset. Recheck the
+// state under the usual lock order so a concurrent new claim cannot be erased.
+func (m *Manager) forgetReleasedLoopInOwners(deposits []*Deposit) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, d := range deposits {
+		if d.IsInState(Deposited) {
+			delete(m.loopInOwners, d.OutPoint)
+		}
+	}
+}
+
+// LockDepositsForLoopIn takes a new claim before the swap is persisted. The
+// claim and state transition are atomic with respect to a previous swap's
+// cleanup, including when neither swap has a persisted deposit mapping yet.
+func (m *Manager) LockDepositsForLoopIn(ctx context.Context,
+	deposits []*Deposit, swapHash lntypes.Hash) error {
+
+	return m.transitionLoopInDeposits(ctx, deposits, swapHash, true)
+}
+
+// ReleaseLoopInDeposits releases only the caller's still-looping-in deposits.
+// Reused, inactive and finalized deposits are left untouched.
+func (m *Manager) ReleaseLoopInDeposits(ctx context.Context,
+	deposits []*Deposit, swapHash lntypes.Hash) error {
+
+	return m.transitionLoopInDeposits(ctx, deposits, swapHash, false)
+}
+
+// RestoreLoopInClaim repairs a legacy ownership mapping in memory. It is only
+// called at startup, before loop-in FSMs or new operations are admitted. The
+// durable relation remains untouched for the separate historical data repair.
+func (m *Manager) RestoreLoopInClaim(ctx context.Context,
+	deposits []*Deposit, swapHash lntypes.Hash) error {
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	outpoints := make([]wire.OutPoint, len(deposits))
+	for i, d := range deposits {
+		if d == nil {
+			return fmt.Errorf("nil deposit at index %d", i)
+		}
+		outpoints[i] = d.OutPoint
+	}
+	if err := CheckDuplicates(outpoints); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, active := m.toActiveDeposits(&outpoints)
+	if active == nil {
+		return errors.New("cannot restore an inactive loop-in deposit")
+	}
+	locked := lockDeposits(active)
+	defer unlockDeposits(locked)
+	for _, d := range active {
+		if !d.isInStateNoLock(LoopingIn) {
+			return fmt.Errorf("deposit %v is no longer looping in", d.OutPoint)
+		}
+	}
+	if m.loopInOwners == nil {
+		m.loopInOwners = make(map[wire.OutPoint]lntypes.Hash)
+	}
+	for _, d := range active {
+		m.loopInOwners[d.OutPoint] = swapHash
+	}
+	return nil
+}
+
+func (m *Manager) transitionLoopInDeposits(ctx context.Context,
+	deposits []*Deposit, swapHash lntypes.Hash, claim bool) error {
+
+	outpoints := make([]wire.OutPoint, len(deposits))
+	for i, d := range deposits {
+		if d == nil {
+			return fmt.Errorf("nil deposit at index %d", i)
+		}
+		outpoints[i] = d.OutPoint
+	}
+	if err := CheckDuplicates(outpoints); err != nil {
+		return err
+	}
+
+	// These events only run NoOp actions. Keep the manager lock while taking
+	// the deposit locks and dispatching them so ownership cannot change in
+	// between checking it and resetting the deposit state.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.loopInOwners == nil {
+		m.loopInOwners = make(map[wire.OutPoint]lntypes.Hash)
+	}
+	var active []*Deposit
+	for _, outpoint := range outpoints {
+		sm := m.activeDeposits[outpoint]
+		if sm == nil {
+			if claim {
+				return fmt.Errorf("deposit %v is not active", outpoint)
+			}
+			continue
+		}
+		active = append(active, sm.deposit)
+	}
+	locked := lockDeposits(active)
+	defer unlockDeposits(locked)
+	if claim {
+		for _, d := range active {
+			if !d.isInStateNoLock(Deposited) {
+				return fmt.Errorf("deposit %v is not deposited", d.OutPoint)
+			}
+		}
+	}
+
+	for _, d := range active {
+		event, target := fsm.OnError, Deposited
+		if claim {
+			event, target = OnLoopInInitiated, LoopingIn
+			m.loopInOwners[d.OutPoint] = swapHash
+		} else if owner, ok := m.loopInOwners[d.OutPoint]; !ok ||
+			owner != swapHash || !d.isInStateNoLock(LoopingIn) {
+
+			continue
+		}
+
+		sm := m.activeDeposits[d.OutPoint]
+		if err := sm.SendEvent(ctx, event, nil); err != nil {
+			return err
+		}
+		if err := sm.DefaultObserver.WaitForState(
+			ctx, DefaultTransitionTimeout, target,
+		); err != nil {
+			return err
+		}
+		if !claim {
+			delete(m.loopInOwners, d.OutPoint)
+		}
+	}
 	return nil
 }
 
@@ -1039,6 +1210,7 @@ func (m *Manager) removeActiveDeposit(outpoint wire.OutPoint) {
 	fsm, ok := m.activeDeposits[outpoint]
 	if ok {
 		delete(m.activeDeposits, outpoint)
+		delete(m.loopInOwners, outpoint)
 	}
 	m.mu.Unlock()
 

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"math"
+	"os"
 	"sort"
 	"strings"
 
@@ -13,10 +16,20 @@ import (
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/input"
+	lndlabels "github.com/lightningnetwork/lnd/labels"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
+)
+
+const (
+	staticAddressAmountFlagName      = "amt"
+	staticAddressConfTargetFlagName  = "conf_target"
+	staticAddressSatPerByteFlagName  = "sat_per_byte"
+	staticAddressSatPerVbyteFlagName = "sat_per_vbyte"
+	staticAddressUtxoFlagName        = "utxo"
 )
 
 func init() {
@@ -29,6 +42,7 @@ var staticAddressCommands = &cli.Command{
 	Usage:   "perform on-chain to off-chain swaps using static addresses.",
 	Commands: []*cli.Command{
 		newStaticAddressCommand,
+		depositStaticAddressCommand,
 		listUnspentCommand,
 		listDepositsCommand,
 		listWithdrawalsCommand,
@@ -45,14 +59,101 @@ var newStaticAddressCommand = &cli.Command{
 	Aliases: []string{"n"},
 	Usage:   "Create a new static loop in address.",
 	Description: `
-	Requests a new static loop in address from the server. Funds that are
-	sent to this address will be locked by a 2:2 multisig between us and the
-	loop server, or a timeout path that we can sweep once it opens up. The 
-	funds can either be cooperatively spent with a signature from the server
-	or looped in.
+	Creates a new static loop in address. On a fresh installation, loopd creates
+	the static-address root lazily when the first address is requested; startup
+	alone does not create an address. Funds sent to the address will be locked by
+	a 2:2 multisig between us and the loop server, or a timeout path that we can
+	sweep once it opens up. The funds can either be cooperatively spent with a
+	signature from the server or looped in.
 	`,
 	Action: newStaticAddress,
 }
+
+var depositStaticAddressCommand = &cli.Command{
+	Name:  "deposit",
+	Usage: "Create an address and print an lncli command to fund it.",
+	Description: `
+	Creates a new static loop in address and prints an lncli sendcoins command
+	for manual funding. No wallet transaction is created or broadcast. If no
+	amount is specified, replace AMOUNT_SAT in the printed command.
+	`,
+	Flags: []cli.Flag{
+		&cli.Int64Flag{
+			Name: staticAddressAmountFlagName,
+			Usage: "the number of bitcoin denominated in satoshis " +
+				"to send to the new static address",
+		},
+		&cli.BoolFlag{
+			Name: "sweepall",
+			Usage: "if set, then the amount field should be " +
+				"unset. This indicates that the wallet will " +
+				"attempt to sweep all outputs within the " +
+				"wallet or all funds in selected utxos (when " +
+				"supplied) to the new static address",
+		},
+		&cli.Int64Flag{
+			Name: staticAddressConfTargetFlagName,
+			Usage: "(optional) the number of blocks that the " +
+				"funding transaction should confirm in, will " +
+				"be used for fee estimation",
+		},
+		&cli.Int64Flag{
+			Name:   staticAddressSatPerByteFlagName,
+			Usage:  "Deprecated, use sat_per_vbyte instead.",
+			Hidden: true,
+		},
+		&cli.Uint64Flag{
+			Name: staticAddressSatPerVbyteFlagName,
+			Usage: "(optional) a manual fee expressed in " +
+				"sat/vbyte that should be used when crafting " +
+				"the funding transaction",
+		},
+		&cli.Uint64Flag{
+			Name: "min_confs",
+			Usage: "(optional) the minimum number of confirmations " +
+				"each one of your outputs used for the funding " +
+				"transaction must satisfy",
+			Value: defaultUtxoMinConf,
+		},
+		&cli.BoolFlag{
+			Name:    "force",
+			Aliases: []string{"f"},
+			Usage: "skip the new-address warning acknowledgement; " +
+				"only print the funding command",
+		},
+		staticAddressCoinSelectionStrategyFlag,
+		&cli.StringSliceFlag{
+			Name: staticAddressUtxoFlagName,
+			Usage: "a utxo specified as outpoint(tx:idx) which " +
+				"will be used as input for the funding " +
+				"transaction. This flag can be repeatedly used " +
+				"to specify multiple utxos as inputs. The " +
+				"selected utxos can either be entirely spent " +
+				"by specifying the sweepall flag or a specified " +
+				"amount can be spent in the utxos through " +
+				"the amt flag",
+		},
+		staticAddressFundingLabelFlag,
+	},
+	Action: depositStaticAddress,
+}
+
+var (
+	staticAddressCoinSelectionStrategyFlag = &cli.StringFlag{
+		Name: "coin_selection_strategy",
+		Usage: "(optional) the strategy to use for selecting coins. " +
+			"Possible values are 'largest', 'random', or " +
+			"'global-config'. If either 'largest' or 'random' is " +
+			"specified, it will override the globally configured " +
+			"strategy in lnd.conf",
+		Value: "global-config",
+	}
+
+	staticAddressFundingLabelFlag = &cli.StringFlag{
+		Name:  "label",
+		Usage: "(optional) a label for the funding transaction",
+	}
+)
 
 func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() > 0 {
@@ -80,6 +181,148 @@ func newStaticAddress(ctx context.Context, cmd *cli.Command) error {
 	printRespJSON(resp)
 
 	return nil
+}
+
+func depositStaticAddress(ctx context.Context, cmd *cli.Command) error {
+	if cmd.NArg() > 0 {
+		return showCommandHelp(ctx, cmd)
+	}
+
+	client, cleanup, err := getClient(cmd)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	resp, err := executeStaticAddressDeposit(
+		ctx, cmd, client, os.Stdin, os.Stderr,
+		term.IsTerminal(int(os.Stdin.Fd())),
+	)
+	if err != nil {
+		return err
+	}
+	printRespJSON(resp)
+	return nil
+}
+
+// executeStaticAddressDeposit creates an address and prints a funding command.
+// Only address creation is submitted to loopd; the user runs lncli separately.
+func executeStaticAddressDeposit(ctx context.Context, cmd *cli.Command,
+	client looprpc.SwapClientClient, input io.Reader, output io.Writer,
+	interactive bool) (*looprpc.NewStaticAddressResponse, error) {
+
+	args, err := staticAddressDepositArgs(cmd)
+	if err != nil {
+		return nil, err
+	}
+	force := cmd.Bool("force")
+	if !force && !interactive {
+		return nil, errors.New("new address confirmation requires an " +
+			"interactive terminal; use --force to print the funding " +
+			"command non-interactively")
+	}
+	if err := displayNewAddressWarningTo(input, output, force); err != nil {
+		return nil, err
+	}
+
+	resp, err := client.NewStaticAddress(ctx, &looprpc.NewStaticAddressRequest{})
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(output, "To fund this address from lnd, run:\n"+
+		"  lncli --network=%s sendcoins --addr=%s %s\n",
+		shellQuoteStaticAddressArg(strings.ToLower(cmd.String("network"))),
+		shellQuoteStaticAddressArg(resp.GetAddress()), strings.Join(args, " "))
+	if !cmd.IsSet(staticAddressAmountFlagName) && !cmd.Bool("sweepall") {
+		fmt.Fprintln(output, "Replace AMOUNT_SAT with the amount to "+
+			"deposit in satoshis.")
+	}
+	return resp, nil
+}
+
+// staticAddressDepositArgs validates options before deriving an address, then
+// renders the matching lncli sendcoins flags without sending a wallet request.
+func staticAddressDepositArgs(cmd *cli.Command) ([]string, error) {
+	args := []string{"--amt=AMOUNT_SAT"}
+	if cmd.IsSet(staticAddressAmountFlagName) {
+		amount := cmd.Int64(staticAddressAmountFlagName)
+		if amount <= 0 {
+			return nil, errors.New("amount must be positive")
+		}
+		if cmd.Bool("sweepall") {
+			return nil, errors.New("amount cannot be set if " +
+				"attempting to sweep all coins out of the wallet")
+		}
+		args[0] = fmt.Sprintf("--amt=%d", amount)
+	} else if cmd.Bool("sweepall") {
+		args[0] = "--sweepall"
+	}
+
+	feeFlag, err := checkNotBothSet(cmd, staticAddressSatPerVbyteFlagName, staticAddressSatPerByteFlagName)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := checkNotBothSet(cmd, feeFlag, staticAddressConfTargetFlagName); err != nil {
+		return nil, err
+	}
+	if cmd.Int64(staticAddressSatPerByteFlagName) < 0 {
+		return nil, errors.New("sat_per_byte must be non-negative")
+	}
+	if cmd.Uint64(staticAddressSatPerVbyteFlagName) > math.MaxInt64 {
+		return nil, errors.New("sat_per_vbyte exceeds maximum int64 value")
+	}
+	confTarget := cmd.Int64(staticAddressConfTargetFlagName)
+	if confTarget < 0 || confTarget > math.MaxInt32 {
+		return nil, errors.New("conf_target must be between 0 and MaxInt32")
+	}
+	minConfs := cmd.Uint64("min_confs")
+	if minConfs > math.MaxInt32 {
+		return nil, errors.New("min_confs exceeds maximum int32 value")
+	}
+	if cmd.IsSet(staticAddressConfTargetFlagName) {
+		args = append(args, fmt.Sprintf("--conf_target=%d", confTarget))
+	}
+	if cmd.IsSet(staticAddressSatPerByteFlagName) || cmd.IsSet(staticAddressSatPerVbyteFlagName) {
+		feeRate := cmd.Uint64(staticAddressSatPerVbyteFlagName)
+		if cmd.IsSet(staticAddressSatPerByteFlagName) {
+			feeRate = uint64(cmd.Int64(staticAddressSatPerByteFlagName))
+		}
+		args = append(args, fmt.Sprintf("--sat_per_vbyte=%d", feeRate))
+	}
+	args = append(args, fmt.Sprintf("--min_confs=%d", minConfs))
+
+	strategy := cmd.String(staticAddressCoinSelectionStrategyFlag.Name)
+	switch strategy {
+	case "global-config", "largest", "random":
+		if cmd.IsSet(staticAddressCoinSelectionStrategyFlag.Name) {
+			args = append(args, "--coin_selection_strategy="+strategy)
+		}
+	default:
+		return nil, fmt.Errorf("unknown coin selection strategy %s", strategy)
+	}
+	utxos := cmd.StringSlice(staticAddressUtxoFlagName)
+	if len(utxos) > 0 {
+		if _, err := lnd.UtxosToOutpoints(utxos); err != nil {
+			return nil, fmt.Errorf("unable to decode utxos: %w", err)
+		}
+	}
+	for _, utxo := range utxos {
+		args = append(args, "--utxo="+shellQuoteStaticAddressArg(utxo))
+	}
+	if cmd.IsSet(staticAddressFundingLabelFlag.Name) {
+		label := cmd.String(staticAddressFundingLabelFlag.Name)
+		if _, err := lndlabels.ValidateAPI(label); err != nil {
+			return nil, fmt.Errorf("invalid funding label: %w", err)
+		}
+		args = append(args, "--label="+shellQuoteStaticAddressArg(label))
+	}
+	return args, nil
+}
+
+// shellQuoteStaticAddressArg preserves literal values in a POSIX shell,
+// including apostrophes, command substitutions and newlines in wallet labels.
+func shellQuoteStaticAddressArg(arg string) string {
+	return "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
 }
 
 var listUnspentCommand = &cli.Command{
@@ -139,7 +382,7 @@ var withdrawalCommand = &cli.Command{
 	`,
 	Flags: []cli.Flag{
 		&cli.StringSliceFlag{
-			Name: "utxo",
+			Name: staticAddressUtxoFlagName,
 			Usage: "specify utxos as outpoints(tx:idx) which will" +
 				"be withdrawn.",
 		},
@@ -154,13 +397,13 @@ var withdrawalCommand = &cli.Command{
 				"funds will go to lnd's wallet",
 		},
 		&cli.Uint64Flag{
-			Name: "sat_per_vbyte",
+			Name: staticAddressSatPerVbyteFlagName,
 			Usage: "(optional) a manual fee expressed in " +
 				"sat/vbyte that should be used when crafting " +
 				"the transaction",
 		},
 		&cli.Uint64Flag{
-			Name:    "amt",
+			Name:    staticAddressAmountFlagName,
 			Aliases: []string{"amount"},
 			Usage: "the number of satoshis that should be " +
 				"withdrawn from the selected deposits. The " +
@@ -183,7 +426,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 
 	var (
 		isAllSelected  = cmd.IsSet("all")
-		isUtxoSelected = cmd.IsSet("utxo")
+		isUtxoSelected = cmd.IsSet(staticAddressUtxoFlagName)
 		outpoints      []*lnrpc.OutPoint
 		destAddr       string
 	)
@@ -194,7 +437,7 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 
 	case isAllSelected:
 	case isUtxoSelected:
-		utxos := cmd.StringSlice("utxo")
+		utxos := cmd.StringSlice(staticAddressUtxoFlagName)
 		outpoints, err = lnd.UtxosToOutpoints(utxos)
 		if err != nil {
 			return err
@@ -213,8 +456,8 @@ func withdraw(ctx context.Context, cmd *cli.Command) error {
 			Outpoints:   outpoints,
 			All:         isAllSelected,
 			DestAddr:    destAddr,
-			SatPerVbyte: int64(cmd.Uint64("sat_per_vbyte")),
-			Amount:      int64(cmd.Uint64("amt")),
+			SatPerVbyte: int64(cmd.Uint64(staticAddressSatPerVbyteFlagName)),
+			Amount:      int64(cmd.Uint64(staticAddressAmountFlagName)),
 		})
 	if err != nil {
 		return err
@@ -386,8 +629,10 @@ var summaryCommand = &cli.Command{
 	Aliases: []string{"s"},
 	Usage:   "Display a summary of static address related information.",
 	Description: `
-	Displays various static address related information about deposits, 
-	withdrawals, swaps and channel openings. 
+	Displays various static address related information about deposits,
+	withdrawals, swaps and channel openings. The deprecated static_address field
+	is the legacy/root address retained for compatibility, not the current
+	receive address. Use "loop static new" to derive a new receive address.
 	`,
 	Action: summary,
 }
@@ -427,7 +672,7 @@ var staticAddressLoopInCommand = &cli.Command{
 	`,
 	Flags: []cli.Flag{
 		&cli.StringSliceFlag{
-			Name: "utxo",
+			Name: staticAddressUtxoFlagName,
 			Usage: "specify the utxos of deposits as " +
 				"outpoints(tx:idx) that should be looped in.",
 		},
@@ -443,7 +688,7 @@ var staticAddressLoopInCommand = &cli.Command{
 				"parameters after the payment timed out.",
 		},
 		&cli.Uint64Flag{
-			Name:    "amt",
+			Name:    staticAddressAmountFlagName,
 			Aliases: []string{"amount"},
 			Usage: "the number of satoshis that should be " +
 				"swapped from the selected deposits. If there" +
@@ -501,7 +746,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 			"allowed")
 
 	default:
-		selectedAmount = int64(cmd.Uint64("amt"))
+		selectedAmount = int64(cmd.Uint64(staticAddressAmountFlagName))
 	}
 
 	client, cleanup, err := getClient(cmd)
@@ -512,7 +757,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 
 	var (
 		isAllSelected              = cmd.IsSet("all")
-		isUtxoSelected             = cmd.IsSet("utxo")
+		isUtxoSelected             = cmd.IsSet(staticAddressUtxoFlagName)
 		autoSelectDepositsForQuote bool
 		label                      = cmd.String(labelFlag.Name)
 		hints                      []*swapserverrpc.RouteHint
@@ -568,7 +813,7 @@ func staticAddressLoopIn(ctx context.Context, cmd *cli.Command) error {
 		depositOutpoints = depositsToOutpoints(allDeposits)
 
 	case isUtxoSelected:
-		depositOutpoints = cmd.StringSlice("utxo")
+		depositOutpoints = cmd.StringSlice(staticAddressUtxoFlagName)
 
 	case selectedAmount > 0:
 		// If only an amount is selected, we will trigger coin
@@ -847,18 +1092,30 @@ func lowConfDepositWarning(allDeposits []*looprpc.Deposit,
 }
 
 func displayNewAddressWarning() error {
-	fmt.Printf("\nWARNING: Be aware that loosing your l402.token file in " +
-		".loop under your home directory will take your ability to " +
-		"spend funds sent to the static address via loop-ins or " +
-		"withdrawals. You will have to wait until the deposit " +
-		"expires and your loop client sweeps the funds back to your " +
-		"lnd wallet. The deposit expiry could be months in the " +
-		"future.\n")
+	return displayNewAddressWarningTo(os.Stdin, os.Stdout, false)
+}
 
-	fmt.Printf("\nCONTINUE WITH NEW ADDRESS? (y/n): ")
+func displayNewAddressWarningTo(input io.Reader, output io.Writer,
+	force bool) error {
+
+	fmt.Fprint(output, "\nWARNING: Be aware that loosing your l402.token file in "+
+		".loop under your home directory will take your ability to "+
+		"spend funds sent to the static address via loop-ins or "+
+		"withdrawals. You will have to wait until the deposit "+
+		"expires and your loop client sweeps the funds back to your "+
+		"lnd wallet. The deposit expiry could be months in the "+
+		"future.\n")
+	if force {
+		return nil
+	}
+
+	fmt.Fprint(output, "\nCONTINUE WITH NEW ADDRESS? (y/n): ")
 
 	var answer string
-	fmt.Scanln(&answer)
+	_, err := fmt.Fscanln(input, &answer)
+	if err != nil {
+		return fmt.Errorf("read new address confirmation: %w", err)
+	}
 	if answer == "y" {
 		return nil
 	}
