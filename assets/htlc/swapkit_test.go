@@ -507,7 +507,7 @@ func TestAssetHtlcScriptEngine(t *testing.T) {
 			preimage: preimage,
 		},
 		{
-			name: "timeout", sequence: kit.CsvExpiry(),
+			name: timeoutPath, sequence: kit.CsvExpiry(),
 			signingKey: senderPriv, valid: true,
 		},
 		{
@@ -532,6 +532,17 @@ func TestAssetHtlcScriptEngine(t *testing.T) {
 // assertScriptSpend executes one HTLC script path and checks its result.
 func assertScriptSpend(t *testing.T, kit *SwapKit, success bool,
 	sequence uint32, signingKey *btcec.PrivateKey,
+	preimage lntypes.Preimage, valid bool) {
+
+	t.Helper()
+
+	assertScriptSpendWithLockTime(
+		t, kit, success, sequence, 0, signingKey, preimage, valid,
+	)
+}
+
+func assertScriptSpendWithLockTime(t *testing.T, kit *SwapKit, success bool,
+	sequence, lockTime uint32, signingKey *btcec.PrivateKey,
 	preimage lntypes.Preimage, valid bool) {
 
 	t.Helper()
@@ -566,6 +577,7 @@ func assertScriptSpend(t *testing.T, kit *SwapKit, success bool,
 
 	const value = int64(50_000)
 	tx := wire.NewMsgTx(2)
+	tx.LockTime = lockTime
 	tx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{1}, Index: 2,
@@ -697,6 +709,18 @@ func newWitnessFixtureForDirection(t *testing.T, sequence uint32,
 
 	t.Helper()
 
+	return newWitnessFixtureForPolicy(
+		t, sequence, assetVersion, commitmentVersion, reverse, AssetHTLCV0,
+	)
+}
+
+// newWitnessFixtureForPolicy anchors a real asset under either HTLC policy.
+func newWitnessFixtureForPolicy(t *testing.T, sequence uint32,
+	assetVersion asset.Version, commitmentVersion commitment.TapCommitmentVersion,
+	reverse bool, contractPolicy Policy) *witnessFixture {
+
+	t.Helper()
+
 	senderKey, senderPubKey := scalarKey(t, 1)
 	receiverKey, receiverPubKey := scalarKey(t, 2)
 	_, senderInternalKey := scalarKey(t, 3)
@@ -729,7 +753,7 @@ func newWitnessFixtureForDirection(t *testing.T, sequence uint32,
 	)
 	require.NoError(t, err)
 
-	kit, err := NewSwapKit(AssetHTLCV0, Params{
+	params := Params{
 		SenderInternalPubKey:   senderInternalKey,
 		ReceiverInternalPubKey: receiverInternalKey,
 		SenderScriptKey:        senderPubKey,
@@ -739,7 +763,12 @@ func newWitnessFixtureForDirection(t *testing.T, sequence uint32,
 		SwapHash:               preimage.Hash(),
 		CsvExpiry:              144,
 		AddressParams:          &address.RegressionNetTap,
-	})
+	}
+	if contractPolicy == AssetHTLCCLTVV1 {
+		params.CsvExpiry = 0
+		params.RefundHeight = 1_000_000
+	}
+	kit, err := NewSwapKit(contractPolicy, params)
 	require.NoError(t, err)
 
 	tapCommitment, err := commitment.FromAssets(
@@ -957,7 +986,7 @@ func TestCreateProofBoundWitnesses(t *testing.T) {
 		fixture.executeWitness(t, witness)
 	})
 
-	t.Run("timeout", func(t *testing.T) {
+	t.Run(timeoutPath, func(t *testing.T) {
 		fixture := newWitnessFixture(t, 144)
 		signer := &localSigner{
 			privateKey:    fixture.senderKey,

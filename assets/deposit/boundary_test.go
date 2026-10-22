@@ -57,7 +57,7 @@ func TestNewKitRejectsCrossPartyAliases(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for _, parity := range []string{"same", "opposite"} {
+			for _, parity := range []string{testSameGroup, testOppositeGroup} {
 				t.Run(parity, func(t *testing.T) {
 					params := Params{
 						SenderInternalPubKey:   senderInternal,
@@ -69,7 +69,7 @@ func TestNewKitRejectsCrossPartyAliases(t *testing.T) {
 						ChainParams: &address.RegressionNetTap,
 					}
 					encoded := test.key.SerializeCompressed()
-					if parity == "opposite" {
+					if parity == testOppositeGroup {
 						encoded[0] ^= 1
 					}
 					alias, err := btcec.ParsePubKey(encoded)

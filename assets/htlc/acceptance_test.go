@@ -135,33 +135,33 @@ func TestValidateProofBindsContract(t *testing.T) {
 			proof: anchorProofUnder(
 				t, &f.proof.Asset, funderKey, nil,
 			),
-			err: "internal key does not match",
+			err: testInternalKeyMismatch,
 		},
 		{
 			name: "funder key with contract scripts",
 			proof: anchorProofUnder(
 				t, &f.proof.Asset, funderKey, &sibling,
 			),
-			err: "internal key does not match",
+			err: testInternalKeyMismatch,
 		},
 		{
 			name: "key path only",
 			proof: anchorProofUnder(
 				t, &f.proof.Asset, internalKey, nil,
 			),
-			err: "tapscript sibling does not match",
+			err: testSiblingMismatch,
 		},
 		{
 			name: "other refund delay",
 			proof: anchorProofUnder(
 				t, &f.proof.Asset, internalKey, &otherSibling,
 			),
-			err: "tapscript sibling does not match",
+			err: testSiblingMismatch,
 		},
 		{
 			name:  "reversed swap direction",
 			proof: reverse.proof,
-			err:   "tapscript sibling does not match",
+			err:   testSiblingMismatch,
 		},
 	}
 	for _, test := range tests {
@@ -317,7 +317,7 @@ func (v *fileVerifier) GetInfo(context.Context, *taprpc.GetInfoRequest,
 
 	version := v.version
 	if version == "" {
-		version = "0.8.6-alpha"
+		version = testSupportedTapd
 	}
 
 	return &taprpc.GetInfoResponse{Version: version}, nil
@@ -340,7 +340,7 @@ type tapdVerifier struct{}
 func (tapdVerifier) GetInfo(context.Context, *taprpc.GetInfoRequest,
 	...grpc.CallOption) (*taprpc.GetInfoResponse, error) {
 
-	return &taprpc.GetInfoResponse{Version: "0.8.6-alpha"}, nil
+	return &taprpc.GetInfoResponse{Version: testSupportedTapd}, nil
 }
 
 // VerifyProof verifies the decoded file with the upstream proof verifier.
@@ -536,7 +536,7 @@ func TestVerifyProofFile(t *testing.T) {
 			name:       "funder-only terminal output",
 			file:       encodeHtlcProofFile(t, *issuance, *funderOnly),
 			outpoint:   funderOnly.OutPoint(),
-			err:        "internal key does not match",
+			err:        testInternalKeyMismatch,
 			tapdCalled: true,
 		},
 	}
@@ -595,7 +595,7 @@ func TestVerifyProofFileTapdVersion(t *testing.T) {
 	issuance := htlcIssuanceProof(t, f)
 	outpoint := issuance.OutPoint()
 	history := encodeHtlcProofFile(t, *issuance)
-	for _, version := range []string{"0.8.5-alpha", "0.8.6-alpha"} {
+	for _, version := range []string{"0.8.5-alpha", testSupportedTapd} {
 		t.Run(version, func(t *testing.T) {
 			verifier := &fileVerifier{
 				version: version,

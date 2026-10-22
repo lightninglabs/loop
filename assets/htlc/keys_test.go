@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightningnetwork/lnd/input"
@@ -14,6 +15,17 @@ import (
 // TestIndependentKeyRoles exercises claims and refunds with four distinct
 // keys in both asset directions. Cooperative keys cannot authorize scripts.
 func TestIndependentKeyRoles(t *testing.T) {
+	t.Run("CSV", func(t *testing.T) {
+		testIndependentKeyRoles(t, AssetHTLCV0)
+	})
+	t.Run("CLTV", func(t *testing.T) {
+		testIndependentKeyRoles(t, AssetHTLCCLTVV1)
+	})
+}
+
+func testIndependentKeyRoles(t *testing.T, contractPolicy Policy) {
+	t.Helper()
+
 	for _, direction := range []struct {
 		name    string
 		reverse bool
@@ -24,13 +36,20 @@ func TestIndependentKeyRoles(t *testing.T) {
 		t.Run(direction.name, func(t *testing.T) {
 			for _, success := range []bool{false, true} {
 				sequence := uint32(144)
+				if contractPolicy == AssetHTLCCLTVV1 {
+					sequence = wire.MaxTxInSequenceNum - 1
+				}
 				if success {
 					sequence = SuccessSequence
 				}
-				f := newWitnessFixtureForDirection(
+				f := newWitnessFixtureForPolicy(
 					t, sequence, asset.V1,
-					commitment.TapCommitmentV2, direction.reverse,
+					commitment.TapCommitmentV2, direction.reverse, contractPolicy,
 				)
+				if !success {
+					f.packet.UnsignedTx.LockTime =
+						f.kit.TimeoutSpendConstraints().LockTime
+				}
 				_, firstInternal := scalarKey(t, 3)
 				_, secondInternal := scalarKey(t, 4)
 				expected, err := input.MuSig2CombineKeys(

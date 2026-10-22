@@ -25,11 +25,11 @@ func TestDepositProofGroup(t *testing.T) {
 		{name: "matching ungrouped", trusted: true, valid: true},
 		{
 			name: "matching grouped", grouped: true, trusted: true,
-			expectedGroup: "same", valid: true,
+			expectedGroup: testSameGroup, valid: true,
 		},
 		{
 			name: "expected grouped but proof ungrouped", trusted: true,
-			expectedGroup: "same",
+			expectedGroup: testSameGroup,
 		},
 		{name: "expected ungrouped but proof grouped", grouped: true, trusted: true},
 		{
@@ -38,7 +38,7 @@ func TestDepositProofGroup(t *testing.T) {
 		},
 		{
 			name: "opposite parity", grouped: true, trusted: true,
-			expectedGroup: "opposite",
+			expectedGroup: testOppositeGroup,
 		},
 		{name: "proof-only ungrouped", valid: true},
 		{name: "proof-only grouped", grouped: true, valid: true},
@@ -91,11 +91,11 @@ func TestDepositProofGroup(t *testing.T) {
 				params.Genesis = &p.Asset.Genesis
 			}
 			switch test.expectedGroup {
-			case "same":
+			case testSameGroup:
 				params.GroupKey = &group.GroupPubKey
 			case "different":
 				_, params.GroupKey = scalarKey(t, 42)
-			case "opposite":
+			case testOppositeGroup:
 				encoded := group.GroupPubKey.SerializeCompressed()
 				encoded[0] ^= 1
 				params.GroupKey, err = btcec.ParsePubKey(encoded)

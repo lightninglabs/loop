@@ -103,8 +103,8 @@ func TestWitnessAssetTimelocks(t *testing.T) {
 		timeout  bool
 		sequence uint32
 	}{
-		{name: "preimage", sequence: SuccessSequence},
-		{name: "timeout", timeout: true, sequence: 144},
+		{name: preimagePath, sequence: SuccessSequence},
+		{name: timeoutPath, timeout: true, sequence: 144},
 	}
 	for _, path := range paths {
 		tests := []struct {

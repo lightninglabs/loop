@@ -354,7 +354,7 @@ func TestVerifyCompleteAnchorMatchesClaim(t *testing.T) {
 
 				return hiddenAsset(f)
 			}),
-			errContains: "does not match the proven asset",
+			errContains: testIncompleteAnchor,
 		},
 		{
 			name: "hidden asset with the same ID",
@@ -369,7 +369,7 @@ func TestVerifyCompleteAnchorMatchesClaim(t *testing.T) {
 
 				return hidden
 			}),
-			errContains: "does not match the proven asset",
+			errContains: testIncompleteAnchor,
 		},
 		{
 			name: "hidden tombstone",
@@ -382,7 +382,7 @@ func TestVerifyCompleteAnchorMatchesClaim(t *testing.T) {
 
 				return tombstone
 			}),
-			errContains: "does not match the proven asset",
+			errContains: testIncompleteAnchor,
 		},
 		{
 			name: "dropped alt leaf",
@@ -392,7 +392,7 @@ func TestVerifyCompleteAnchorMatchesClaim(t *testing.T) {
 
 				return htlcProof
 			},
-			errContains: "does not match the proven asset",
+			errContains: testIncompleteAnchor,
 		},
 		{
 			name: "extra alt leaf",
@@ -415,7 +415,7 @@ func TestVerifyCompleteAnchorMatchesClaim(t *testing.T) {
 
 				return htlcProof
 			},
-			errContains: "does not match the proven asset",
+			errContains: testIncompleteAnchor,
 		},
 		{
 			name: "duplicate alt leaf",
@@ -505,8 +505,8 @@ func TestGetPkScriptFromProofRequiresCompleteAnchor(t *testing.T) {
 		f := newWitnessFixture(t, SuccessSequence)
 		hideAnchorLeaves(t, f, hiddenAsset(f))
 		_, err := f.kit.GetPkScriptFromProof(f.proof)
-		require.ErrorContains(t, err, "does not match the proven asset")
+		require.ErrorContains(t, err, testIncompleteAnchor)
 		_, err = GenTaprootAssetRootFromProof(f.proof)
-		require.ErrorContains(t, err, "does not match the proven asset")
+		require.ErrorContains(t, err, testIncompleteAnchor)
 	})
 }

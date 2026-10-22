@@ -175,12 +175,12 @@ func TestVerifyProofFileProvenance(t *testing.T) {
 		},
 		{
 			name: "ownership", history: []proof.Proof{ownership},
-			err: "ownership challenge",
+			err: testOwnershipChallenge,
 		},
 		{
 			name:    "empty challenge witness",
 			history: []proof.Proof{emptyChallenge},
-			err:     "ownership challenge",
+			err:     testOwnershipChallenge,
 		},
 		{
 			name: "missing genesis", history: []proof.Proof{*transfer},
@@ -189,17 +189,17 @@ func TestVerifyProofFileProvenance(t *testing.T) {
 		{
 			name:    "later ownership challenge",
 			history: []proof.Proof{*fixture.proof, ownership},
-			err:     "ownership challenge",
+			err:     testOwnershipChallenge,
 		},
 		{
 			name:    "ownership additional input",
 			history: wrap([]proof.Proof{ownership}),
-			err:     "ownership challenge",
+			err:     testOwnershipChallenge,
 		},
 		{
 			name:    "deep ownership additional input",
 			history: wrap(wrap([]proof.Proof{ownership})),
-			err:     "ownership challenge",
+			err:     testOwnershipChallenge,
 		},
 		{
 			name:    "additional input missing genesis",

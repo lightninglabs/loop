@@ -62,6 +62,26 @@ func GenTimeoutPathScript(senderHtlcKey *btcec.PublicKey, csvExpiry int64) (
 	return builder.Script()
 }
 
+// GenCLTVTimeoutPathScript constructs a refund path using an absolute Bitcoin
+// block height. Its byte layout matches the static Loop In V3 timeout leaf.
+func GenCLTVTimeoutPathScript(senderHtlcKey *btcec.PublicKey,
+	refundHeight int64) ([]byte, error) {
+
+	if senderHtlcKey == nil {
+		return nil, fmt.Errorf("sender HTLC key is required")
+	}
+	if refundHeight <= 0 || refundHeight >= txscript.LockTimeThreshold {
+		return nil, fmt.Errorf("refund height must be positive and below %d",
+			uint32(txscript.LockTimeThreshold))
+	}
+
+	return txscript.NewScriptBuilder().
+		AddData(schnorr.SerializePubKey(senderHtlcKey)).
+		AddOp(txscript.OP_CHECKSIGVERIFY).
+		AddInt64(refundHeight).
+		AddOp(txscript.OP_CHECKLOCKTIMEVERIFY).Script()
+}
+
 // GetOpTrueScript returns a script that always evaluates to true.
 func GetOpTrueScript() ([]byte, error) {
 	return txscript.NewScriptBuilder().AddOp(txscript.OP_TRUE).Script()

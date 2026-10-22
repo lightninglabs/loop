@@ -53,10 +53,10 @@ func TestWitnessBitcoinOutputApproval(t *testing.T) {
 		}},
 	}
 	for _, timeout := range []bool{false, true} {
-		path := "preimage"
+		path := preimagePath
 		sequence := SuccessSequence
 		if timeout {
-			path = "timeout"
+			path = timeoutPath
 			sequence = 144
 		}
 		for _, test := range tests {
@@ -92,10 +92,10 @@ func TestWitnessBitcoinOutputApproval(t *testing.T) {
 // proves the approval does not alias its original slice, outputs or scripts.
 func TestWitnessApprovedBitcoinChange(t *testing.T) {
 	for _, timeout := range []bool{false, true} {
-		path := "preimage"
+		path := preimagePath
 		sequence := SuccessSequence
 		if timeout {
-			path = "timeout"
+			path = timeoutPath
 			sequence = 144
 		}
 		t.Run(path, func(t *testing.T) {

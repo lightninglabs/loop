@@ -20,7 +20,7 @@ type supportedTapdClient struct {
 func (supportedTapdClient) GetInfo(context.Context, *taprpc.GetInfoRequest,
 	...grpc.CallOption) (*taprpc.GetInfoResponse, error) {
 
-	return &taprpc.GetInfoResponse{Version: "0.8.6-alpha"}, nil
+	return &taprpc.GetInfoResponse{Version: testSupportedTapd}, nil
 }
 
 type versionedAddressClient struct {
@@ -36,11 +36,11 @@ func (c *versionedAddressClient) GetInfo(context.Context,
 	return &taprpc.GetInfoResponse{Version: c.version}, nil
 }
 
-// TestAddressTapdVersion ensures both address operations reject an unsafe
+// TestAddressTapdVersion ensures all address operations reject an unsafe
 // running backend before issuing an address that could receive new funds.
 func TestAddressTapdVersion(t *testing.T) {
-	for _, version := range []string{"0.8.5-alpha", "0.8.6-alpha"} {
-		for _, operation := range []string{"deposit", "HTLC"} {
+	for _, version := range []string{"0.8.5-alpha", testSupportedTapd} {
+		for _, operation := range []string{testDepositAddress, "HTLC", "CLTV HTLC"} {
 			t.Run(version+"/"+operation, func(t *testing.T) {
 				genesis := testAddressGenesis()
 				kit := newAddressKit(t, &genesis, nil)
@@ -49,15 +49,22 @@ func TestAddressTapdVersion(t *testing.T) {
 					version:       version,
 				}
 				var err error
-				if operation == "HTLC" {
+				switch operation {
+				case "HTLC":
 					_, _, err = kit.NewHtlcAddr(
 						t.Context(), client, 1000,
 						lntypes.Hash{1}, 144,
 					)
-				} else {
+				case "CLTV HTLC":
+					_, _, err = kit.NewCLTVHtlcAddr(
+						t.Context(), client, 1000,
+						lntypes.Hash{1}, 1_000_000,
+					)
+
+				default:
 					_, err = kit.NewAddr(t.Context(), client, 1000)
 				}
-				if version == "0.8.6-alpha" {
+				if version == testSupportedTapd {
 					require.NoError(t, err)
 					require.Equal(t, 1, client.calls)
 					return
@@ -86,7 +93,7 @@ func (v *versionedProofVerifier) GetInfo(context.Context,
 // TestVerifyProofFileTapdVersion requires an upgraded verifier for untrusted
 // histories, while preserving local recovery with a previously verified proof.
 func TestVerifyProofFileTapdVersion(t *testing.T) {
-	for _, version := range []string{"0.8.5-alpha", "0.8.6-alpha"} {
+	for _, version := range []string{"0.8.5-alpha", testSupportedTapd} {
 		t.Run(version, func(t *testing.T) {
 			f := newWitnessFixture(t)
 			verifier := &versionedProofVerifier{
@@ -100,7 +107,7 @@ func TestVerifyProofFileTapdVersion(t *testing.T) {
 				t.Context(), verifier, encodeProofFile(t, *f.proof),
 				&outpoint, f.proof.Asset.Amount,
 			)
-			if version == "0.8.6-alpha" {
+			if version == testSupportedTapd {
 				require.NoError(t, err)
 				require.Equal(t, 1, verifier.calls)
 				return
