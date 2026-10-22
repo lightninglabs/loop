@@ -1,0 +1,34 @@
+listenaddr: '0.0.0.0:11018'
+staticroot: '/root/.aperture/static'
+servestatic: true
+debuglevel: trace
+insecure: false
+writetimeout: 0s
+
+servername: aperture
+autocert: false
+
+authenticator:
+ lndhost: lndserver:10009
+ tlspath: /root/.lnd/tls.cert
+ macdir: /root/.lnd/data/chain/bitcoin/regtest
+ network: regtest
+
+etcd:
+ host: 'etcd:2379'
+ user:
+ password:
+
+services:
+ - name: loop
+   hostregexp: '^.*$'
+   pathregexp: '^/looprpc.*$'
+   address: 'loopserver:11009'
+   protocol: https
+   tlscertpath: /root/.lnd/tls.cert
+   price: 1000
+   authwhitelistpaths:
+     - '^/looprpc.SwapServer/LoopOutTerms.*$'
+     - '^/looprpc.SwapServer/LoopOutQuote.*$'
+     - '^/looprpc.SwapServer/LoopInTerms.*$'
+     - '^/looprpc.SwapServer/LoopInQuote.*$'

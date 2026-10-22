@@ -1,202 +1,239 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# The absolute directory this file is located in.
-COMPOSE="docker-compose -p regtest"
+set -euo pipefail
 
-function bitcoin() {
-  docker exec -ti bitcoind bitcoin-cli -regtest "$@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
+START_TIMEOUT_SECONDS="${START_TIMEOUT_SECONDS:-180}"
+
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE=(docker compose -p regtest -f "${COMPOSE_FILE}")
+else
+  COMPOSE=(docker-compose -p regtest -f "${COMPOSE_FILE}")
+fi
+
+bitcoin() {
+  docker exec -i bitcoind bitcoin-cli -regtest "$@"
 }
 
-function lndserver() {
-  docker exec -ti lndserver lncli --network regtest "$@"
+lndserver() {
+  docker exec -i lndserver lncli --network regtest "$@"
 }
 
-function lndclient() {
-  docker exec -ti lndclient lncli --network regtest "$@"
+lndclient() {
+  docker exec -i lndclient lncli --network regtest "$@"
 }
 
-function loop() {
-  docker exec -ti loopclient loop --network regtest "$@"
+loop() {
+  docker exec -i loopclient loop --network regtest "$@"
 }
 
-function start() {
-  $COMPOSE up --force-recreate -d
-  echo "Waiting for nodes to start"
-  waitnodestart
-  setup
-}
+wait_for() {
+  local description="$1"
+  shift
 
-function waitnodestart() {
-  while ! lndserver getinfo | grep -q identity_pubkey; do
+  local deadline=$((SECONDS + START_TIMEOUT_SECONDS))
+  until "$@" >/dev/null 2>&1; do
+    if [ "${SECONDS}" -ge "${deadline}" ]; then
+      echo "Timed out waiting for ${description}" >&2
+      return 1
+    fi
     sleep 1
   done
-  while ! lndclient getinfo | grep -q identity_pubkey; do
-    sleep 1
-  done
 }
 
-function mine() {
-  NUMBLOCKS=6
-  if [ ! -z "$1" ]
-  then
-    NUMBLOCKS=$1
+lnd_rpc_ready() {
+  local node="$1"
+  "${node}" getinfo | jq -e '.identity_pubkey != ""'
+}
+
+lnd_synced() {
+  local node="$1"
+  "${node}" getinfo | jq -e \
+    '.identity_pubkey != "" and .synced_to_chain == true'
+}
+
+channels_active() {
+  local node="$1"
+  local expected="$2"
+
+  [ "$("${node}" getinfo | jq -r '.num_active_channels')" \
+    -ge "${expected}" ]
+}
+
+loop_ready() {
+  loop getinfo
+}
+
+payment_route_ready() {
+  local invoice="$1"
+  local decoded destination amount
+
+  decoded="$(lndclient decodepayreq --pay_req "${invoice}")" || return 1
+  destination="$(jq -r '.destination' <<<"${decoded}")"
+  amount="$(jq -r '.num_satoshis' <<<"${decoded}")"
+
+  [ -n "${destination}" ] && [ "${destination}" != "null" ] && \
+    [ "${amount}" -gt 0 ] && \
+    lndclient queryroutes "${destination}" "${amount}" | \
+      jq -e '.routes | length > 0'
+}
+
+mine() {
+  local blocks="${1:-6}"
+  local address
+  address="$(bitcoin getnewaddress "" legacy)"
+  bitcoin generatetoaddress "${blocks}" "${address}" >/dev/null
+  wait_for_nodes
+}
+
+wait_for_rpc() {
+  echo "Waiting for both lnd RPC servers"
+  wait_for "server lnd RPC" lnd_rpc_ready lndserver
+  wait_for "client lnd RPC" lnd_rpc_ready lndclient
+}
+
+wait_for_nodes() {
+  echo "Waiting for both lnd nodes to synchronize"
+  wait_for "server lnd chain sync" lnd_synced lndserver
+  wait_for "client lnd chain sync" lnd_synced lndclient
+}
+
+wait_for_channels() {
+  local expected="${1}"
+  echo "Waiting for ${expected} active channel(s) on both nodes"
+  wait_for "${expected} server channel(s)" \
+    channels_active lndserver "${expected}"
+  wait_for "${expected} client channel(s)" \
+    channels_active lndclient "${expected}"
+}
+
+bootstrap_l402() {
+  echo "Fetching the regtest L402 token"
+
+  local before_index fetch_error invoice latest_index
+  before_index="$(lndserver listinvoices --max_invoices 1 | \
+    jq -r '.last_index_offset // 0')"
+
+  # The current lndclient compatibility PayInvoice helper omits lnd's
+  # mandatory payment timeout. The first call still persists the pending
+  # challenge, so pay that exact newly-created invoice with lncli and let the
+  # interceptor resume it on the second call.
+  if fetch_error="$(loop fetchl402 2>&1)"; then
+    return
   fi
-  bitcoin generatetoaddress $NUMBLOCKS $(bitcoin getnewaddress "" legacy) > /dev/null
+
+  latest_index="$(lndserver listinvoices --max_invoices 1 | \
+    jq -r '.last_index_offset // 0')"
+  if [ "${latest_index}" -le "${before_index}" ]; then
+    echo "${fetch_error}" >&2
+    echo "Aperture did not create an L402 invoice" >&2
+    return 1
+  fi
+
+  invoice="$(lndserver listinvoices --max_invoices 1 | \
+    jq -r '.invoices[-1].payment_request')"
+  if [ -z "${invoice}" ] || [ "${invoice}" = "null" ]; then
+    echo "Aperture returned an empty L402 invoice" >&2
+    return 1
+  fi
+
+  wait_for "a route to the Aperture L402 invoice" \
+    payment_route_ready "${invoice}"
+  lndclient payinvoice --pay_req "${invoice}" --fee_limit 10 \
+    --timeout 60s --force >/dev/null
+  loop fetchl402 >/dev/null
 }
 
-function setup() {  
-  echo "Copying loopserver files"
-  copy_loopserver_files
+setup() {
+  echo "Creating and funding the regtest topology"
+  if ! bitcoin listwallets | jq -e '.[] | select(. == "miner")' >/dev/null; then
+    bitcoin createwallet miner >/dev/null
+  fi
 
-  echo "Creating wallet"
-  bitcoin createwallet miner
+  local miner_address server_address client_address
+  miner_address="$(bitcoin getnewaddress "" legacy)"
+  bitcoin generatetoaddress 106 "${miner_address}" >/dev/null
+  wait_for_nodes
 
-  ADDR_BTC=$(bitcoin getnewaddress "" legacy)
-  echo "Generating blocks to $ADDR_BTC"
-  bitcoin generatetoaddress 106 "$ADDR_BTC" > /dev/null
-
-  echo "Getting pubkeys"
-  LNDSERVER=$(lndserver getinfo | jq .identity_pubkey -r)
-  LNDCLIENT=$(lndclient getinfo | jq .identity_pubkey -r)
-  echo "Getting addresses"
-  
-  
-  echo "Sending funds"
-  ADDR_SERVER=$(lndserver newaddress p2wkh | jq .address -r)
-  ADDR_CLIENT=$(lndclient newaddress p2wkh | jq .address -r)
-  bitcoin sendtoaddress "$ADDR_SERVER" 5
-  bitcoin sendtoaddress "$ADDR_CLIENT" 5
+  server_address="$(lndserver newaddress p2wkh | jq -r '.address')"
+  client_address="$(lndclient newaddress p2wkh | jq -r '.address')"
+  bitcoin sendtoaddress "${server_address}" 5 >/dev/null
+  bitcoin sendtoaddress "${client_address}" 5 >/dev/null
   mine 6
 
-  sleep 30
-  
-  lndserver openchannel --node_key $LNDCLIENT --connect lndclient:9735 --local_amt 16000000
+  local server_pubkey client_pubkey
+  server_pubkey="$(lndserver getinfo | jq -r '.identity_pubkey')"
+  client_pubkey="$(lndclient getinfo | jq -r '.identity_pubkey')"
+
+  lndserver openchannel --node_key "${client_pubkey}" \
+    --connect lndclient:9735 --local_amt 16000000 >/dev/null
   mine 6
-  
-  sleep 10
+  wait_for_channels 1
 
-  lndclient openchannel --node_key $LNDSERVER --local_amt 16000000
+  lndclient openchannel --node_key "${server_pubkey}" \
+    --local_amt 16000000 >/dev/null
   mine 6
+  wait_for_channels 2
 
-  docker cp aperture:/root/.aperture/tls.cert /tmp/aperture-tls.cert
-  chmod 644 /tmp/aperture-tls.cert
-  docker cp -a /tmp/aperture-tls.cert loopclient:/root/.loop/aperture-tls.cert
-
+  echo "Waiting for loopd and the source-built regtest server"
+  wait_for "loopd and regtest server readiness" loop_ready
+  bootstrap_l402
 }
 
-function stop() {
-  $COMPOSE down --volumes
+start() {
+  # The server is intentionally in-memory, so keeping client or Aperture state
+  # across a server recreation would leave orphaned swaps and invalid tokens.
+  "${COMPOSE[@]}" down --volumes --remove-orphans
+  "${COMPOSE[@]}" up --build --force-recreate -d
+  wait_for_rpc
+  setup
+  info
 }
 
-function restart() {
-  stop
+stop() {
+  "${COMPOSE[@]}" down --volumes --remove-orphans
+}
+
+restart() {
   start
 }
 
-function info() {
-  LNDSERVER=$(lndserver getinfo | jq -c '{pubkey: .identity_pubkey, channels: .num_active_channels, peers: .num_peers}')
-  LNDCLIENT=$(lndclient getinfo | jq -c '{pubkey: .identity_pubkey, channels: .num_active_channels, peers: .num_peers}')
-  echo "lnd server:   $LNDSERVER"
-  echo "lnd client:   $LNDCLIENT"
+info() {
+  local server_info client_info
+  server_info="$(lndserver getinfo | jq -c \
+    '{pubkey: .identity_pubkey, channels: .num_active_channels, peers: .num_peers}')"
+  client_info="$(lndclient getinfo | jq -c \
+    '{pubkey: .identity_pubkey, channels: .num_active_channels, peers: .num_peers}')"
+  echo "lnd server:   ${server_info}"
+  echo "lnd client:   ${client_info}"
 }
 
-function copy_loopserver_files() {
-  # copy cert to loopserver
-  docker cp lndserver:/root/.lnd/tls.cert /tmp/loopserver-tls.cert
-  chmod 644 /tmp/loopserver-tls.cert
-  docker cp -a /tmp/loopserver-tls.cert loopserver:/home/loopserver/tls.cert
-  
-  #copy readonly macaroon to loopserver
-  docker cp lndserver:/root/.lnd/data/chain/bitcoin/regtest/readonly.macaroon /tmp/loopserver-read.macaroon
-  chmod 644 /tmp/loopserver-read.macaroon
-  docker cp -a /tmp/loopserver-read.macaroon loopserver:/home/loopserver/readonly.macaroon
-
-  # copy admin macaroon to loopserver
-  docker cp lndserver:/root/.lnd/data/chain/bitcoin/regtest/admin.macaroon /tmp/loopserver-admin.macaroon
-  chmod 644 /tmp/loopserver-admin.macaroon
-  docker cp -a /tmp/loopserver-admin.macaroon loopserver:/home/loopserver/admin.macaroon
-
-  # copy invoices macaroon to loopserver
-  docker cp lndserver:/root/.lnd/data/chain/bitcoin/regtest/invoices.macaroon /tmp/loopserver-invoices.macaroon
-  chmod 644 /tmp/loopserver-invoices.macaroon
-  docker cp -a /tmp/loopserver-invoices.macaroon loopserver:/home/loopserver/invoices.macaroon
-
-  # copy chainnotifier macaroon to loopserver
-  docker cp lndserver:/root/.lnd/data/chain/bitcoin/regtest/chainnotifier.macaroon /tmp/loopserver-chainnotifier.macaroon
-  chmod 644 /tmp/loopserver-chainnotifier.macaroon
-  docker cp -a /tmp/loopserver-chainnotifier.macaroon loopserver:/home/loopserver/chainnotifier.macaroon
-
-  # copy router macaroon to loopserver
-  docker cp lndserver:/root/.lnd/data/chain/bitcoin/regtest/router.macaroon /tmp/loopserver-router.macaroon
-  chmod 644 /tmp/loopserver-router.macaroon
-  docker cp -a /tmp/loopserver-router.macaroon loopserver:/home/loopserver/router.macaroon
-
-  # copy signer macaroon to loopserver
-  docker cp lndserver:/root/.lnd/data/chain/bitcoin/regtest/signer.macaroon /tmp/loopserver-signer.macaroon
-  chmod 644 /tmp/loopserver-signer.macaroon
-  docker cp -a /tmp/loopserver-signer.macaroon loopserver:/home/loopserver/signer.macaroon
-
-  # copy walletkit macaroon to loopserver
-  docker cp lndserver:/root/.lnd/data/chain/bitcoin/regtest/walletkit.macaroon /tmp/loopserver-walletkit.macaroon
-  chmod 644 /tmp/loopserver-walletkit.macaroon
-  docker cp -a /tmp/loopserver-walletkit.macaroon loopserver:/home/loopserver/walletkit.macaroon
-
-  docker cp loopserver:/home/loopserver/tls.cert /tmp/loopserver-tls.cert
-  chmod 644 /tmp/loopserver-tls.cert
-  docker cp -a /tmp/loopserver-tls.cert aperture:/root/.aperture/loopserver-tls.cert
-
-  # create the aperture config and copy it to the aperture container.
-  write_aperture_config
-
-  docker cp /tmp/aperture.yaml aperture:/root/.aperture/aperture.yaml
+logs() {
+  if [ "$#" -eq 0 ]; then
+    "${COMPOSE[@]}" logs -f loopserver loopclient
+  else
+    "${COMPOSE[@]}" logs -f "$@"
+  fi
 }
 
-
-function write_aperture_config() {
- rm -rf /tmp/aperture.yaml
- touch /tmp/aperture.yaml && cat > /tmp/aperture.yaml <<EOF
-listenaddr: '0.0.0.0:11018'
-staticroot: '/root/.aperture/static'
-servestatic: true
-debuglevel: trace
-insecure: false
-writetimeout: 0s
-
-servername: aperture
-autocert: false
-
-authenticator:
- lndhost: lndserver:10009
- tlspath: /root/.lnd/tls.cert
- macdir:  /root/.lnd/data/chain/bitcoin/regtest
- network: regtest
-
-etcd:
- host: 'etcd:2379'
- user:
- password:
-
-services:
- - name: loop
-   hostregexp: '^.*$'
-   pathregexp: '^/looprpc.*$'
-   address: 'loopserver:11009'
-   protocol: https
-   tlscertpath: /root/.aperture/loopserver-tls.cert
-   price: 1000
-   authwhitelistpaths:
-     - '^/looprpc.SwapServer/LoopOutTerms.*$'
-     - '^/looprpc.SwapServer/LoopOutQuote.*$'
-     - '^/looprpc.SwapServer/LoopInTerms.*$'
-     - '^/looprpc.SwapServer/LoopInQuote.*$'
-EOF
+usage() {
+  echo "Usage: $0 start|stop|restart|info|mine|bitcoin|lndserver|lndclient|loop|logs"
 }
 
-
-if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 start|stop|restart|info|loop"
+if [ "$#" -lt 1 ]; then
+  usage
+  exit 1
 fi
 
-CMD=$1
+command_name="$1"
 shift
-$CMD "$@"
+case "${command_name}" in
+  start|stop|restart|info|mine|bitcoin|lndserver|lndclient|loop|logs)
+    "${command_name}" "$@"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
