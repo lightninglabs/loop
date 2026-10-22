@@ -22,6 +22,17 @@ import (
 // templates with exact-value and change inputs, for grouped and ungrouped
 // assets. Default and address templates always derive the advertised key.
 func TestHtlcFundingModes(t *testing.T) {
+	t.Run("CSV", func(t *testing.T) {
+		testHtlcFundingModes(t, AssetHTLCV0)
+	})
+	t.Run("CLTV", func(t *testing.T) {
+		testHtlcFundingModes(t, AssetHTLCCLTVV1)
+	})
+}
+
+func testHtlcFundingModes(t *testing.T, contractPolicy Policy) {
+	t.Helper()
+
 	for _, mode := range []struct {
 		name        string
 		interactive bool
@@ -36,7 +47,10 @@ func TestHtlcFundingModes(t *testing.T) {
 				name := fmt.Sprintf("%s/grouped=%t/input=%d",
 					mode.name, grouped, sourceAmount)
 				t.Run(name, func(t *testing.T) {
-					f := newWitnessFixture(t, SuccessSequence)
+					f := newWitnessFixtureForPolicy(
+						t, SuccessSequence, asset.V1,
+						commitment.TapCommitmentV2, false, contractPolicy,
+					)
 					internalKey, err := f.kit.GetAggregateKey()
 					require.NoError(t, err)
 					sibling, err := f.kit.GetSiblingPreimage()

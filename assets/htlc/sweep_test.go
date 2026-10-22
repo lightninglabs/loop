@@ -547,7 +547,7 @@ func TestAcceptedHtlcsRemainClaimable(t *testing.T) {
 	paths := []struct {
 		name    string
 		timeout bool
-	}{{"claim", false}, {"refund", true}}
+	}{{claimPath, false}, {refundPath, true}}
 	for _, layout := range fundingLayouts() {
 		for _, path := range paths {
 			t.Run(layout.name+"/"+path.name, func(t *testing.T) {
@@ -599,7 +599,7 @@ func TestHiddenAnchorLeafBlocksClaim(t *testing.T) {
 	hidden := hiddenAsset(f)
 	anchorCommitment := hideAnchorLeaves(t, f, hidden)
 	_, err := f.kit.GetPkScriptFromProof(f.proof)
-	require.ErrorContains(t, err, "does not match the proven asset")
+	require.ErrorContains(t, err, testIncompleteAnchor)
 
 	claim := assettest.Sweep(
 		t, []*proof.Proof{f.proof}, f.packet, opTrueWitness(t),

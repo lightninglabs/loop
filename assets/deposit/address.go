@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/lightninglabs/loop/assets/htlc"
 	"github.com/lightninglabs/loop/assets/internal/policy"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
@@ -55,10 +56,31 @@ func (d *Kit) ValidateAddr(encoded string, amount uint64) (*address.Tap, error) 
 func (d *Kit) ValidateHtlcAddr(encoded string, amount uint64,
 	swapHash lntypes.Hash, csvExpiry uint32) (*address.Tap, error) {
 
+	return d.validateHtlcAddr(
+		encoded, htlc.AssetHTLCV0, amount, swapHash, csvExpiry, 0,
+	)
+}
+
+// ValidateCLTVHtlcAddr validates a peer's address against the deposit parties
+// and the agreed AssetHTLCCLTVV1 terms, including the absolute refund height.
+func (d *Kit) ValidateCLTVHtlcAddr(encoded string, amount uint64,
+	swapHash lntypes.Hash, refundHeight uint32) (*address.Tap, error) {
+
+	return d.validateHtlcAddr(
+		encoded, htlc.AssetHTLCCLTVV1, amount, swapHash, 0, refundHeight,
+	)
+}
+
+func (d *Kit) validateHtlcAddr(encoded string, contractPolicy htlc.Policy,
+	amount uint64, swapHash lntypes.Hash, csvExpiry, refundHeight uint32) (
+	*address.Tap, error) {
+
 	if err := d.validateAddressAsset(amount); err != nil {
 		return nil, err
 	}
-	kit, err := d.newHtlcSwapKit(amount, swapHash, csvExpiry)
+	kit, err := d.newHtlcSwapKitWithPolicy(
+		contractPolicy, amount, swapHash, csvExpiry, refundHeight,
+	)
 	if err != nil {
 		return nil, err
 	}

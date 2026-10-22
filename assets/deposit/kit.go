@@ -326,6 +326,29 @@ func (d *Kit) NewHtlcAddr(ctx context.Context, client AddressProofClient,
 	amount uint64, swapHash lntypes.Hash, csvExpiry uint32) (
 	*taprpc.Addr, *htlc.SwapKit, error) {
 
+	return d.newHtlcAddr(
+		ctx, client, htlc.AssetHTLCV0, amount, swapHash, csvExpiry, 0,
+	)
+}
+
+// NewCLTVHtlcAddr creates an AssetHTLCCLTVV1 address using the deposit parties
+// and an absolute Bitcoin refund height. It applies the same trusted metadata,
+// tapd version and address validation checks as NewHtlcAddr. The deposit's own
+// CSV refund terms are independent of this new HTLC's refund height.
+func (d *Kit) NewCLTVHtlcAddr(ctx context.Context, client AddressProofClient,
+	amount uint64, swapHash lntypes.Hash, refundHeight uint32) (
+	*taprpc.Addr, *htlc.SwapKit, error) {
+
+	return d.newHtlcAddr(
+		ctx, client, htlc.AssetHTLCCLTVV1, amount, swapHash, 0, refundHeight,
+	)
+}
+
+// newHtlcAddr constructs and validates an address under an explicit policy.
+func (d *Kit) newHtlcAddr(ctx context.Context, client AddressProofClient,
+	contractPolicy htlc.Policy, amount uint64, swapHash lntypes.Hash,
+	csvExpiry, refundHeight uint32) (*taprpc.Addr, *htlc.SwapKit, error) {
+
 	if d == nil {
 		return nil, nil, fmt.Errorf("deposit kit is required")
 	}
@@ -336,7 +359,9 @@ func (d *Kit) NewHtlcAddr(ctx context.Context, client AddressProofClient,
 		return nil, nil, err
 	}
 
-	swapKit, err := d.newHtlcSwapKit(amount, swapHash, csvExpiry)
+	swapKit, err := d.newHtlcSwapKitWithPolicy(
+		contractPolicy, amount, swapHash, csvExpiry, refundHeight,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -389,7 +414,16 @@ func (d *Kit) NewHtlcAddr(ctx context.Context, client AddressProofClient,
 func (d *Kit) newHtlcSwapKit(amount uint64, swapHash lntypes.Hash,
 	csvExpiry uint32) (*htlc.SwapKit, error) {
 
-	return htlc.NewSwapKit(htlc.AssetHTLCV0, htlc.Params{
+	return d.newHtlcSwapKitWithPolicy(
+		htlc.AssetHTLCV0, amount, swapHash, csvExpiry, 0,
+	)
+}
+
+func (d *Kit) newHtlcSwapKitWithPolicy(contractPolicy htlc.Policy,
+	amount uint64, swapHash lntypes.Hash, csvExpiry, refundHeight uint32) (
+	*htlc.SwapKit, error) {
+
+	return htlc.NewSwapKit(contractPolicy, htlc.Params{
 		SenderInternalPubKey:   d.senderInternalPubKey,
 		ReceiverInternalPubKey: d.receiverInternalPubKey,
 		SenderScriptKey:        d.senderScriptKey,
@@ -398,6 +432,7 @@ func (d *Kit) newHtlcSwapKit(amount uint64, swapHash lntypes.Hash,
 		Amount:                 amount,
 		SwapHash:               swapHash,
 		CsvExpiry:              csvExpiry,
+		RefundHeight:           refundHeight,
 		AddressParams:          d.chainParams,
 	})
 }

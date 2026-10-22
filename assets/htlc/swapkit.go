@@ -28,8 +28,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// SuccessSequence is the relative lock used by the success path. It is part of
-// the legacy version-zero policy.
+// SuccessSequence is the relative lock used by both HTLC success policies.
 const SuccessSequence uint32 = 1
 
 // Policy identifies immutable asset HTLC contract terms, independently of the
@@ -50,6 +49,11 @@ const (
 	// LegacyDepositV0 is the compatibility name for AssetHTLCV0. Existing
 	// drafts can keep selecting it without changing their contract terms.
 	LegacyDepositV0 = AssetHTLCV0
+
+	// AssetHTLCCLTVV1 uses an absolute Bitcoin block height for refunds,
+	// while retaining the V0 success path, key roles and asset script key.
+	// It can be used for either asset swap direction.
+	AssetHTLCCLTVV1 Policy = 2
 )
 
 // Params contains the validated inputs used to construct a SwapKit. Sender
@@ -67,8 +71,14 @@ type Params struct {
 	AssetID           asset.ID
 	Amount            uint64
 	SwapHash          lntypes.Hash
-	CsvExpiry         uint32
-	AddressParams     *address.ChainParams
+
+	// CsvExpiry is the relative refund delay for AssetHTLCV0 only.
+	CsvExpiry uint32
+
+	// RefundHeight is the absolute Bitcoin refund height for
+	// AssetHTLCCLTVV1 only. Timestamp locktimes are not supported.
+	RefundHeight  uint32
+	AddressParams *address.ChainParams
 }
 
 // SwapKit holds the immutable information required to construct and spend an
@@ -84,6 +94,7 @@ type SwapKit struct {
 	amount                 uint64
 	swapHash               lntypes.Hash
 	csvExpiry              uint32
+	refundHeight           uint32
 	addressParams          address.ChainParams
 }
 
@@ -131,6 +142,7 @@ func NewSwapKit(contractPolicy Policy, params Params) (*SwapKit, error) {
 		amount:                 params.Amount,
 		swapHash:               params.SwapHash,
 		csvExpiry:              params.CsvExpiry,
+		refundHeight:           params.RefundHeight,
 		addressParams:          *addressParams,
 	}
 	if err := kit.Validate(); err != nil {
@@ -201,9 +213,14 @@ func (s *SwapKit) SwapHash() lntypes.Hash {
 	return s.swapHash
 }
 
-// CsvExpiry returns the sender's block-based relative refund delay.
+// CsvExpiry returns the relative refund delay, or zero for a CLTV contract.
 func (s *SwapKit) CsvExpiry() uint32 {
 	return s.csvExpiry
+}
+
+// RefundHeight returns the CLTV refund height, or zero for a CSV contract.
+func (s *SwapKit) RefundHeight() uint32 {
+	return s.refundHeight
 }
 
 // AddressParams returns a copy of the contract's address parameters.
@@ -238,7 +255,7 @@ func (s *SwapKit) validateScripts() error {
 	if s == nil {
 		return fmt.Errorf("swap kit is required")
 	}
-	if s.policy != AssetHTLCV0 {
+	if s.policy != AssetHTLCV0 && s.policy != AssetHTLCCLTVV1 {
 		return fmt.Errorf("unknown asset HTLC policy: %d", s.policy)
 	}
 	if s.senderScriptKey == nil {
@@ -266,11 +283,28 @@ func (s *SwapKit) validateScripts() error {
 			}
 		}
 	}
-	if s.csvExpiry <= SuccessSequence {
-		return fmt.Errorf("CSV expiry must exceed success sequence")
-	}
-	if s.csvExpiry > wire.SequenceLockTimeMask {
-		return fmt.Errorf("CSV expiry exceeds block-based BIP68 range")
+	switch s.policy {
+	case AssetHTLCV0:
+		if s.refundHeight != 0 {
+			return fmt.Errorf("CSV policy cannot set refund height")
+		}
+		if s.csvExpiry <= SuccessSequence {
+			return fmt.Errorf("CSV expiry must exceed success sequence")
+		}
+		if s.csvExpiry > wire.SequenceLockTimeMask {
+			return fmt.Errorf("CSV expiry exceeds block-based BIP68 range")
+		}
+
+	case AssetHTLCCLTVV1:
+		if s.csvExpiry != 0 {
+			return fmt.Errorf("CLTV policy cannot set CSV expiry")
+		}
+		if s.refundHeight == 0 ||
+			s.refundHeight >= txscript.LockTimeThreshold {
+
+			return fmt.Errorf("refund height must be positive and below %d",
+				uint32(txscript.LockTimeThreshold))
+		}
 	}
 
 	return nil
@@ -281,7 +315,7 @@ func (s *SwapKit) GetSuccessScript() ([]byte, error) {
 	if s == nil || s.receiverScriptKey == nil {
 		return nil, fmt.Errorf("receiver script public key is required")
 	}
-	if s.policy != AssetHTLCV0 {
+	if s.policy != AssetHTLCV0 && s.policy != AssetHTLCCLTVV1 {
 		return nil, fmt.Errorf("unknown asset HTLC policy: %d", s.policy)
 	}
 
@@ -293,11 +327,18 @@ func (s *SwapKit) GetTimeoutScript() ([]byte, error) {
 	if s == nil {
 		return nil, fmt.Errorf("swap kit is required")
 	}
-	if s.policy != AssetHTLCV0 {
+	switch s.policy {
+	case AssetHTLCV0:
+		return GenTimeoutPathScript(s.senderScriptKey, int64(s.csvExpiry))
+
+	case AssetHTLCCLTVV1:
+		return GenCLTVTimeoutPathScript(
+			s.senderScriptKey, int64(s.refundHeight),
+		)
+
+	default:
 		return nil, fmt.Errorf("unknown asset HTLC policy: %d", s.policy)
 	}
-
-	return GenTimeoutPathScript(s.senderScriptKey, int64(s.csvExpiry))
 }
 
 // GetAggregateKey returns the sorted MuSig2 aggregate key used in the swap
@@ -1001,8 +1042,8 @@ func (s *SwapKit) validateSweep(assetProof *proof.Proof,
 
 // AssetInputIndex returns the unique input that spends the proof outpoint. It
 // validates all PSBT prevouts and the proof-bound anchor output before exposing
-// the index. Callers use this index to set the required relative sequence
-// before asking the kit to sign.
+// the index. Callers use this index to apply SuccessSpendConstraints or
+// TimeoutSpendConstraints before signing any inputs.
 func (s *SwapKit) AssetInputIndex(assetProof *proof.Proof,
 	sweepPacket *psbt.Packet) (uint32, error) {
 
@@ -1015,7 +1056,7 @@ func (s *SwapKit) AssetInputIndex(assetProof *proof.Proof,
 }
 
 // validateSequence requires the proof-selected input to use the contract's
-// relative lock value before a witness is signed.
+// sequence value before a witness is signed.
 func validateSequence(sweep *validatedSweep, sweepPacket *psbt.Packet,
 	required uint32) error {
 
@@ -1145,9 +1186,10 @@ func (s *SwapKit) CreatePreimageWitness(ctx context.Context,
 
 // CreateTimeoutWitness signs the exact proof-bound asset input and returns a
 // timeout-path witness in the legacy stack order. The caller must set the
-// proof-selected input's sequence to CsvExpiry before calling this method; the
-// PSBT is never mutated here. The transfer must contain the caller-approved,
-// complete active and passive asset packets.
+// proof-selected input's sequence and transaction locktime according to
+// TimeoutSpendConstraints before signing any inputs. The PSBT is never mutated
+// here. The transfer must contain the caller-approved, complete active and
+// passive asset packets.
 func (s *SwapKit) CreateTimeoutWitness(ctx context.Context,
 	signer lndclient.SignerClient, htlcProof *proof.Proof,
 	sweepBtcPacket *psbt.Packet, keyLocator keychain.KeyLocator,
@@ -1163,9 +1205,18 @@ func (s *SwapKit) CreateTimeoutWitness(ctx context.Context,
 		return nil, err
 	}
 	if err := validateSequence(
-		sweep, sweepBtcPacket, s.csvExpiry,
+		sweep, sweepBtcPacket, s.TimeoutSpendConstraints().Sequence,
 	); err != nil {
 		return nil, err
+	}
+	if s.policy == AssetHTLCCLTVV1 {
+		lockTime := sweepBtcPacket.UnsignedTx.LockTime
+		if lockTime < s.refundHeight ||
+			lockTime >= txscript.LockTimeThreshold {
+
+			return nil, fmt.Errorf("timeout locktime must be a block "+
+				"height at least %d, got %d", s.refundHeight, lockTime)
+		}
 	}
 
 	if err := transfer.Validate(htlcProof, sweepBtcPacket); err != nil {

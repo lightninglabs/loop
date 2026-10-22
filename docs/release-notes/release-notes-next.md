@@ -7,6 +7,11 @@
   restart and cooperative sweeping. Blinded payments use LND's routing without
   destination-based routing plugins.
 
+* Shared asset HTLCs add the explicit `AssetHTLCCLTVV1` policy for absolute
+  refund heights in either swap direction, with deposit-to-HTLC address
+  helpers and signing constraints. Existing CSV contracts and OP_TRUE asset
+  script key derivation are preserved.
+
 * Shared asset HTLCs now expose the direction-neutral `AssetHTLCV0` policy for
   both Asset Loop In and Asset Loop Out. `LegacyDepositV0` remains an alias
   with the same policy value and on-chain contract terms.

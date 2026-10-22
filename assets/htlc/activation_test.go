@@ -25,7 +25,7 @@ type activatedVerifier struct {
 func (*activatedVerifier) GetInfo(context.Context, *taprpc.GetInfoRequest,
 	...grpc.CallOption) (*taprpc.GetInfoResponse, error) {
 
-	return &taprpc.GetInfoResponse{Version: "0.8.6-alpha"}, nil
+	return &taprpc.GetInfoResponse{Version: testSupportedTapd}, nil
 }
 
 // VerifyProof delegates the complete history to tapd with activation enabled.

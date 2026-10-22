@@ -367,12 +367,12 @@ func TestValidateProvenance(t *testing.T) {
 		{
 			name: "ownership proof",
 			file: newFile(t, ownership),
-			err:  "ownership challenge",
+			err:  testOwnershipChallenge,
 		},
 		{
 			name: "later ownership proof",
 			file: newFile(t, issuance, ownership),
-			err:  "ownership challenge",
+			err:  testOwnershipChallenge,
 		},
 		{
 			name: "missing genesis",
@@ -383,7 +383,7 @@ func TestValidateProvenance(t *testing.T) {
 			name: "nested ownership proof",
 			file: nest(t, issuance, nest(t, issuance,
 				newFile(t, ownership))),
-			err: "ownership challenge",
+			err: testOwnershipChallenge,
 		},
 		{
 			name: "nested input missing genesis",

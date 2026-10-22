@@ -150,7 +150,7 @@ func newAddressKit(t *testing.T, genesis *asset.Genesis,
 // TestAddressValidation accepts both contract types and derives the Bitcoin
 // output key using trusted metadata, for normal, collectible and grouped assets.
 func TestAddressValidation(t *testing.T) {
-	for _, kind := range []string{"normal", "collectible", "grouped"} {
+	for _, kind := range []string{"normal", "collectible", testGroupedAsset} {
 		t.Run(kind, func(t *testing.T) {
 			genesis := testAddressGenesis()
 			amount := uint64(1000)
@@ -159,7 +159,7 @@ func TestAddressValidation(t *testing.T) {
 				genesis.Type = asset.Collectible
 				amount = 1
 			}
-			if kind == "grouped" {
+			if kind == testGroupedAsset {
 				_, group = scalarKey(t, 42)
 			}
 			kit := newAddressKit(t, &genesis, group)
@@ -219,7 +219,7 @@ func TestAddressResponsesRejectMismatches(t *testing.T) {
 		{"courier", func(a *taprpc.Addr) *taprpc.Addr { a.ProofCourierAddr = "universerpc://other:1"; return a }},
 	}
 	for _, htlc := range []bool{false, true} {
-		path := "deposit"
+		path := testDepositAddress
 		if htlc {
 			path = "htlc"
 		}
@@ -263,7 +263,7 @@ func TestEncodedAddressesRejectWrongContracts(t *testing.T) {
 		{"missing sibling", func(a *address.Tap) { a.TapscriptSibling = nil }},
 	}
 	for _, isHtlc := range []bool{false, true} {
-		path := "deposit"
+		path := testDepositAddress
 		if isHtlc {
 			path = "htlc"
 		}

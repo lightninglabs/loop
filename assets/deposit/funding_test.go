@@ -23,7 +23,7 @@ func TestHtlcAddressFunding(t *testing.T) {
 	for _, grouped := range []bool{false, true} {
 		name := "ungrouped"
 		if grouped {
-			name = "grouped"
+			name = testGroupedAsset
 		}
 		t.Run(name, func(t *testing.T) {
 			for _, change := range []uint64{0, 500} {

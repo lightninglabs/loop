@@ -17,13 +17,39 @@
 // V0 denotes the Loop contract revision, independently of Taproot Assets
 // wire versions.
 //
+// AssetHTLCCLTVV1 selects the static Loop In V3 Bitcoin script layout with an
+// absolute refund height. Construct it with Params.RefundHeight set and
+// Params.CsvExpiry zero. The success leaf still requires CSV=1. Both policies
+// support either direction and retain the same cooperative internal-key
+// aggregation, four key roles, asset script key and witness stack order.
+// The CLTV policy does not reproduce a caller's custom asset script key.
+//
+// SuccessSpendConstraints and TimeoutSpendConstraints expose the Bitcoin
+// transaction requirements without depending on a signing backend. Before
+// signing any inputs, use AssetInputIndex to identify the proof-bound input
+// and set its sequence and the transaction's locktime. CLTV refunds use
+// sequence 0xfffffffe (non-final with BIP68 disabled) and nLockTime at least
+// RefundHeight, strictly below the timestamp threshold. Witness builders
+// validate these terms without mutating the transaction or fee signatures.
+// Existing leaf, control block and output-script methods also support both
+// policies, allowing other signing backends to use the same contract.
+//
+// The caller must negotiate and persist the exact policy and terms before
+// funding, verify the funding history and current unspent outpoint, and
+// enforce confirmation depth, chain finality and Lightning deadline margins.
+// CLTV's clock does not restart when a deposit is converted to an HTLC; the
+// flow must reject funding when too little refund time remains. Bitcoin
+// finality requires a block height greater than nLockTime. Deposit CSV expiry
+// and the HTLC's absolute refund height are independent. This kit does not
+// implement invoice settlement, cancellation or swap state machines.
+//
 // Callers must explicitly select a policy and retain its terms for the life
 // of the swap. A new direction or application can reuse identical terms;
 // changes to scripts, key derivation, timelocks or supported wire versions
 // require a distinct policy. A policy must never be redefined to migrate an
 // existing contract to new terms.
 //
-// AssetHTLCV0 retains success CSV=1 and the shared OP_TRUE asset script key.
+// Both policies retain success CSV=1 and the shared OP_TRUE asset script key.
 // Multiple HTLC outputs for the same asset using that shared key cannot be
 // batched in one transaction, and proof delivery needs a discriminator beyond
 // that shared script key.
