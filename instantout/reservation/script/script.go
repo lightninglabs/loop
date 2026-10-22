@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightningnetwork/lnd/input"
 )
 
@@ -94,15 +95,9 @@ func PayToWitnessTaprootScript(taprootKey *btcec.PublicKey) ([]byte, error) {
 func TaprootExpiryScript(expiry uint32,
 	serverKey *btcec.PublicKey) (*txscript.TapLeaf, error) {
 
-	builder := txscript.NewScriptBuilder()
-
-	builder.AddData(schnorr.SerializePubKey(serverKey))
-	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
-
-	builder.AddInt64(int64(expiry))
-	builder.AddOp(txscript.OP_CHECKLOCKTIMEVERIFY)
-
-	script, err := builder.Script()
+	script, err := swapkit.CLTVTimeoutScript(
+		[32]byte(schnorr.SerializePubKey(serverKey)), int64(expiry),
+	)
 	if err != nil {
 		return nil, err
 	}

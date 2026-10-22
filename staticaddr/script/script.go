@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/lightninglabs/loop/swapkit"
 	"github.com/lightningnetwork/lnd/input"
 )
 
@@ -116,14 +117,9 @@ func (s *StaticAddress) StaticAddressScript() ([]byte, error) {
 func GenTimeoutPathScript(clientKey *btcec.PublicKey, csvExpiry int64) ([]byte,
 	error) {
 
-	builder := txscript.NewScriptBuilder()
-
-	builder.AddData(schnorr.SerializePubKey(clientKey))
-	builder.AddOp(txscript.OP_CHECKSIGVERIFY)
-	builder.AddInt64(csvExpiry)
-	builder.AddOp(txscript.OP_CHECKSEQUENCEVERIFY)
-
-	return builder.Script()
+	return swapkit.CSVTimeoutScript(
+		[32]byte(schnorr.SerializePubKey(clientKey)), csvExpiry,
+	)
 }
 
 // GenSuccessWitness returns the success witness to spend the static address
