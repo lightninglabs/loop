@@ -87,6 +87,7 @@ type LoopoutSwap struct {
 	PublicationDeadline time.Time
 	SingleSweep         bool
 	PaymentTimeout      int32
+	PaymentAddress      []byte
 }
 
 type LoopoutSwapsAssetInfo struct {

@@ -112,9 +112,10 @@ INSERT INTO loopout_swaps (
     max_prepay_routing_fee,
     publication_deadline,
     single_sweep,
-    payment_timeout
+    payment_timeout,
+    payment_address
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
 );
 
 -- name: InsertLoopOutAsset :exec

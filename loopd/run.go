@@ -36,6 +36,8 @@ var (
 	//     for the L402 token (swap_server_client.go): lnd v0.19.0-beta
 	//     defaults the timeout to 60 seconds, older lnd rejects the
 	//     payment with "timeout_seconds must be specified".
+	//   - bLIP 39 invoice payments, including multipart payments to blinded
+	//     paths (loopout.go), are supported by lnd v0.19.0-beta.
 	//   - routerrpc.SendPaymentRequest.first_hop_custom_records and
 	//     lnrpc.Route.custom_channel_data, used by asset loop outs
 	//     (loopout.go): both added in lnd v0.18.4-beta.

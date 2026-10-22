@@ -523,6 +523,7 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 	defer rpcCancel()
 	swapResp, err := s.server.NewLoopOutSwap(rpcCtx,
 		&swapserverrpc.ServerLoopOutRequest{
+			AcceptBlindedInvoices:   true,
 			SwapHash:                swapHash[:],
 			Amt:                     uint64(amount),
 			ReceiverKey:             receiverKey[:],
@@ -541,11 +542,21 @@ func (s *grpcSwapServerClient) NewLoopOutSwap(ctx context.Context,
 		return nil, err
 	}
 
+	var paymentAddr *[32]byte
+	if len(swapResp.PaymentAddress) != 0 {
+		if len(swapResp.PaymentAddress) != 32 {
+			return nil, errors.New("invalid swap payment address length")
+		}
+		addr := [32]byte(swapResp.PaymentAddress)
+		paymentAddr = &addr
+	}
+
 	return &newLoopOutResponse{
 		swapInvoice:   swapResp.SwapInvoice,
 		prepayInvoice: swapResp.PrepayInvoice,
 		senderKey:     senderKey,
 		serverMessage: swapResp.ServerMessage,
+		paymentAddr:   paymentAddr,
 	}, nil
 }
 
@@ -1128,6 +1139,7 @@ type newLoopOutResponse struct {
 	prepayInvoice string
 	senderKey     [33]byte
 	serverMessage string
+	paymentAddr   *[32]byte
 }
 
 type newLoopInResponse struct {

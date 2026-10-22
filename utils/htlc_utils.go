@@ -61,6 +61,8 @@ func GetHtlcScriptVersion(
 }
 
 // ObtainSwapPaymentAddr will retrieve the payment addr from the passed invoice.
+//
+// Deprecated: Use ObtainLoopOutPaymentAddr to support blinded swap invoices.
 func ObtainSwapPaymentAddr(swapInvoice string, chainParams *chaincfg.Params) (
 	*[32]byte, error) {
 
@@ -77,4 +79,34 @@ func ObtainSwapPaymentAddr(swapInvoice string, chainParams *chaincfg.Params) (
 	}
 
 	return &payAddr, nil
+}
+
+// ObtainLoopOutPaymentAddr returns the secret used to authenticate loop-out
+// RPCs. Blinded invoices require a separately supplied, persisted secret.
+// Ordinary invoices retain their invoice-derived secret, including old swaps.
+func ObtainLoopOutPaymentAddr(contract *loopdb.LoopOutContract,
+	chainParams *chaincfg.Params) (*[32]byte, error) {
+
+	invoice, err := zpay32.Decode(contract.SwapInvoice, chainParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(invoice.BlindedPaymentPaths) > 0 {
+		if contract.PaymentAddr == nil {
+			return nil, fmt.Errorf("missing blinded swap payment address")
+		}
+		return contract.PaymentAddr, nil
+	}
+
+	addr, err := invoice.PaymentAddr.UnwrapOrErr(
+		fmt.Errorf("expected payment address for invoice"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if contract.PaymentAddr != nil && *contract.PaymentAddr != addr {
+		return nil, fmt.Errorf("swap payment address differs from invoice")
+	}
+	return &addr, nil
 }

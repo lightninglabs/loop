@@ -30,6 +30,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	paymentsdb "github.com/lightningnetwork/lnd/payments/db"
 	"github.com/lightningnetwork/lnd/tlv"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
 )
 
@@ -197,6 +198,7 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	contract := loopdb.LoopOutContract{
 		SwapInvoice:             swapResp.swapInvoice,
+		PaymentAddr:             swapResp.paymentAddr,
 		DestAddr:                request.DestAddr,
 		IsExternalAddr:          request.IsExternalAddr,
 		MaxSwapRoutingFee:       request.MaxSwapRoutingFee,
@@ -255,8 +257,8 @@ func newLoopOutSwap(globalCtx context.Context, cfg *swapConfig,
 
 	// Obtain the payment addr since we'll need it later for routing plugin
 	// recommendation and possibly for cancel.
-	paymentAddr, err := utils.ObtainSwapPaymentAddr(
-		contract.SwapInvoice, cfg.lnd.ChainParams,
+	paymentAddr, err := utils.ObtainLoopOutPaymentAddr(
+		&contract, cfg.lnd.ChainParams,
 	)
 	if err != nil {
 		return nil, err
@@ -312,8 +314,8 @@ func resumeLoopOutSwap(cfg *swapConfig, pend *loopdb.LoopOut,
 
 	// Obtain the payment addr since we'll need it later for routing plugin
 	// recommendation and possibly for cancel.
-	paymentAddr, err := utils.ObtainSwapPaymentAddr(
-		pend.Contract.SwapInvoice, cfg.lnd.ChainParams,
+	paymentAddr, err := utils.ObtainLoopOutPaymentAddr(
+		pend.Contract, cfg.lnd.ChainParams,
 	)
 	if err != nil {
 		return nil, err
@@ -784,6 +786,16 @@ func (s *loopOutSwap) payInvoiceAsync(ctx context.Context,
 
 	maxRetries := 1
 	totalPaymentTimeout := s.executeConfig.totalPaymentTimeout
+
+	// Destination-based plugins cannot interpret a blinded destination.
+	// LND selects the route to an introduction node from the invoice.
+	decoded, err := zpay32.Decode(invoice, chainParams)
+	if err != nil {
+		return nil, err
+	}
+	if len(decoded.BlindedPaymentPaths) > 0 {
+		pluginType = RoutingPluginNone
+	}
 
 	// Attempt to acquire and initialize the routing plugin.
 	routingPlugin, err := AcquireRoutingPlugin(

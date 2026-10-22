@@ -32,6 +32,10 @@ type LoopOutContract struct {
 	// initiate the loop out swap.
 	SwapInvoice string
 
+	// PaymentAddr authenticates swap RPCs when the swap invoice contains
+	// blinded paths. A nil value uses the ordinary invoice's payment address.
+	PaymentAddr *[32]byte
+
 	// MaxSwapRoutingFee is the maximum off-chain fee in msat that may be
 	// paid for the swap payment to the server.
 	MaxSwapRoutingFee btcutil.Amount

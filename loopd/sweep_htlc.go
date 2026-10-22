@@ -329,8 +329,8 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 
 		if cooperative {
 			storedPaymentAddr, paymentErr :=
-				utils.ObtainSwapPaymentAddr(
-					targetSwap.Contract.SwapInvoice,
+				utils.ObtainLoopOutPaymentAddr(
+					targetSwap.Contract,
 					chainParams,
 				)
 			if paymentErr != nil {
