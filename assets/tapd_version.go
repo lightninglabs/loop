@@ -3,7 +3,7 @@ package assets
 import (
 	"context"
 
-	"github.com/lightninglabs/loop/assets/internal/policy"
+	policy "github.com/lightninglabs/loop/internal/assetpolicy"
 )
 
 // MinOnchainSwapTapdVersion is the oldest tapd release that may create new
