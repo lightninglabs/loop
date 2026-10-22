@@ -1,6 +1,6 @@
 package htlc
 
-import "github.com/btcsuite/btcd/wire"
+import "github.com/btcsuite/btcd/wire/v2"
 
 // SpendConstraints describes the canonical Bitcoin input sequence and minimum
 // transaction locktime for an HTLC script path. Apply these before signing any

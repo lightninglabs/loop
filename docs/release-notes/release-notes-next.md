@@ -18,6 +18,10 @@
 
 #### Breaking Changes
 
+* Shared asset swap tooling now uses the btcd v2 Bitcoin types, with an
+  immutable SDK revision containing the exact-proof selection and received
+  asset signing fixes. Go callers must use the corresponding v2 packages.
+
 * Shared asset kit RPC interfaces now require `GetInfo` to check the running
   tapd before address creation and full-history proof acceptance. Custom RPC
   adapters must forward this method; integrations using other APIs can call
