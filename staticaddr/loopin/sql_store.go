@@ -654,6 +654,7 @@ func toDeposits(rows []sqlc.DepositsForSwapHashRow) ([]*deposit.Deposit,
 			Pkscript:              d.Pkscript,
 			ProtocolVersion:       d.ProtocolVersion,
 			InitiationHeight:      d.InitiationHeight,
+			Label:                 d.Label,
 		}
 
 		sqlcDepositUpdate := sqlc.DepositUpdate{
@@ -903,5 +904,6 @@ func toChangeAddressParameters(row sqlc.GetStaticAddressLoopInSwapRow) (
 		ClientKeyIndex:   row.ChangeClientKeyIndex.Int32,
 		ProtocolVersion:  row.ChangeProtocolVersion.Int32,
 		InitiationHeight: row.ChangeInitiationHeight.Int32,
+		Label:            row.ChangeLabel.String,
 	})
 }

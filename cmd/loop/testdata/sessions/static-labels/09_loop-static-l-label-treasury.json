@@ -1,0 +1,73 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "l",
+      "--network=regtest"
+    ],
+    "env": {},
+    "version": "0.33.3-beta commit=v0.33.3-beta-64-g61e66756cf18d59da00a8da4209bd7534865058a commit_hash=61e66756cf18d59da00a8da4209bd7534865058a",
+    "duration": 12108417,
+    "clock_start_unix": 1784236626
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListUnspentDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListUnspentDepositsRequest",
+        "payload": {
+          "min_confs": 0,
+          "max_confs": 0
+        }
+      }
+    },
+    {
+      "time_ms": 11,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListUnspentDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListUnspentDepositsResponse",
+        "payload": {
+          "utxos": [
+            {
+              "static_address": "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
+              "amount_sat": "2500000",
+              "outpoint": "188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0",
+              "confirmations": "6",
+              "address_label": "treasury"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 12,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"utxos\": [\n",
+          "        {\n",
+          "            \"address_label\": \"treasury\",\n",
+          "            \"amount_sat\": \"2500000\",\n",
+          "            \"confirmations\": \"6\",\n",
+          "            \"outpoint\": \"188f55042e49cfa9942cc1f8e216c5e8679a7036e9ee6449d0fcc6c6b81561be:0\",\n",
+          "            \"static_address\": \"bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6\"\n",
+          "        }\n",
+          "    ]\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 12,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

@@ -57,7 +57,8 @@ SELECT
     sa.client_key_index  client_key_index,
     sa.pkscript          pkscript,
     sa.protocol_version  protocol_version,
-    sa.initiation_height initiation_height
+    sa.initiation_height initiation_height,
+    sa.label             AS label
 FROM
     deposits d
         LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
@@ -74,7 +75,8 @@ SELECT
     sa.client_key_index  client_key_index,
     sa.pkscript          pkscript,
     sa.protocol_version  protocol_version,
-    sa.initiation_height initiation_height
+    sa.initiation_height initiation_height,
+    sa.label             AS label
 FROM
     deposits d
         LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
@@ -93,7 +95,8 @@ SELECT
     sa.client_key_index  client_key_index,
     sa.pkscript          pkscript,
     sa.protocol_version  protocol_version,
-    sa.initiation_height initiation_height
+    sa.initiation_height initiation_height,
+    sa.label             AS label
 FROM
     deposits d
         LEFT JOIN static_addresses sa ON sa.id = d.static_address_id

@@ -42,7 +42,7 @@
           "   --max_swap_fee_sat uint          the maximum swap fee in satoshis. If set, the swap is rejected when the quoted fee exceeds this cap. The maximum allowed value is 10000000. On-chain fees for creating static deposits are unaffected. (default: 0)\n",
           "   --max_swap_fee_ppm uint          the maximum swap fee expressed in parts per million of the swap amount. If set together with --max_swap_fee_sat the tighter cap is used. (default: 0)\n",
           "   --last_hop string                the pubkey of the last hop to use for this swap\n",
-          "   --label string                   an optional label for this swap,limited to 500 characters. The label may not start with our reserved prefix: [reserved].\n",
+          "   --label string                   an optional label for this swap, limited to 500 characters. The label may not start with our reserved prefix: [reserved].\n",
           "   --route_hints string             a JSON array of route hints that can each be individually used to assist in reaching the invoice's destination\n",
           "   --private                        generates and passes routehints. Should be used if the connected node is only reachable via private channels (default: false)\n",
           "   --force                          Assumes yes during confirmation. Using this option will result in an immediate swap (default: false)\n",

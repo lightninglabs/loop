@@ -54,6 +54,7 @@ SELECT
     sa.pkscript          pkscript,
     sa.protocol_version  protocol_version,
     sa.initiation_height initiation_height,
+    sa.label             AS label,
     u.update_state,
     u.update_timestamp
 FROM
@@ -93,6 +94,7 @@ type DepositsForSwapHashRow struct {
 	Pkscript              []byte
 	ProtocolVersion       sql.NullInt32
 	InitiationHeight      sql.NullInt32
+	Label                 sql.NullString
 	UpdateState           sql.NullString
 	UpdateTimestamp       sql.NullTime
 }
@@ -128,6 +130,7 @@ func (q *Queries) DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]D
 			&i.Pkscript,
 			&i.ProtocolVersion,
 			&i.InitiationHeight,
+			&i.Label,
 			&i.UpdateState,
 			&i.UpdateTimestamp,
 		); err != nil {
@@ -244,7 +247,8 @@ SELECT
     change_address.client_key_index  change_client_key_index,
     change_address.pkscript          change_pkscript,
     change_address.protocol_version  change_protocol_version,
-    change_address.initiation_height change_initiation_height
+    change_address.initiation_height change_initiation_height,
+    change_address.label             change_label
 FROM
     swaps
         JOIN
@@ -301,6 +305,7 @@ type GetStaticAddressLoopInSwapRow struct {
 	ChangePkscript               []byte
 	ChangeProtocolVersion        sql.NullInt32
 	ChangeInitiationHeight       sql.NullInt32
+	ChangeLabel                  sql.NullString
 }
 
 func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byte) (GetStaticAddressLoopInSwapRow, error) {
@@ -349,6 +354,7 @@ func (q *Queries) GetStaticAddressLoopInSwap(ctx context.Context, swapHash []byt
 		&i.ChangePkscript,
 		&i.ChangeProtocolVersion,
 		&i.ChangeInitiationHeight,
+		&i.ChangeLabel,
 	)
 	return i, err
 }
@@ -365,7 +371,8 @@ SELECT
     change_address.client_key_index  change_client_key_index,
     change_address.pkscript          change_pkscript,
     change_address.protocol_version  change_protocol_version,
-    change_address.initiation_height change_initiation_height
+    change_address.initiation_height change_initiation_height,
+    change_address.label             change_label
 FROM
     swaps
         JOIN
@@ -434,6 +441,7 @@ type GetStaticAddressLoopInSwapsByStatesRow struct {
 	ChangePkscript               []byte
 	ChangeProtocolVersion        sql.NullInt32
 	ChangeInitiationHeight       sql.NullInt32
+	ChangeLabel                  sql.NullString
 }
 
 func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dollar_1 sql.NullString) ([]GetStaticAddressLoopInSwapsByStatesRow, error) {
@@ -488,6 +496,7 @@ func (q *Queries) GetStaticAddressLoopInSwapsByStates(ctx context.Context, dolla
 			&i.ChangePkscript,
 			&i.ChangeProtocolVersion,
 			&i.ChangeInitiationHeight,
+			&i.ChangeLabel,
 		); err != nil {
 			return nil, err
 		}

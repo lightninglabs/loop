@@ -25,10 +25,11 @@ import (
 )
 
 type generatedChangeTestAddressManager struct {
-	params *address.AddressParameters
-	known  map[string]*address.AddressParameters
-	err    error
-	calls  int
+	params         *address.AddressParameters
+	known          map[string]*address.AddressParameters
+	err            error
+	calls          int
+	spentPkScripts [][]byte
 }
 
 func (m *generatedChangeTestAddressManager) GetStaticAddressParameters(
@@ -44,9 +45,11 @@ func (m *generatedChangeTestAddressManager) GetStaticAddress(
 }
 
 func (m *generatedChangeTestAddressManager) NewChangeAddress(
-	context.Context) (*address.AddressParameters, error) {
+	_ context.Context, spentPkScripts [][]byte) (
+	*address.AddressParameters, error) {
 
 	m.calls++
+	m.spentPkScripts = spentPkScripts
 
 	return m.params, m.err
 }
@@ -201,6 +204,14 @@ func TestCreateFinalizedWithdrawalTxUsesGeneratedChange(t *testing.T) {
 			require.Equal(
 				t, testCase.wantAddressCalls, addressManager.calls,
 			)
+			if testCase.wantAddressCalls > 0 {
+				// The change label is derived from the spent
+				// deposits' addresses.
+				require.Equal(
+					t, [][]byte{depositPkScript},
+					addressManager.spentPkScripts,
+				)
+			}
 			require.Equal(t, testCase.wantServerCalls, server.calls)
 			if testCase.wantServerCalls == 0 {
 				require.Nil(t, server.request)

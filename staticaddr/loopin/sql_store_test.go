@@ -229,6 +229,7 @@ func TestLoopInChangeAddressRoundTrip(t *testing.T) {
 		PkScript:         []byte{0x51, 0x20, 0x04},
 		ProtocolVersion:  version.ProtocolVersion_V0,
 		InitiationHeight: 987,
+		Label:            "ops, treasury",
 	}
 	require.NoError(
 		t, addressStore.CreateStaticAddress(ctx, changeParams),
@@ -281,6 +282,7 @@ func TestLoopInChangeAddressRoundTrip(t *testing.T) {
 		require.Equal(
 			t, changeParams.InitiationHeight, got.InitiationHeight,
 		)
+		require.Equal(t, changeParams.Label, got.Label)
 	}
 
 	restoredSwap, err := loopInStore.GetLoopInByHash(ctx, swapHash)
@@ -397,6 +399,7 @@ func TestLoopInDepositAddressOwnershipRoundTrip(t *testing.T) {
 		PkScript:         []byte{0x51, 0x20, 0x02},
 		ProtocolVersion:  version.ProtocolVersion_V0,
 		InitiationHeight: 789,
+		Label:            "treasury",
 	}
 	require.NoError(t, addressStore.CreateStaticAddress(ctx, addressParams))
 
@@ -462,6 +465,7 @@ func TestLoopInDepositAddressOwnershipRoundTrip(t *testing.T) {
 		restoredParams.ProtocolVersion)
 	require.Equal(t, addressParams.InitiationHeight,
 		restoredParams.InitiationHeight)
+	require.Equal(t, addressParams.Label, restoredParams.Label)
 }
 
 // TestGetStaticAddressLoopInSwapsByStates tests that we can retrieve
