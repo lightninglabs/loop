@@ -21,7 +21,10 @@ env:
   # If you change this value, please change it in the following files as well:
   # /Dockerfile
   GO_VERSION: 1.27.3
-  LITD_ITEST_BRANCH: master
+  # Test the coordinated btcd v2 migration until LiT #1438 lands.
+  LITD_ITEST_REPOSITORY: hieblmi/lightning-terminal
+  # LiT #1438 plus the Go 1.27 SQL error-wrapping compatibility fix.
+  LITD_ITEST_BRANCH: aa01e4811135d227b38a41c0636545527ba95801
 
 jobs:
   ########################

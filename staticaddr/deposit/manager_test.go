@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -159,12 +160,12 @@ func (l *listUnspentOverride) ListUnspent(ctx context.Context,
 }
 
 func (m *mockAddressManager) GetTaprootAddress(clientPubkey,
-	serverPubkey *btcec.PublicKey, expiry int64) (*btcutil.AddressTaproot,
+	serverPubkey *btcec.PublicKey, expiry int64) (*btcaddr.AddressTaproot,
 	error) {
 
 	args := m.Called(clientPubkey, serverPubkey, expiry)
 
-	return args.Get(0).(*btcutil.AddressTaproot),
+	return args.Get(0).(*btcaddr.AddressTaproot),
 		args.Error(1)
 }
 

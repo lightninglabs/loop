@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"testing"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
@@ -231,7 +231,7 @@ func TestNewAddressAcceptsMaxCSVExpiry(t *testing.T) {
 // GenerateExpectedTaprootAddress generates the expected taproot address that
 // the predefined parameters are supposed to generate.
 func GenerateExpectedTaprootAddress(t *ManagerTestContext) (
-	*btcutil.AddressTaproot, error) {
+	*btcaddr.AddressTaproot, error) {
 
 	keyIndex := int32(0)
 	_, pubKey := test.CreateKey(keyIndex)
@@ -252,7 +252,7 @@ func GenerateExpectedTaprootAddress(t *ManagerTestContext) (
 		return nil, err
 	}
 
-	return btcutil.NewAddressTaproot(
+	return btcaddr.NewAddressTaproot(
 		schnorr.SerializePubKey(staticAddress.TaprootKey),
 		t.manager.cfg.ChainParams,
 	)
