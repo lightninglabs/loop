@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"testing"
 	"time"
 
@@ -95,25 +96,13 @@ func NewPostgresStore(cfg *PostgresConfig,
 		// Now that the database is open, populate the database with
 		// our set of schemas based on our embedded in-memory file
 		// system.
-		//
-		// First, we'll need to open up a new migration instance for
-		// our current target database: sqlite.
-		driver, err := postgres_migrate.WithInstance(
-			rawDb, &postgres_migrate.Config{},
-		)
-		if err != nil {
-			return nil, err
-		}
-
 		postgresFS := newReplacerFS(sqlSchemas, map[string]string{
 			"BLOB":                "BYTEA",
 			"INTEGER PRIMARY KEY": "SERIAL PRIMARY KEY",
 			txidSqlite:            txidPostgres,
 		})
 
-		err = applyMigrations(
-			postgresFS, driver, "sqlc/migrations", cfg.DBName,
-		)
+		err = applyPostgresMigrations(rawDb, postgresFS, cfg.DBName)
 		if err != nil {
 			return nil, err
 		}
@@ -141,6 +130,36 @@ func NewPostgresStore(cfg *PostgresConfig,
 		cfg:    cfg,
 		BaseDB: baseDB,
 	}, nil
+}
+
+// applyPostgresMigrations applies the migrations of the passed file system on a
+// connection of the database pool and hands the connection back once they are
+// done. A migration driver created by postgres_migrate.WithInstance keeps its
+// connection checked out until it is closed, which would also close the
+// database.
+func applyPostgresMigrations(db *sql.DB, migrationFS fs.FS,
+	dbName string) error {
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	// Open up a new migration instance for our current target database:
+	// postgres. It only holds session-level advisory locks while it
+	// migrates, so the connection can be reused afterwards.
+	driver, err := postgres_migrate.WithConnection(
+		ctx, conn, &postgres_migrate.Config{},
+	)
+	if err != nil {
+		return err
+	}
+
+	return applyMigrations(migrationFS, driver, "sqlc/migrations", dbName)
 }
 
 // NewTestPostgresDB is a helper function that creates a Postgres database for
