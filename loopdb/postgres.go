@@ -19,6 +19,11 @@ import (
 
 const (
 	dsnTemplate = "postgres://%v:%v@%v:%d/%v?sslmode=%v"
+
+	// defaultMaxConns is the maximum number of open connections to the
+	// database server if no limit is configured. lnd and tapd use the same
+	// default.
+	defaultMaxConns = 25
 )
 
 var (
@@ -38,7 +43,7 @@ type PostgresConfig struct {
 	User               string `long:"user" description:"Database user."`
 	Password           string `long:"password" description:"Database user's password."` //nolint:gosec
 	DBName             string `long:"dbname" description:"Database name to use."`
-	MaxOpenConnections int32  `long:"maxconnections" description:"Max open connections to keep alive to the database server."`
+	MaxOpenConnections int32  `long:"maxconnections" description:"Maximum number of open connections to the database server. Defaults to 25 if unset."`
 	RequireSSL         bool   `long:"requiressl" description:"Whether to require using SSL (mode: require) when connecting to the server."`
 }
 
@@ -93,6 +98,15 @@ func NewPostgresStore(cfg *PostgresConfig,
 	if err != nil {
 		return nil, err
 	}
+
+	// Bound the connection pool. Without a limit, concurrent queries open
+	// as many connections as they need, which can exceed the number of
+	// connections that the database server accepts.
+	maxConns := defaultMaxConns
+	if cfg.MaxOpenConnections > 0 {
+		maxConns = int(cfg.MaxOpenConnections)
+	}
+	rawDb.SetMaxOpenConns(maxConns)
 
 	if !cfg.SkipMigrations {
 		// Now that the database is open, populate the database with
