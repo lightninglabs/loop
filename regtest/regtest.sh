@@ -1,7 +1,12 @@
 #!/bin/bash
 
-# The absolute directory this file is located in.
-COMPOSE="docker-compose -p regtest"
+# Compose v2 is the docker compose plugin; older installations have the
+# standalone docker-compose instead.
+if docker compose version > /dev/null 2>&1; then
+  COMPOSE="docker compose -p regtest"
+else
+  COMPOSE="docker-compose -p regtest"
+fi
 
 function bitcoin() {
   docker exec -ti bitcoind bitcoin-cli -regtest "$@"

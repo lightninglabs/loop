@@ -16,7 +16,8 @@ start script that should make getting started very easy.
 To get this quick start demo environment operational, you need to have the
 following tools installed on your system:
  - Docker
- - `docker-compose`
+ - Docker Compose: the `docker compose` plugin, or the older standalone
+   `docker-compose`
  - `jq`
  - `git`
 
