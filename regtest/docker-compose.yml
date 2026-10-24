@@ -167,7 +167,9 @@ services:
       - "--lnd.tlspath=/root/.lnd/tls.cert"
 
   etcd:
-    image: bitnami/etcd:3.3.12
+    # Bitnami removed its versioned images from the bitnami organization on
+    # Docker Hub. bitnamilegacy keeps them, without further updates.
+    image: bitnamilegacy/etcd:3.3.12
     platform: linux/amd64
     container_name: etcd
     hostname: etcd
