@@ -1630,6 +1630,13 @@ func (s *mockStaticAddressLoopInStore) SwapHashesForDepositIDs(
 	return nil, nil
 }
 
+// BatchMapDepositsToSwapHashes satisfies the static loop-in store interface.
+func (s *mockStaticAddressLoopInStore) BatchMapDepositsToSwapHashes(
+	context.Context, map[deposit.ID]lntypes.Hash) error {
+
+	return nil
+}
+
 // TestRPCAutoloopReasonStaticLoopInNoCandidate verifies that the new planner
 // reason is exposed over rpc.
 func TestRPCAutoloopReasonStaticLoopInNoCandidate(t *testing.T) {
