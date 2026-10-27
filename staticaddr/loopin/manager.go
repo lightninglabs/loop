@@ -363,6 +363,15 @@ func (m *Manager) handleLoopInSweepReq(ctx context.Context,
 			swapHash)
 	}
 
+	// A legacy mapping may omit this swap from the input-based lookup below.
+	// Validate its original deposits even when no rows still map to it.
+	if loopIn.SelectedAmount > 0 {
+		if err := validateChangeDepositSnapshot(loopIn); err != nil {
+			return fmt.Errorf("cannot verify change for swap %x: %w",
+				swapHash[:], err)
+		}
+	}
+
 	// If the user selected an amount that is less than the total deposit
 	// amount we'll check that the server sends us the correct change amount
 	// back to our static address.
@@ -643,6 +652,15 @@ func (m *Manager) checkChange(ctx context.Context,
 			return err
 		}
 
+		// Deposit ownership can change after a retry. Never calculate a
+		// partial swap's change from an incomplete historical join.
+		if loopIn.SelectedAmount > 0 {
+			if err := validateChangeDepositSnapshot(loopIn); err != nil {
+				return fmt.Errorf("cannot verify change for swap %x: %w",
+					swapHash[:], err)
+			}
+		}
+
 		changeAmt := loopIn.ExpectedChangeAmount()
 		if changeAmt == 0 {
 			continue
@@ -693,6 +711,37 @@ func (m *Manager) checkChange(ctx context.Context,
 
 		return fmt.Errorf("couldn't find expected change of %v "+
 			"satoshis sent to static address", expected.Value)
+	}
+
+	return nil
+}
+
+// validateChangeDepositSnapshot requires every original input before its value
+// contributes to the expected change. Store-loaded deposits follow snapshot order.
+func validateChangeDepositSnapshot(loopIn *StaticAddressLoopIn) error {
+	if len(loopIn.DepositOutpoints) == 0 ||
+		len(loopIn.Deposits) != len(loopIn.DepositOutpoints) {
+
+		return fmt.Errorf("incomplete deposit snapshot: have %d of %d deposits",
+			len(loopIn.Deposits), len(loopIn.DepositOutpoints))
+	}
+
+	seen := make(map[wire.OutPoint]struct{}, len(loopIn.DepositOutpoints))
+	for i, encoded := range loopIn.DepositOutpoints {
+		outpoint, err := wire.NewOutPointFromString(encoded)
+		if err != nil {
+			return fmt.Errorf("invalid deposit snapshot outpoint %q: %w",
+				encoded, err)
+		}
+		if _, ok := seen[*outpoint]; ok {
+			return fmt.Errorf("duplicate deposit snapshot outpoint %v", outpoint)
+		}
+		seen[*outpoint] = struct{}{}
+
+		d := loopIn.Deposits[i]
+		if d == nil || d.OutPoint != *outpoint {
+			return fmt.Errorf("deposit snapshot mismatch at input %d", i)
+		}
 	}
 
 	return nil

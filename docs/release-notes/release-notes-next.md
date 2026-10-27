@@ -82,7 +82,8 @@
 
 * Recover static loop-in ownership using persisted swap order, keeping ambiguous
   deposits locked without preventing startup. Recovered owners retain every
-  restored input for release and finalization.
+  restored input for release and finalization. Cooperative change validation
+  rejects incomplete original-input metadata.
 
 * Finish risk-rejected static loop-ins once a confirmed funding conflict makes
   release safe, and retain HTLC monitoring after a reorg while deposits remain
