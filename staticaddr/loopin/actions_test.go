@@ -3647,11 +3647,22 @@ func (m *mockAddressManager) GetStaticAddressParameters(_ context.Context) (
 	return m.params, nil
 }
 
-// NewChangeAddress returns configured parameters for tests that need change.
-func (m *mockAddressManager) NewChangeAddress(_ context.Context) (
+// PrepareChangeAddress returns configured parameters for tests that need change.
+func (m *mockAddressManager) PrepareChangeAddress(_ context.Context) (
 	*address.AddressParameters, error) {
 
 	return m.params, nil
+}
+
+// ActivateChangeAddress supplies the ID needed to persist prepared change.
+func (m *mockAddressManager) ActivateChangeAddress(_ context.Context,
+	params *address.AddressParameters) error {
+
+	if params.ID == 0 {
+		params.ID = 1
+	}
+
+	return nil
 }
 
 // noopDepositManager is a stub DepositManager used to satisfy FSM config.

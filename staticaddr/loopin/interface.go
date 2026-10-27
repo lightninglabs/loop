@@ -39,9 +39,15 @@ type AddressManager interface {
 	GetStaticAddressParameters(ctx context.Context) (*script.Parameters,
 		error)
 
-	// NewChangeAddress derives and persists a fresh static address from the
-	// change key family for this operation's change output.
-	NewChangeAddress(ctx context.Context) (*address.AddressParameters, error)
+	// PrepareChangeAddress derives a fresh change key and script without
+	// persisting the address or importing a wallet watch.
+	PrepareChangeAddress(ctx context.Context) (*address.AddressParameters,
+		error)
+
+	// ActivateChangeAddress persists and imports the prepared address before
+	// the swap is stored or any spend signatures are released.
+	ActivateChangeAddress(ctx context.Context,
+		params *address.AddressParameters) error
 }
 
 // DepositManager handles the interaction of loop-ins with deposits.
