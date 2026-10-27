@@ -11,6 +11,9 @@
 
 #### Bug Fixes
 
+* Bound the static Loop In risk decision replay cache to prevent unbounded
+  memory growth from swap server notifications for unknown swaps.
+
 #### Maintenance
 - Update the LoopRPC requirement to the revision used by this release.
 
