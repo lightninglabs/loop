@@ -10,8 +10,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightninglabs/taproot-assets/taprpc/rfqrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -420,7 +420,7 @@ func TestQuoteRateConsistency(t *testing.T) {
 		{"over", "106", "100", 0, 0, false},
 		{"expensive prepay", "1", "1000", 0, 0, false},
 		{"expensive probe", "1000", "1", 0, 0, false},
-		{"invalid", "0", "100", 0, 0, false},
+		{invalidCase, "0", "100", 0, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := compareQuoteRates(

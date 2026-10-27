@@ -15,10 +15,11 @@ import (
 	"sync"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -196,7 +197,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 			s.config.TotalPaymentTimeout)
 	}
 
-	var sweepAddr btcutil.Address
+	var sweepAddr btcaddr.Address
 	var isExternalAddr bool
 	var err error
 	//nolint:lll
@@ -208,7 +209,7 @@ func (s *swapClientServer) LoopOut(ctx context.Context,
 	case in.Dest != "":
 		// Decode the client provided destination address for the loop
 		// out sweep.
-		sweepAddr, err = btcutil.DecodeAddress(
+		sweepAddr, err = btcaddr.DecodeAddress(
 			in.Dest, s.lnd.ChainParams,
 		)
 		if err != nil {
@@ -2472,7 +2473,7 @@ func staticAddressLoopInSwapInfoWithChainParams(
 // staticAddressLoopInHtlcAddress reconstructs the V2 P2WSH HTLC address from
 // the static-address loop-in's client and server keys.
 func staticAddressLoopInHtlcAddress(swp *loopin.StaticAddressLoopIn,
-	chainParams *chaincfg.Params) (btcutil.Address, error) {
+	chainParams *chaincfg.Params) (btcaddr.Address, error) {
 
 	if swp.ClientPubkey == nil {
 		return nil, errors.New("missing static address loop-in client HTLC key")
@@ -3073,7 +3074,7 @@ func validateLoopInRequest(htlcConfTarget int32, external bool,
 // loop amount is valid given the available balance.
 func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 	chainParams *chaincfg.Params, req *looprpc.LoopOutRequest,
-	sweepAddr btcutil.Address, maxParts uint32) (int32, error) {
+	sweepAddr btcaddr.Address, maxParts uint32) (int32, error) {
 
 	// Check that the provided destination address has the correct format
 	// for the active network.
@@ -3085,11 +3086,11 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 	// Check that the provided destination address is a supported
 	// address format.
 	switch sweepAddr.(type) {
-	case *btcutil.AddressTaproot,
-		*btcutil.AddressWitnessScriptHash,
-		*btcutil.AddressWitnessPubKeyHash,
-		*btcutil.AddressScriptHash,
-		*btcutil.AddressPubKeyHash:
+	case *btcaddr.AddressTaproot,
+		*btcaddr.AddressWitnessScriptHash,
+		*btcaddr.AddressWitnessPubKeyHash,
+		*btcaddr.AddressScriptHash,
+		*btcaddr.AddressPubKeyHash:
 
 	default:
 		return 0, errInvalidAddress

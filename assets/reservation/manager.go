@@ -326,10 +326,8 @@ func (m *Manager) create(ctx context.Context, request *managerRequest,
 		ID:        request.id,
 		ClientKey: *key,
 		State:     RequestQuote,
-		Terms: Terms{
-			AssetID: request.assetID,
-			Amount:  request.amount,
-		},
+		AssetID:   request.assetID,
+		Amount:    request.amount,
 		SkipProbe: request.skipProbe,
 	}
 	if err := m.cfg.FSM.Store.CreateReservation(ctx, r); err != nil {

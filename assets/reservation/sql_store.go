@@ -208,16 +208,14 @@ func toReservation(row sqlc.AssetReservation, state string,
 		return nil, err
 	}
 	r := &Reservation{
-		ID: ID(row.ReservationID),
-		Terms: Terms{
-			AssetID:               [32]byte(row.AssetID),
-			Amount:                uint64(row.Amount),
-			Fee:                   uint64(row.Fee),
-			CSVDelay:              uint32(row.CsvDelay),
-			RequiredConfirmations: uint32(row.RequiredConfirmations),
-			ExecutionDelta:        uint32(row.ExecutionDelta),
-			MinUsableBlocks:       uint32(row.MinUsableBlocks),
-		},
+		ID:                    ID(row.ReservationID),
+		AssetID:               [32]byte(row.AssetID),
+		Amount:                uint64(row.Amount),
+		Fee:                   uint64(row.Fee),
+		CSVDelay:              uint32(row.CsvDelay),
+		RequiredConfirmations: uint32(row.RequiredConfirmations),
+		ExecutionDelta:        uint32(row.ExecutionDelta),
+		MinUsableBlocks:       uint32(row.MinUsableBlocks),
 		ClientKey: keychain.KeyDescriptor{
 			PubKey: pubkey,
 			KeyLocator: keychain.KeyLocator{

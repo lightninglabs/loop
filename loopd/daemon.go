@@ -492,6 +492,15 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		}
 
 		infof("Using asset client with version %v", getInfo.Version)
+
+		// The shared kit checks its running backend before address
+		// creation and full-history proof acceptance. This warning is
+		// informational; no on-chain asset swap manager is wired here.
+		err = assets.CheckOnchainSwapTapdVersion(getInfo.Version)
+		if err != nil {
+			warnf("Shared asset kit address creation and proof "+
+				"acceptance require an upgraded tapd: %v", err)
+		}
 	}
 
 	// Create an instance of the loop client library.

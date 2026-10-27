@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/assets/payment"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -318,6 +318,7 @@ func (p *LndPayments) TrackProbe(ctx context.Context, r *Reservation,
 func receiveProbeUpdates(stream interface {
 	Recv() (*lnrpc.Payment, error)
 }, observe func(*lnrpc.Payment) error) error {
+
 	for {
 		update, err := stream.Recv()
 		if err != nil {

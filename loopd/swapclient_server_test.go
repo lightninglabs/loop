@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -43,15 +44,15 @@ import (
 )
 
 var (
-	testnetAddr, _ = btcutil.NewAddressScriptHash(
+	testnetAddr, _ = btcaddr.NewAddressScriptHash(
 		[]byte{123}, &chaincfg.TestNet3Params,
 	)
 
-	mainnetAddr, _ = btcutil.NewAddressScriptHash(
+	mainnetAddr, _ = btcaddr.NewAddressScriptHash(
 		[]byte{123}, &chaincfg.MainNetParams,
 	)
 
-	nodepubkeyAddr, _ = btcutil.DecodeAddress(
+	nodepubkeyAddr, _ = btcaddr.DecodeAddress(
 		mock_lnd.NewMockLnd().NodePubkey, &chaincfg.MainNetParams,
 	)
 
@@ -1385,7 +1386,7 @@ func newGenericStaticLoopInServer(t *testing.T) (*swapClientServer,
 }
 
 func newTestStaticAddressParams(t *testing.T) (*script.Parameters,
-	*btcutil.AddressTaproot) {
+	*btcaddr.AddressTaproot) {
 
 	t.Helper()
 
@@ -1402,7 +1403,7 @@ func newTestStaticAddressParams(t *testing.T) (*script.Parameters,
 	staticPkScript, err := staticAddress.StaticAddressScript()
 	require.NoError(t, err)
 
-	taprootAddress, err := btcutil.NewAddressTaproot(
+	taprootAddress, err := btcaddr.NewAddressTaproot(
 		schnorr.SerializePubKey(staticAddress.TaprootKey),
 		&chaincfg.TestNet3Params,
 	)
@@ -1685,7 +1686,7 @@ func TestValidateLoopOutRequest(t *testing.T) {
 		name            string
 		chain           chaincfg.Params
 		confTarget      int32
-		destAddr        btcutil.Address
+		destAddr        btcaddr.Address
 		label           string
 		channels        []lndclient.ChannelInfo
 		outgoingChanSet []uint64
@@ -2800,8 +2801,6 @@ func TestListUnspentDeposits(t *testing.T) {
 }
 
 type assetReservationRPCManager struct {
-	assetReservationManager
-
 	record        *assetreservation.Reservation
 	records       []*assetreservation.Reservation
 	state         fsm.StateType
@@ -3039,17 +3038,15 @@ func TestAssetReservationRPCSkipProbe(t *testing.T) {
 // testRPCAssetReservation supplies the saved terms exposed by the RPC handlers.
 func testRPCAssetReservation() *assetreservation.Reservation {
 	return &assetreservation.Reservation{
-		ID:    assetreservation.ID{1},
-		State: assetreservation.AwaitApproval,
-		Terms: assetreservation.Terms{
-			AssetID:               [32]byte{2},
-			Amount:                10000,
-			Fee:                   11,
-			CSVDelay:              1440,
-			RequiredConfirmations: 3,
-			ExecutionDelta:        90,
-			MinUsableBlocks:       1000,
-		},
+		ID:                    assetreservation.ID{1},
+		State:                 assetreservation.AwaitApproval,
+		AssetID:               [32]byte{2},
+		Amount:                10000,
+		Fee:                   11,
+		CSVDelay:              1440,
+		RequiredConfirmations: 3,
+		ExecutionDelta:        90,
+		MinUsableBlocks:       1000,
 		Quote: &swapserverrpc.AssetReservationQuote{
 			ReservationId:           []byte{1},
 			PrepayAmountMsat:        11000,

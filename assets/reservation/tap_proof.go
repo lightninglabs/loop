@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/lightninglabs/loop/assets/deposit"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
@@ -14,7 +13,7 @@ import (
 // ProofClient verifies proofs and records verified issuance metadata in the
 // client's local tapd. Recording issuance does not import spendable assets.
 type ProofClient interface {
-	deposit.ProofVerifier
+	ProofVerifier
 	InsertProof(context.Context, *universerpc.AssetProof,
 		...grpc.CallOption) (*universerpc.AssetProofResponse, error)
 }
@@ -23,12 +22,20 @@ type tapProofVerifier struct{ tap ProofClient }
 
 // NewTapProofVerifier wraps the local tapd client to register issuance metadata
 // before verifying a reservation's full proof history.
-func NewTapProofVerifier(tap ProofClient) deposit.ProofVerifier {
+func NewTapProofVerifier(tap ProofClient) ProofVerifier {
 	return tapProofVerifier{tap: tap}
 }
 
+// GetInfo passes through the version check before a new purchase begins.
+func (v tapProofVerifier) GetInfo(ctx context.Context,
+	req *taprpc.GetInfoRequest, opts ...grpc.CallOption) (
+	*taprpc.GetInfoResponse, error) {
+
+	return v.tap.GetInfo(ctx, req, opts...)
+}
+
 // VerifyProof supplies issuance metadata before full verification. Tapd
-// v0.8.3 needs that metadata to return a decoded transfer proof, including on
+// needs that metadata to return a decoded transfer proof, including on
 // a BTC-only client that has never received this asset. InsertProof verifies
 // the issuance against tapd's chain view and safely repeats after a restart.
 func (v tapProofVerifier) VerifyProof(ctx context.Context, req *taprpc.ProofFile,

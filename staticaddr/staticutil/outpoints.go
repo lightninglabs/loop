@@ -3,7 +3,7 @@ package staticutil
 import (
 	"fmt"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightningnetwork/lnd/lnrpc"
 )
 

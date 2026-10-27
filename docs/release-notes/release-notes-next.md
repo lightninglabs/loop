@@ -2,6 +2,10 @@
 
 #### New Features
 
+* Add shared asset swap contracts and native Tap SDK construction, proof,
+  signing, and recovery helpers in `swapkit/tapsdk`. The reservation purchase
+  uses the server-funded CSV contract.
+
 * Loop Out accepts bLIP 39 blinded invoices when the server supplies a separate
   payment address for swap RPC authentication. The address is persisted for
   restart and cooperative sweeping. Blinded payments use LND's routing without
@@ -72,6 +76,8 @@
   version and use the required non-interactive split-root layout.
 
 #### Maintenance
+
+* Align asset tooling with btcd v2, Taproot Assets v0.8.6, and Go 1.27.3.
 - Update the LoopRPC requirement to the revision used by this release.
 
 * Hold reservation prepays until funding is broadcast. Report funding refusals

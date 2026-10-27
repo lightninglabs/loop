@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/stretchr/testify/require"
@@ -79,7 +79,8 @@ func (n *confirmationNotifier) RegisterBlockEpochNtfn(context.Context) (
 // TestConfirmationObservation checks the exact output without wallet history.
 func TestConfirmationObservation(t *testing.T) {
 	const spentCase = "spent"
-	for _, name := range []string{"confirmed", "wrong", spentCase} {
+	const wrongCase = "wrong"
+	for _, name := range []string{"confirmed", wrongCase, spentCase} {
 		t.Run(name, func(t *testing.T) {
 			tx := wire.NewMsgTx(2)
 			tx.AddTxOut(wire.NewTxOut(1000, []byte{0x51}))
@@ -99,14 +100,14 @@ func TestConfirmationObservation(t *testing.T) {
 				},
 			}
 			output := *tx.TxOut[1]
-			if name == "wrong" {
+			if name == wrongCase {
 				output.Value++
 			}
 			status, err := reader.Observe(
 				t.Context(), outpoint, &output, 99,
 			)
 			switch name {
-			case "wrong":
+			case wrongCase:
 				require.ErrorIs(t, err, ErrInvalidReservation)
 
 			default:

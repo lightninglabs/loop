@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -47,7 +47,6 @@ func testPurchaseQuote(r *Reservation) *swapserverrpc.AssetReservationQuote {
 }
 
 func testApproval(t *testing.T, r *Reservation) *looprpc.ApproveAssetReservationRequest {
-
 	t.Helper()
 	hash, err := QuoteHash(r.Quote)
 	require.NoError(t, err)

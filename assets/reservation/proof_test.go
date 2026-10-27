@@ -7,10 +7,9 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/loop/assets/deposit"
-	"github.com/lightninglabs/loop/assets/htlc"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
+	assetpolicy "github.com/lightninglabs/loop/internal/assetpolicy"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -25,8 +24,18 @@ import (
 )
 
 type reservationProofVerifier struct {
-	valid bool
-	err   error
+	valid   bool
+	err     error
+	version string
+}
+
+const issuanceCall = "issuance"
+
+func (v reservationProofVerifier) GetInfo(context.Context,
+	*taprpc.GetInfoRequest, ...grpc.CallOption) (
+	*taprpc.GetInfoResponse, error) {
+
+	return &taprpc.GetInfoResponse{Version: v.version}, nil
 }
 
 type issuanceProofClient struct {
@@ -40,7 +49,7 @@ func (v *issuanceProofClient) InsertProof(_ context.Context,
 	req *universerpc.AssetProof, _ ...grpc.CallOption) (
 	*universerpc.AssetProofResponse, error) {
 
-	v.calls = append(v.calls, "issuance")
+	v.calls = append(v.calls, issuanceCall)
 	v.request = req
 	return &universerpc.AssetProofResponse{}, v.insertErr
 }
@@ -52,6 +61,13 @@ func (v *issuanceProofClient) VerifyProof(context.Context,
 	return &taprpc.VerifyProofResponse{
 		Valid: v.valid,
 	}, nil
+}
+
+func (v *issuanceProofClient) GetInfo(context.Context,
+	*taprpc.GetInfoRequest, ...grpc.CallOption) (
+	*taprpc.GetInfoResponse, error) {
+
+	return &taprpc.GetInfoResponse{Version: testTapdVersion}, nil
 }
 
 func (v reservationProofVerifier) VerifyProof(context.Context,
@@ -72,13 +88,13 @@ func TestReservationProofBinding(t *testing.T) {
 		Tag:  "reservation proof",
 		Type: asset.Normal,
 	}
-	kit, err := deposit.NewKit(server, client, keychain.KeyLocator{},
+	kit, err := NewKit(server, client, keychain.KeyLocator{},
 		genesis.ID(), 1440, &address.RegressionNetTap)
 	require.NoError(t, err)
-	opTrue, _, _, _, err := htlc.CreateOpTrueLeaf()
+	opTrue, err := kit.TapScriptKey()
 	require.NoError(t, err)
 	a, err := asset.New(genesis, 100, 0, 0,
-		asset.NewScriptKey(opTrue.PubKey), nil,
+		opTrue, nil,
 		asset.WithAssetVersion(asset.V1))
 	require.NoError(t, err)
 	version := commitment.TapCommitmentV2
@@ -120,7 +136,7 @@ func TestReservationProofBinding(t *testing.T) {
 	var raw bytes.Buffer
 	require.NoError(t, file.Encode(&raw))
 	verifier := reservationProofVerifier{
-		valid: true,
+		valid: true, version: testTapdVersion,
 	}
 	got, err := VerifyReservationProof(
 		t.Context(), verifier, kit, raw.Bytes(),
@@ -144,6 +160,11 @@ func TestReservationProofBinding(t *testing.T) {
 		t.Context(), verifier, kit, raw.Bytes(), p.OutPoint(), 100)
 	require.ErrorIs(t, err, verifier.err)
 	require.NotErrorIs(t, err, ErrInvalidReservation)
+	verifier.version = "v0.8.3"
+	_, err = VerifyReservationProof(
+		t.Context(), verifier, kit, raw.Bytes(), p.OutPoint(), 100)
+	require.ErrorIs(t, err, assetpolicy.ErrTapdVersionUnsupported)
+	verifier.version = testTapdVersion
 
 	for _, nested := range []bool{false, true} {
 		name := "outer ownership challenge"
@@ -181,7 +202,7 @@ func TestReservationProofBinding(t *testing.T) {
 			t.Context(), v, kit, raw.Bytes(),
 			p.OutPoint(), 100)
 		require.NoError(t, err)
-		require.Equal(t, []string{"issuance", "history"}, node.calls)
+		require.Equal(t, []string{issuanceCall, "history"}, node.calls)
 		id := genesis.ID()
 		require.Equal(t, id[:], node.request.Key.Id.GetAssetId())
 		require.Equal(t, universerpc.ProofType_PROOF_TYPE_ISSUANCE,
@@ -200,7 +221,7 @@ func TestReservationProofBinding(t *testing.T) {
 			t.Context(), v, kit, raw.Bytes(),
 			p.OutPoint(), 100)
 		require.ErrorIs(t, err, ErrInvalidReservation)
-		require.Equal(t, []string{"issuance", "history"}, node.calls)
+		require.Equal(t, []string{issuanceCall, "history"}, node.calls)
 
 		node.calls = nil
 		node.insertErr = errors.New("issuance rejected")
@@ -208,7 +229,7 @@ func TestReservationProofBinding(t *testing.T) {
 			t.Context(), v, kit, raw.Bytes(),
 			p.OutPoint(), 100)
 		require.ErrorIs(t, err, node.insertErr)
-		require.Equal(t, []string{"issuance"}, node.calls)
+		require.Equal(t, []string{issuanceCall}, node.calls)
 
 		node.calls = nil
 		_, err = VerifyReservationProof(

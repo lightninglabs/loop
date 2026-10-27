@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/assets/htlc"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -109,6 +109,7 @@ func (localProofVerifier) VerifyProof(ctx context.Context,
 // TestVerifyProofFileProvenance accepts real genesis and transfer proofs while
 // rejecting standalone and nested ownership histories before invoking tapd.
 func TestVerifyProofFileProvenance(t *testing.T) {
+	const ownershipChallenge = "ownership challenge"
 	fixture := newWitnessFixture(t)
 	transfer := newTransferProof(t, fixture)
 	for _, history := range [][]proof.Proof{
@@ -137,19 +138,14 @@ func TestVerifyProofFileProvenance(t *testing.T) {
 	)
 	require.ErrorContains(t, err, "invalid deposit proof file")
 
-	// This leaf has no issuance history and claims an inflated amount,
-	// yet the real verifier accepts its public OP_TRUE ownership challenge.
+	// This leaf has no issuance history and claims an inflated amount.
+	// Deposit validation must reject it before calling tapd, regardless
+	// of whether the current tapd verifier accepts ownership challenges.
 	ownership := *transfer
 	ownership.Asset = *transfer.Asset.Copy()
 	ownership.Asset.Amount++
 	ownership.ChallengeWitness = opTrueWitness(t)
 	reanchorDepositProof(t, fixture.kit, &ownership)
-	response, err := (localProofVerifier{}).VerifyProof(
-		t.Context(), encodeProofFile(t, ownership),
-	)
-	require.NoError(t, err)
-	require.True(t, response.Valid)
-
 	// Wrap a file in AdditionalInputs, including more than one level to
 	// ensure the restriction applies throughout the input tree.
 	wrap := func(history []proof.Proof) []proof.Proof {
@@ -171,12 +167,12 @@ func TestVerifyProofFileProvenance(t *testing.T) {
 		},
 		{
 			name: "ownership", history: []proof.Proof{ownership},
-			err: "ownership challenge",
+			err: ownershipChallenge,
 		},
 		{
 			name:    "empty challenge witness",
 			history: []proof.Proof{emptyChallenge},
-			err:     "ownership challenge",
+			err:     ownershipChallenge,
 		},
 		{
 			name: "missing genesis", history: []proof.Proof{*transfer},
@@ -185,17 +181,17 @@ func TestVerifyProofFileProvenance(t *testing.T) {
 		{
 			name:    "later ownership challenge",
 			history: []proof.Proof{*fixture.proof, ownership},
-			err:     "ownership challenge",
+			err:     ownershipChallenge,
 		},
 		{
 			name:    "ownership additional input",
 			history: wrap([]proof.Proof{ownership}),
-			err:     "ownership challenge",
+			err:     ownershipChallenge,
 		},
 		{
 			name:    "deep ownership additional input",
 			history: wrap(wrap([]proof.Proof{ownership})),
-			err:     "ownership challenge",
+			err:     ownershipChallenge,
 		},
 		{
 			name:    "additional input missing genesis",

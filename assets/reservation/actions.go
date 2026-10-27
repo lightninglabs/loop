@@ -265,9 +265,11 @@ func (f *FSM) observeProbe(ctx context.Context, update *lnrpc.Payment) error {
 	if update == nil || update.PaymentHash != ProbeHash(r.ID).String() {
 		return errors.New("invalid probe payment update")
 	}
-	if update.Status == lnrpc.Payment_FAILED {
+	switch update.Status {
+	case lnrpc.Payment_FAILED:
 		r.ProbeResult = proto.Clone(update).(*lnrpc.Payment)
-	} else if update.Status == lnrpc.Payment_IN_FLIGHT {
+
+	case lnrpc.Payment_IN_FLIGHT:
 		for _, attempt := range update.Htlcs {
 			if attempt == nil || attempt.Route == nil ||
 				attempt.Status != lnrpc.HTLCAttempt_IN_FLIGHT {
@@ -285,9 +287,11 @@ func (f *FSM) observeProbe(ctx context.Context, update *lnrpc.Payment) error {
 			r.Probes.MainFeeMsat = uint64(route.TotalFeesMsat)
 			r.Probes.FeeKnown = true
 		}
-	} else if update.Status == lnrpc.Payment_SUCCEEDED {
+
+	case lnrpc.Payment_SUCCEEDED:
 		return errors.New("probe unexpectedly settled")
-	} else {
+
+	default:
 		return nil
 	}
 	if !f.save(ctx) {

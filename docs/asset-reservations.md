@@ -1,9 +1,13 @@
 # Asset reservations
 
-Status: a fresh, local implementation on `hai/asset-reservations-stepwise`,
-based on the shared asset kit at `81e876cd`. Reservation purchase comes first;
-asset Loop Out will build on it. Purchases require `--experimental` and
+Status: an experimental implementation on `hai/asset-reservations-stepwise`.
+Reservation purchase comes first; asset Loop Out will build on it. Purchases
+require `--experimental` and
 `--tapd.activate` in standalone loopd. They are not production-ready yet.
+The reservation adapter uses the shared swapkit CSV contract with the server
+as sender. New purchases and delivered proofs require tapd v0.8.6 or newer.
+Address creation keeps the tweaked asset key's parity; proof lookup uses its
+x-only form. No earlier reservation encoding has shipped.
 
 The real-node reservation case passed on 2026-09-10 with tapd v0.8.3 and
 LND v0.21.3-beta: a BTC-only payer, both probes, purchase through Ready,
@@ -87,7 +91,7 @@ waits for explicit approval, tracks the exact prepay, and verifies delivery
 through narrow payment and wallet interfaces. Its SQLite-backed tests cover
 restarts, failed writes, cancellation racing settlement, proof rejection, and
 CSV expiry. The asset adapter now verifies full proofs through tapd and the
-shared deposit kit, and tracks confirmations and spends through LND. The
+shared reservation adapter, and tracks confirmations and spends through LND. The
 payment adapter validates both receiving RFQs and invoices, probes through
 LND's `SendPaymentV2`, and sends the approved BTC prepay. It saves the paying node
 and exact request before dispatch. Runtime wiring uses the existing LND
@@ -127,7 +131,7 @@ local keys. Like Instant Out, a ready client reservation is not known spent
 or expired; it is not a synchronous UTXO assertion.
 
 For assets new to the client, the adapter first submits the history's issuance
-proof to local tapd. Tapd verifies it and records the metadata needed by v0.8.3
+proof to local tapd. Tapd verifies it and records the metadata needed
 to return a decoded transfer proof. This does not import wallet assets. Full
 history verification is still required, and either RPC failure stops delivery.
 The local tapd credentials and universe policy must allow issuance insertion.
@@ -222,7 +226,7 @@ an existing reservation without buying another or charging prepay twice.
 Acceptance requires real-node purchase, proof verification, cancellation of
 unfundable held payments, restart without duplicate collection/publication,
 delayed confirmation, and automatic server CSV sweeping. Preserve existing
-asset and BTC flows. Reorg recovery, fee bumping, and tap-sdk migration remain
+asset and BTC flows. Reorg recovery and fee bumping remain
 separate work; keep this experimental feature disabled for production.
 
 The implemented purchase path bounds quote acquisition to one minute across

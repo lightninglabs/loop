@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/lightninglabs/loop/assets/deposit"
+	assetpolicy "github.com/lightninglabs/loop/internal/assetpolicy"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -23,7 +23,7 @@ type ReservationKeys interface {
 // It never asks the server whether the client can use its reservation.
 type WalletVerifier struct {
 	Keys      ReservationKeys
-	Tap       deposit.ProofVerifier
+	Tap       ProofVerifier
 	Chain     *ChainReader
 	Params    *address.ChainParams
 	KeyFamily int32
@@ -46,6 +46,9 @@ func (w *WalletVerifier) DeriveKey(ctx context.Context) (
 	*keychain.KeyDescriptor, error) {
 
 	if err := w.Validate(); err != nil {
+		return nil, err
+	}
+	if err := assetpolicy.RequireOnchainSwapTapd(ctx, w.Tap); err != nil {
 		return nil, err
 	}
 	return w.Keys.DeriveNextKey(ctx, w.KeyFamily)
@@ -79,7 +82,7 @@ func (w *WalletVerifier) Verify(ctx context.Context, r *Reservation,
 	if err != nil {
 		return result, ErrInvalidReservation
 	}
-	kit, err := deposit.NewKit(server, key.PubKey, key.KeyLocator,
+	kit, err := NewKit(server, key.PubKey, key.KeyLocator,
 		asset.ID(r.AssetID), r.CSVDelay, w.Params)
 	if err != nil {
 		return result, err

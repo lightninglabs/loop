@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -24,6 +24,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
+
+const invalidCase = "invalid"
 
 type failingStore struct {
 	Store
@@ -240,6 +242,7 @@ func (h *clientHarness) PrepareProbe(_ context.Context,
 
 func (h *clientHarness) SendProbe(_ context.Context, r *Reservation,
 	observe func(*lnrpc.Payment) error) error {
+
 	h.probeInvoices = append(h.probeInvoices, r.Quote.ProbeInvoice)
 	h.probeSucceeded = h.probeResult == ProbeSucceeded
 	h.probeCanceled = true
@@ -461,14 +464,15 @@ func TestClientFailedProbeCancelsPurchase(t *testing.T) {
 }
 
 func TestClientPurchaseWriteBoundaries(t *testing.T) {
-	for _, boundary := range []string{"approval", "payment"} {
+	const approvalBoundary = "approval"
+	for _, boundary := range []string{approvalBoundary, "payment"} {
 		for _, skipProbe := range []bool{false, true} {
 			name := fmt.Sprintf("%s/skip_probe=%t", boundary, skipProbe)
 			t.Run(name, func(t *testing.T) {
 				h := newClientHarness(t)
 				h.event(OnRecover, nil)
 				h.store.fail = func(r *Reservation) bool {
-					if boundary == "approval" {
+					if boundary == approvalBoundary {
 						return r.State == PayPrepay
 					}
 					return r.PaymentRequest != nil
@@ -483,7 +487,7 @@ func TestClientPurchaseWriteBoundaries(t *testing.T) {
 				require.Zero(t, h.sends)
 				h.store.fail = nil
 				h.restart()
-				if boundary == "approval" {
+				if boundary == approvalBoundary {
 					h.state(AwaitApproval)
 					require.Zero(t, h.record().MaxRouteFeeMsat)
 					require.False(t, h.record().SkipProbe)
@@ -716,11 +720,11 @@ func TestReadyVerifiesOncePerRestart(t *testing.T) {
 }
 
 func TestQuoteFailuresStopBeforePayment(t *testing.T) {
-	for _, failure := range []string{"invalid", "pending", "unavailable"} {
+	for _, failure := range []string{invalidCase, "pending", "unavailable"} {
 		t.Run(failure, func(t *testing.T) {
 			h := newClientHarness(t)
 			switch failure {
-			case "invalid":
+			case invalidCase:
 				h.quoteValidationErr = errors.New("invalid invoice")
 			case "pending":
 				h.quotePending = true
@@ -728,7 +732,7 @@ func TestQuoteFailuresStopBeforePayment(t *testing.T) {
 				h.quoteErr = errors.New("server offline")
 			}
 			h.event(OnRecover, nil)
-			if failure != "invalid" {
+			if failure != invalidCase {
 				h.state(RequestQuote)
 				h.cfg.Clock.(*clock.TestClock).SetTime(
 					h.record().CreatedAt.Add(time.Minute),
