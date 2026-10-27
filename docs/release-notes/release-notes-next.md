@@ -70,6 +70,10 @@
 
 #### Bug Fixes
 
+* Fractional static loop-ins defer change-address persistence and wallet imports
+  until the server response and local checks succeed, avoiding unused address
+  rows and watches on rejected requests or excessive fees.
+
 * Static Address key recovery uses lnd's coin type for each network, including
   coin type 1 on simnet, so synchronized startups consume no additional keys.
 
@@ -82,7 +86,8 @@
 
 * Recover static loop-in ownership using persisted swap order, keeping ambiguous
   deposits locked without preventing startup. Recovered owners retain every
-  restored input for release and finalization.
+  restored input for release and finalization. Cooperative change validation
+  rejects incomplete original-input metadata.
 
 * Finish risk-rejected static loop-ins once a confirmed funding conflict makes
   release safe, and retain HTLC monitoring after a reorg while deposits remain

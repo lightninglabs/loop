@@ -119,7 +119,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	if hasChange {
 		changeAmount := f.loopIn.ExpectedChangeAmount()
 		f.loopIn.ChangeAddressParams, err =
-			f.cfg.AddressManager.NewChangeAddress(ctx)
+			f.cfg.AddressManager.PrepareChangeAddress(ctx)
 		if err != nil {
 			err = fmt.Errorf("unable to create static address "+
 				"change output: %w", err)
@@ -377,6 +377,21 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		return returnError(fundingErr)
 	}
 	f.loopIn.FundingTxs = fundingTxs
+
+	// Only persist and import change after the server response and local
+	// checks succeed. Rejected attempts consume a key but create no change
+	// address row or wallet watch. Activation and swap persistence must both
+	// complete before the next state can release any spend signatures.
+	if hasChange {
+		err := f.cfg.AddressManager.ActivateChangeAddress(
+			ctx, f.loopIn.ChangeAddressParams,
+		)
+		if err != nil {
+			pushEmptySigs()
+			return returnError(fmt.Errorf("unable to activate static "+
+				"address change output: %w", err))
+		}
+	}
 
 	// Once the htlc tx is initiated, we store the loop-in in the database.
 	err = f.cfg.Store.CreateLoopIn(ctx, f.loopIn)
