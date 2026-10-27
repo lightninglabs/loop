@@ -1233,6 +1233,7 @@ func TestHandleLoopInSweepReqRejectsInvalidServerNonce(t *testing.T) {
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:         swapHash,
 		DepositOutpoints: []string{depOutpoint},
+		Deposits:         []*deposit.Deposit{dep},
 		SelectedAmount:   dep.Value,
 	}
 	loopIn.SetState(Succeeded)
@@ -1311,6 +1312,7 @@ func TestHandleLoopInSweepReqRejectsMalformedPrevouts(t *testing.T) {
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:         swapHash,
 		DepositOutpoints: []string{depOutpoint},
+		Deposits:         []*deposit.Deposit{dep},
 		SelectedAmount:   dep.Value,
 	}
 	loopIn.SetState(Succeeded)
@@ -1756,7 +1758,12 @@ func TestCheckChange(t *testing.T) {
 
 		var hash lntypes.Hash
 		hash[0] = h
+		outpoints := make([]string, len(deposits))
+		for i, d := range deposits {
+			outpoints[i] = d.String()
+		}
 		li := &StaticAddressLoopIn{
+			DepositOutpoints:    outpoints,
 			Deposits:            deposits,
 			SelectedAmount:      selected,
 			ChangeAddressParams: changeAddress,
