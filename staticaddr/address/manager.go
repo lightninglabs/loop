@@ -438,8 +438,7 @@ func (m *Manager) NewReceiveAddress(ctx context.Context) (*AddressParameters,
 }
 
 // NewChangeAddress derives, stores, imports and activates the next change
-// family static address. Swap and withdrawal code calls this before submitting
-// requests that require change.
+// family static address for callers requiring immediate activation.
 func (m *Manager) NewChangeAddress(ctx context.Context) (*AddressParameters,
 	error) {
 
@@ -449,6 +448,71 @@ func (m *Manager) NewChangeAddress(ctx context.Context) (*AddressParameters,
 	}
 
 	return m.newDerivedAddress(ctx, root, swap.StaticAddressChangeKeyFamily)
+}
+
+// PrepareChangeAddress derives the next change address without persisting or
+// importing it. It first ensures that the shared static address root exists.
+// The caller must activate these same parameters before signing a spend to it.
+func (m *Manager) PrepareChangeAddress(ctx context.Context) (*AddressParameters,
+	error) {
+
+	root, err := m.EnsureStaticAddressRoot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.lockIssuance(ctx); err != nil {
+		return nil, err
+	}
+	defer m.unlockIssuance()
+
+	key, err := m.cfg.WalletKit.DeriveNextKey(
+		ctx, swap.StaticAddressChangeKeyFamily,
+	)
+	if err != nil {
+		return nil, err
+	}
+	params, _, err := m.addressParametersFromKey(
+		key, root.ServerPubkey, root.Expiry, root.ProtocolVersion,
+	)
+	return params, err
+}
+
+// ActivateChangeAddress persists and imports prepared change parameters before
+// publishing them in the active address index. An import failure retains the
+// row and its ID so a retry or startup can repair the same address.
+func (m *Manager) ActivateChangeAddress(ctx context.Context,
+	params *AddressParameters) error {
+
+	if params == nil || params.ClientPubkey == nil ||
+		params.ServerPubkey == nil {
+
+		return fmt.Errorf("missing static address change parameters")
+	}
+	if params.KeyLocator.Family !=
+		keychain.KeyFamily(swap.StaticAddressChangeKeyFamily) {
+
+		return fmt.Errorf("invalid static address change key family %d",
+			params.KeyLocator.Family)
+	}
+	staticAddress, err := staticAddressFromParams(params)
+	if err != nil {
+		return err
+	}
+	pkScript, err := staticAddress.StaticAddressScript()
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(params.PkScript, pkScript) {
+		return fmt.Errorf("static address change script does not " +
+			"match its parameters")
+	}
+
+	if err := m.lockIssuance(ctx); err != nil {
+		return err
+	}
+	defer m.unlockIssuance()
+
+	return m.persistAndActivateAddress(ctx, params, staticAddress)
 }
 
 // newDerivedAddress derives a client key in the requested family and creates
@@ -473,23 +537,43 @@ func (m *Manager) newDerivedAddress(ctx context.Context, root *AddressParameters
 }
 
 // createAddressFromKey persists the address before importing its wallet watch
-// and adding it to the active script index.
+// and adding it to the active script index. The caller holds the issuance gate.
 func (m *Manager) createAddressFromKey(ctx context.Context,
 	clientPubKey *keychain.KeyDescriptor, serverPubKey *btcec.PublicKey,
 	expiry uint32, protocolVersion version.AddressProtocolVersion) (
 	*AddressParameters, error) {
+
+	params, staticAddress, err := m.addressParametersFromKey(
+		clientPubKey, serverPubKey, expiry, protocolVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	err = m.persistAndActivateAddress(ctx, params, staticAddress)
+	if err != nil {
+		return nil, err
+	}
+	return params, nil
+}
+
+// addressParametersFromKey constructs a static address without storing or
+// importing it. The caller holds the issuance gate.
+func (m *Manager) addressParametersFromKey(
+	clientPubKey *keychain.KeyDescriptor, serverPubKey *btcec.PublicKey,
+	expiry uint32, protocolVersion version.AddressProtocolVersion) (
+	*AddressParameters, *script.StaticAddress, error) {
 
 	staticAddress, err := script.NewStaticAddress(
 		input.MuSig2Version100RC2, int64(expiry), clientPubKey.PubKey,
 		serverPubKey,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	pkScript, err := staticAddress.StaticAddressScript()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	addrParams := &AddressParameters{
@@ -505,33 +589,45 @@ func (m *Manager) createAddressFromKey(ctx context.Context,
 		InitiationHeight: m.currentHeight.Load(),
 	}
 
-	// Persist the address before importing it into lnd. In particular, the
-	// server has already committed a root at this point, so retaining the
-	// client key locator lets a later retry repair a failed wallet import
-	// instead of deriving a different root key.
-	err = m.cfg.Store.CreateStaticAddress(ctx, addrParams)
+	return addrParams, staticAddress, nil
+}
+
+// persistAndActivateAddress keeps the durable address before importing its
+// wallet watch or publishing it. The caller holds the issuance gate.
+func (m *Manager) persistAndActivateAddress(ctx context.Context,
+	params *AddressParameters, staticAddress *script.StaticAddress) error {
+
+	// Retaining the client key locator lets a later retry repair a failed
+	// wallet import, including for a root already committed by the server.
+	if params.ID == 0 {
+		err := m.cfg.Store.CreateStaticAddress(ctx, params)
+		if err != nil {
+			return err
+		}
+	}
+	id, err := m.cfg.Store.GetStaticAddressID(ctx, params.PkScript)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if params.ID != 0 && params.ID != id {
+		return fmt.Errorf("static address ID does not match its script")
+	}
+	if params.ID == 0 {
+		params.ID = id
 	}
 
-	addrParams.ID, err = m.cfg.Store.GetStaticAddressID(ctx, pkScript)
-	if err != nil {
-		return nil, err
-	}
-
-	err = m.importAddressTapscript(ctx, staticAddress)
-	if err != nil {
-		return nil, err
+	if err := m.importAddressTapscript(ctx, staticAddress); err != nil {
+		return err
 	}
 
 	m.activeMu.Lock()
-	m.activeStaticAddresses[string(pkScript)] = addrParams
-	if m.rootAddress == nil || addrParams.ID < m.rootAddress.ID {
-		m.rootAddress = addrParams
+	m.activeStaticAddresses[string(params.PkScript)] = params
+	if m.rootAddress == nil || params.ID < m.rootAddress.ID {
+		m.rootAddress = params
 	}
 	m.activeMu.Unlock()
 
-	return addrParams, nil
+	return nil
 }
 
 // validateServerAddressParams validates the server-controlled static address

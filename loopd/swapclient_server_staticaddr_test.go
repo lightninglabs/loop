@@ -194,7 +194,9 @@ func newTestStaticAddressContext(t *testing.T, expiry uint32) (*address.Manager,
 	t.Helper()
 
 	mock := mock_lnd.NewMockLnd()
-	_, client := mock_lnd.CreateKey(1)
+	// The mock derives keys from one counter across families. Keep the root
+	// distinct from the receive keys at indexes zero and one used below.
+	_, client := mock_lnd.CreateKey(100)
 	_, server := mock_lnd.CreateKey(2)
 	staticAddress, err := script.NewStaticAddress(
 		input.MuSig2Version100RC2, int64(expiry), client, server,
