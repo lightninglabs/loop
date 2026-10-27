@@ -1,0 +1,16 @@
+DROP INDEX asset_reservations_outpoint_idx;
+ALTER TABLE asset_reservations DROP COLUMN deposit_proof;
+ALTER TABLE asset_reservations DROP COLUMN prepay_credit;
+ALTER TABLE asset_reservations DROP COLUMN confirmation_height;
+ALTER TABLE asset_reservations DROP COLUMN funding_outpoint;
+ALTER TABLE asset_reservations DROP COLUMN payment_result;
+ALTER TABLE asset_reservations DROP COLUMN payment_request;
+ALTER TABLE asset_reservations DROP COLUMN paying_node_key;
+ALTER TABLE asset_reservations DROP COLUMN payment_hash;
+ALTER TABLE asset_reservations DROP COLUMN main_route_fee_msat;
+ALTER TABLE asset_reservations DROP COLUMN prepay_route_fee_msat;
+ALTER TABLE asset_reservations DROP COLUMN probes_checked_at;
+ALTER TABLE asset_reservations DROP COLUMN main_probe;
+ALTER TABLE asset_reservations DROP COLUMN skip_probe;
+ALTER TABLE asset_reservations DROP COLUMN max_route_fee_msat;
+ALTER TABLE asset_reservations DROP COLUMN quote;

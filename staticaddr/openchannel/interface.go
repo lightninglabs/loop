@@ -3,8 +3,8 @@ package openchannel
 import (
 	"context"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/wire"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -33,7 +33,7 @@ type DepositManager interface {
 
 type WithdrawalManager interface {
 	CreateFinalizedWithdrawalTx(ctx context.Context,
-		deposits []*deposit.Deposit, withdrawalAddress btcutil.Address,
+		deposits []*deposit.Deposit, withdrawalAddress btcaddr.Address,
 		feeRate chainfee.SatPerKWeight,
 		selectedWithdrawalAmount int64,
 		commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error)

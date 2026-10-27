@@ -1,50 +1,56 @@
 module github.com/lightninglabs/loop
 
 require (
-	github.com/btcsuite/btcd v0.25.1-0.20260310163610-1c55c7c18179
-	github.com/btcsuite/btcd/btcec/v2 v2.3.6
-	github.com/btcsuite/btcd/btcutil v1.1.6
-	github.com/btcsuite/btcd/btcutil/psbt v1.1.10
-	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
+	github.com/btcsuite/btcd v0.26.0
+	github.com/btcsuite/btcd/address/v2 v2.0.0
+	github.com/btcsuite/btcd/btcec/v2 v2.5.0
+	github.com/btcsuite/btcd/btcutil/v2 v2.0.0
+	github.com/btcsuite/btcd/chaincfg/v2 v2.0.0
+	github.com/btcsuite/btcd/chainhash/v2 v2.0.0
+	github.com/btcsuite/btcd/psbt/v2 v2.0.0
+	github.com/btcsuite/btcd/txscript/v2 v2.0.0
+	github.com/btcsuite/btcd/wire/v2 v2.0.0
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b
-	github.com/btcsuite/btcwallet v0.16.18
-	github.com/btcsuite/btcwallet/wtxmgr v1.5.6
+	github.com/btcsuite/btcwallet v0.18.1-0.20261020132555-16cfb4483d1f
+	github.com/btcsuite/btcwallet/wtxmgr v1.6.1-0.20261020132555-16cfb4483d1f
 	github.com/davecgh/go-spew v1.1.1
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/golang-migrate/migrate/v4 v4.17.0
 	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/jackc/pgerrcode v0.0.0-20240316143900-6e2875d9b438
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/lib/pq v1.10.9
-	github.com/lightninglabs/aperture v0.4.0
-	github.com/lightninglabs/lndclient v0.21.0-2
+	github.com/lightninglabs/aperture v0.5.1-0.20260706191149-3c889b604a94
+	github.com/lightninglabs/lndclient v1.0.1-0.20260701212139-09c54915cfba
 	github.com/lightninglabs/loop/looprpc v1.0.17-0.20261021185954-333ed1efccdd
 	github.com/lightninglabs/loop/swapserverrpc v1.0.14
-	github.com/lightninglabs/taproot-assets v0.8.1
-	github.com/lightninglabs/taproot-assets/taprpc v1.2.0
-	github.com/lightningnetwork/lightning-onion v1.3.0
-	github.com/lightningnetwork/lnd v0.21.0-beta
+	github.com/lightninglabs/tap-sdk v0.3.0
+	github.com/lightninglabs/taproot-assets v0.8.6
+	github.com/lightninglabs/taproot-assets/taprpc v1.3.3
+	github.com/lightningnetwork/lightning-onion v1.4.0
+	github.com/lightningnetwork/lnd v0.21.3-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
-	github.com/lightningnetwork/lnd/queue v1.2.0
+	github.com/lightningnetwork/lnd/queue v1.2.1-0.20260925031608-f2963ce1fd19
 	github.com/lightningnetwork/lnd/ticker v1.1.1
-	github.com/lightningnetwork/lnd/tlv v1.3.2
-	github.com/lightningnetwork/lnd/tor v1.1.6
+	github.com/lightningnetwork/lnd/tlv v1.4.1
+	github.com/lightningnetwork/lnd/tor v1.2.0
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli-docs/v3 v3.1.1-0.20251020101624-bec07369b4f6
 	github.com/urfave/cli/v3 v3.4.1
 	go.etcd.io/bbolt v1.4.3
+	golang.org/x/crypto v0.55.0
 	golang.org/x/sync v0.22.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/macaroon-bakery.v2 v2.3.0
 	gopkg.in/macaroon.v2 v2.1.0
-	modernc.org/sqlite v1.34.5
+	modernc.org/sqlite v1.59.0
 )
 
 require (
@@ -59,18 +65,20 @@ require (
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/btcsuite/btcd/btcutil v1.2.0 // indirect
 	github.com/btcsuite/btcd/v2transport v1.0.1 // indirect
 	github.com/btcsuite/btclog v1.0.0 // indirect
-	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.5 // indirect
-	github.com/btcsuite/btcwallet/wallet/txrules v1.2.2 // indirect
-	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.5 // indirect
-	github.com/btcsuite/btcwallet/walletdb v1.5.1 // indirect
+	github.com/btcsuite/btcwallet/wallet/txauthor v1.4.0 // indirect
+	github.com/btcsuite/btcwallet/wallet/txrules v1.3.0 // indirect
+	github.com/btcsuite/btcwallet/wallet/txsizes v1.3.0 // indirect
+	github.com/btcsuite/btcwallet/walletdb v1.6.0 // indirect
 	github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd // indirect
 	github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792 // indirect
 	github.com/btcsuite/winsvc v1.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
@@ -79,13 +87,13 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
-	github.com/decred/dcrd/lru v1.1.2 // indirect
+	github.com/decred/dcrd/lru v1.1.3 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/cli v29.4.1+incompatible // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fergusstrange/embedded-postgres v1.25.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -94,7 +102,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -112,19 +120,20 @@ require (
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/jrick/logrotate v1.1.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/kcalvinalvin/anet v0.0.0-20251112173137-d8ddc1f6dbee // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
-	github.com/lightninglabs/neutrino v0.17.1 // indirect
-	github.com/lightninglabs/neutrino/cache v1.1.3 // indirect
+	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.4-0.20250610182311-2f1d46ef18b7 // indirect
+	github.com/lightninglabs/neutrino v0.18.0 // indirect
+	github.com/lightninglabs/neutrino/cache v1.1.4 // indirect
 	github.com/lightningnetwork/lnd/actor v0.0.6 // indirect
-	github.com/lightningnetwork/lnd/fn/v2 v2.0.9 // indirect
+	github.com/lightningnetwork/lnd/fn/v2 v2.0.10 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.5.1 // indirect
 	github.com/lightningnetwork/lnd/sqldb v1.0.13 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/miekg/dns v1.1.50 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/moby/api v1.54.2 // indirect
@@ -133,15 +142,16 @@ require (
 	github.com/moby/term v0.5.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/ncruces/go-strftime v0.1.9 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runc v1.3.6 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.14.0 // indirect
-	github.com/prometheus/client_model v0.3.0 // indirect
-	github.com/prometheus/common v0.37.0 // indirect
-	github.com/prometheus/procfs v0.8.0 // indirect
+	github.com/prometheus/client_golang v1.23.2 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/common v0.66.1 // indirect
+	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/fastuuid v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -167,7 +177,7 @@ require (
 	go.etcd.io/etcd/server/v3 v3.5.12 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel v1.45.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.45.0 // indirect
@@ -178,8 +188,8 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20250811191247-51f88131bc50 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
@@ -194,16 +204,16 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.55.3 // indirect
-	modernc.org/mathutil v1.6.0 // indirect
-	modernc.org/memory v1.8.0 // indirect
+	modernc.org/libc v1.75.7 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.12.1 // indirect
 	pgregory.net/rapid v1.2.0 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
 // We want to format raw bytes as hex instead of base64. The forked version
 // allows us to specify that as an option.
-replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display
+replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.36.11-hex-display
 
 // We are using a fork of the migration library with custom functionality that
 // did not yet make it into the upstream repository.
@@ -233,7 +243,43 @@ replace go.augendre.info/fatcontext => github.com/Crocmagnon/fatcontext v0.9.0
 
 go 1.27.3
 
-// This sqldb revision contains lnd's pgx v5 migration, which removes the
-// vulnerable legacy pgx v4/pgproto3 dependency chain. Remove this replacement
-// once the required lnd version includes an sqldb release with that migration.
-replace github.com/lightningnetwork/lnd/sqldb v1.0.13 => github.com/lightningnetwork/lnd/sqldb v1.0.13-0.20260514041430-e9b422f78581
+// Build the coordinated btcd v2 migration on the user-selected lnd master
+// revision 0d9c9d3afb27, including the released recovery and replay fixes.
+// Keep lnd's locally replaced submodules on that same immutable revision.
+// See https://github.com/lightninglabs/loop/pull/1199.
+replace github.com/lightningnetwork/lnd => github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/actor => github.com/lightningnetwork/lnd/actor v0.0.7-0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/cert => github.com/lightningnetwork/lnd/cert v1.2.3-0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/clock => github.com/lightningnetwork/lnd/clock v1.1.2-0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/fn/v2 => github.com/lightningnetwork/lnd/fn/v2 v2.0.11-0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/healthcheck => github.com/lightningnetwork/lnd/healthcheck v1.2.7-0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/kvdb => github.com/lightningnetwork/lnd/kvdb v1.6.2-0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/queue => github.com/lightningnetwork/lnd/queue v1.2.1-0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/sqldb => github.com/lightningnetwork/lnd/sqldb v1.0.13-0.20261021170048-0d9c9d3afb27
+
+replace github.com/lightningnetwork/lnd/ticker => github.com/lightningnetwork/lnd/ticker v1.1.2-0.20261021170048-0d9c9d3afb27
+
+// Use the btcd v2 migration of the fixed tapd v0.8.6 code until an upstream
+// v2-compatible release is available. Upstream lnd/tlv v1.4.1 is compatible
+// with this graph and supplies bounded decoding. Dependency replacements are
+// not inherited by consumers or independently built modules.
+// See https://github.com/lightninglabs/taproot-assets/pull/2366.
+replace github.com/lightninglabs/taproot-assets => github.com/hieblmi/taro v0.1.0-alpha.0.20261021113806-b47086671590
+
+// The SDK's historical v1 pseudo-version sorts above the official v0.21
+// releases. Select the released client matching the btcd v2 API explicitly.
+replace github.com/lightninglabs/lndclient => github.com/lightninglabs/lndclient v0.21.0-3
+
+// SDK v0.3.0 plus Sputnik's exact proof-outpoint and received-input signing
+// fixes, reviewed in https://github.com/lightninglabs/tap-sdk/pull/187 and
+// https://github.com/lightninglabs/tap-sdk/pull/188. The source also supports
+// authenticated caller-owned connections without narrowing SDK capabilities.
+replace github.com/lightninglabs/tap-sdk => github.com/hieblmi/tap-sdk v0.3.1-0.20261026133327-f03d1cbf5f1b

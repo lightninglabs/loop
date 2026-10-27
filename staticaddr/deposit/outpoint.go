@@ -3,7 +3,7 @@ package deposit
 import (
 	"fmt"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 // CheckDuplicates returns an error if the outpoint list contains duplicates.

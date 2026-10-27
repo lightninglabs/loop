@@ -5,11 +5,12 @@ import (
 	"context"
 	"fmt"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/input"
@@ -29,7 +30,7 @@ type Sweeper struct {
 func (s *Sweeper) CreateUnsignedTaprootKeySpendSweepTx(
 	ctx context.Context, lockTime uint32,
 	htlc *swap.Htlc, htlcOutpoint wire.OutPoint,
-	amount, fee btcutil.Amount, destAddr btcutil.Address) (
+	amount, fee btcutil.Amount, destAddr btcaddr.Address) (
 	*wire.MsgTx, []byte, []byte, error) {
 
 	if htlc.Version != swap.HtlcV3 {
@@ -96,7 +97,7 @@ func (s *Sweeper) CreateSweepTx(
 	keyBytes [33]byte, witnessScript []byte,
 	witnessFunc func(sig []byte) (wire.TxWitness, error),
 	amount, fee btcutil.Amount,
-	destAddr btcutil.Address) (*wire.MsgTx, error) {
+	destAddr btcaddr.Address) (*wire.MsgTx, error) {
 
 	// Compose tx.
 	sweepTx := wire.NewMsgTx(2)
@@ -180,7 +181,7 @@ func (s *Sweeper) CreateSweepTx(
 // estimator. It also takes a label used for logging.
 func (s *Sweeper) GetSweepFee(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator) error,
-	destAddr btcutil.Address, sweepConfTarget int32, label string) (
+	destAddr btcaddr.Address, sweepConfTarget int32, label string) (
 	btcutil.Amount, error) {
 
 	// Use GetSweepFeeDetails to get the fee and other unused data.
@@ -197,7 +198,7 @@ func (s *Sweeper) GetSweepFee(ctx context.Context,
 // rate and transaction weight.
 func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
 	addInputEstimate func(*input.TxWeightEstimator) error,
-	destAddr btcutil.Address, sweepConfTarget int32, label string) (
+	destAddr btcaddr.Address, sweepConfTarget int32, label string) (
 	btcutil.Amount, chainfee.SatPerKWeight, lntypes.WeightUnit, error) {
 
 	// Get fee estimate from lnd.
@@ -237,22 +238,22 @@ func (s *Sweeper) GetSweepFeeDetails(ctx context.Context,
 
 // AddOutputEstimate adds output to weight estimator.
 func AddOutputEstimate(weightEstimate *input.TxWeightEstimator,
-	destAddr btcutil.Address) error {
+	destAddr btcaddr.Address) error {
 
 	switch destAddr.(type) {
-	case *btcutil.AddressWitnessScriptHash:
+	case *btcaddr.AddressWitnessScriptHash:
 		weightEstimate.AddP2WSHOutput()
 
-	case *btcutil.AddressWitnessPubKeyHash:
+	case *btcaddr.AddressWitnessPubKeyHash:
 		weightEstimate.AddP2WKHOutput()
 
-	case *btcutil.AddressScriptHash:
+	case *btcaddr.AddressScriptHash:
 		weightEstimate.AddP2SHOutput()
 
-	case *btcutil.AddressPubKeyHash:
+	case *btcaddr.AddressPubKeyHash:
 		weightEstimate.AddP2PKHOutput()
 
-	case *btcutil.AddressTaproot:
+	case *btcaddr.AddressTaproot:
 		weightEstimate.AddP2TROutput()
 
 	default:

@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/looprpc";
+
+// AssetReservations controls local purchases. Buy requests a quote but does
+// not pay. Approve saves payment choices and consent before payment begins.
+// Unapproved quotes expire automatically; cancellation is internal recovery.
+service AssetReservations {
+    rpc Buy (BuyAssetReservationRequest) returns (ClientAssetReservation);
+    rpc Get (ClientAssetReservationSelector) returns (ClientAssetReservation);
+    rpc List (ListClientAssetReservationsRequest)
+        returns (ListClientAssetReservationsResponse);
+    rpc Approve (ApproveAssetReservationRequest)
+        returns (ClientAssetReservation);
+}
+
+message BuyAssetReservationRequest {
+    // A fresh, nonzero 32-byte ID makes lost-response retries idempotent.
+    bytes reservation_id = 1;
+    bytes asset_id = 2;
+    uint64 amount = 3;
+    // Skip automatic probing for a new purchase. Reusing an ID preserves its
+    // saved progress. Approve must still set skip_probe if no probe succeeded.
+    bool skip_probe = 4;
+}
+
+message ClientAssetReservationSelector {
+    oneof selector {
+        // Used before funding; funded purchases should use their outpoint.
+        bytes reservation_id = 1;
+        string outpoint = 2;
+    }
+}
+
+message ApproveAssetReservationRequest {
+    ClientAssetReservationSelector reservation = 1;
+    // Accept the exact displayed quote, including its asset fee and BTC
+    // prepay amount. Checked against the saved immutable quote.
+    bytes quote_hash = 2;
+    // Cap the prepay routing fee in millisatoshis. Saved on the reservation
+    // with the transition that authorizes payment.
+    uint64 max_route_fee_msat = 3;
+    // Accept the quote without a successful main probe. Saved with the same
+    // transition. Quote validation and payment limits still apply.
+    bool skip_probe = 4;
+}
+
+enum ReservationProbeResult {
+    RESERVATION_PROBE_NOT_RUN = 0;
+    RESERVATION_PROBE_SUCCEEDED = 1;
+    RESERVATION_PROBE_FAILED = 2;
+    RESERVATION_PROBE_TIMED_OUT = 3;
+    RESERVATION_PROBE_UNSUPPORTED = 4;
+}
+
+message ClientAssetReservation {
+    // Reservation identity and principal.
+    bytes reservation_id = 1;
+    string state = 2;
+    bytes asset_id = 3;
+    uint64 amount = 4;
+
+    // Quote identity, validity, and receiving edge.
+    bytes quote_hash = 16;
+    int64 quote_expires_at = 20;
+    bytes edge_key = 17;
+
+    // Asset charges and their Bitcoin payment amounts.
+    uint64 asset_fee = 5;
+    uint64 prepay_credit = 14;
+    uint64 prepay_amount_msat = 18;
+    // Indicative only; the later swap obtains a fresh execution quote.
+    uint64 estimated_main_amount_msat = 19;
+
+    // Probe choice, outcome, and observed routing fees.
+    // Whether probing is waived for this purchase. Before approval this is
+    // a preference only; background recovery preserves it.
+    bool skip_probe = 21;
+    // Result of probing the estimated main payment. Approval requires success
+    // unless skip_probe is set; success does not reserve future liquidity.
+    ReservationProbeResult main_probe = 22;
+    int64 probes_checked_at = 25;
+    // A live route was observed and the probe succeeded. False means the fee
+    // estimates are unavailable, rather than a zero-fee route.
+    bool probe_fee_known = 26;
+    uint64 main_probe_fee_msat = 24;
+    // Main routing fee scaled by prepay/main BTC amounts, rounded up to msat.
+    // Ignores fixed hop fees; available only when probe_fee_known is true.
+    uint64 estimated_prepay_route_fee_msat = 23;
+
+    // Funding output and verification.
+    string outpoint = 10;
+    bool proof_verified = 15;
+    uint32 required_confirmations = 7;
+    uint32 confirmation_height = 11;
+
+    // Lifetime terms paired with their resulting block heights.
+    uint32 csv_delay = 6;
+    uint32 timeout_height = 12;
+    uint32 execution_delta = 8;
+    uint32 execution_cutoff = 13;
+    uint32 min_usable_blocks = 9;
+}
+
+message ListClientAssetReservationsRequest {
+    uint32 limit = 1;
+    bytes after_id = 2;
+    // Match this client FSM state, using the exact name returned
+    // in ClientAssetReservation.state. Cannot be combined with active_only.
+    // Keep the filter unchanged while following next_after_id through pages.
+    string state = 3;
+    // Exclude terminal states; include Ready and NeedAdminAttention.
+    // When false and state is empty, return all reservations.
+    bool active_only = 4;
+}
+
+message ListClientAssetReservationsResponse {
+    repeated ClientAssetReservation reservations = 1;
+    bytes next_after_id = 2;
+}

@@ -20,6 +20,95 @@ Global flags:
 | `--help` (`-h`)        | show help                                                 | bool   |             `false`             |         *none*         |
 | `--version` (`-v`)     | print the version                                         | bool   |             `false`             |         *none*         |
 
+### `asset` command
+
+manage on-chain asset reservations.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] asset [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description | Type | Default value |
+|-----------------|-------------|------|:-------------:|
+| `--help` (`-h`) | show help   | bool |    `false`    |
+
+### `asset reservation` subcommand
+
+buy and inspect asset reservations.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] asset reservation [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description | Type | Default value |
+|-----------------|-------------|------|:-------------:|
+| `--help` (`-h`) | show help   | bool |    `false`    |
+
+### `asset reservation buy` subcommand
+
+quote, approve, and buy a reservation.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] asset reservation buy [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name                    | Description                                                  | Type   | Default value |
+|-------------------------|--------------------------------------------------------------|--------|:-------------:|
+| `--asset_id="…"`        |                                                              | string |
+| `--amt="…"`             | asset amount in indivisible units                            | uint   |      `0`      |
+| `--reservation_id="…"`  | resume this purchase ID                                      | string |
+| `--yes`                 | approve the displayed terms without a prompt                 | bool   |    `false`    |
+| `--skip_probe`          | skip probing and buy without a successful main-payment probe | bool   |    `false`    |
+| `--max_routing_fee="…"` | maximum prepay routing fee in satoshis                       | uint   |      `0`      |
+| `--help` (`-h`)         | show help                                                    | bool   |    `false`    |
+
+### `asset reservation list` subcommand
+
+list saved purchases.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] asset reservation list [COMMAND FLAGS] [ARGUMENTS...]
+```
+
+The following flags are supported:
+
+| Name            | Description                                                        | Type   | Default value |
+|-----------------|--------------------------------------------------------------------|--------|:-------------:|
+| `--help` (`-h`) | show help                                                          | bool   |    `false`    |
+| `--state="…"`   | filter by one client state (for example Ready)                     | string |
+| `--active_only` | exclude Canceled and Expired; include Ready and NeedAdminAttention | bool   |    `false`    |
+
+### `asset reservation get` subcommand
+
+show a reservation by outpoint.
+
+Usage:
+
+```bash
+$ loop [GLOBAL FLAGS] asset reservation get [COMMAND FLAGS] txid:vout
+```
+
+The following flags are supported:
+
+| Name                   | Description                        | Type   | Default value |
+|------------------------|------------------------------------|--------|:-------------:|
+| `--reservation_id="…"` | identify a purchase before funding | string |
+| `--help` (`-h`)        | show help                          | bool   |    `false`    |
+
 ### `out` command
 
 perform an off-chain to on-chain swap (looping out).
