@@ -15,6 +15,8 @@ import (
 )
 
 type Querier interface {
+	WorkflowQuerier
+
 	// CreateWithdrawal inserts a new withdrawal.
 	CreateWithdrawal(ctx context.Context,
 		arg sqlc.CreateWithdrawalParams) error
