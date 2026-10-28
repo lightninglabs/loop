@@ -2761,7 +2761,7 @@ func toClientDepositState(state fsm.StateType) looprpc.DepositState {
 	case deposit.Deposited:
 		return looprpc.DepositState_DEPOSITED
 
-	case deposit.Withdrawing:
+	case deposit.WithdrawalReserved, deposit.Withdrawing:
 		return looprpc.DepositState_WITHDRAWING
 
 	case deposit.Withdrawn:

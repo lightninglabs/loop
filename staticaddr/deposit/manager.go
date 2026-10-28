@@ -73,8 +73,9 @@ type ManagerConfig struct {
 //
 // Lock order: if both Manager.mu and a Deposit lock are needed, acquire
 // Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
-// Deposit lock. Multiple deposits must be locked with lockDeposits, which
-// canonicalizes lock order by outpoint.
+// Deposit lock. Runtime transitions acquire each FSM event gate before deposit
+// locks, in the order Manager.mu -> canonical event gates -> canonical deposit
+// locks. Multiple deposits must be locked with lockDeposits.
 type Manager struct {
 	cfg *ManagerConfig
 
@@ -666,6 +667,7 @@ func (m *Manager) updateDepositConfirmations(ctx context.Context,
 	for _, utxo := range utxos {
 		m.mu.Lock()
 		deposit, ok := m.deposits[utxo.OutPoint]
+		machine := m.activeDeposits[utxo.OutPoint]
 		m.mu.Unlock()
 		if !ok {
 			continue
@@ -674,6 +676,9 @@ func (m *Manager) updateDepositConfirmations(ctx context.Context,
 		err := func() error {
 			deposit.Lock()
 			defer deposit.Unlock()
+			if machine != nil && machine.withdrawalFenced {
+				return nil
+			}
 
 			// A positive confirmation count can only be converted into an
 			// absolute height when the wallet query was bracketed by the
@@ -764,7 +769,7 @@ func (m *Manager) syncActiveDeposits(ctx context.Context,
 				continue
 			}
 
-			if fsm == nil || fsm.deposit == nil {
+			if fsm == nil || fsm.deposit == nil || fsm.withdrawalFenced {
 				continue
 			}
 
@@ -863,7 +868,9 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 
 	var deposits []*Deposit
 	for _, fsm := range m.activeDeposits {
-		deposits = append(deposits, fsm.deposit)
+		if !fsm.withdrawalFenced {
+			deposits = append(deposits, fsm.deposit)
+		}
 	}
 
 	lockedDeposits := lockDeposits(deposits)
@@ -900,9 +907,15 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	_, deposits := m.toActiveDeposits(&outpoints)
+	stateMachines, deposits := m.toActiveDeposits(&outpoints)
 	if deposits == nil {
 		return nil, false
+	}
+
+	for _, machine := range stateMachines {
+		if machine.withdrawalFenced {
+			return nil, false
+		}
 	}
 
 	// If the targetState is empty we return all active deposits regardless
@@ -968,41 +981,52 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 		return fmt.Errorf("duplicate deposit outpoint: %w", err)
 	}
 
+	if _, ok := lockedEvents[event]; !ok {
+		return fmt.Errorf("unsupported manager deposit event %s", event)
+	}
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	stateMachines, activeDeposits := m.toActiveDeposits(&outpoints)
-	m.mu.Unlock()
-
 	if stateMachines == nil {
 		return fmt.Errorf("deposits not found in active deposits")
 	}
-
-	// The state machines update the manager's deposit objects without
-	// locking them for these events, so lock exactly those objects.
+	unlockEvents, err := lockFSMEvents(ctx, stateMachines)
+	if err != nil {
+		return err
+	}
+	defer unlockEvents()
 	lockedDeposits := lockDeposits(activeDeposits)
 	defer unlockDeposits(lockedDeposits)
-	for _, deposit := range activeDeposits {
+
+	// Validate the whole selection before applying any transition. A stale
+	// loop-in/channel request must not partially consume a withdrawal claim.
+	for i, deposit := range activeDeposits {
+		if stateMachines[i].withdrawalFenced {
+			return ErrWithdrawalReconciliationRequired
+		}
 		if deposit.isInFinalStateNoLock() {
-			return fmt.Errorf("deposit %v is no longer active in "+
-				"state %v", deposit.OutPoint,
-				deposit.getStateNoLock())
+			return fmt.Errorf("deposit %v is no longer active in state %v",
+				deposit.OutPoint, deposit.getStateNoLock())
+		}
+		if deposit.isInStateNoLock(expectedFinalState) {
+			continue
+		}
+		state := stateMachines[i].States[deposit.getStateNoLock()]
+		if _, ok := state.Transitions[event]; !ok {
+			return fmt.Errorf("deposit %v rejects event %s in state %s",
+				deposit.OutPoint, event, deposit.getStateNoLock())
 		}
 	}
-
 	for i, sm := range stateMachines {
 		if activeDeposits[i].isInStateNoLock(expectedFinalState) {
 			continue
 		}
-
-		err := sm.SendEvent(ctx, event, nil)
-		if err != nil {
+		if err := sm.StateMachine.SendEvent(ctx, event, nil); err != nil {
 			return err
 		}
-
-		err = sm.DefaultObserver.WaitForState(
-			ctx, DefaultTransitionTimeout, expectedFinalState,
-		)
-		if err != nil {
-			return err
+		if !activeDeposits[i].isInStateNoLock(expectedFinalState) {
+			return fmt.Errorf("deposit %v did not reach state %s",
+				activeDeposits[i].OutPoint, expectedFinalState)
 		}
 	}
 
@@ -1084,9 +1108,25 @@ func (m *Manager) GetVisibleDeposits(ctx context.Context) ([]*Deposit, error) {
 
 // UpdateDeposit overrides all fields of the deposit with given ID in the store.
 func (m *Manager) UpdateDeposit(ctx context.Context, d *Deposit) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	active, ok := m.deposits[d.OutPoint]
+	if !ok || active != d {
+		return errors.New("deposit update requires the manager's active object")
+	}
+	machine := m.activeDeposits[d.OutPoint]
+	if machine == nil {
+		return errors.New("deposit is inactive")
+	}
+	if err := machine.acquireEvent(ctx); err != nil {
+		return err
+	}
+	defer machine.releaseEvent()
 	d.Lock()
 	defer d.Unlock()
-
+	if machine.withdrawalFenced {
+		return ErrWithdrawalReconciliationRequired
+	}
 	return m.cfg.Store.UpdateDeposit(ctx, d)
 }
 
