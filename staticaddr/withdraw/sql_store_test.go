@@ -70,25 +70,14 @@ func TestSqlStore(t *testing.T) {
 
 	withdrawals, err := store.GetAllWithdrawals(ctxb)
 	require.NoError(t, err)
-	require.Len(t, withdrawals, 1)
-	require.NotEmpty(t, withdrawals[0].ID)
-	require.EqualValues(
-		t, d1.Value+d2.Value, withdrawals[0].TotalDepositAmount,
-	)
-	require.Len(t, withdrawals[0].Deposits, 2)
-	require.EqualValues(
-		t, d1.Value, withdrawals[0].Deposits[0].Value,
-	)
-	require.EqualValues(
-		t, d2.Value, withdrawals[0].Deposits[1].Value,
-	)
-	require.NotEmpty(t, withdrawals[0].InitiationTime)
+	require.Empty(t, withdrawals)
 
 	err = store.UpdateWithdrawal(
 		ctxb, []*deposit.Deposit{d1, d2}, withdrawalTx, 6, []byte{0x01},
 	)
 	require.NoError(t, err)
 
+	require.NoError(t, store.WorkflowStore().MigrateLegacy(ctxb))
 	withdrawals, err = store.GetAllWithdrawals(ctxb)
 	require.NoError(t, err)
 	require.Len(t, withdrawals, 1)

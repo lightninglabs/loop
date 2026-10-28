@@ -363,6 +363,56 @@ func workflowCandidate(data WorkflowData, txid string) *WorkflowAttempt {
 	return nil
 }
 
+func (m *Manager) workflowConfig(id string) fsmv2.Config[WorkflowData, workflowEvent] {
+	states := make(map[fsmv2.StateID]fsmv2.State[WorkflowData, workflowEvent])
+	for _, stateID := range []fsmv2.StateID{
+		WorkflowSigning, WorkflowPublishPending, WorkflowMonitoring,
+		WorkflowConfirming, WorkflowFinalizing, WorkflowSucceeded,
+		WorkflowFailed, WorkflowReconciliation,
+	} {
+		state := fsmv2.State[WorkflowData, workflowEvent]{
+			Validate: func(data WorkflowData) error {
+				return validateWorkflow(stateID, data)
+			},
+		}
+		if stateID == WorkflowSucceeded || stateID == WorkflowFailed {
+			state.Terminal = true
+		} else {
+			state.Enter = m.enterWorkflow
+			state.Restore = m.restoreWorkflow
+			state.Transitions = make(map[fsmv2.Event]fsmv2.Transition[WorkflowData, workflowEvent])
+		}
+		states[stateID] = state
+	}
+	add := func(from fsmv2.StateID, event fsmv2.Event, to fsmv2.StateID) {
+		states[from].Transitions[event] = fsmv2.Transition[WorkflowData, workflowEvent]{
+			To: to, Gate: workflowGate(event), Update: workflowUpdate(event),
+		}
+	}
+	add(WorkflowSigning, workflowSigned, WorkflowPublishPending)
+	add(WorkflowSigning, workflowAbort, WorkflowFailed)
+	add(WorkflowSigning, workflowResume, WorkflowMonitoring)
+	add(WorkflowPublishPending, workflowPublished, WorkflowMonitoring)
+	add(WorkflowMonitoring, workflowBump, WorkflowSigning)
+	add(WorkflowConfirming, workflowConfirmed, WorkflowFinalizing)
+	add(WorkflowFinalizing, workflowFinalize, WorkflowSucceeded)
+	add(WorkflowConfirming, workflowReorg, WorkflowMonitoring)
+	add(WorkflowFinalizing, workflowReorg, WorkflowMonitoring)
+	for _, state := range []fsmv2.StateID{
+		WorkflowSigning, WorkflowPublishPending, WorkflowMonitoring,
+		WorkflowReconciliation,
+	} {
+		add(state, workflowSpend, WorkflowConfirming)
+		add(state, workflowConflict, WorkflowReconciliation)
+	}
+	return fsmv2.Config[WorkflowData, workflowEvent]{
+		ID: id, Version: 1, Store: &ownedWorkflowStore{manager: m, inner: m.cfg.Store.WorkflowStore()},
+		DataCodec:  fsmv2.JSONCodec[WorkflowData](),
+		EventCodec: fsmv2.JSONCodec[workflowEvent](),
+		States:     states, MaxBytes: 4 << 20,
+	}
+}
+
 func workflowGate(event fsmv2.Event) fsmv2.Gate[WorkflowData, workflowEvent] {
 	return func(_ context.Context, view fsmv2.Snapshot[WorkflowData],
 		msg workflowEvent) error {

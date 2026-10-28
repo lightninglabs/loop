@@ -6,7 +6,6 @@ import (
 	"database/sql"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
@@ -71,7 +70,9 @@ func NewSqlStore(db BaseDB, depositStore deposit.Store) *SqlStore {
 	}
 }
 
-// CreateWithdrawal creates a static address withdrawal record in the database.
+// CreateWithdrawal writes the legacy schema for migration fixtures.
+//
+// Deprecated: new withdrawals must use WorkflowStore and durable intent.
 func (s *SqlStore) CreateWithdrawal(ctx context.Context,
 	deposits []*deposit.Deposit) error {
 
@@ -112,7 +113,8 @@ func (s *SqlStore) CreateWithdrawal(ctx context.Context,
 		})
 }
 
-// UpdateWithdrawal updates a withdrawal record with the transaction
+// Deprecated: new withdrawals must complete through WorkflowStore.
+// UpdateWithdrawal updates a legacy withdrawal record with the transaction
 // information, including the withdrawn amount, change amount, and
 // confirmation height. It is expected that the withdrawal has already been
 // created with CreateWithdrawal, and that the deposits slice contains the
@@ -171,53 +173,8 @@ func (s *SqlStore) UpdateWithdrawal(ctx context.Context,
 		})
 }
 
-// GetAllWithdrawals retrieves all static address withdrawals from the
-// database. It returns a slice of Withdrawal structs, each containing a list
-// of associated deposits.
-func (s *SqlStore) GetAllWithdrawals(ctx context.Context) ([]Withdrawal,
-	error) {
-
-	withdrawals, err := s.baseDB.GetAllWithdrawals(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]Withdrawal, 0, len(withdrawals))
-	for _, w := range withdrawals {
-		depositIDs, err := s.baseDB.GetWithdrawalDeposits(ctx,
-			w.WithdrawalID)
-
-		if err != nil {
-			return nil, err
-		}
-
-		deposits := make([]*deposit.Deposit, 0, len(depositIDs))
-		for _, dID := range depositIDs {
-			deposit, err := s.depositStore.GetDeposit(
-				ctx, deposit.ID(dID),
-			)
-			if err != nil {
-				return nil, err
-			}
-			deposits = append(deposits, deposit)
-		}
-
-		txID, err := chainhash.NewHashFromStr(w.WithdrawalTxID.String)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, Withdrawal{
-			ID:                 ID(w.WithdrawalID),
-			TxID:               *txID,
-			Deposits:           deposits,
-			TotalDepositAmount: btcutil.Amount(w.TotalDepositAmount),
-			WithdrawnAmount:    btcutil.Amount(w.WithdrawnAmount.Int64),
-			ChangeAmount:       btcutil.Amount(w.ChangeAmount.Int64),
-			InitiationTime:     w.InitiationTime,
-			ConfirmationHeight: w.ConfirmationHeight.Int64,
-		})
-	}
-
-	return result, nil
+// GetAllWithdrawals retrieves representable withdrawals from the v2 domain
+// store only. MigrateLegacy imports historical records during manager startup.
+func (s *SqlStore) GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error) {
+	return s.getWorkflowWithdrawals(ctx)
 }
