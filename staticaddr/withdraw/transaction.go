@@ -325,7 +325,7 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	for _, outpoint := range outpoints {
 		msgTx.AddTxIn(&wire.TxIn{
 			PreviousOutPoint: outpoint,
-			Sequence:         0,
+			Sequence:         wire.MaxTxInSequenceNum - 2,
 		})
 	}
 

@@ -14,7 +14,7 @@ const (
 	IdLength = 32
 )
 
-// ID is a unique identifier for a deposit.
+// ID is the stable identifier of a logical withdrawal across fee bumps.
 type ID [IdLength]byte
 
 // FromByteSlice creates a deposit id from a byte slice.
@@ -29,10 +29,10 @@ func (r *ID) FromByteSlice(b []byte) error {
 	return nil
 }
 
-// Withdrawal represents a finalized static address withdrawal record in the
-// database.
+// Withdrawal is the backward-compatible listing view of an authoritative
+// withdrawal workflow. The RPC message is unchanged.
 type Withdrawal struct {
-	// ID is the unique identifier of the deposit.
+	// ID is the unique identifier of the withdrawal.
 	ID ID
 
 	// TxID is the transaction ID of the withdrawal.
