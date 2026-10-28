@@ -703,6 +703,12 @@ func (m *Manager) handleNotification(ctx context.Context, ntfn *swapserverrpc.
 			ctx, swapHashBytes, true,
 			NotificationTypeStaticLoopInRiskAccepted,
 			func(swapHash lntypes.Hash, persisted bool) {
+				// Retain only the validated hash, without unknown
+				// protobuf fields or the original backing buffer.
+				riskAcceptedNtfn = &swapserverrpc.
+					ServerStaticLoopInRiskAcceptedNotification{
+					SwapHash: swapHash[:],
+				}
 				m.staticLoopInRiskAccepted[swapHash] =
 					riskAcceptedNtfn
 				m.staticLoopInRiskPersisted[swapHash] = persisted
@@ -731,6 +737,12 @@ func (m *Manager) handleNotification(ctx context.Context, ntfn *swapserverrpc.
 			ctx, swapHashBytes, false,
 			NotificationTypeStaticLoopInRiskRejected,
 			func(swapHash lntypes.Hash, persisted bool) {
+				// Retain only the validated hash, without unknown
+				// protobuf fields or the original backing buffer.
+				riskRejectedNtfn = &swapserverrpc.
+					ServerStaticLoopInRiskRejectedNotification{
+					SwapHash: swapHash[:],
+				}
 				m.staticLoopInRiskRejected[swapHash] =
 					riskRejectedNtfn
 				m.staticLoopInRiskPersisted[swapHash] = persisted
