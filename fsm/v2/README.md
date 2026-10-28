@@ -2,9 +2,10 @@
 
 `github.com/lightninglabs/loop/fsm/v2` is an opt-in foundation for swap state
 machines. It separates transition decisions, durable updates, external effects,
-and restart recovery. The existing `fsm` package and its consumers are unchanged.
-Adding this package does **not** fix the existing Instant Out or static-address
-Loop In flows; those need per-flow adoption and crash-boundary tests.
+and restart recovery. Static-address withdrawals are its first production
+consumer; see [their workflow and migration design](../../staticaddr/withdraw/README.md).
+Instant Out and static-address Loop In retain the legacy engine and require
+separate per-flow adoption and crash-boundary tests.
 
 ## Lessons from the existing implementation
 
@@ -167,9 +168,10 @@ and history when they can express and enforce the flow's durable obligations.
 If legacy data is unsupported, a required recovery artifact is missing, or the
 current store cannot enforce atomic revision comparison, make a flow-specific
 adoption decision. That may require explicit compatibility handling, additional
-domain fields, or a domain migration reviewed with the affected protocol. No
-production flow is adapted here, and no existing records are automatically moved
-or reinterpreted.
+domain fields, or a domain migration reviewed with the affected protocol. The
+withdrawal-specific adapter and reviewed legacy import implement this contract
+for withdrawals. Other flows remain unchanged; the engine itself never moves
+or reinterprets their records.
 
 The generic engine remains in `fsm/v2/fsm.go`, with no database or actor imports.
 Database schema versions and the FSM record's `Version` serve different purposes:

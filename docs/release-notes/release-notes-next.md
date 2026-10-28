@@ -16,6 +16,13 @@
 
 #### Bug Fixes
 
+* Make static-address withdrawals durable with an authoritative workflow,
+  atomic deposit ownership, signed transaction persistence before publication,
+  per-state restart recovery, and retained fee-bump attempts. Import legacy
+  withdrawals into a separate domain schema without changing the old tables;
+  ambiguous legacy data is quarantined. Existing withdrawal RPCs and the
+  listing response remain compatible, with listings read from the new store.
+
 #### Maintenance
 - Update the LoopRPC requirement to the revision used by this release.
 
