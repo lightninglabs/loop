@@ -668,6 +668,11 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		loopdb.NewTypedStore[withdraw.Querier](baseDb),
 		depositStore,
 	)
+	// Import before any deposit FSM is activated. Otherwise stale legacy
+	// Deposited state could trigger an expiry sweep before ownership is restored.
+	if err := withdrawalStore.WorkflowStore().MigrateLegacy(d.mainCtx); err != nil {
+		return fmt.Errorf("migrate static address withdrawals: %w", err)
+	}
 	withdrawalCfg := &withdraw.ManagerConfig{
 		StaticAddressServerClient: staticAddressClient,
 		AddressManager:            staticAddressManager,

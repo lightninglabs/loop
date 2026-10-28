@@ -40,8 +40,10 @@ WaitForExpirySweep
 WaitForExpirySweep --> Deposited: OnError
 WaitForExpirySweep --> Expired: OnExpirySwept
 WaitForExpirySweep --> PublishExpirySweep: OnRecover
+WithdrawalReserved
+WithdrawalReserved --> WithdrawalReserved: OnExpiry
+WithdrawalReserved --> WithdrawalReserved: OnRecover
 Withdrawing
-Withdrawing --> Deposited: OnError
 Withdrawing --> Withdrawing: OnExpiry
 Withdrawing --> Withdrawing: OnRecover
 Withdrawing --> Withdrawing: OnWithdrawInitiated

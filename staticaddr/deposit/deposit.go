@@ -62,7 +62,8 @@ type OnchainCost struct {
 //
 // Lock order: if both Manager.mu and a Deposit lock are needed, acquire
 // Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
-// Deposit lock.
+// Deposit lock. Manager-owned transitions also take the FSM event gate before
+// deposit locks, so expiry and withdrawal readback cannot use different machines.
 //
 // The state and ConfirmationHeight fields are mutable and protected by the
 // deposit lock.
