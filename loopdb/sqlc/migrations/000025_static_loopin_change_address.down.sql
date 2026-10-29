@@ -1,0 +1,1 @@
+ALTER TABLE static_address_swaps DROP COLUMN change_static_address_id;

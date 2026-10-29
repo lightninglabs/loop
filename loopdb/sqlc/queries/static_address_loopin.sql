@@ -10,7 +10,9 @@ INSERT INTO static_address_swaps (
     htlc_tx_fee_rate_sat_kw,
     htlc_timeout_sweep_tx_id,
     htlc_timeout_sweep_address,
-    fast
+    fast,
+    change_static_address_id,
+    funding_txs
 ) VALUES (
     $1,
     $2,
@@ -22,7 +24,9 @@ INSERT INTO static_address_swaps (
     $8,
     $9,
     $10,
-    $11
+    $11,
+    $12,
+    $13
 );
 
 -- name: UpdateStaticAddressLoopIn :exec
@@ -65,13 +69,24 @@ RETURNING id;
 SELECT
     swaps.*,
     static_address_swaps.*,
-    htlc_keys.*
+    htlc_keys.*,
+    change_address.client_pubkey     change_client_pubkey,
+    change_address.server_pubkey     change_server_pubkey,
+    change_address.expiry            change_expiry,
+    change_address.client_key_family change_client_key_family,
+    change_address.client_key_index  change_client_key_index,
+    change_address.pkscript          change_pkscript,
+    change_address.protocol_version  change_protocol_version,
+    change_address.initiation_height change_initiation_height
 FROM
     swaps
         JOIN
     static_address_swaps ON swaps.swap_hash = static_address_swaps.swap_hash
         JOIN
     htlc_keys ON swaps.swap_hash = htlc_keys.swap_hash
+        LEFT JOIN
+    static_addresses change_address
+        ON static_address_swaps.change_static_address_id = change_address.id
 WHERE
         swaps.swap_hash = $1;
 
@@ -79,13 +94,24 @@ WHERE
 SELECT
     swaps.*,
     static_address_swaps.*,
-    htlc_keys.*
+    htlc_keys.*,
+    change_address.client_pubkey     change_client_pubkey,
+    change_address.server_pubkey     change_server_pubkey,
+    change_address.expiry            change_expiry,
+    change_address.client_key_family change_client_key_family,
+    change_address.client_key_index  change_client_key_index,
+    change_address.pkscript          change_pkscript,
+    change_address.protocol_version  change_protocol_version,
+    change_address.initiation_height change_initiation_height
 FROM
     swaps
         JOIN
     static_address_swaps ON swaps.swap_hash = static_address_swaps.swap_hash
         JOIN
     htlc_keys ON swaps.swap_hash = htlc_keys.swap_hash
+        LEFT JOIN
+    static_addresses change_address
+        ON static_address_swaps.change_static_address_id = change_address.id
         JOIN
     static_address_swap_updates u ON swaps.swap_hash = u.swap_hash
         -- This subquery picks the latest update for each swap_hash by id, not
@@ -111,6 +137,28 @@ WHERE
     swap_hash = $1
 ORDER BY
     id ASC;
+
+-- name: GetPaidStaticAddressLoopInClaims :many
+-- Startup only needs ownership metadata for paid terminal swaps, without
+-- fetching each swap's deposit rows, keys and update history.
+SELECT
+    swaps.id AS swap_id,
+    s.swap_hash,
+    s.deposit_outpoints,
+    u.update_state
+FROM
+    static_address_swaps s
+        JOIN
+    swaps ON swaps.swap_hash = s.swap_hash
+        JOIN
+    static_address_swap_updates u ON u.id = (
+        SELECT MAX(id)
+        FROM static_address_swap_updates
+        WHERE swap_hash = s.swap_hash
+    )
+WHERE
+    swaps.id > $1 AND
+    u.update_state IN ('Succeeded', 'SucceededTransitioningFailed');
 
 -- name: IsStored :one
 SELECT EXISTS (
@@ -152,10 +200,19 @@ WHERE
 -- name: DepositsForSwapHash :many
 SELECT
     d.*,
+    sa.client_pubkey     client_pubkey,
+    sa.server_pubkey     server_pubkey,
+    sa.expiry            expiry,
+    sa.client_key_family client_key_family,
+    sa.client_key_index  client_key_index,
+    sa.pkscript          pkscript,
+    sa.protocol_version  protocol_version,
+    sa.initiation_height initiation_height,
     u.update_state,
     u.update_timestamp
 FROM
     deposits d
+        LEFT JOIN static_addresses sa ON sa.id = d.static_address_id
         LEFT JOIN
     deposit_updates u ON u.id = (
         SELECT id
@@ -166,5 +223,3 @@ FROM
     )
 WHERE
     d.swap_hash = $1;
-
-

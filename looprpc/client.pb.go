@@ -5292,11 +5292,9 @@ func (x *NewStaticAddressRequest) GetClientKey() []byte {
 
 type NewStaticAddressResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	//
-	//The taproot static address.
+	// The newly derived taproot static address.
 	Address string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
-	//
-	//The CSV expiry of the static address.
+	// The CSV expiry of the static address in blocks.
 	Expiry        uint32 `protobuf:"varint,2,opt,name=expiry,proto3" json:"expiry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5976,10 +5974,15 @@ func (*StaticAddressSummaryRequest) Descriptor() ([]byte, []int) {
 type StaticAddressSummaryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	//
-	//The static address of the client.
+	//Deprecated: The legacy/root static address anchoring derived addresses.
+	//New deposits should use fresh addresses returned by NewStaticAddress; this
+	//address must not be treated as the current receive address.
+	//
+	// Deprecated: Marked as deprecated in client.proto.
 	StaticAddress string `protobuf:"bytes,1,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
 	//
-	//The CSV expiry of the static address.
+	//The shared CSV delay in blocks inherited by all static addresses derived
+	//from the legacy/root address.
 	RelativeExpiryBlocks uint64 `protobuf:"varint,2,opt,name=relative_expiry_blocks,json=relativeExpiryBlocks,proto3" json:"relative_expiry_blocks,omitempty"`
 	//
 	//The total number of deposits.
@@ -6039,6 +6042,7 @@ func (*StaticAddressSummaryResponse) Descriptor() ([]byte, []int) {
 	return file_client_proto_rawDescGZIP(), []int{69}
 }
 
+// Deprecated: Marked as deprecated in client.proto.
 func (x *StaticAddressSummaryResponse) GetStaticAddress() string {
 	if x != nil {
 		return x.StaticAddress
@@ -6156,8 +6160,11 @@ type Deposit struct {
 	//hasn't been determined yet. The cost of a single deposit is never
 	//partial.
 	CostOnchainStatus OnchainCostStatus `protobuf:"varint,9,opt,name=cost_onchain_status,json=costOnchainStatus,proto3,enum=looprpc.OnchainCostStatus" json:"cost_onchain_status,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	//
+	//The static address that the deposit was sent to.
+	StaticAddress string `protobuf:"bytes,10,opt,name=static_address,json=staticAddress,proto3" json:"static_address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Deposit) Reset() {
@@ -6251,6 +6258,13 @@ func (x *Deposit) GetCostOnchainStatus() OnchainCostStatus {
 		return x.CostOnchainStatus
 	}
 	return OnchainCostStatus_ONCHAIN_COST_STATUS_UNKNOWN
+}
+
+func (x *Deposit) GetStaticAddress() string {
+	if x != nil {
+		return x.StaticAddress
+	}
+	return ""
 }
 
 type StaticAddressWithdrawal struct {
@@ -7653,13 +7667,13 @@ const file_client_proto_rawDesc = "" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x16\n" +
 	"\x06amount\x18\x03 \x01(\x04R\x06amount\x12'\n" +
 	"\x0freservation_ids\x18\x04 \x03(\fR\x0ereservationIds\x12\x1e\n" +
-	"\vsweep_tx_id\x18\x05 \x01(\tR\tsweepTxId\"8\n" +
+	"\vsweep_tx_id\x18\x05 \x01(\tR\tsweepTxId\"R\n" +
 	"\x17NewStaticAddressRequest\x12\x1d\n" +
 	"\n" +
-	"client_key\x18\x01 \x01(\fR\tclientKey\"L\n" +
+	"client_key\x18\x01 \x01(\fR\tclientKeyJ\x04\b\x02\x10\x03R\x12send_coins_request\"g\n" +
 	"\x18NewStaticAddressResponse\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x16\n" +
-	"\x06expiry\x18\x02 \x01(\rR\x06expiry\"V\n" +
+	"\x06expiry\x18\x02 \x01(\rR\x06expiryJ\x04\b\x03\x10\x04R\x13send_coins_response\"V\n" +
 	"\x1aListUnspentDepositsRequest\x12\x1b\n" +
 	"\tmin_confs\x18\x01 \x01(\x05R\bminConfs\x12\x1b\n" +
 	"\tmax_confs\x18\x02 \x01(\x05R\bmaxConfs\"B\n" +
@@ -7691,9 +7705,9 @@ const file_client_proto_rawDesc = "" +
 	"\x1dListStaticAddressSwapsRequest\"X\n" +
 	"\x1eListStaticAddressSwapsResponse\x126\n" +
 	"\x05swaps\x18\x01 \x03(\v2 .looprpc.StaticAddressLoopInSwapR\x05swaps\"\x1d\n" +
-	"\x1bStaticAddressSummaryRequest\"\xca\x04\n" +
-	"\x1cStaticAddressSummaryResponse\x12%\n" +
-	"\x0estatic_address\x18\x01 \x01(\tR\rstaticAddress\x124\n" +
+	"\x1bStaticAddressSummaryRequest\"\xce\x04\n" +
+	"\x1cStaticAddressSummaryResponse\x12)\n" +
+	"\x0estatic_address\x18\x01 \x01(\tB\x02\x18\x01R\rstaticAddress\x124\n" +
 	"\x16relative_expiry_blocks\x18\x02 \x01(\x04R\x14relativeExpiryBlocks\x12,\n" +
 	"\x12total_num_deposits\x18\x03 \x01(\rR\x10totalNumDeposits\x12<\n" +
 	"\x1avalue_unconfirmed_satoshis\x18\x04 \x01(\x03R\x18valueUnconfirmedSatoshis\x128\n" +
@@ -7703,7 +7717,7 @@ const file_client_proto_rawDesc = "" +
 	"\x18value_looped_in_satoshis\x18\b \x01(\x03R\x15valueLoopedInSatoshis\x12J\n" +
 	"\"value_htlc_timeout_sweeps_satoshis\x18\t \x01(\x03R\x1evalueHtlcTimeoutSweepsSatoshis\x122\n" +
 	"\x15value_channels_opened\x18\n" +
-	" \x01(\x03R\x13valueChannelsOpened\"\xe5\x02\n" +
+	" \x01(\x03R\x13valueChannelsOpened\"\x8c\x03\n" +
 	"\aDeposit\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12+\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x15.looprpc.DepositStateR\x05state\x12\x1a\n" +
@@ -7713,7 +7727,9 @@ const file_client_proto_rawDesc = "" +
 	"\x13blocks_until_expiry\x18\x06 \x01(\x03R\x11blocksUntilExpiry\x12\x1b\n" +
 	"\tswap_hash\x18\a \x01(\fR\bswapHash\x12!\n" +
 	"\fcost_onchain\x18\b \x01(\x03R\vcostOnchain\x12J\n" +
-	"\x13cost_onchain_status\x18\t \x01(\x0e2\x1a.looprpc.OnchainCostStatusR\x11costOnchainStatus\"\xc2\x02\n" +
+	"\x13cost_onchain_status\x18\t \x01(\x0e2\x1a.looprpc.OnchainCostStatusR\x11costOnchainStatus\x12%\n" +
+	"\x0estatic_address\x18\n" +
+	" \x01(\tR\rstaticAddress\"\xc2\x02\n" +
 	"\x17StaticAddressWithdrawal\x12\x13\n" +
 	"\x05tx_id\x18\x01 \x01(\tR\x04txId\x12,\n" +
 	"\bdeposits\x18\x02 \x03(\v2\x10.looprpc.DepositR\bdeposits\x12A\n" +

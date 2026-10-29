@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
@@ -43,6 +44,13 @@ func NewSqlStore(db *loopdb.BaseDB) *SqlStore {
 
 // CreateDeposit creates a static address deposit record in the database.
 func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
+	if deposit.AddressParams == nil {
+		return fmt.Errorf("static address parameters must be set")
+	}
+	if deposit.AddressParams.ID <= 0 {
+		return fmt.Errorf("static address ID must be set")
+	}
+
 	createArgs := sqlc.CreateDepositParams{
 		DepositID:            deposit.ID[:],
 		TxHash:               deposit.Hash[:],
@@ -50,6 +58,10 @@ func (s *SqlStore) CreateDeposit(ctx context.Context, deposit *Deposit) error {
 		Amount:               int64(deposit.Value),
 		ConfirmationHeight:   deposit.GetConfirmationHeight(),
 		TimeoutSweepPkScript: deposit.TimeOutSweepPkScript,
+		StaticAddressID: sql.NullInt32{
+			Int32: deposit.AddressParams.ID,
+			Valid: true,
+		},
 	}
 
 	// Store the on-chain cost if it was determined when the deposit was
@@ -161,7 +173,9 @@ func (s *SqlStore) GetDeposit(ctx context.Context, id ID) (*Deposit, error) {
 				return err
 			}
 
-			deposit, err = ToDeposit(row, latestUpdate)
+			deposit, err = ToDeposit(
+				sqlc.AllDepositsRow(row), latestUpdate,
+			)
 			if err != nil {
 				return err
 			}
@@ -207,7 +221,9 @@ func (s *SqlStore) DepositForOutpoint(ctx context.Context,
 				return err
 			}
 
-			deposit, err = ToDeposit(row, latestUpdate)
+			deposit, err = ToDeposit(
+				sqlc.AllDepositsRow(row), latestUpdate,
+			)
 			if err != nil {
 				return err
 			}
@@ -259,8 +275,9 @@ func (s *SqlStore) AllDeposits(ctx context.Context) ([]*Deposit, error) {
 	return allDeposits, nil
 }
 
-// ToDeposit converts an sql deposit to a deposit.
-func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
+// ToDeposit converts an sql deposit row with joined static address metadata to
+// a deposit.
+func ToDeposit(row sqlc.AllDepositsRow, lastUpdate sqlc.DepositUpdate) (*Deposit,
 	error) {
 
 	id := ID{}
@@ -311,8 +328,12 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 	}
 
 	onchainCost := toOnchainCost(row.OnchainCost, row.OnchainCostKnown)
+	if !row.StaticAddressID.Valid || row.StaticAddressID.Int32 <= 0 {
+		return nil, fmt.Errorf("deposit %x missing static address ID",
+			row.DepositID)
+	}
 
-	return &Deposit{
+	deposit := &Deposit{
 		ID:          id,
 		OnchainCost: onchainCost,
 		state:       fsm.StateType(lastUpdate.UpdateState),
@@ -326,7 +347,24 @@ func ToDeposit(row sqlc.Deposit, lastUpdate sqlc.DepositUpdate) (*Deposit,
 		ExpirySweepTxid:       expirySweepTxid,
 		SwapHash:              swapHash,
 		FinalizedWithdrawalTx: finalizedWithdrawalTx,
-	}, nil
+	}
+
+	deposit.AddressParams, err = address.ParametersFromRow(sqlc.StaticAddress{
+		ID:               row.StaticAddressID.Int32,
+		ClientPubkey:     row.ClientPubkey,
+		ServerPubkey:     row.ServerPubkey,
+		Expiry:           row.Expiry.Int32,
+		Pkscript:         row.Pkscript,
+		ClientKeyFamily:  row.ClientKeyFamily.Int32,
+		ClientKeyIndex:   row.ClientKeyIndex.Int32,
+		ProtocolVersion:  row.ProtocolVersion.Int32,
+		InitiationHeight: row.InitiationHeight.Int32,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return deposit, nil
 }
 
 // toOnchainCost converts the stored on-chain cost of a deposit.

@@ -1,7 +1,9 @@
 package loopd
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
@@ -29,6 +32,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	mock_lnd "github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -434,6 +438,17 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}
 	testDeposit.SetState(deposit.LoopedIn)
 
+	_, clientPubkey := mock_lnd.CreateKey(1)
+	_, serverPubkey := mock_lnd.CreateKey(2)
+	staticAddressParams := &script.Parameters{
+		ID:           1,
+		ClientPubkey: clientPubkey,
+		ServerPubkey: serverPubkey,
+		Expiry:       staticAddressExpiry,
+		PkScript:     []byte("pkscript"),
+	}
+	testDeposit.AddressParams = staticAddressParams
+
 	initiationTime := time.Unix(1_234, 567).UTC()
 	lastUpdateTime := time.Unix(2_345, 678).UTC()
 	staticLoopIn := &loopin.StaticAddressLoopIn{
@@ -464,21 +479,25 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	_, clientPubkey := mock_lnd.CreateKey(1)
-	_, serverPubkey := mock_lnd.CreateKey(2)
 	addrStore := &mockAddressStore{
-		params: []*script.Parameters{{
-			ClientPubkey: clientPubkey,
-			ServerPubkey: serverPubkey,
-			Expiry:       staticAddressExpiry,
-			PkScript:     []byte("pkscript"),
-		}},
+		params: []*script.Parameters{staticAddressParams},
 	}
 	addrMgr, err := address.NewManager(&address.ManagerConfig{
 		Store:       addrStore,
 		WalletKit:   lnd.WalletKit,
 		ChainParams: lnd.ChainParams,
 	}, 1)
+	require.NoError(t, err)
+	expectedStaticAddress, err := addrMgr.GetTaprootAddress(
+		staticAddressParams.ClientPubkey,
+		staticAddressParams.ServerPubkey,
+		int64(staticAddressParams.Expiry),
+	)
+	require.NoError(t, err)
+
+	staticAddressParams.PkScript, err = txscript.PayToAddrScript(
+		expectedStaticAddress,
+	)
 	require.NoError(t, err)
 
 	server := &swapClientServer{
@@ -522,6 +541,7 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 	require.Equal(t, depositConfHeight, rpcDeposit.ConfirmationHeight)
 	require.Equal(t, swapHash[:], rpcDeposit.SwapHash)
 	require.Equal(t, looprpc.DepositState_LOOPED_IN, rpcDeposit.State)
+	require.Equal(t, expectedStaticAddress.String(), rpcDeposit.StaticAddress)
 	require.Equal(
 		t, depositConfHeight+int64(staticAddressExpiry)-600,
 		rpcDeposit.BlocksUntilExpiry,
@@ -570,6 +590,7 @@ func TestListStaticAddressSwapsPopulatesTimingAndCosts(t *testing.T) {
 func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 	ctx := t.Context()
 	lnd := mock_lnd.NewMockLnd()
+	addrParams, _ := newTestStaticAddressParams(t)
 
 	newInvoice := func() string {
 		_, invoice, err := lnd.Client.AddInvoice(
@@ -592,8 +613,9 @@ func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 		OutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{1},
 		},
-		Value:    100_000,
-		SwapHash: &succeededHash,
+		Value:         100_000,
+		SwapHash:      &succeededHash,
+		AddressParams: addrParams,
 		OnchainCost: deposit.OnchainCost{
 			Amount: 900,
 			Status: deposit.OnchainCostKnown,
@@ -606,8 +628,9 @@ func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 		OutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{2},
 		},
-		Value:    200_000,
-		SwapHash: &succeededHash,
+		Value:         200_000,
+		SwapHash:      &succeededHash,
+		AddressParams: addrParams,
 		OnchainCost: deposit.OnchainCost{
 			Status: deposit.OnchainCostUnknown,
 		},
@@ -653,16 +676,9 @@ func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	_, clientPubkey := mock_lnd.CreateKey(1)
-	_, serverPubkey := mock_lnd.CreateKey(2)
 	addrMgr, err := address.NewManager(&address.ManagerConfig{
 		Store: &mockAddressStore{
-			params: []*script.Parameters{{
-				ClientPubkey: clientPubkey,
-				ServerPubkey: serverPubkey,
-				Expiry:       25,
-				PkScript:     []byte("pkscript"),
-			}},
+			params: []*script.Parameters{addrParams},
 		},
 		WalletKit:   lnd.WalletKit,
 		ChainParams: lnd.ChainParams,
@@ -710,6 +726,7 @@ func TestListStaticAddressSwapsOnchainCostOfReusedDeposits(t *testing.T) {
 	require.Len(t, depositsResp.FilteredDeposits, 2)
 	byOutpoint := make(map[string]*looprpc.Deposit)
 	for _, d := range depositsResp.FilteredDeposits {
+		require.NotEmpty(t, d.StaticAddress)
 		byOutpoint[d.Outpoint] = d
 	}
 	require.Equal(t, int64(900), byOutpoint[outpoints[0]].CostOnchain)
@@ -1037,7 +1054,6 @@ func (f swapDepositsFunc) DepositsForSwap(ctx context.Context,
 func TestStaticLoopInStatusUpdaterUsesSwapHtlcAddress(t *testing.T) {
 	ctx := t.Context()
 	_, staticLoopIn := newGenericStaticLoopInServer(t)
-	staticLoopIn.AddressParams = nil
 	statusChan := make(chan loop.SwapInfo, 1)
 	updater := newStaticLoopInStatusUpdater(
 		statusChan, ctx, &chaincfg.TestNet3Params,
@@ -1421,7 +1437,6 @@ func newGenericStaticLoopInServerWithStore(t *testing.T) (*swapClientServer,
 
 	_, clientPubkey := mock_lnd.CreateKey(10)
 	_, serverPubkey := mock_lnd.CreateKey(11)
-	addressParams, _ := newTestStaticAddressParams(t)
 	depositOutpoint := wire.OutPoint{
 		Hash:  chainhash.Hash{12, 13, 14},
 		Index: 2,
@@ -1445,7 +1460,6 @@ func newGenericStaticLoopInServerWithStore(t *testing.T) (*swapClientServer,
 		SelectedAmount:   50_000,
 		DepositOutpoints: []string{depositOutpoint.String()},
 		Deposits:         []*deposit.Deposit{staticDeposit},
-		AddressParams:    addressParams,
 	}
 	staticLoopIn.SetState(loopin.PaymentReceived)
 
@@ -1592,6 +1606,25 @@ func (s *mockStaticAddressLoopInStore) GetStaticAddressLoopInSwapsByStates(
 	}
 
 	return s.swaps, nil
+}
+
+// GetPaidStaticAddressLoopInClaims returns the configured paid ownership claims.
+func (s *mockStaticAddressLoopInStore) GetPaidStaticAddressLoopInClaims(
+	_ context.Context, afterID int32) ([]loopin.LoopInClaim, error) {
+
+	var claims []loopin.LoopInClaim
+	for _, swp := range s.swaps {
+		state := swp.GetState()
+		if swp.ID > afterID && (state == loopin.Succeeded ||
+			state == loopin.SucceededTransitioningFailed) {
+
+			claims = append(claims, loopin.LoopInClaim{
+				ID: swp.ID, SwapHash: swp.SwapHash, State: state,
+				DepositOutpoints: swp.DepositOutpoints,
+			})
+		}
+	}
+	return claims, nil
 }
 
 // IsStored satisfies the static loop-in store interface.
@@ -2390,8 +2423,23 @@ type mockAddressStore struct {
 func (s *mockAddressStore) CreateStaticAddress(_ context.Context,
 	p *script.Parameters) error {
 
+	if p.ID == 0 {
+		p.ID = int32(len(s.params) + 1)
+	}
 	s.params = append(s.params, p)
 	return nil
+}
+
+func (s *mockAddressStore) GetStaticAddressID(_ context.Context,
+	pkScript []byte) (int32, error) {
+
+	for _, p := range s.params {
+		if bytes.Equal(p.PkScript, pkScript) {
+			return p.ID, nil
+		}
+	}
+
+	return 0, sql.ErrNoRows
 }
 
 func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
@@ -2404,10 +2452,47 @@ func (s *mockAddressStore) GetStaticAddress(_ context.Context, _ []byte) (
 	return s.params[0], nil
 }
 
+// ListStaticAddresses pages through the persisted test addresses.
+func (s *mockAddressStore) ListStaticAddresses(_ context.Context,
+	afterID, limit int32) ([]*address.AddressParameters, error) {
+
+	var page []*address.AddressParameters
+	for i, p := range s.params {
+		if p.ID == 0 {
+			p.ID = int32(i + 1)
+		}
+		if p.ID > afterID {
+			page = append(page, p)
+			if len(page) == int(limit) {
+				break
+			}
+		}
+	}
+	return page, nil
+}
+
 func (s *mockAddressStore) GetAllStaticAddresses(_ context.Context) (
 	[]*script.Parameters, error) {
 
 	return s.params, nil
+}
+
+func (s *mockAddressStore) GetLegacyParameters(_ context.Context) (
+	*address.AddressParameters, error) {
+
+	if len(s.params) == 0 {
+		return nil, sql.ErrNoRows
+	}
+
+	return s.params[0], nil
+}
+
+// GetMaxStaticAddressHtlcKeyIndex reports that no static loop-in HTLC keys
+// exist.
+func (s *mockAddressStore) GetMaxStaticAddressHtlcKeyIndex(_ context.Context,
+	_ keychain.KeyFamily) (uint32, bool, error) {
+
+	return 0, false, nil
 }
 
 // mockDepositStore implements deposit.Store minimally for DepositsForOutpoints.
@@ -2585,7 +2670,12 @@ func TestListUnspentDeposits(t *testing.T) {
 	// Prepare a single static address parameter set.
 	_, client := mock_lnd.CreateKey(1)
 	_, server := mock_lnd.CreateKey(2)
-	pkScript := []byte("pkscript")
+	staticAddress, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, 10, client, server,
+	)
+	require.NoError(t, err)
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
 	addrParams := &script.Parameters{
 		ClientPubkey: client,
 		ServerPubkey: server,
@@ -2602,6 +2692,8 @@ func TestListUnspentDeposits(t *testing.T) {
 		ChainParams: mock.ChainParams,
 		// ChainNotifier and AddressClient are not needed for this test.
 	}, 1)
+	require.NoError(t, err)
+	_, err = addrMgr.EnsureStaticAddressRoot(ctx)
 	require.NoError(t, err)
 
 	// Construct several UTXOs with different confirmation counts.
@@ -2656,6 +2748,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			})
 
 			server := &swapClientServer{
+				network:              lndclient.NetworkTestnet,
 				staticAddressManager: addrMgr,
 				depositManager:       depMgr,
 			}
@@ -2695,6 +2788,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			})
 
 			server := &swapClientServer{
+				network:              lndclient.NetworkTestnet,
 				staticAddressManager: addrMgr,
 				depositManager:       depMgr,
 			}
@@ -2724,7 +2818,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			mock.SetListUnspent(nil)
 			m.activeOutpoints = map[wire.OutPoint]bool{}
 		}
-		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		server := &swapClientServer{network: lndclient.NetworkTestnet, staticAddressManager: addrMgr, depositManager: depMgr}
 		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
 		require.NoError(t, err)
 		require.Empty(t, resp.Utxos)
@@ -2738,7 +2832,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			utxoDeposited.OutPoint: deposit.Deposited,
 		})
 		depMgr.activeOutpoints = map[wire.OutPoint]bool{}
-		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		server := &swapClientServer{network: lndclient.NetworkTestnet, staticAddressManager: addrMgr, depositManager: depMgr}
 		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
 		require.NoError(t, err)
 		require.Empty(t, resp.Utxos)
@@ -2755,7 +2849,7 @@ func TestListUnspentDeposits(t *testing.T) {
 			reorged.Confirmations = 0
 			mock.SetListUnspent([]*lnwallet.Utxo{&reorged})
 		}
-		server := &swapClientServer{staticAddressManager: addrMgr, depositManager: depMgr}
+		server := &swapClientServer{network: lndclient.NetworkTestnet, staticAddressManager: addrMgr, depositManager: depMgr}
 		resp, err := server.ListUnspentDeposits(t.Context(), &looprpc.ListUnspentDepositsRequest{})
 		require.NoError(t, err)
 		require.Len(t, resp.Utxos, 1)
@@ -2779,6 +2873,7 @@ func TestListUnspentDeposits(t *testing.T) {
 		}
 
 		server := &swapClientServer{
+			network:              lndclient.NetworkTestnet,
 			staticAddressManager: addrMgr,
 			depositManager:       depMgr,
 		}
