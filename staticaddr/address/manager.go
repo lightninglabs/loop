@@ -7,11 +7,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
@@ -109,7 +109,7 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 
 // NewAddress creates a new static address with the server or returns an
 // existing one.
-func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
+func (m *Manager) NewAddress(ctx context.Context) (*btcaddr.AddressTaproot,
 	int64, error) {
 
 	// If there's already a static address in the database, we can return
@@ -275,7 +275,7 @@ func validateServerAddressParams(
 // GetTaprootAddress returns a taproot address for the given client and server
 // public keys and expiry.
 func (m *Manager) GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
-	expiry int64) (*btcutil.AddressTaproot, error) {
+	expiry int64) (*btcaddr.AddressTaproot, error) {
 
 	staticAddress, err := script.NewStaticAddress(
 		input.MuSig2Version100RC2, expiry, clientPubkey, serverPubkey,
@@ -284,7 +284,7 @@ func (m *Manager) GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
 		return nil, err
 	}
 
-	return btcutil.NewAddressTaproot(
+	return btcaddr.NewAddressTaproot(
 		schnorr.SerializePubKey(staticAddress.TaprootKey),
 		m.cfg.ChainParams,
 	)
@@ -292,7 +292,7 @@ func (m *Manager) GetTaprootAddress(clientPubkey, serverPubkey *btcec.PublicKey,
 
 // ListUnspentRaw returns a list of utxos at the static address.
 func (m *Manager) ListUnspentRaw(ctx context.Context, minConfs,
-	maxConfs int32) (*btcutil.AddressTaproot, []*lnwallet.Utxo, error) {
+	maxConfs int32) (*btcaddr.AddressTaproot, []*lnwallet.Utxo, error) {
 
 	addresses, err := m.cfg.Store.GetAllStaticAddresses(ctx)
 	switch {

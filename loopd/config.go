@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/loop/assets"
 	"github.com/lightninglabs/loop/loopdb"
