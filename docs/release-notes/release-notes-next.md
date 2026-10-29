@@ -11,6 +11,11 @@
 
 #### Bug Fixes
 
+* Bound the static Loop In risk decision replay cache to prevent unbounded
+  memory growth from swap server notifications for unknown swaps. Cached
+  decisions retain only a copy of the validated swap hash, without unknown
+  protobuf fields or oversized backing buffers.
+
 #### Maintenance
 - Update the LoopRPC requirement to the revision used by this release.
 
