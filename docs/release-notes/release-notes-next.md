@@ -11,6 +11,9 @@
 
 #### Bug Fixes
 
+* A sweep batch that cannot construct its transaction now logs the failure and
+  retries without stopping `loopd` or unrelated swap sweeps.
+
 * Disable MPTCP listeners by default, restoring plain TCP for `loopd` and
   mitigating the demonstrated CVE-2026-98432 exploit path on vulnerable Linux
   kernels. Existing binaries can apply the same mitigation with
