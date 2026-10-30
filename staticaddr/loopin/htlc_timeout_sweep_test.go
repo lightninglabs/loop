@@ -19,6 +19,7 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
@@ -384,6 +385,73 @@ func TestHtlcOutput(t *testing.T) {
 				Index: tc.htlcIndex,
 			}, outpoint)
 			require.Equal(t, htlcTx.TxOut[tc.htlcIndex], txOut)
+		})
+	}
+}
+
+// TestCreateHtlcSweepTxRejectsDust verifies that the sweep is only signed if
+// the fee leaves an output at or above the dust limit.
+func TestCreateHtlcSweepTxRejectsDust(t *testing.T) {
+	t.Parallel()
+
+	const feeRate = chainfee.SatPerKWeight(50_000)
+
+	mockLnd := test.NewMockLnd()
+	loopIn, variants := newHtlcVariantTestLoopIn(t, mockLnd)
+
+	htlc, err := loopIn.getHtlc(mockLnd.ChainParams)
+	require.NoError(t, err)
+
+	var weightEstimator input.TxWeightEstimator
+	weightEstimator.AddP2TROutput()
+	require.NoError(t, htlc.AddSuccessToEstimator(&weightEstimator))
+
+	fee := int64(feeRate.FeeForWeight(weightEstimator.Weight()))
+	dustLimit := int64(lnwallet.DustLimitForSize(input.P2TRSize))
+
+	tests := []struct {
+		name      string
+		htlcValue int64
+		err       string
+	}{
+		{
+			name:      "output at dust limit",
+			htlcValue: fee + dustLimit,
+		},
+		{
+			name:      "output below dust limit",
+			htlcValue: fee + dustLimit - 1,
+			err:       "too small to pay the sweep fee",
+		},
+		{
+			name:      "fee above htlc value",
+			htlcValue: fee - 1,
+			err:       "too small to pay the sweep fee",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			htlcTx := variants[testExtremeHtlcFeeRate].Copy()
+			htlcTx.TxOut[0].Value = tc.htlcValue
+
+			sweepTx, err := loopIn.createHtlcSweepTx(
+				t.Context(), &noopSigner{}, htlcTx,
+				loopIn.HtlcTimeoutSweepAddress, feeRate,
+				mockLnd.ChainParams,
+				uint32(loopIn.HtlcCltvExpiry),
+			)
+			if tc.err != "" {
+				require.ErrorContains(t, err, tc.err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(
+				t, dustLimit, sweepTx.TxOut[0].Value,
+			)
 		})
 	}
 }
