@@ -26,6 +26,7 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -495,7 +496,16 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 
 	fee := feeRate.FeeForWeight(weightEstimator.Weight())
 
+	// The backup htlc tx variants leave a smaller htlc output, so make
+	// sure the sweep fee still leaves a spendable output.
 	htlcOutValue := htlcOut.Value
+	dustLimit := lnwallet.DustLimitForSize(input.P2TRSize)
+	if htlcOutValue-int64(fee) < int64(dustLimit) {
+		return nil, fmt.Errorf("htlc output %v of %v is too small to "+
+			"pay the sweep fee %v at fee rate %v", htlcOutpoint,
+			btcutil.Amount(htlcOutValue), fee, feeRate)
+	}
+
 	output := &wire.TxOut{
 		Value:    htlcOutValue - int64(fee),
 		PkScript: sweepPkScript,
