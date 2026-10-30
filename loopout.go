@@ -1555,7 +1555,7 @@ type resumeManager struct {
 	ntfnManager NotificationManager
 	swapStore   loopdb.SwapStore
 	swapClient  swapserverrpc.SwapServerClient
-	lnd         *lndclient.GrpcLndServices
+	lnd         *lndclient.LndServices
 	clock       clock.Clock
 
 	reqChan chan *swapserverrpc.ServerUnfinishedSwapNotification
@@ -1566,7 +1566,7 @@ type resumeManager struct {
 func Resume(ctx context.Context, ntfnManager NotificationManager,
 	swapStore loopdb.SwapStore,
 	swapClientConn *grpc.ClientConn,
-	lnd *lndclient.GrpcLndServices, clock clock.Clock) {
+	lnd *lndclient.LndServices, clock clock.Clock) {
 
 	resumeManager := &resumeManager{
 		ntfnManager: ntfnManager,

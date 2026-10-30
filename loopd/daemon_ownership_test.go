@@ -354,9 +354,10 @@ func TestSubserverDoesNotCloseSharedLndConn(t *testing.T) {
 			conn := services.ClientConn
 
 			// Start the daemon as a subserver with the shared
-			// (borrowed) lnd connection.
+			// (borrowed) lnd services. Note that the daemon only
+			// receives the non-closable view of the connection.
 			d := newTestDaemon(t)
-			err := d.StartAsSubserver(services, false)
+			err := d.StartAsSubserver(&services.LndServices, false)
 			require.NoError(t, err)
 
 			// Trigger the shutdown and wait for the daemon to
@@ -399,10 +400,11 @@ func TestOwnedLndConnClosedOnStop(t *testing.T) {
 	conn := services.ClientConn
 
 	// Simulate a daemon that created its own lnd connection (standalone
-	// mode via Start) by marking the connection as owned.
+	// mode via Start): it keeps the closable wrapper in lndOwner while
+	// the rest of the daemon only sees the non-closable services view.
 	d := newTestDaemon(t)
-	d.lnd = services
-	d.lndOwned = true
+	d.lnd = &services.LndServices
+	d.lndOwner = services
 
 	// Stopping the daemon must close the connection it owns.
 	d.stop()

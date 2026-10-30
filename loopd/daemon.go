@@ -90,16 +90,21 @@ type Daemon struct {
 	listenerCfg     *ListenerCfg
 	internalErrChan chan error
 
-	lnd           *lndclient.GrpcLndServices
+	// lnd is the set of lnd services the daemon uses. It is a
+	// non-closable view: the closeable connection wrapper is only ever
+	// held in lndOwner, and only when the daemon created the connection
+	// itself (standalone mode).
+	lnd           *lndclient.LndServices
 	assetClient   *assets.TapdClient
 	clientCleanup func()
 
-	// lndOwned indicates whether the daemon created the lnd connection
-	// itself (standalone mode via Start) and therefore owns its
-	// lifecycle. When the daemon is started as a subserver
-	// (StartAsSubserver), the lnd connection is shared with and owned
-	// by the parent process (e.g. LiT) and must not be closed here.
-	lndOwned bool
+	// lndOwner holds the full lnd services wrapper, including its Close
+	// method, if and only if the daemon created the lnd connection
+	// itself (standalone mode via Start). When the daemon is started as
+	// a subserver (StartAsSubserver), the lnd connection is shared with
+	// and owned by the parent process (e.g. LiT) and lndOwner is nil,
+	// so there is no closable handle to the borrowed connection.
+	lndOwner *lndclient.GrpcLndServices
 
 	wg       sync.WaitGroup
 	quit     chan struct{}
@@ -154,14 +159,16 @@ func (d *Daemon) Start() error {
 	network := lndclient.Network(d.cfg.Network)
 
 	var err error
-	d.lnd, err = d.listenerCfg.getLnd(network, d.cfg.Lnd)
+	lndGrpc, err := d.listenerCfg.getLnd(network, d.cfg.Lnd)
 	if err != nil {
 		return err
 	}
 
 	// We created the lnd connection ourselves, so we own it and are
-	// responsible for closing it on shutdown.
-	d.lndOwned = true
+	// responsible for closing it on shutdown. The rest of the daemon
+	// only ever sees the non-closable services view.
+	d.lndOwner = lndGrpc
+	d.lnd = &lndGrpc.LndServices
 
 	// Initialize the assets client.
 	if d.cfg.Tapd.Activate {
@@ -216,7 +223,7 @@ func (d *Daemon) Start() error {
 // create its own gRPC server but registers to an existing one. The same goes
 // for REST (if enabled), instead of creating an own mux and HTTP server, we
 // register to an existing one.
-func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
+func (d *Daemon) StartAsSubserver(lndServices *lndclient.LndServices,
 	withMacaroonService bool) error {
 
 	// There should be no reason to start the daemon twice. Therefore,
@@ -227,13 +234,11 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	}
 
 	// When starting as a subserver, we get passed in an already established
-	// connection to lnd that might be shared among other subservers.
-	d.lnd = lndGrpc
-
-	// The lnd connection is owned by the parent process (e.g. LiT) and
-	// potentially shared with other subservers, so we must never close
-	// it ourselves.
-	d.lndOwned = false
+	// connection to lnd that might be shared among other subservers. We
+	// only receive the non-closable services view: the connection is
+	// owned by the parent process (e.g. LiT) and it is not possible for
+	// us to close it.
+	d.lnd = lndServices
 
 	// With lnd already pre-connected, initialize everything else, such as
 	// the swap server client, the RPC server instance and our main swap
@@ -462,7 +467,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Run the cost migration.
 	err = loop.MigrateLoopOutCosts(
-		d.mainCtx, d.lnd.LndServices, d.cfg.MigrationRPCBatchSize,
+		d.mainCtx, *d.lnd, d.cfg.MigrationRPCBatchSize,
 		swapDb,
 	)
 	if err != nil {
@@ -507,7 +512,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 
 	// Create an instance of the loop client library.
 	swapClient, clientCleanup, err := getClient(
-		d.cfg, swapDb, sweeperDb, &d.lnd.LndServices, d.assetClient,
+		d.cfg, swapDb, sweeperDb, d.lnd, d.assetClient,
 	)
 	if err != nil {
 		return err
@@ -564,7 +569,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 				},
 				RequiredPerms: loop_looprpc.RequiredPermissions,
 				DBPassword:    macDbDefaultPw,
-				LndClient:     &d.lnd.LndServices,
+				LndClient:     d.lnd,
 				EphemeralKey:  lndclient.SharedKeyNUMS,
 				KeyLocator:    lndclient.SharedKeyLocator,
 			},
@@ -817,7 +822,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		impl:                 swapClient,
 		loopInQuoter:         swapClient,
 		liquidityMgr:         liquidityMgr,
-		lnd:                  &d.lnd.LndServices,
+		lnd:                  d.lnd,
 		swaps:                make(map[lntypes.Hash]loop.SwapInfo),
 		subscribers:          make(map[int]chan<- any),
 		statusChan:           statusChan,
@@ -1164,13 +1169,14 @@ func (d *Daemon) stop() {
 		}
 	}
 
-	// Next, shut down the connections to lnd and the swap server. We
-	// only close the lnd connection if we created it ourselves
-	// (standalone mode). In subserver mode the connection is owned by
-	// the parent process and shared with other subservers, closing it
-	// here would tear down their lnd access as well.
-	if d.lnd != nil && d.lndOwned {
-		d.lnd.Close()
+	// Next, shut down the connections to lnd and the swap server. The
+	// lnd connection is only closed if we created it ourselves
+	// (standalone mode), in which case lndOwner holds the closable
+	// wrapper. In subserver mode the connection is owned by the parent
+	// process and shared with other subservers, closing it here would
+	// tear down their lnd access as well.
+	if d.lndOwner != nil {
+		d.lndOwner.Close()
 	}
 	if d.clientCleanup != nil {
 		d.clientCleanup()
