@@ -1373,6 +1373,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 // htlc timeout sweep transaction fails.
 const htlcTimeoutSweepRetryDelay = time.Hour
 
+// defaultHtlcTxLookupTimeout is the default maximum time to wait for the spend
+// of the first deposit when looking up the htlc tx to sweep.
+const defaultHtlcTxLookupTimeout = 30 * time.Minute
+
 // SweepHtlcTimeoutAction is called if the server published the htlc tx without
 // paying the invoice. We wait for the timeout path to open up and sweep the
 // funds back to us.
@@ -1385,6 +1389,13 @@ func (f *FSM) SweepHtlcTimeoutAction(ctx context.Context,
 			return OnHtlcTimeoutSweepPublished
 		}
 
+		// Keep the current state on shutdown so recovery resumes the
+		// sweep after restart.
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
+		f.LastActionError = err
 		f.Errorf("unable to create and publish htlc timeout sweep "+
 			"tx: %v, retrying in %v", err, htlcTimeoutSweepRetryDelay)
 
@@ -1523,6 +1534,13 @@ func (f *FSM) unlockDeposits(ctx context.Context) error {
 // createAndPublishHtlcTimeoutSweepTx creates and publishes the htlc timeout
 // sweep transaction.
 func (f *FSM) createAndPublishHtlcTimeoutSweepTx(ctx context.Context) error {
+	// Look up the htlc tx first. This can take a while, so the fee rate
+	// and the block height are only fetched once it is known.
+	htlcTx, err := f.fetchHtlcTx(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Get a fee rate.
 	feeRate, err := f.cfg.WalletKit.EstimateFeeRate(ctx, defaultConfTarget)
 	if err != nil {
@@ -1536,9 +1554,8 @@ func (f *FSM) createAndPublishHtlcTimeoutSweepTx(ctx context.Context) error {
 
 	// Create htlc timeout transaction.
 	timeoutTx, err := f.loopIn.createHtlcSweepTx(
-		ctx, f.cfg.Signer, f.loopIn.HtlcTimeoutSweepAddress, feeRate,
-		f.cfg.ChainParams, getInfo.BlockHeight,
-		f.cfg.MaxStaticAddrHtlcFeePercentage,
+		ctx, f.cfg.Signer, htlcTx, f.loopIn.HtlcTimeoutSweepAddress,
+		feeRate, f.cfg.ChainParams, getInfo.BlockHeight,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create htlc timeout sweep tx: %w",
@@ -1569,6 +1586,67 @@ func (f *FSM) createAndPublishHtlcTimeoutSweepTx(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// fetchHtlcTx waits for the spend of the swap's first deposit and returns the
+// spending htlc tx. The server may publish any of the htlc tx variants the
+// client co-signed, and only the standard fee rate is persisted, so the htlc
+// tx that is swept is taken from the chain instead of being rebuilt.
+func (f *FSM) fetchHtlcTx(ctx context.Context) (*wire.MsgTx, error) {
+	outpoints := f.loopIn.Outpoints()
+	if len(outpoints) == 0 {
+		return nil, errors.New("loop-in has no deposits")
+	}
+
+	if f.loopIn.AddressParams == nil {
+		return nil, errors.New("loop-in has no static address " +
+			"parameters")
+	}
+
+	lookupTimeout := f.cfg.HtlcTxLookupTimeout
+	if lookupTimeout == 0 {
+		lookupTimeout = defaultHtlcTxLookupTimeout
+	}
+
+	spendCtx, cancel := context.WithTimeout(ctx, lookupTimeout)
+	defer cancel()
+
+	spendChan, errChan, err := f.cfg.ChainNotifier.RegisterSpendNtfn(
+		spendCtx, &outpoints[0], f.loopIn.AddressParams.PkScript,
+		int32(f.loopIn.InitiationHeight),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to register for the spend of "+
+			"deposit %v: %w", outpoints[0], err)
+	}
+
+	f.Infof("waiting for the htlc tx that spends deposit %v, height "+
+		"hint %v", outpoints[0], f.loopIn.InitiationHeight)
+
+	select {
+	case spend := <-spendChan:
+		if spend == nil || spend.SpendingTx == nil {
+			return nil, fmt.Errorf("spend of deposit %v has no "+
+				"spending tx", outpoints[0])
+		}
+
+		f.Infof("deposit %v spent by htlc tx %v", outpoints[0],
+			spend.SpendingTx.TxHash())
+
+		return spend.SpendingTx, nil
+
+	case err := <-errChan:
+		return nil, fmt.Errorf("unable to watch the spend of deposit "+
+			"%v: %w", outpoints[0], err)
+
+	case <-spendCtx.Done():
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		return nil, fmt.Errorf("deposit %v was not spent within %v",
+			outpoints[0], lookupTimeout)
+	}
 }
 
 // toNonces converts a byte slice to a 66 byte slice.

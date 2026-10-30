@@ -321,8 +321,7 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 		return nil, err
 	}
 
-	// Create the sweep output. NOTE: The HTLC output must be added at
-	// index 0. createHtlcSweepTx relies on this layout invariant.
+	// Create the sweep output. The HTLC output is added at index 0.
 	sweepOutput := &wire.TxOut{
 		Value:    int64(swapAmt - fee),
 		PkScript: pkscript,
@@ -366,18 +365,105 @@ func (l *StaticAddressLoopIn) htlcWeight(hasChange bool) lntypes.WeightUnit {
 	return weightEstimator.Weight()
 }
 
+// htlcOutput returns the outpoint and the output of the htlc in the given htlc
+// tx. The client co-signs a standard, a high fee and an extremely high fee
+// variant of the htlc tx, and the server may publish any of them. The timeout
+// sweep therefore has to spend the htlc output of the tx that actually spent
+// the deposits instead of rebuilding one of the variants. The tx is only
+// accepted if it spends exactly the deposits of this swap and has a single
+// output to the given htlc pkScript. The input order is not checked because
+// recovery can load the deposits in a different order than they were signed
+// in, and only a tx the client co-signed can spend the deposits anyway.
+func (l *StaticAddressLoopIn) htlcOutput(htlcTx *wire.MsgTx,
+	htlcPkScript []byte) (wire.OutPoint, *wire.TxOut, error) {
+
+	if htlcTx == nil {
+		return wire.OutPoint{}, nil, errors.New("no htlc tx provided")
+	}
+
+	outpoints := l.Outpoints()
+	if len(outpoints) == 0 {
+		return wire.OutPoint{}, nil, errors.New("loop-in has no " +
+			"deposits")
+	}
+
+	txHash := htlcTx.TxHash()
+	if len(htlcTx.TxIn) != len(outpoints) {
+		return wire.OutPoint{}, nil, fmt.Errorf("tx %v spends %d "+
+			"inputs, expected the %d deposits of the swap", txHash,
+			len(htlcTx.TxIn), len(outpoints))
+	}
+
+	unspent := make(map[wire.OutPoint]struct{}, len(outpoints))
+	for _, outpoint := range outpoints {
+		unspent[outpoint] = struct{}{}
+	}
+
+	for i, txIn := range htlcTx.TxIn {
+		if _, ok := unspent[txIn.PreviousOutPoint]; !ok {
+			return wire.OutPoint{}, nil, fmt.Errorf("tx %v input "+
+				"%d spends %v, which is not a remaining "+
+				"deposit of the swap", txHash, i,
+				txIn.PreviousOutPoint)
+		}
+
+		delete(unspent, txIn.PreviousOutPoint)
+	}
+
+	var (
+		htlcIndex = -1
+		htlcOut   *wire.TxOut
+	)
+	for i, txOut := range htlcTx.TxOut {
+		if !bytes.Equal(txOut.PkScript, htlcPkScript) {
+			continue
+		}
+
+		if htlcOut != nil {
+			return wire.OutPoint{}, nil, fmt.Errorf("tx %v has "+
+				"more than one htlc output", txHash)
+		}
+
+		htlcIndex = i
+		htlcOut = txOut
+	}
+
+	if htlcOut == nil {
+		return wire.OutPoint{}, nil, fmt.Errorf("tx %v has no htlc "+
+			"output", txHash)
+	}
+
+	if htlcOut.Value <= 0 {
+		return wire.OutPoint{}, nil, fmt.Errorf("tx %v has an htlc "+
+			"output without value", txHash)
+	}
+
+	htlcOutpoint := wire.OutPoint{
+		Hash:  txHash,
+		Index: uint32(htlcIndex),
+	}
+
+	return htlcOutpoint, htlcOut, nil
+}
+
 // createHtlcSweepTx creates the htlc sweep transaction for the timeout path of
-// the loop-in htlc.
+// the loop-in htlc. The htlcTx is the htlc tx variant that spent the deposits
+// on chain.
 func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
-	signer lndclient.SignerClient, sweepAddress btcutil.Address,
-	feeRate chainfee.SatPerKWeight, network *chaincfg.Params,
-	blockHeight uint32, maxFeePercentage float64) (*wire.MsgTx, error) {
+	signer lndclient.SignerClient, htlcTx *wire.MsgTx,
+	sweepAddress btcutil.Address, feeRate chainfee.SatPerKWeight,
+	network *chaincfg.Params, blockHeight uint32) (*wire.MsgTx, error) {
 
 	if network == nil {
 		return nil, errors.New("no network provided")
 	}
 
 	htlc, err := l.getHtlc(network)
+	if err != nil {
+		return nil, err
+	}
+
+	htlcOutpoint, htlcOut, err := l.htlcOutput(htlcTx, htlc.PkScript)
 	if err != nil {
 		return nil, err
 	}
@@ -394,36 +480,11 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 		return nil, err
 	}
 
-	htlcTx, err := l.createHtlcTx(
-		network, l.HtlcTxFeeRate, maxFeePercentage,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// The HTLC output is always at index 0 (createHtlcTx adds it first).
-	// If there is a change output, it is at index 1. Verify this invariant
-	// so we fail fast if createHtlcTx's layout ever changes.
-	const htlcInputIndex = uint32(0)
-	if len(htlcTx.TxOut) == 2 {
-		if bytes.Equal(
-			htlcTx.TxOut[0].PkScript, l.AddressParams.PkScript,
-		) {
-
-			return nil, fmt.Errorf("htlc tx output layout " +
-				"invariant violated: expected HTLC output " +
-				"at index 0, got change output")
-		}
-	}
-
 	// Add the htlc input.
 	sweepTx.AddTxIn(&wire.TxIn{
-		PreviousOutPoint: wire.OutPoint{
-			Hash:  htlcTx.TxHash(),
-			Index: htlcInputIndex,
-		},
-		SignatureScript: htlc.SigScript,
-		Sequence:        htlc.SuccessSequence(),
+		PreviousOutPoint: htlcOutpoint,
+		SignatureScript:  htlc.SigScript,
+		Sequence:         htlc.SuccessSequence(),
 	})
 
 	// Add the sweep output.
@@ -434,7 +495,7 @@ func (l *StaticAddressLoopIn) createHtlcSweepTx(ctx context.Context,
 
 	fee := feeRate.FeeForWeight(weightEstimator.Weight())
 
-	htlcOutValue := htlcTx.TxOut[htlcInputIndex].Value
+	htlcOutValue := htlcOut.Value
 	output := &wire.TxOut{
 		Value:    htlcOutValue - int64(fee),
 		PkScript: sweepPkScript,
