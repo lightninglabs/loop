@@ -465,8 +465,8 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		b.cfg.chainParams,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to find destination address: %w",
-			err), false
+		return 0, fmt.Errorf("%w: find destination address: %w",
+			errBatchNotConstructed, err), false
 	}
 
 	// Construct unsigned batch transaction.

@@ -12,7 +12,8 @@
 #### Bug Fixes
 
 * A sweep batch that cannot construct its transaction now logs the failure and
-  retries without stopping `loopd` or unrelated swap sweeps.
+  retries without stopping `loopd`. New sweeps use another batch until the
+  failing one constructs a transaction.
 
 * Bound the static Loop In risk decision replay cache to prevent unbounded
   memory growth from swap server notifications for unknown swaps. Cached

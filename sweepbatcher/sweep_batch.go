@@ -233,6 +233,11 @@ type batch struct {
 	// sweeps store the sweeps that this batch currently contains.
 	sweeps map[wire.OutPoint]sweep
 
+	// admissionPaused keeps new sweeps out of a batch until it has
+	// successfully built a transaction. Existing sweeps can still be
+	// refreshed. This is also set on restore, before the first retry.
+	admissionPaused bool
+
 	// currentHeight is the current block height.
 	currentHeight int32
 
@@ -432,6 +437,7 @@ func NewBatchFromDB(cfg batchConfig, bk batchKit) (*batch, error) {
 		state:               bk.state,
 		primarySweepID:      bk.primaryID,
 		sweeps:              bk.sweeps,
+		admissionPaused:     true,
 		confChan:            make(chan *chainntnfs.TxConfirmation, 1),
 		testReqs:            make(chan *testRequest),
 		errChan:             make(chan error, 1),
@@ -506,6 +512,9 @@ func (b *batch) checkSweepToAdd(_ context.Context, sweep *sweep) (bool, error) {
 	// sweep is already in our batch. In that case, just update the sweep.
 	if _, ok := b.sweeps[sweep.outpoint]; ok {
 		return true, nil
+	}
+	if b.admissionPaused {
+		return false, fmt.Errorf("batch %d has paused admission", b.id)
 	}
 
 	// Enforce MaxSweepsPerBatch. If there are already too many sweeps in
@@ -807,6 +816,9 @@ func (b *batch) matchesSweepMode(presigned bool) bool {
 	done, err := b.scheduleNextCall()
 	defer done()
 	if err != nil {
+		return false
+	}
+	if b.admissionPaused {
 		return false
 	}
 
@@ -1225,15 +1237,23 @@ func (b *batch) publish(ctx context.Context) error {
 		return nil
 	}
 
-	// Run the RBF rate update.
-	err = b.updateRbfRate(ctx)
-	if err != nil {
-		return err
-	}
-
 	// logPublishError is a function which logs publish errors.
 	logPublishError := func(errMsg string, err error) {
 		b.publishErrorHandler(err, errMsg, b.log())
+	}
+
+	// Keep the last usable rate if no transaction can be constructed.
+	previousRbfCache := b.rbfCache
+
+	// Run the RBF rate update.
+	err = b.updateRbfRate(ctx)
+	if errors.Is(err, errBatchNotConstructed) {
+		b.admissionPaused = true
+		logPublishError("construct error", err)
+		return nil
+	}
+	if err != nil {
+		return err
 	}
 
 	// Determine if we should use presigned mode for the batch.
@@ -1252,6 +1272,7 @@ func (b *batch) publish(ctx context.Context) error {
 	if err != nil {
 		switch {
 		case signSuccess:
+			b.admissionPaused = false
 			logPublishError("publish error", err)
 
 			// Publishing error is expected: "insufficient fee" and
@@ -1260,6 +1281,12 @@ func (b *batch) publish(ctx context.Context) error {
 			return nil
 
 		case errors.Is(err, errBatchNotConstructed):
+			b.admissionPaused = true
+			b.rbfCache = previousRbfCache
+			if persistErr := b.persist(ctx); persistErr != nil {
+				return fmt.Errorf("restore batch fee rate: %w",
+					persistErr)
+			}
 			logPublishError("construct error", err)
 			return nil
 
@@ -1272,6 +1299,7 @@ func (b *batch) publish(ctx context.Context) error {
 			return err
 		}
 	}
+	b.admissionPaused = false
 
 	b.Infof("published, total sweeps: %v, fees: %v", len(b.sweeps), fee)
 	for _, sweep := range b.sweeps {
@@ -1573,7 +1601,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		var err error
 		address, err = b.getBatchDestAddr(ctx)
 		if err != nil {
-			return 0, err, false
+			return 0, fmt.Errorf("%w: get batch destination: %w",
+				errBatchNotConstructed, err), false
 		}
 	}
 
@@ -1615,8 +1644,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 		// Create PSBT and prevOutsMap.
 		psbtBytes, prevOutsMap, err := b.createPsbt(tx, sweeps)
 		if err != nil {
-			return 0, fmt.Errorf("createPsbt failed: %w", err),
-				false
+			return 0, fmt.Errorf("%w: createPsbt failed: %w",
+				errBatchNotConstructed, err), false
 		}
 
 		// Keep track if any new sweep failed to sign cooperatively.
@@ -2018,7 +2047,8 @@ func (b *batch) updateRbfRate(ctx context.Context) error {
 			ctx, b.cfg.batchConfTarget,
 		)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: estimate fee rate: %w",
+				errBatchNotConstructed, err)
 		}
 
 		// Set the initial value for our fee rate.
