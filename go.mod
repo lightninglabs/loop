@@ -233,6 +233,8 @@ replace go.augendre.info/fatcontext => github.com/Crocmagnon/fatcontext v0.9.0
 
 go 1.27.3
 
+godebug multipathtcp=0
+
 // This sqldb revision contains lnd's pgx v5 migration, which removes the
 // vulnerable legacy pgx v4/pgproto3 dependency chain. Remove this replacement
 // once the required lnd version includes an sqldb release with that migration.
