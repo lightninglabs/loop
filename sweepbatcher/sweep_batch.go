@@ -54,6 +54,11 @@ const (
 
 var (
 	ErrBatchShuttingDown = errors.New("batch shutting down")
+
+	// errBatchNotConstructed marks failures before the transaction is signed.
+	// They must not stop the shared batcher, but remain visible in logs and
+	// are retried on the next publish attempt.
+	errBatchNotConstructed = errors.New("batch transaction not constructed")
 )
 
 // sweep stores any data related to sweeping a specific outpoint.
@@ -1245,14 +1250,20 @@ func (b *batch) publish(ctx context.Context) error {
 	}
 
 	if err != nil {
-		if signSuccess {
+		switch {
+		case signSuccess:
 			logPublishError("publish error", err)
 
 			// Publishing error is expected: "insufficient fee" and
 			// "output already spent". Don't return the error here
 			// not to break the main loop of the sweep batch.
 			return nil
-		} else {
+
+		case errors.Is(err, errBatchNotConstructed):
+			logPublishError("construct error", err)
+			return nil
+
+		default:
 			logPublishError("signing error", err)
 
 			// Signing error is not expected, because we have
@@ -1583,8 +1594,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 	)
 	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get min relay fee: %w", err),
-			false
+		return 0, fmt.Errorf("%w: failed to get min relay fee: %w",
+			errBatchNotConstructed, err), false
 	}
 	for attempt := 1; ; attempt++ {
 		b.Infof("Attempt %d of collecting cooperative signatures.",
@@ -1597,8 +1608,8 @@ func (b *batch) publishMixedBatch(ctx context.Context) (btcutil.Amount, error,
 			minRelayFeeRate,
 		)
 		if err != nil {
-			return 0, fmt.Errorf("failed to construct tx: %w", err),
-				false
+			return 0, fmt.Errorf("%w: failed to construct tx: %w",
+				errBatchNotConstructed, err), false
 		}
 
 		// Create PSBT and prevOutsMap.

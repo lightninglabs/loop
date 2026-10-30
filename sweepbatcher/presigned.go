@@ -443,8 +443,8 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	// Determine the current minimum relay fee based on our chain backend.
 	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get minRelayFeeRate: %w", err),
-			false
+		return 0, fmt.Errorf("%w: failed to get minRelayFeeRate: %w",
+			errBatchNotConstructed, err), false
 	}
 
 	// Cache current height and desired feerate of the batch.
@@ -474,8 +474,8 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		sweeps, address, currentHeight, feeRate, minRelayFeeRate,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to construct tx: %w", err),
-			false
+		return 0, fmt.Errorf("%w: failed to construct tx: %w",
+			errBatchNotConstructed, err), false
 	}
 
 	// Adjust feeRate, because it may have been clamped.
