@@ -125,6 +125,13 @@ type Config struct {
 	// MaxStaticAddrHtlcFeePercentage since it serves the server as backup
 	// transaction in case of fee spikes.
 	MaxStaticAddrHtlcBackupFeePercentage float64
+
+	// HtlcTxLookupTimeout is the maximum time to wait for a confirmed spend
+	// when looking up the htlc tx to sweep, or the tx that already spent
+	// the htlc output. A timeout fails the sweep attempt so that it is
+	// retried and reported like any other failure. Zero means
+	// defaultHtlcTxLookupTimeout.
+	HtlcTxLookupTimeout time.Duration
 }
 
 // newSwapRequest is used to send a loop-in request to the manager main loop.

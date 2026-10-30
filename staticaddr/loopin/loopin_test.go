@@ -130,9 +130,8 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 	// Call createHtlcSweepTx and verify that the sweep output is derived
 	// from the HTLC value, not the change.
 	sweepTx, err := loopIn.createHtlcSweepTx(
-		t.Context(), signer, sweepAddr, feeRate,
+		t.Context(), signer, htlcTx, sweepAddr, feeRate,
 		network, uint32(loopIn.HtlcCltvExpiry)+1,
-		maxFeePercentage,
 	)
 	require.NoError(t, err)
 	require.Len(t, sweepTx.TxOut, 1)
