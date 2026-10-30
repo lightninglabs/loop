@@ -94,6 +94,13 @@ type Daemon struct {
 	assetClient   *assets.TapdClient
 	clientCleanup func()
 
+	// lndOwned indicates whether the daemon created the lnd connection
+	// itself (standalone mode via Start) and therefore owns its
+	// lifecycle. When the daemon is started as a subserver
+	// (StartAsSubserver), the lnd connection is shared with and owned
+	// by the parent process (e.g. LiT) and must not be closed here.
+	lndOwned bool
+
 	wg       sync.WaitGroup
 	quit     chan struct{}
 	stopOnce sync.Once
@@ -151,6 +158,10 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		return err
 	}
+
+	// We created the lnd connection ourselves, so we own it and are
+	// responsible for closing it on shutdown.
+	d.lndOwned = true
 
 	// Initialize the assets client.
 	if d.cfg.Tapd.Activate {
@@ -218,6 +229,11 @@ func (d *Daemon) StartAsSubserver(lndGrpc *lndclient.GrpcLndServices,
 	// When starting as a subserver, we get passed in an already established
 	// connection to lnd that might be shared among other subservers.
 	d.lnd = lndGrpc
+
+	// The lnd connection is owned by the parent process (e.g. LiT) and
+	// potentially shared with other subservers, so we must never close
+	// it ourselves.
+	d.lndOwned = false
 
 	// With lnd already pre-connected, initialize everything else, such as
 	// the swap server client, the RPC server instance and our main swap
@@ -1148,8 +1164,12 @@ func (d *Daemon) stop() {
 		}
 	}
 
-	// Next, shut down the connections to lnd and the swap server.
-	if d.lnd != nil {
+	// Next, shut down the connections to lnd and the swap server. We
+	// only close the lnd connection if we created it ourselves
+	// (standalone mode). In subserver mode the connection is owned by
+	// the parent process and shared with other subservers, closing it
+	// here would tear down their lnd access as well.
+	if d.lnd != nil && d.lndOwned {
 		d.lnd.Close()
 	}
 	if d.clientCleanup != nil {
