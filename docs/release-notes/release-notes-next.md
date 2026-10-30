@@ -16,6 +16,12 @@
   decisions retain only a copy of the validated swap hash, without unknown
   protobuf fields or oversized backing buffers.
 
+* The static address Loop In timeout sweep now spends the exact HTLC output
+  confirmed on chain, including server-published backup fee variants.
+  Previously it always targeted the standard fee variant, so a confirmed high
+  fee or extremely high fee HTLC transaction could not be swept back after the
+  HTLC timed out. Sweeps that would leave a dust output are no longer signed.
+
 #### Maintenance
 - Update the LoopRPC requirement to the revision used by this release.
 
