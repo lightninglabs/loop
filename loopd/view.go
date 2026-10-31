@@ -17,11 +17,14 @@ import (
 func view(config *Config, lisCfg *ListenerCfg) error {
 	network := lndclient.Network(config.Network)
 
-	lnd, err := lisCfg.getLnd(network, config.Lnd)
+	// The view command creates its own lnd connection and therefore owns
+	// (and closes) it. The variable is deliberately named ownedLnd so the
+	// ownership guard test can whitelist this legitimate close site.
+	ownedLnd, err := lisCfg.getLnd(network, config.Lnd)
 	if err != nil {
 		return err
 	}
-	defer lnd.Close()
+	defer ownedLnd.Close()
 
 	chainParams, err := network.ChainParams()
 	if err != nil {
@@ -48,7 +51,7 @@ func view(config *Config, lisCfg *ListenerCfg) error {
 	}
 
 	swapClient, cleanup, err := getClient(
-		config, swapDb, sweeperDb, &lnd.LndServices, assetClient,
+		config, swapDb, sweeperDb, &ownedLnd.LndServices, assetClient,
 	)
 	if err != nil {
 		return err

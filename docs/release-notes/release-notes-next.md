@@ -11,6 +11,13 @@
 
 #### Bug Fixes
 
+* Fix a connection ownership bug where an embedded loop daemon closed the
+  shared lnd connection on shutdown. When running as a subserver of
+  lightning-terminal, a graceful stop or a runtime error in the loop daemon
+  tore down the lnd connection owned by the parent process, breaking lnd
+  access for LiT and all other integrated subservers. The daemon now tracks
+  whether it created the connection itself and only closes owned connections.
+
 * Bound the static Loop In risk decision replay cache to prevent unbounded
   memory growth from swap server notifications for unknown swaps. Cached
   decisions retain only a copy of the validated swap hash, without unknown
