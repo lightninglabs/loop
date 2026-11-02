@@ -24,6 +24,11 @@ type DepositManager interface {
 	// EnsureDepositsFresh reconciles active deposits with the wallet view.
 	EnsureDepositsFresh(ctx context.Context) error
 
+	// HoldActiveDeposits prevents wallet reconciliation from removing the
+	// selected deposits and defers their expiry while still Deposited,
+	// until the returned release function is called.
+	HoldActiveDeposits(outpoints []wire.OutPoint) (func(), error)
+
 	// GetActiveDepositsInState returns all active deposits in the given
 	// state.
 	GetActiveDepositsInState(stateFilter fsm.StateType) ([]*deposit.Deposit,

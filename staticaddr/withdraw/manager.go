@@ -437,6 +437,15 @@ func (m *Manager) WithdrawDeposits(ctx context.Context,
 		return "", "", err
 	}
 
+	// The wallet can stop reporting the inputs while publication is still
+	// blocked. Keep their FSMs active until the existing withdrawal
+	// bookkeeping finishes, including on publication or monitoring errors.
+	release, err := m.cfg.DepositManager.HoldActiveDeposits(outpoints)
+	if err != nil {
+		return "", "", err
+	}
+	defer release()
+
 	published, err := m.publishFinalizedWithdrawalTx(ctx, finalizedTx)
 	if err != nil {
 		return "", "", err
