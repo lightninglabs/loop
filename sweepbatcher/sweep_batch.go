@@ -59,6 +59,10 @@ var (
 	// They must not stop the shared batcher, but remain visible in logs and
 	// are retried on the next publish attempt.
 	errBatchNotConstructed = errors.New("batch transaction not constructed")
+
+	// errBatchSigningTimeout marks an expected co-signer timeout. The batch
+	// remains pending and retries without stopping the shared batcher.
+	errBatchSigningTimeout = errors.New("batch signing timed out")
 )
 
 // sweep stores any data related to sweeping a specific outpoint.
@@ -1242,7 +1246,7 @@ func (b *batch) publish(ctx context.Context) error {
 		b.publishErrorHandler(err, errMsg, b.log())
 	}
 
-	// Keep the last usable rate if no transaction can be constructed.
+	// Keep the last usable rate if no signed transaction is obtained.
 	previousRbfCache := b.rbfCache
 
 	// Run the RBF rate update.
@@ -1280,14 +1284,22 @@ func (b *batch) publish(ctx context.Context) error {
 			// not to break the main loop of the sweep batch.
 			return nil
 
-		case errors.Is(err, errBatchNotConstructed):
-			b.admissionPaused = true
+		case errors.Is(err, errBatchNotConstructed),
+			errors.Is(err, errBatchSigningTimeout):
+
+			// A signing timeout follows successful construction, so
+			// the batch can accept new sweeps again.
+			b.admissionPaused = errors.Is(err, errBatchNotConstructed)
 			b.rbfCache = previousRbfCache
 			if persistErr := b.persist(ctx); persistErr != nil {
 				return fmt.Errorf("restore batch fee rate: %w",
 					persistErr)
 			}
-			logPublishError("construct error", err)
+			if b.admissionPaused {
+				logPublishError("construct error", err)
+			} else {
+				logPublishError("signing timeout", err)
+			}
 			return nil
 
 		default:

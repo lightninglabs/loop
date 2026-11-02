@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/blockchain"
@@ -494,6 +495,11 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		loadOnly,
 	)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return 0, fmt.Errorf("%w: failed to sign tx: %w",
+				errBatchSigningTimeout, err), false
+		}
+
 		return 0, fmt.Errorf("failed to sign tx: %w", err),
 			false
 	}

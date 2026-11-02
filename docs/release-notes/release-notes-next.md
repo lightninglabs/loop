@@ -14,6 +14,7 @@
 * A sweep batch that cannot construct its transaction now logs the failure and
   retries without stopping `loopd`. New sweeps use another batch until the
   failing one constructs a transaction.
+  Presigned co-signer timeouts also retry without stopping other batches.
 
 * Disable MPTCP listeners by default, restoring plain TCP for `loopd` and
   mitigating the demonstrated CVE-2026-98432 exploit path on vulnerable Linux
