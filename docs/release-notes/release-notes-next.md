@@ -2,6 +2,9 @@
 
 #### New Features
 
+* Add `loop/tapsdk`, a maintained Taproot Assets SDK with wallet, transport,
+  custom-anchor transfer and proof helpers using the existing Bitcoin types.
+
 * Loop Out accepts bLIP 39 blinded invoices when the server supplies a separate
   payment address for swap RPC authentication. The address is persisted for
   restart and cooperative sweeping. Blinded payments use LND's routing without
