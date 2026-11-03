@@ -1,6 +1,7 @@
 package tapsdk
 
 import (
+	"context"
 	"testing"
 
 	sdk "github.com/lightninglabs/tap-sdk"
@@ -45,6 +46,28 @@ func TestDirectionNeutralProofBindings(t *testing.T) {
 			}
 		})
 	}
+}
+
+type unsupportedNode struct{ sdk.Client }
+
+func (*unsupportedNode) GetInfo(context.Context) (*sdk.Info, error) {
+	return &sdk.Info{Version: "0.8.7", Network: "regtest"}, nil
+}
+
+func TestLiveFloorPreservesLocalRecovery(t *testing.T) {
+	wallet := sdk.NewWallet(&unsupportedNode{}, sdk.NetworkRegtest)
+	require.ErrorContains(t, CheckNodeVersion(t.Context(), wallet), "0.8.8")
+	// Native saved-package and witness decoding has no tapd-version gate.
+	_, final := nativeSignedFixture(t)
+	raw, err := final.MarshalBinary()
+	require.NoError(t, err)
+	recovered, err := DecodeFinalPackage(raw)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		final.CommittedPackageDigest,
+		recovered.CommittedPackageDigest,
+	)
 }
 
 func TestApprovalChecksBitcoinOnlyFunding(t *testing.T) {

@@ -212,3 +212,28 @@ func TestFundedPackagePolicy(t *testing.T) {
 		require.Error(t, CheckFundedPackage(changed, 2_000))
 	}
 }
+
+func TestBackendFeeSigningPolicy(t *testing.T) {
+	f := newPathFixture(t)
+	plan, err := f.wallet.NewCustomAnchorTxBuilder().Build(
+		t.Context(), f.request,
+	)
+	require.NoError(t, err)
+	pkg, err := plan.Commit(t.Context())
+	require.NoError(t, err)
+	packet, err := DecodePSBT(pkg.CommittedAnchorPsbt)
+	require.NoError(t, err)
+	fee := packet.UnsignedTx.TxIn[0].PreviousOutPoint
+	pkg.Funding.Mode = sdk.CustomAnchorFundingWalletFunded
+	pkg.Funding.MaxFeeSat = 2_000
+	pkg.FundingLock.CustomLockID = bytes.Repeat([]byte{1}, 32)
+	pkg.BackendManagedInputIndices = []uint32{0}
+	pkg.LockedUTXOs = []sdk.CustomAnchorLockedUTXO{{
+		Outpoint: sdk.Outpoint{Txid: sdk.Hash(fee.Hash), Index: fee.Index},
+	}}
+	pkg.SigningPlans = pkg.SigningPlans[1:]
+	// The wallet owns its fee-input signatures; the explicit contract plan
+	// still uses SIGHASH_DEFAULT.
+	pkg = withSigningHash(t, pkg, 0, txscript.SigHashAll)
+	require.NoError(t, CheckFundedPackage(pkg, 2_000))
+}
