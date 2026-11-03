@@ -34,11 +34,9 @@ func (c *pathChain) Prevout(_ context.Context, point wire.OutPoint) (*wire.TxOut
 }
 
 func (c *pathChain) Height(context.Context) (uint32, error) { return 200, nil }
-
 func (c *pathChain) Block(_ context.Context, h uint32) (*wire.MsgBlock, error) {
 	return c.blocks[h], nil
 }
-
 func (c *pathChain) BlockHash(_ context.Context,
 	height uint32) (chainhash.Hash, error) {
 
@@ -48,7 +46,6 @@ func (c *pathChain) BlockHash(_ context.Context,
 	}
 	return block.BlockHash(), nil
 }
-
 func (c *pathChain) Unspent(_ context.Context, p wire.OutPoint) (bool, error) {
 	return c.utxos[p] != nil, nil
 }
@@ -68,7 +65,6 @@ func (c *pathClient) GetInfo(context.Context) (*sdk.Info, error) {
 	}
 	return fixtureNodeInfo(), nil
 }
-
 func (c *pathClient) VerifyProof(_ context.Context, raw []byte) (*sdk.VerifyProofResponse, error) {
 	c.verifies++
 	if c.afterVerify != nil {
@@ -76,12 +72,10 @@ func (c *pathClient) VerifyProof(_ context.Context, raw []byte) (*sdk.VerifyProo
 	}
 	return fixtureVerified(raw, true)
 }
-
 func (c *pathClient) CustomAnchorCapabilities(context.Context) (*sdk.CustomAnchorCapabilities, error) {
 	v := sdk.DefaultTapdCustomAnchorCapabilities()
 	return &v, nil
 }
-
 func (c *pathClient) PublishAndLogTransferWithRequest(context.Context,
 	*sdk.PublishAndLogTransferRequest) (*sdk.AssetPacket, error) {
 
@@ -332,4 +326,123 @@ func requestPoint(t *testing.T, request *sdk.CustomAnchorRequest, index int) wir
 	p, err := DecodePSBT(request.AnchorPSBT)
 	require.NoError(t, err)
 	return p.UnsignedTx.TxIn[index].PreviousOutPoint
+}
+
+func TestApprovedParentsNativeBuild(t *testing.T) {
+	f := newPathFixture(t)
+	unsigned, parent := f.parent(t)
+	request, binding := f.child(t, parent)
+	for _, approval := range []ParentApproval{
+		{Package: unsigned, Digest: unsigned.CommittedPackageDigest},
+		{Package: parent, Digest: sdk.Hash{1}},
+	} {
+		_, err := NewApprovedParents(t.Context(), f.wallet, f.chain, 2,
+			request, []InputBinding{binding}, []ParentApproval{approval})
+		require.Error(t, err)
+	}
+	parents, err := NewApprovedParents(t.Context(), f.wallet, f.chain, 2,
+		request, []InputBinding{binding}, []ParentApproval{{Package: parent,
+			Digest: parent.CommittedPackageDigest}})
+	require.NoError(t, err)
+	f.client.verifies = 0
+	builder := f.wallet.NewCustomAnchorTxBuilder()
+	builder.SetConfirmedProofVerifier(parents)
+	plan, err := builder.Build(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, 1, f.client.verifies)
+	require.NoError(t, parents.CheckPlan(t.Context(), plan))
+	child, err := plan.Commit(t.Context(), sdk.CustomAnchorCommitOptions{})
+	require.NoError(t, err)
+	require.NoError(t, child.Validate())
+	require.Equal(t, sdk.CustomAnchorProofSourceCompactPath, child.Inputs[0].ProofSource.Kind)
+	delete(f.chain.utxos, requestPoint(t, f.request, 0))
+	require.Error(t, parents.CheckCurrent(t.Context()))
+}
+
+func TestApprovedParentsRejectUnapprovedTransition(t *testing.T) {
+	f := newPathFixture(t)
+	_, parent := f.parent(t)
+	request, binding := f.child(t, parent)
+	_, err := NewApprovedParents(t.Context(), f.wallet, f.chain, 2,
+		request, []InputBinding{binding}, nil)
+	require.Error(t, err)
+}
+
+func TestApprovedParentsRequireIsolatedBases(t *testing.T) {
+	f := newPathFixture(t)
+	p := bindingProof(t, bindingGenesis(), bindingKey(2).PubKey(),
+		bindingKey(3).PubKey(), nil, bindingGenesis().FirstPrevOut, 100, true)
+	request := f.request.Clone()
+	request.Inputs[0].ProofFile = nil
+	request.Inputs[0].ProofPath = &sdk.AssetProofPath{ConfirmedBaseProof: bindingRaw(t, p)}
+	_, err := NewApprovedParents(t.Context(), f.wallet, f.chain, 2,
+		request, []InputBinding{f.binding}, nil)
+	require.ErrorContains(t, err, "compact parent paths require isolated asset anchors")
+	require.Zero(t, f.client.verifies)
+}
+
+func TestApprovedParentsRecheckFundingAfterVerification(t *testing.T) {
+	f := newPathFixture(t)
+	_, parent := f.parent(t)
+	request, binding := f.child(t, parent)
+	parents, err := NewApprovedParents(t.Context(), f.wallet, f.chain, 2,
+		request, []InputBinding{binding}, []ParentApproval{{Package: parent,
+			Digest: parent.CommittedPackageDigest}})
+	require.NoError(t, err)
+	f.client.verifies = 0
+	f.client.afterVerify = func() { clear(f.chain.utxos) }
+	builder := f.wallet.NewCustomAnchorTxBuilder()
+	builder.SetConfirmedProofVerifier(parents)
+	_, err = builder.Build(t.Context(), request)
+	require.Error(t, err)
+	require.Equal(t, 1, f.client.verifies)
+}
+
+func TestApprovedParentsSnapshotBeforeRPC(t *testing.T) {
+	f := newPathFixture(t)
+	_, parent := f.parent(t)
+	request, binding := f.child(t, parent)
+	f.client.afterInfo = func() {
+		binding.Anchor.Leaves[0][0] ^= 1
+		request.Inputs[0].ProofPath.ConfirmedBaseProof[0] ^= 1
+	}
+	_, err := NewApprovedParents(t.Context(), f.wallet, f.chain, 2,
+		request, []InputBinding{binding}, []ParentApproval{{Package: parent,
+			Digest: parent.CommittedPackageDigest}})
+	require.NoError(t, err)
+}
+
+func TestApprovedParentsBindNativePlan(t *testing.T) {
+	f := newPathFixture(t)
+	_, parent := f.parent(t)
+	request, binding := f.child(t, parent)
+	parents, err := NewApprovedParents(t.Context(), f.wallet, f.chain, 2,
+		request, []InputBinding{binding}, []ParentApproval{{Package: parent,
+			Digest: parent.CommittedPackageDigest}})
+	require.NoError(t, err)
+	changed := request.Clone()
+	changed.Outputs[0].ProofDelivery.RecipientID = "substituted delivery"
+	builder := f.wallet.NewCustomAnchorTxBuilder()
+	builder.SetConfirmedProofVerifier(parents)
+	plan, err := builder.Build(t.Context(), changed)
+	require.NoError(t, err)
+	require.ErrorContains(t, parents.CheckPlan(t.Context(), plan), "differs from inspected")
+}
+
+func TestApprovedParentsAuthenticateRootFunding(t *testing.T) {
+	for _, script := range []bool{false, true} {
+		f := newPathFixture(t)
+		_, parent := f.parent(t)
+		request, binding := f.child(t, parent)
+		point := requestPoint(t, f.request, 0)
+		if script {
+			f.chain.utxos[point].PkScript = []byte{txscript.OP_TRUE}
+		} else {
+			f.chain.utxos[point].Value++
+		}
+		_, err := NewApprovedParents(t.Context(), f.wallet, f.chain, 2,
+			request, []InputBinding{binding}, []ParentApproval{{Package: parent,
+				Digest: parent.CommittedPackageDigest}})
+		require.ErrorContains(t, err, "authenticated Bitcoin prevout")
+	}
 }
