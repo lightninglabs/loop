@@ -3,9 +3,10 @@
 #### New Features
 
 * Add an opt-in, storage-agnostic `fsm/v2` engine with typed transition gates
-  and updates, persist-before-effect ordering, revision compare-and-swap, and
-  explicit restart recovery. Existing swap flows remain on the original engine
-  pending per-flow adoption.
+  and updates, declared initial states, persist-before-effect ordering,
+  revision compare-and-swap, revision-checked worker results, and explicit
+  restart recovery. Existing swap flows remain on the original engine pending
+  per-flow adoption.
 
 * Loop Out accepts bLIP 39 blinded invoices when the server supplies a separate
   payment address for swap RPC authentication. The address is persisted for

@@ -20,8 +20,8 @@ type Machine[D, E any] struct {
 	record Record
 }
 
-// Create stores revision 1 without executing business callbacks. The returned
-// machine requires Recover, just like Open. Initial state must therefore have a
+// Create stores revision 1 in a declared initial state without running effects.
+// The machine requires Recover, just like Open. Its initial state must have a
 // restore path that is safe whether initialization has run before or not.
 // A creation error may have committed: Open the same ID to resolve it, never
 // create a replacement ID to retry a financial operation.
@@ -34,6 +34,9 @@ func Create[D, E any](ctx context.Context, cfg Config[D, E],
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if !m.cfg.States[initial].Initial {
+		return nil, fmt.Errorf("%w: %q is not an initial state", ErrInvalidRecord, initial)
 	}
 	encoded, err := m.encode(data)
 	if err != nil {
@@ -92,7 +95,9 @@ func configure[D, E any](cfg Config[D, E]) (*Machine[D, E], error) {
 		cfg.MaxBytes = DefaultMaxBytes
 	}
 	states := maps.Clone(cfg.States)
+	hasInitial := false
 	for id, state := range states {
+		hasInitial = hasInitial || state.Initial
 		if id == "" || state.Validate == nil {
 			return nil, fmt.Errorf("%w: state needs name and validator", ErrConfig)
 		}
@@ -114,6 +119,9 @@ func configure[D, E any](cfg Config[D, E]) (*Machine[D, E], error) {
 			}
 		}
 		states[id] = state
+	}
+	if !hasInitial {
+		return nil, fmt.Errorf("%w: no initial state", ErrConfig)
 	}
 	cfg.States = states
 	m := &Machine[D, E]{cfg: cfg, token: make(chan struct{}, 1)}
@@ -180,6 +188,23 @@ func (m *Machine[D, E]) Recover(ctx context.Context) error {
 func (m *Machine[D, E]) Send(ctx context.Context, event Event,
 	payload E) (Snapshot[D], error) {
 
+	return m.dispatch(ctx, nil, event, payload)
+}
+
+// SendAtRevision submits a result that is valid only for the revision at
+// which its worker started. A local mismatch returns ErrStaleRevision before
+// callbacks or writes and leaves the machine ready. As with Send, a concurrent
+// store conflict requires recovery. Use Send for observations that can remain
+// valid across revisions, such as confirmation of an older signed transaction.
+func (m *Machine[D, E]) SendAtRevision(ctx context.Context, revision uint64,
+	event Event, payload E) (Snapshot[D], error) {
+
+	return m.dispatch(ctx, &revision, event, payload)
+}
+
+func (m *Machine[D, E]) dispatch(ctx context.Context, expectedRevision *uint64,
+	event Event, payload E) (Snapshot[D], error) {
+
 	var zero Snapshot[D]
 	if err := m.acquire(ctx); err != nil {
 		return zero, err
@@ -193,19 +218,22 @@ func (m *Machine[D, E]) Send(ctx context.Context, event Event,
 			m.ready = false
 		}
 	}()
-	snapshot, err := m.send(ctx, event, payload)
+	snapshot, err := m.send(ctx, expectedRevision, event, payload)
 	returned = true
 	return snapshot, err
 }
 
-func (m *Machine[D, E]) send(ctx context.Context, event Event,
-	payload E) (Snapshot[D], error) {
+func (m *Machine[D, E]) send(ctx context.Context, expectedRevision *uint64,
+	event Event, payload E) (Snapshot[D], error) {
 
 	var zero Snapshot[D]
 	if !m.ready {
 		return zero, ErrRecoveryRequired
 	}
 	previous := m.getRecord()
+	if expectedRevision != nil && previous.Revision != *expectedRevision {
+		return zero, ErrStaleRevision
+	}
 	transition, ok := m.cfg.States[previous.State].Transitions[event]
 	if !ok {
 		return zero, ErrEventRejected

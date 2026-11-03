@@ -14,6 +14,8 @@ var (
 	ErrNotFound = errors.New("fsm record not found")
 	// ErrConflict means creation or compare-and-swap lost to another writer.
 	ErrConflict = errors.New("fsm revision conflict")
+	// ErrStaleRevision means a result targets a different local revision.
+	ErrStaleRevision = errors.New("fsm result revision mismatch")
 	// ErrConfig means the definition or dependencies are invalid.
 	ErrConfig = errors.New("invalid fsm configuration")
 	// ErrInvalidRecord means a checkpoint failed envelope or data validation.
@@ -135,6 +137,9 @@ type Transition[D, E any] struct {
 // calls Enter. Terminal states have no transitions, Enter or Restore: complete
 // all business/resource reconciliation before committing a terminal state.
 type State[D, E any] struct {
+	// Initial permits Create to start a new operation in this state.
+	// Open and Recover can resume any validated state in the graph.
+	Initial     bool
 	Terminal    bool
 	Validate    func(D) error
 	Restore     Effect[D]

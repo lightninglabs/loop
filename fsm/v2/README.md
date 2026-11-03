@@ -34,6 +34,11 @@ waiter goroutines in the transition engine.
 from machine identity. The definition is validated and copied at construction.
 Changing caller-owned maps later must not change a running machine.
 
+Mark each permitted starting state with `Initial`. A graph must have at least
+one. `Create` rejects every other state before encoding data or writing a
+record. `Open` and `Recover` can resume any validated checkpoint, including
+historical records imported by a flow after validating their evidence.
+
 Each transition has an explicit target, a mandatory `Gate`, and a mandatory
 `Update`. Each state has a mandatory `Validate`; nonterminal states additionally
 require `Restore`. `Enter` is optional and runs only after the next record is
@@ -92,8 +97,11 @@ canceled caller waiting for serialization can return without starting an event.
 Cancellation cannot forcibly stop a callback that ignores its context. Keep
 callbacks bounded: register supervised runtime workers for long-lived monitoring
 and return, so the owner can process urgent timeout and chain events. Worker
-results should carry an intent identity or expected revision; reject stale
-results in a gate rather than applying them to a later operation.
+results scoped to one revision use `SendAtRevision` with the revision that
+started the worker. A local mismatch returns `ErrStaleRevision` without a
+write or recovery. For evidence that survives revisions, such as a confirmed
+spend of an older fee-bump candidate, use `Send` and match the transaction or
+intent identity in the gate.
 
 ## Recovery and uncertain outcomes
 
@@ -218,6 +226,11 @@ a legacy state name as proof that its old entry action completed.
 - Implement the flow-specific `Store` adapter against its existing records and
   history. Prove that loading a snapshot is consistent and the revision check,
   update, history append, and any transactional resource changes are atomic.
+  Race two flow IDs for one shared input, reopen the store after the winning
+  commit, and deliver delayed cleanup from the loser. Only the winner may
+  release the input. The [SQLite contract test](ownership_test.go) exercises
+  this sequence with a test adapter. Repeat it against each shared production
+  ownership store.
 
 - Define durable intents before payment, preimage disclosure, partial-signature
   release, transaction publication, and resource ownership changes. Store exact

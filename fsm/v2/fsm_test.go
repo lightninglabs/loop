@@ -141,7 +141,7 @@ func noop(context.Context, fsm.Snapshot[businessData]) error {
 	return nil
 }
 
-func config(store *memoryStore) fsm.Config[businessData, command] {
+func config(store fsm.Store) fsm.Config[businessData, command] {
 	validate := func(data businessData) error {
 		if len(data.Values) == 0 || data.Values[0] < 0 {
 			return errors.New("invalid business data")
@@ -156,6 +156,7 @@ func config(store *memoryStore) fsm.Config[businessData, command] {
 		EventCodec: fsm.JSONCodec[command](),
 		States: map[fsm.StateID]fsm.State[businessData, command]{
 			stateReady: {
+				Initial:  true,
 				Validate: validate,
 				Restore:  noop,
 				Transitions: map[fsm.Event]fsm.Transition[businessData, command]{
@@ -273,6 +274,60 @@ func TestExplicitRecoveryAndTerminal(t *testing.T) {
 	assertError(t, err, fsm.ErrEventRejected)
 	if restores != 1 || store.writes != 3 {
 		t.Fatalf("terminal recovery replayed work: restores=%d writes=%d", restores, store.writes)
+	}
+}
+
+func TestCreateRequiresDeclaredInitialState(t *testing.T) {
+	store := &memoryStore{}
+	cfg := config(store)
+	cfg.DataCodec.Encode = func(businessData) ([]byte, error) {
+		t.Fatal("unauthorized start reached the codec")
+		return nil, nil
+	}
+	for _, state := range []fsm.StateID{statePending, stateDone, "unknown"} {
+		_, err := fsm.Create(t.Context(), cfg, state, businessData{})
+		assertError(t, err, fsm.ErrInvalidRecord)
+	}
+	if store.writes != 0 {
+		t.Fatal("unauthorized start wrote a checkpoint")
+	}
+
+	cfg = config(store)
+	pending := cfg.States[statePending]
+	pending.Initial = true
+	cfg.States[statePending] = pending
+	_, err := fsm.Create(t.Context(), cfg, statePending, businessData{Values: []int{1}})
+	if err != nil {
+		t.Fatalf("declared alternate initial state: %v", err)
+	}
+}
+
+func TestSendAtRevisionRejectsReplacedWorker(t *testing.T) {
+	store := &memoryStore{}
+	cfg := config(store)
+	pending := cfg.States[statePending]
+	pending.Transitions["replace"] = fsm.Transition[businessData, command]{
+		To: statePending, Gate: allow, Update: unchanged,
+	}
+	machine := create(t, cfg)
+	first, err := machine.SendAtRevision(t.Context(), 1, "start", command{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := machine.Send(t.Context(), "replace", command{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, revision := range []uint64{0, first.Revision, next.Revision + 1} {
+		_, err := machine.SendAtRevision(t.Context(), revision, "complete", command{})
+		assertError(t, err, fsm.ErrStaleRevision)
+	}
+	if store.writes != 3 {
+		t.Fatal("stale results advanced the store")
+	}
+	completed, err := machine.SendAtRevision(t.Context(), next.Revision, "complete", command{})
+	if err != nil || completed.State != stateDone {
+		t.Fatalf("current worker failed: %+v, %v", completed, err)
 	}
 }
 
@@ -674,6 +729,11 @@ func TestCallbackPanicFencesMachine(t *testing.T) {
 
 func TestInvalidDefinitionsAndRecords(t *testing.T) {
 	mutations := map[string]func(*fsm.Config[businessData, command]){
+		"no initial state": func(cfg *fsm.Config[businessData, command]) {
+			state := cfg.States[stateReady]
+			state.Initial = false
+			cfg.States[stateReady] = state
+		},
 		"empty id":            func(cfg *fsm.Config[businessData, command]) { cfg.ID = "" },
 		"zero version":        func(cfg *fsm.Config[businessData, command]) { cfg.Version = 0 },
 		"nil store":           func(cfg *fsm.Config[businessData, command]) { cfg.Store = nil },
@@ -949,6 +1009,7 @@ func TestRecoveryWithReconstructedData(t *testing.T) {
 		EventCodec: fsm.JSONCodec[struct{}](),
 		States: map[fsm.StateID]fsm.State[map[string]int, struct{}]{
 			stateDone: {
+				Initial:  true,
 				Terminal: true,
 				Validate: func(value map[string]int) error {
 					if len(value) != len(data) {
