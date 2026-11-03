@@ -131,6 +131,85 @@ func DecodePSBT(raw []byte) (*psbt.Packet, error) {
 	return psbt.NewFromRawBytes(bytes.NewReader(raw), false)
 }
 
+// EncodePSBT serializes a native Bitcoin PSBT.
+func EncodePSBT(p *psbt.Packet) ([]byte, error) {
+	var b bytes.Buffer
+	err := p.Serialize(&b)
+	return b.Bytes(), err
+}
+
+// MaxPackageBytes bounds native JSON package decoding, including base64 proof
+// files and PSBTs. The encoded package must fit before signing and on recovery.
+const MaxPackageBytes = 2 * assetpolicy.MaxProvenanceBytes
+
+// importProof restores lineage missing from tapd's exact-output proof archive.
+func importProof(ctx context.Context, wallet *sdk.Wallet, raw []byte) error {
+	p, err := LastProof(raw)
+	if err != nil {
+		return err
+	}
+	key, err := sdk.ParsePubKey(
+		p.Asset.ScriptKey.PubKey.SerializeCompressed(),
+	)
+	if err != nil {
+		return err
+	}
+	point := sdk.Outpoint{Txid: sdk.Hash(p.OutPoint().Hash),
+		Index: p.OutPoint().Index}
+	file, err := wallet.ExportProofFile(ctx,
+		sdk.AssetRefFromAssetID(sdk.AssetID(p.Asset.ID())), key, &point)
+	if err == nil && file != nil {
+		existing, err := LastProof(file.RawProofFile)
+		if err != nil {
+			return err
+		}
+		if existing.OutPoint() != p.OutPoint() ||
+			existing.Asset.ID() != p.Asset.ID() ||
+			existing.Asset.Amount != p.Asset.Amount ||
+			!existing.Asset.ScriptKey.PubKey.IsEqual(
+				p.Asset.ScriptKey.PubKey,
+			) {
+
+			return swapkit.ErrInvalid
+		}
+		return nil
+	}
+	_, err = wallet.ImportProofFile(ctx,
+		&sdk.ProofFile{RawProofFile: raw})
+	return err
+}
+
+// declareOPTrue registers the exact public asset script tree with tapd.
+func declareOPTrue(ctx context.Context, wallet *sdk.Wallet,
+	scriptKey sdk.PubKey,
+	witness [][]byte) error {
+
+	if len(witness) != 2 ||
+		!bytes.Equal(witness[0], []byte{txscript.OP_TRUE}) {
+
+		return swapkit.ErrInvalid
+	}
+	control, err := txscript.ParseControlBlock(witness[1])
+	if err != nil {
+		return err
+	}
+	internal, err := sdk.ParsePubKey(
+		control.InternalKey.SerializeCompressed(),
+	)
+	if err != nil {
+		return err
+	}
+	_, err = wallet.Client().
+		DeclareScriptKey(ctx, &sdk.DeclareScriptKeyRequest{
+			ScriptKey: sdk.ScriptKey{PubKey: scriptKey,
+				KeyDesc: sdk.KeyDescriptor{
+					RawKeyBytes: internal,
+				},
+				TapTweak: control.RootHash(witness[0])},
+		})
+	return err
+}
+
 // SDKPoint converts a native SDK outpoint to the Bitcoin wire type.
 func SDKPoint(p sdk.Outpoint) wire.OutPoint {
 	return wire.OutPoint{Hash: chainhash.Hash(p.Txid), Index: p.Index}
