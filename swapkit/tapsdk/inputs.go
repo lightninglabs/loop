@@ -1,16 +1,128 @@
 package tapsdk
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
+	assetpolicy "github.com/lightninglabs/loop/internal/assetpolicy"
 	"github.com/lightninglabs/loop/internal/assetproof"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/proof"
 )
+
+// PrepareInputs restores proof lineage and declares OP_TRUE inputs in tapd.
+// The SDK builder owns full input proof verification; this does not repeat it.
+func PrepareInputs(ctx context.Context, wallet *sdk.Wallet,
+	request *sdk.CustomAnchorRequest) error {
+
+	if request == nil {
+		return swapkit.ErrInvalid
+	}
+	// Bound the complete request before decoding or importing any history.
+	var size int
+	var raws [][]byte
+	for _, input := range request.Inputs {
+		raw := input.ProofFile
+		if input.ProofPath != nil {
+			if len(raw) != 0 {
+				return swapkit.ErrInvalid
+			}
+			if err := input.ProofPath.Validate(); err != nil {
+				return err
+			}
+			encoded, err := input.ProofPath.MarshalBinary()
+			if err != nil {
+				return err
+			}
+			if len(encoded) > assetpolicy.MaxProvenanceBytes-size {
+				return swapkit.ErrInvalid
+			}
+			size += len(encoded)
+			raw = input.ProofPath.ConfirmedBaseProof
+		} else {
+			if len(raw) > assetpolicy.MaxProvenanceBytes-size {
+				return swapkit.ErrInvalid
+			}
+			size += len(raw)
+		}
+		raws = append(raws, raw)
+	}
+	for _, passive := range request.PassiveAssets.Packets {
+		if len(
+			passive.ProofFile,
+		) > assetpolicy.MaxProvenanceBytes-size {
+
+			return swapkit.ErrInvalid
+		}
+		size += len(passive.ProofFile)
+		raws = append(raws, passive.ProofFile)
+	}
+	request = request.Clone()
+	for i := range raws {
+		raws[i] = bytes.Clone(raws[i])
+	}
+	params, err := nodeParams(ctx, wallet)
+	if err != nil {
+		return err
+	}
+	var inventory []*proof.Proof
+	for _, raw := range raws {
+		if err := checkProvenanceWithParams(ctx, raw, params); err != nil {
+			return err
+		}
+		p, err := LastProof(raw)
+		if err != nil {
+			return err
+		}
+		inventory = append(inventory, p)
+	}
+	if err := assetproof.VerifyCompleteAnchors(inventory); err != nil {
+		return err
+	}
+	for _, input := range request.Inputs {
+		raw := input.ProofFile
+		var p *proof.Proof
+		if input.ProofPath != nil {
+			raw = input.ProofPath.ConfirmedBaseProof
+			if len(input.ProofPath.Steps) > 0 {
+				p, err = proof.Decode(
+					input.ProofPath.Steps[len(input.ProofPath.Steps)-1].TransitionProof,
+				)
+			}
+		}
+		if p == nil && err == nil {
+			p, err = LastProof(raw)
+		}
+		if err != nil {
+			return err
+		}
+		if input.Witness.Mode == sdk.CustomAssetWitnessCallerProvided {
+			pub, err := sdk.ParsePubKey(
+				p.Asset.ScriptKey.PubKey.SerializeCompressed(),
+			)
+			if err != nil {
+				return err
+			}
+			if err := declareOPTrue(ctx, wallet, pub, input.Witness.Stack); err != nil {
+				return err
+			}
+		}
+		if err := importProof(ctx, wallet, raw); err != nil {
+			return err
+		}
+	}
+	for _, passive := range request.PassiveAssets.Packets {
+		if err := importProof(ctx, wallet, passive.ProofFile); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
 
 // CheckInputsCurrent repeats chain checks after SDK Build's verification RPCs.
 // Call it before Commit so verification cannot authorize a now stale input.
@@ -63,6 +175,34 @@ func CheckInputsCurrent(ctx context.Context, chain Chain, minConfs uint32,
 	}
 
 	return nil
+}
+
+// commit rebuilds an already observed transfer's proof. It never signs a
+// wallet transaction; the caller applies the observed Bitcoin witness.
+func commit(
+	ctx context.Context,
+	wallet *sdk.Wallet,
+	chain Chain,
+	minConfs uint32,
+	request *sdk.CustomAnchorRequest,
+) (*sdk.CustomAnchorTransferPackage, error) {
+
+	if err := PrepareInputs(ctx, wallet, request); err != nil {
+		return nil, err
+	}
+	plan, err := wallet.NewCustomAnchorTxBuilder().Build(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	err = CheckInputsCurrent(ctx, chain, minConfs, request, false)
+	if err != nil {
+		return nil, err
+	}
+	return plan.Commit(ctx, sdk.CustomAnchorCommitOptions{
+		Publish: sdk.CustomAnchorPublishMetadata{
+			Label: "Loop asset transfer",
+		},
+	})
 }
 
 // checkFundingCurrent checks all asset and Bitcoin-only funding inputs. Skip
