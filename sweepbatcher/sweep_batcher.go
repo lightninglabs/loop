@@ -193,6 +193,8 @@ type PresignedHelper interface {
 	// sign it within the helper's time budget, the returned error must
 	// wrap context.DeadlineExceeded. The batcher then treats the failure
 	// to add a sweep to a batch as expected and logs it at info level.
+	// A timeout during publication is logged and retried on a later publish
+	// attempt without stopping the batcher.
 	SignTx(ctx context.Context, primarySweepID wire.OutPoint,
 		tx *wire.MsgTx, inputAmt btcutil.Amount,
 		minRelayFee, feeRate chainfee.SatPerKWeight,

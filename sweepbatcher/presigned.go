@@ -3,6 +3,7 @@ package sweepbatcher
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/blockchain"
@@ -443,8 +444,8 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 	// Determine the current minimum relay fee based on our chain backend.
 	minRelayFeeRate, err := b.wallet.MinRelayFee(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get minRelayFeeRate: %w", err),
-			false
+		return 0, fmt.Errorf("%w: failed to get minRelayFeeRate: %w",
+			errBatchNotConstructed, err), false
 	}
 
 	// Cache current height and desired feerate of the batch.
@@ -465,8 +466,8 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		b.cfg.chainParams,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to find destination address: %w",
-			err), false
+		return 0, fmt.Errorf("%w: find destination address: %w",
+			errBatchNotConstructed, err), false
 	}
 
 	// Construct unsigned batch transaction.
@@ -474,8 +475,8 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		sweeps, address, currentHeight, feeRate, minRelayFeeRate,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to construct tx: %w", err),
-			false
+		return 0, fmt.Errorf("%w: failed to construct tx: %w",
+			errBatchNotConstructed, err), false
 	}
 
 	// Adjust feeRate, because it may have been clamped.
@@ -494,6 +495,11 @@ func (b *batch) publishPresigned(ctx context.Context) (btcutil.Amount, error,
 		loadOnly,
 	)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return 0, fmt.Errorf("%w: failed to sign tx: %w",
+				errBatchSigningTimeout, err), false
+		}
+
 		return 0, fmt.Errorf("failed to sign tx: %w", err),
 			false
 	}
