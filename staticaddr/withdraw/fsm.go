@@ -371,6 +371,7 @@ func (m *Manager) workflowConfig(id string) fsmv2.Config[WorkflowData, workflowE
 		WorkflowFailed, WorkflowReconciliation,
 	} {
 		state := fsmv2.State[WorkflowData, workflowEvent]{
+			Initial: stateID == WorkflowSigning,
 			Validate: func(data WorkflowData) error {
 				return validateWorkflow(stateID, data)
 			},

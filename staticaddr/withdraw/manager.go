@@ -89,10 +89,11 @@ type newWithdrawalResponse struct {
 }
 
 type workflowResult struct {
-	id      string
-	event   fsmv2.Event
-	message workflowEvent
-	err     error
+	id              string
+	signingRevision uint64
+	event           fsmv2.Event
+	message         workflowEvent
+	err             error
 }
 
 type withdrawalRuntime struct {
@@ -534,7 +535,8 @@ func (m *Manager) restoreWorkflow(ctx context.Context, view fsmv2.Snapshot[Workf
 				event = workflowAbort
 			}
 			m.deliverResult(workCtx, workflowResult{id: view.ID, event: event,
-				message: workflowEvent{Attempt: view.Data.Attempt, Tx: raw}, err: err})
+				signingRevision: view.Revision,
+				message:         workflowEvent{Attempt: view.Data.Attempt, Tx: raw}, err: err})
 		})
 	}
 	if view.State != WorkflowSigning && runtime.signCancel != nil {
@@ -613,7 +615,21 @@ func (m *Manager) handleWorkflowResult(ctx context.Context, result workflowResul
 		result.event = workflowConflict
 		result.message.Reason = "deposit spent by a transaction outside the approved withdrawal attempts"
 	}
-	committed, err := runtime.machine.Send(ctx, result.event, result.message)
+	var committed fsmv2.Snapshot[WorkflowData]
+	switch result.event {
+	case workflowSigned, workflowAbort, workflowResume:
+		committed, err = runtime.machine.SendAtRevision(
+			ctx, result.signingRevision, result.event, result.message,
+		)
+		if errors.Is(err, fsmv2.ErrStaleRevision) {
+			return
+		}
+
+	default:
+		// An older signed candidate can still win on chain after a fee
+		// bump. Match chain evidence against the retained candidates.
+		committed, err = runtime.machine.Send(ctx, result.event, result.message)
+	}
 	if err != nil {
 		if errors.Is(err, fsmv2.ErrRecoveryRequired) {
 			runtime.needsRecovery = true

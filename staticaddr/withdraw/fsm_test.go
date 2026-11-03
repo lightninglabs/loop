@@ -132,16 +132,32 @@ func TestWorkflowOldCandidateWinsDuringReplacementSigning(t *testing.T) {
 	require.Equal(t, WorkflowSigning, bumping.State)
 	require.Len(t, bumping.Data.Attempts, 1)
 
+	// Even a well-formed signing result for this plan cannot advance the
+	// workflow if its worker was authorized at an earlier revision.
+	manager := &Manager{workflows: map[string]*withdrawalRuntime{
+		data.ID: {machine: machine},
+	}}
+	lateReplacement := signTestCandidate(t, fixture, data, replacement)
+	manager.handleWorkflowResult(t.Context(), workflowResult{
+		id: data.ID, event: workflowSigned, signingRevision: 1,
+		message: workflowEvent{Attempt: 2, Tx: lateReplacement},
+	})
+	current, err := machine.Snapshot(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, bumping.Revision, current.Revision)
+
 	// The old signer result is stale, but a chain observation of its already
 	// retained candidate must remain actionable during the new attempt.
 	_, err = machine.Send(t.Context(), workflowSigned, workflowEvent{Attempt: 1, Tx: raw})
 	require.ErrorContains(t, err, "stale")
-	confirming, err := machine.Send(t.Context(), workflowSpend,
-		workflowEvent{TxID: signed.TxHash().String(), Tx: raw})
+	manager.handleWorkflowResult(t.Context(), workflowResult{
+		id: data.ID, event: workflowSpend,
+		message: workflowEvent{TxID: signed.TxHash().String(), Tx: raw},
+	})
+	confirming, err := machine.Snapshot(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, WorkflowConfirming, confirming.State)
 	require.Equal(t, signed.TxHash().String(), confirming.Data.WinningTxID)
-	lateReplacement := signTestCandidate(t, fixture, data, replacement)
 	_, err = machine.Send(t.Context(), workflowSigned,
 		workflowEvent{Attempt: 2, Tx: lateReplacement})
 	require.ErrorIs(t, err, fsmv2.ErrEventRejected)
