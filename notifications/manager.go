@@ -57,6 +57,11 @@ const (
 	// we queue per subscriber before dropping new notifications.
 	defaultMaxQueuedNotifications = 1024
 
+	// maxPendingRiskDecisions bounds the replay cache across accepted and
+	// rejected decisions. The server chooses the hashes, including hashes
+	// for swaps that do not exist locally and cannot be persisted.
+	maxPendingRiskDecisions = 1024
+
 	// current_version is the current version of the notification listener.
 	current_version = swapserverrpc.SubscribeNotificationsRequest_V1
 )
@@ -91,8 +96,8 @@ type Config struct {
 
 	// PersistStaticLoopInRiskDecision durably records static loop-in
 	// confirmation-risk decisions. If this fails, the notification is still
-	// cached and forwarded so a later subscriber can process it after the swap
-	// row exists.
+	// forwarded and cached subject to maxPendingRiskDecisions so a later
+	// subscriber can process it after the swap row exists.
 	PersistStaticLoopInRiskDecision func(context.Context, lntypes.Hash,
 		bool) error
 }
@@ -124,7 +129,8 @@ type Manager struct {
 
 	// staticLoopInRiskPersisted records whether the cached risk decision for
 	// a swap hash was durably persisted. Unpersisted decisions remain cached
-	// after subscriber cancellation so they can be replayed.
+	// after subscriber cancellation so they can be replayed, subject to the
+	// shared maxPendingRiskDecisions limit.
 	staticLoopInRiskPersisted map[lntypes.Hash]bool
 }
 
@@ -607,6 +613,7 @@ func (m *Manager) handleStaticLoopInRiskDecision(ctx context.Context,
 	defer m.Unlock()
 
 	if hasSwapHash {
+		m.evictPendingRiskDecision(swapHash)
 		cacheDecision(swapHash, persisted)
 	}
 
@@ -618,6 +625,30 @@ func (m *Manager) handleStaticLoopInRiskDecision(ctx context.Context,
 		}
 
 		notifySubscriber(sub)
+	}
+}
+
+// evictPendingRiskDecision makes room for a new risk decision in the bounded
+// replay cache. Updating an existing hash does not need additional space. At
+// capacity, an arbitrary cached decision is evicted, even if persistence
+// failed.
+//
+// NOTE: The caller must hold the Manager mutex.
+func (m *Manager) evictPendingRiskDecision(swapHash lntypes.Hash) {
+	if _, ok := m.staticLoopInRiskPersisted[swapHash]; ok {
+		return
+	}
+
+	if len(m.staticLoopInRiskPersisted) < maxPendingRiskDecisions {
+		return
+	}
+
+	for hash := range m.staticLoopInRiskPersisted {
+		delete(m.staticLoopInRiskAccepted, hash)
+		delete(m.staticLoopInRiskRejected, hash)
+		delete(m.staticLoopInRiskPersisted, hash)
+
+		return
 	}
 }
 
@@ -672,6 +703,12 @@ func (m *Manager) handleNotification(ctx context.Context, ntfn *swapserverrpc.
 			ctx, swapHashBytes, true,
 			NotificationTypeStaticLoopInRiskAccepted,
 			func(swapHash lntypes.Hash, persisted bool) {
+				// Retain only the validated hash, without unknown
+				// protobuf fields or the original backing buffer.
+				riskAcceptedNtfn = &swapserverrpc.
+					ServerStaticLoopInRiskAcceptedNotification{
+					SwapHash: swapHash[:],
+				}
 				m.staticLoopInRiskAccepted[swapHash] =
 					riskAcceptedNtfn
 				m.staticLoopInRiskPersisted[swapHash] = persisted
@@ -700,6 +737,12 @@ func (m *Manager) handleNotification(ctx context.Context, ntfn *swapserverrpc.
 			ctx, swapHashBytes, false,
 			NotificationTypeStaticLoopInRiskRejected,
 			func(swapHash lntypes.Hash, persisted bool) {
+				// Retain only the validated hash, without unknown
+				// protobuf fields or the original backing buffer.
+				riskRejectedNtfn = &swapserverrpc.
+					ServerStaticLoopInRiskRejectedNotification{
+					SwapHash: swapHash[:],
+				}
 				m.staticLoopInRiskRejected[swapHash] =
 					riskRejectedNtfn
 				m.staticLoopInRiskPersisted[swapHash] = persisted

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -89,6 +90,11 @@ type Manager struct {
 	// activeDeposits contains all the active static address outputs.
 	activeDeposits map[wire.OutPoint]*FSM
 
+	// activeDepositHolds keeps wallet reconciliation from removing inputs
+	// while a withdrawal publishes and records its result. Counts are
+	// protected by mu; holds do not change deposit state or ownership.
+	activeDepositHolds map[wire.OutPoint]uint32
+
 	// deposits contain all the deposits that have ever been made to the
 	// static address. This field is used to store and recover deposits. It
 	// also serves as a basis for reconciliation of newly detected deposits
@@ -114,6 +120,7 @@ func NewManager(cfg *ManagerConfig) *Manager {
 	return &Manager{
 		cfg:                  cfg,
 		activeDeposits:       make(map[wire.OutPoint]*FSM),
+		activeDepositHolds:   make(map[wire.OutPoint]uint32),
 		deposits:             make(map[wire.OutPoint]*Deposit),
 		finalizedDepositChan: make(chan wire.OutPoint),
 	}
@@ -218,14 +225,22 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 	}
 }
 
-// notifyActiveDeposits informs all active deposit FSMs about a new block
-// height.
+// notifyActiveDeposits informs active deposit FSMs about a new block height.
+// Held Deposited inputs defer expiry until withdrawal publication finishes.
 func (m *Manager) notifyActiveDeposits(ctx context.Context,
 	height uint32) error {
 
 	m.mu.Lock()
 	activeDeposits := make([]*FSM, 0, len(m.activeDeposits))
-	for _, fsm := range m.activeDeposits {
+	for outpoint, fsm := range m.activeDeposits {
+		// Retaining a spent input must not allow an expiry sweep to
+		// compete with its pending withdrawal publication.
+		if m.activeDepositHolds[outpoint] > 0 &&
+			fsm.deposit.IsInState(Deposited) {
+
+			continue
+		}
+
 		activeDeposits = append(activeDeposits, fsm)
 	}
 	m.mu.Unlock()
@@ -723,8 +738,9 @@ func (m *Manager) updateDepositConfirmations(ctx context.Context,
 // syncActiveDeposits reconciles the live active set with lnd's current wallet
 // view. Known Deposited records that are visible but inactive become active
 // again, and active Deposited records that are no longer wallet-visible are
-// removed from the live set. The DB record is left untouched as historical
-// evidence that the outpoint was once detected.
+// removed from the live set unless held by an in-flight withdrawal. The DB
+// record is left untouched as historical evidence that the outpoint was once
+// detected.
 func (m *Manager) syncActiveDeposits(ctx context.Context,
 	utxos []*lnwallet.Utxo) error {
 
@@ -766,6 +782,10 @@ func (m *Manager) syncActiveDeposits(ctx context.Context,
 
 		for outpoint, fsm := range m.activeDeposits {
 			if _, ok := currentUtxos[outpoint]; ok {
+				continue
+			}
+
+			if m.activeDepositHolds[outpoint] > 0 {
 				continue
 			}
 
@@ -857,9 +877,8 @@ func (m *Manager) startDepositFsm(ctx context.Context, deposit *Deposit) error {
 	return nil
 }
 
-// GetActiveDepositsInState returns all active deposits. This function is called
-// on a client restart before the manager is fully initialized, hence we don't
-// have to lock the deposits.
+// GetActiveDepositsInState returns active deposits in the requested state.
+// Deposited inputs held by a withdrawal are excluded from new coin selection.
 func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 	[]*Deposit, error) {
 
@@ -878,6 +897,10 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 
 	filteredDeposits := make([]*Deposit, 0, len(deposits))
 	for _, d := range deposits {
+		if stateFilter == Deposited && m.activeDepositHolds[d.OutPoint] > 0 {
+			continue
+		}
+
 		if !d.isInStateNoLock(stateFilter) {
 			continue
 		}
@@ -893,10 +916,56 @@ func (m *Manager) GetActiveDepositsInState(stateFilter fsm.StateType) (
 	return filteredDeposits, nil
 }
 
+// HoldActiveDeposits temporarily prevents wallet reconciliation from removing
+// the selected active deposits. A withdrawal must acquire the hold before
+// publication and release it after its existing bookkeeping, on every return
+// path. No mutex is held during publication, and no state is persisted or
+// transitioned by a hold. Held Deposited inputs are excluded from new spending
+// selections and block notifications, so retaining them does not start a
+// competing expiry sweep. Normal expiry checks resume on the next block after
+// release. Notifications for other deposit states remain unchanged.
+//
+// Acquisition is all-or-nothing with respect to reconciliation. The returned
+// release function is idempotent; overlapping holds remain effective until
+// all callers release them.
+func (m *Manager) HoldActiveDeposits(outpoints []wire.OutPoint) (func(), error) {
+	if err := CheckDuplicates(outpoints); err != nil {
+		return nil, err
+	}
+	outpoints = slices.Clone(outpoints)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, outpoint := range outpoints {
+		if sm := m.activeDeposits[outpoint]; sm == nil {
+			return nil, fmt.Errorf("deposit %v is no longer active",
+				outpoint)
+		}
+	}
+	for _, outpoint := range outpoints {
+		m.activeDepositHolds[outpoint]++
+	}
+
+	return sync.OnceFunc(func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
+		for _, outpoint := range outpoints {
+			if m.activeDepositHolds[outpoint] == 1 {
+				delete(m.activeDepositHolds, outpoint)
+			} else {
+				m.activeDepositHolds[outpoint]--
+			}
+		}
+	}), nil
+}
+
 // AllOutpointsActiveDeposits checks if all deposits referenced by the outpoints
 // are in our in-mem active deposits map and in the specified state. If
 // fsm.EmptyState is set as targetState all deposits are returned regardless of
-// their state. Each existent deposit is locked during the check.
+// their state. Deposited selections exclude inputs held by a withdrawal. Each
+// existent deposit is locked during the check.
 func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	targetState fsm.StateType) ([]*Deposit, bool) {
 
@@ -927,6 +996,10 @@ func (m *Manager) AllOutpointsActiveDeposits(outpoints []wire.OutPoint,
 	lockedDeposits := lockDeposits(deposits)
 	defer unlockDeposits(lockedDeposits)
 	for _, d := range deposits {
+		if targetState == Deposited && m.activeDepositHolds[d.OutPoint] > 0 {
+			return nil, false
+		}
+
 		if !d.isInStateNoLock(targetState) {
 			return nil, false
 		}
