@@ -21,6 +21,14 @@ runs:
         go mod edit -replace=github.com/lightninglabs/loop=../
         go mod edit -replace=github.com/lightninglabs/loop/looprpc=../looprpc
         go mod edit -replace=github.com/lightninglabs/loop/swapserverrpc=../swapserverrpc
+        # Module replacements are not inherited by the combined daemon.
+        # Keep its proof decoder and other source overrides aligned with Loop.
+        while IFS= read -r replacement; do
+          go mod edit "$replacement"
+        done < <(go mod edit -json ../go.mod | jq -r '
+          .Replace[] | select(.New.Version != null) |
+          "-replace=\(.Old.Path)\(if .Old.Version then "@" + .Old.Version else "" end)=\(.New.Path)@\(.New.Version)"
+        ')
         go mod tidy
       shell: bash
 
