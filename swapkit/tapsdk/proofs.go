@@ -142,6 +142,50 @@ func EncodePSBT(p *psbt.Packet) ([]byte, error) {
 // files and PSBTs. The encoded package must fit before signing and on recovery.
 const MaxPackageBytes = 2 * assetpolicy.MaxProvenanceBytes
 
+// DecodePackage bounds decoding and checks native integrity and signing policy.
+func DecodePackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
+	if len(raw) > MaxPackageBytes {
+		return nil, swapkit.ErrInvalid
+	}
+	var pkg sdk.CustomAnchorTransferPackage
+	if err := pkg.UnmarshalBinary(raw); err != nil {
+		return nil, err
+	}
+	if err := CheckSigningPolicy(&pkg); err != nil {
+		return nil, err
+	}
+	return &pkg, nil
+}
+
+// DecodeFinalPackage also verifies the complete Bitcoin witness.
+func DecodeFinalPackage(raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
+	pkg, err := DecodePackage(raw)
+	if err != nil {
+		return nil, err
+	}
+	return pkg.WithFinalAnchorPSBT(pkg.AnchorPsbt)
+}
+
+// BindFinalPackage accepts only the approved transfer's finalized witness.
+// The SDK committed digest binds transaction metadata and signing policy.
+func BindFinalPackage(approved *sdk.CustomAnchorTransferPackage,
+	raw []byte) (*sdk.CustomAnchorTransferPackage, error) {
+
+	if err := CheckSigningPolicy(approved); err != nil {
+		return nil, err
+	}
+	proposed, err := DecodePackage(raw)
+	if err != nil {
+		return nil, err
+	}
+	if proposed.CommittedPackageDigest !=
+		approved.CommittedPackageDigest {
+
+		return nil, swapkit.ErrInvalid
+	}
+	return approved.WithFinalAnchorPSBT(proposed.AnchorPsbt)
+}
+
 // importProof restores lineage missing from tapd's exact-output proof archive.
 func importProof(ctx context.Context, wallet *sdk.Wallet, raw []byte) error {
 	p, err := LastProof(raw)
