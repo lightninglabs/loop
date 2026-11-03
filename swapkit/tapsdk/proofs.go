@@ -14,6 +14,7 @@ import (
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
+	"github.com/lightninglabs/taproot-assets/tappsbt"
 )
 
 // LastProof decodes the final transition in a native asset proof file.
@@ -83,6 +84,42 @@ func commitmentRoots(
 		return sdk.Hash{}, sdk.Hash{}, swapkit.ErrInvalid
 	}
 	return sdk.Hash(assets), sdk.Hash(root), nil
+}
+
+// verifyProof checks Loop policy and SDK lineage between current-chain checks.
+func verifyProof(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32, raw []byte,
+	group [33]byte, amount uint64, unspent bool) (*proof.Proof, error) {
+
+	if err := CheckNodeVersion(ctx, wallet); err != nil {
+		return nil, err
+	}
+	if err := checkProvenance(ctx, wallet, raw); err != nil {
+		return nil, err
+	}
+	p, err := inspectProof(
+		ctx,
+		chain,
+		minConfs,
+		raw,
+		group,
+		amount,
+		unspent,
+	)
+	if err != nil {
+		return nil, err
+	}
+	verified, err := wallet.Client().VerifyProof(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkVerifiedSummary(verified, p); err != nil {
+		return nil, err
+	}
+	if err := checkConfirmation(ctx, chain, minConfs, p, unspent); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 // checkConfirmation requires current-chain inclusion and optional spendability.
@@ -184,6 +221,139 @@ func BindFinalPackage(approved *sdk.CustomAnchorTransferPackage,
 		return nil, swapkit.ErrInvalid
 	}
 	return approved.WithFinalAnchorPSBT(proposed.AnchorPsbt)
+}
+
+// LogAndExport publishes or records an observed transfer through tapd.
+// Exact output locators make retries safe after a lost publication reply.
+func LogAndExport(ctx context.Context, wallet *sdk.Wallet,
+	chain Chain, minConfs uint32,
+	pkg *sdk.CustomAnchorTransferPackage, observed bool) ([]byte, error) {
+
+	if err := CheckNodeVersion(ctx, wallet); err != nil {
+		return nil, err
+	}
+	if err := CheckSigningPolicy(pkg); err != nil {
+		return nil, err
+	}
+	if len(pkg.Inputs) != 1 || len(pkg.Outputs) != 1 ||
+		len(pkg.ProofUpdates) != 1 {
+
+		return nil, swapkit.ErrInvalid
+	}
+	out := pkg.Outputs[0]
+	export := func() ([]byte, error) {
+		file, err := wallet.ExportProofFile(ctx,
+			sdk.AssetRefFromAssetID(out.IssuanceID), out.ScriptKey,
+			&out.AnchorOutpoint)
+		if err != nil {
+			return nil, err
+		}
+		if file == nil {
+			return nil, swapkit.ErrInvalid
+		}
+		p, err := LastProof(file.RawProofFile)
+		if err != nil {
+			return nil, err
+		}
+		if sdk.AssetID(p.Asset.ID()) != out.IssuanceID ||
+			p.OutPoint() != SDKPoint(out.AnchorOutpoint) ||
+			!bytes.Equal(
+				p.Asset.ScriptKey.PubKey.SerializeCompressed(),
+				out.ScriptKey[:],
+			) {
+
+			return nil, swapkit.ErrInvalid
+		}
+		// The caller verifies the proof with its contract exactly once.
+		// Here a current confirmation distinguishes archive lag from success.
+		if err := checkConfirmation(ctx, chain, minConfs, p, false); err != nil {
+			return nil, err
+		}
+		return file.RawProofFile, nil
+	}
+	if raw, err := export(); err == nil {
+		return raw, nil
+	}
+	if _, err := OPTrueSpendInfo(out); err == nil {
+		if err := declareOutput(ctx, wallet, pkg, out); err != nil {
+			return nil, err
+		}
+	}
+	rawInput, err := confirmedInputProof(pkg.Inputs[0].ProofSource)
+	if err != nil {
+		return nil, err
+	}
+	err = importProof(ctx, wallet, rawInput)
+	if err != nil {
+		return nil, err
+	}
+	if observed {
+		pkg = pkg.Clone()
+		pkg.Publish.SkipAnchorTxBroadcast = true
+		pkg.Publish.ExternalBroadcast = true
+		pkg, err = pkg.Seal()
+		if err != nil {
+			return nil, err
+		}
+	}
+	_, err = wallet.PublishCustomAnchorTransfer(ctx, pkg, pkg.AnchorPsbt)
+	if err != nil {
+		// A lost reply can follow a durable tapd publication. The next
+		// invocation checks the proof archive before retrying the log.
+		return nil, err
+	}
+	if raw, err := export(); err == nil {
+		return raw, nil
+	}
+	return nil, swapkit.ErrPending
+}
+
+// declareOutput retains the native packet's complete key descriptor. A control
+// block alone loses the original key parity and locator, which can replace a
+// wallet-owned key's first stored derivation with the unrelated zero locator.
+func declareOutput(ctx context.Context, wallet *sdk.Wallet,
+	pkg *sdk.CustomAnchorTransferPackage,
+	out sdk.CustomAnchorAssetOutputSummary) error {
+
+	if out.PacketIndex >= uint32(len(pkg.ActiveVirtualPsbts)) {
+		return swapkit.ErrInvalid
+	}
+	packet, err := tappsbt.NewFromRawBytes(bytes.NewReader(
+		pkg.ActiveVirtualPsbts[out.PacketIndex]), false)
+	if err != nil {
+		return err
+	}
+	if out.VirtualOutputIndex >= uint32(len(packet.Outputs)) {
+		return swapkit.ErrInvalid
+	}
+	key := packet.Outputs[out.VirtualOutputIndex].ScriptKey
+	if key.TweakedScriptKey == nil || key.RawKey.PubKey == nil ||
+		!bytes.Equal(
+			key.PubKey.SerializeCompressed(),
+			out.ScriptKey[:],
+		) {
+
+		return swapkit.ErrInvalid
+	}
+	raw, err := sdk.ParsePubKey(key.RawKey.PubKey.SerializeCompressed())
+	if err != nil {
+		return err
+	}
+	_, err = wallet.Client().
+		DeclareScriptKey(ctx, &sdk.DeclareScriptKeyRequest{
+			ScriptKey: sdk.ScriptKey{
+				PubKey:   out.ScriptKey,
+				TapTweak: key.Tweak,
+				KeyDesc: sdk.KeyDescriptor{RawKeyBytes: raw,
+					KeyLocator: sdk.KeyLocator{
+						Family: uint32(
+							key.RawKey.Family,
+						),
+						Index: key.RawKey.Index,
+					}},
+			},
+		})
+	return err
 }
 
 // importProof restores lineage missing from tapd's exact-output proof archive.
@@ -292,4 +462,25 @@ func inspectProof(ctx context.Context, chain Chain, minConfs uint32, raw []byte,
 		return nil, err
 	}
 	return p, nil
+}
+
+// confirmedInputProof preserves native proof sources without treating a compact
+// path encoding as a proof-file encoding. Unconfirmed steps need the explicit
+// ConfirmPackageInputs handoff before publication.
+func confirmedInputProof(source sdk.CustomAnchorProofSourceSummary) ([]byte, error) {
+	switch source.Kind {
+	case sdk.CustomAnchorProofSourceConfirmedFile:
+		return bytes.Clone(source.Blob), nil
+	case sdk.CustomAnchorProofSourceCompactPath:
+		var path sdk.AssetProofPath
+		if err := path.UnmarshalBinary(source.Blob); err != nil {
+			return nil, err
+		}
+		if len(path.Steps) != 0 {
+			return nil, swapkit.ErrPending
+		}
+		return bytes.Clone(path.ConfirmedBaseProof), nil
+	default:
+		return nil, swapkit.ErrInvalid
+	}
 }

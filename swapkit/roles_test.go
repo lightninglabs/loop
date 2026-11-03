@@ -257,3 +257,11 @@ func TestSwapKitSnapshots(t *testing.T) {
 	require.NotEqual(t, spend.PkScript, fresh.PkScript)
 	require.NotEqual(t, spend.ControlBlock, fresh.ControlBlock)
 }
+
+func TestFlowRecordDecode(t *testing.T) {
+	var offer Offer
+	require.NoError(t, Decode([]byte(`{"Hash":[1],"Terms":{"Version":1}}`), &offer))
+	require.Equal(t, uint32(1), offer.Terms.Version)
+	require.Error(t, Decode([]byte(`{"Terms":{"Unknown":1}}`), &offer))
+	require.Error(t, Decode([]byte(`{} {}`), &offer))
+}

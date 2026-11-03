@@ -2,10 +2,14 @@ package tapsdk
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
@@ -13,6 +17,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tapsend"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -149,6 +154,398 @@ func bindingBlock(p *proof.Proof) *wire.MsgBlock {
 	}
 }
 
+func TestProofRequiresExactPolicyAndCurrentChain(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*bindingSDK, *bindingChain, *proof.Proof,
+			*[33]byte, *uint64)
+		hidden bool
+	}{
+		{name: testValid},
+		{name: "hidden co-anchored asset", hidden: true},
+		{name: "invalid SDK proof", mutate: func(s *bindingSDK,
+			_ *bindingChain, _ *proof.Proof,
+			_ *[33]byte, _ *uint64) {
+
+			s.valid = false
+		}},
+		{name: "opposite group parity", mutate: func(_ *bindingSDK,
+			_ *bindingChain, _ *proof.Proof,
+			g *[33]byte, _ *uint64) {
+
+			g[0] ^= 1
+		}},
+		{name: "different amount", mutate: func(_ *bindingSDK,
+			_ *bindingChain, _ *proof.Proof,
+			_ *[33]byte, a *uint64) {
+
+			*a++
+		}},
+		{name: "insufficient depth", mutate: func(_ *bindingSDK,
+			c *bindingChain, _ *proof.Proof,
+			_ *[33]byte, _ *uint64) {
+
+			c.tip = 100
+		}},
+		{name: "tip below proof", mutate: func(_ *bindingSDK,
+			c *bindingChain, _ *proof.Proof,
+			_ *[33]byte, _ *uint64) {
+
+			c.tip = 99
+		}},
+		{name: "reorged proof", mutate: func(_ *bindingSDK,
+			c *bindingChain, _ *proof.Proof,
+			_ *[33]byte, _ *uint64) {
+
+			c.blocks[100].Header.Nonce++
+		}},
+		{name: "invalid transaction merkle proof", mutate: func(_ *bindingSDK,
+			_ *bindingChain, p *proof.Proof,
+			_ *[33]byte, _ *uint64) {
+
+			p.TxMerkleProof.Nodes = []chainhash.Hash{{1}}
+			p.TxMerkleProof.Bits = []bool{true}
+		}},
+		{name: testSpentOutput, mutate: func(_ *bindingSDK,
+			c *bindingChain, _ *proof.Proof,
+			_ *[33]byte, _ *uint64) {
+
+			c.unspent = false
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := bindingProof(t, bindingGenesis(),
+				bindingKey(2).PubKey(), bindingKey(3).PubKey(),
+				nil, bindingGenesis().FirstPrevOut,
+				100, test.hidden)
+			client := &bindingSDK{valid: true}
+			chain := &bindingChain{tip: 101, unspent: true,
+				blocks: map[uint32]*wire.MsgBlock{
+					100: bindingBlock(p),
+				}}
+			group, amount := bindingPub(11), uint64(1000)
+			if test.mutate != nil {
+				test.mutate(client, chain, p, &group, &amount)
+			}
+			r := &proofNode{
+				client:   client,
+				chain:    chain,
+				minConfs: 2,
+			}
+			_, err := verifyProof(
+				t.Context(),
+				r.wallet(),
+				r.chain,
+				r.minConfs,
+				bindingRaw(t, p),
+				group,
+				amount,
+				true,
+			)
+			if test.name == testValid || test.name == "opposite group parity" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+func bindingOutcome(t *testing.T, refund bool) (*proofNode, *SwapContext,
+	*proof.Proof, *bindingChain) {
+
+	t.Helper()
+	clientKey, serverKey := bindingPub(2), bindingPub(3)
+	dk, err := swapkit.NewDepositKit(swapkit.DepositKitParams{
+		ClientKey: clientKey, ServerKey: serverKey, CSVExpiry: 100,
+	})
+	require.NoError(t, err)
+	leaf := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE})
+	assetTree := txscript.AssembleTaprootScriptTree(leaf)
+	assetRoot := assetTree.RootNode.TapHash()
+	assetKey := bindingKey(5).PubKey()
+	assetOutputKey := txscript.ComputeTaprootOutputKey(
+		assetKey, assetRoot[:],
+	)
+	assetOutputKey, err = schnorr.ParsePubKey(
+		schnorr.SerializePubKey(assetOutputKey))
+	require.NoError(t, err)
+	control := assetTree.LeafMerkleProofs[0].ToControlBlock(assetKey)
+	controlRaw, err := control.ToBytes()
+	require.NoError(t, err)
+	spend := &sdk.CustomAssetOPTrueSpendInfo{
+		LeafScript: leaf.Script, LeafVersion: uint8(leaf.LeafVersion),
+		InternalKey: bindingPub(5), ControlBlock: controlRaw,
+	}
+	timeout, err := dk.TimeoutSpend(sdk.Hash{1})
+	require.NoError(t, err)
+	sibling, err := commitment.NewPreimageFromLeaf(
+		txscript.NewBaseTapLeaf(timeout.LeafScript))
+	require.NoError(t, err)
+	anchorPlan := dk.AnchorPlan()
+	internal, err := btcec.ParsePubKey(anchorPlan.InternalKey[:])
+	require.NoError(t, err)
+	deposit := bindingProof(t, bindingGenesis(), assetOutputKey, internal,
+		sibling, bindingGenesis().FirstPrevOut, 100, false)
+	assets, merkle, err := isolatedRoots(deposit)
+	require.NoError(t, err)
+	var script sdk.PubKey
+	copy(script[:], assetOutputKey.SerializeCompressed())
+	ref := sdk.AssetRefFromGroupKey(bindingPub(11))
+	c := DepositContract{Version: 1, ClientKey: clientKey,
+		ServerKey: serverKey, CSV: 100,
+		Output: sdk.CustomAnchorAssetOutputSummary{
+			ScriptKey: script, OPTrueSpend: spend, AssetRef: ref,
+			IssuanceID: sdk.AssetID(deposit.Asset.ID()),
+			AssetType:  sdk.AssetType(deposit.Asset.Genesis.Type),
+			Amount:     1000, AnchorValueSat: 10_000,
+			TaprootAssetRoot: assets, TaprootMerkleRoot: merkle,
+			AnchorOutpoint: sdk.Outpoint{Txid: sdk.Hash(
+				deposit.AnchorTx.TxHash())},
+		}}
+	// Preserve the existing SDK/contract JSON field names.
+	//nolint:musttag
+	contract, err := json.Marshal(c)
+	require.NoError(t, err)
+	preimage := [32]byte{99}
+	s := &SwapContext{Offer: swapkit.Offer{Hash: sha256.Sum256(preimage[:]),
+		Terms: swapkit.Terms{Version: 1, GroupKey: bindingPub(11),
+			DepositOutpoints: []string{deposit.OutPoint().String()},
+			DepositAmount:    1000, PayoutAmount: 900,
+			AssetFee:     100,
+			RefundHeight: 150, RecoveryDelta: 10,
+			Contract: contract}}}
+	prior := sdk.CustomAnchorAssetOutputSummary{
+		AssetRef: ref, Amount: 1000,
+		IssuanceID:     sdk.AssetID(deposit.Asset.ID()),
+		AnchorValueSat: 9000, TaprootAssetRoot: sdk.Hash{42},
+		AnchorOutpoint: sdk.Outpoint{Txid: sdk.Hash{88}},
+	}
+	s.Fallback = &sdk.CustomAnchorTransferPackage{
+		Outputs: []sdk.CustomAnchorAssetOutputSummary{prior},
+	}
+	policy, err := HTLC(s.Offer, c)
+	require.NoError(t, err)
+	path, err := policy.SuccessSpend(prior.TaprootAssetRoot)
+	require.NoError(t, err)
+	receiver := bindingKey(3)
+	if refund {
+		receiver = bindingKey(2)
+		path, err = policy.TimeoutSpend(prior.TaprootAssetRoot)
+		require.NoError(t, err)
+	}
+	outputKey := txscript.ComputeTaprootKeyNoScript(receiver.PubKey())
+	outputKey, err = schnorr.ParsePubKey(schnorr.SerializePubKey(outputKey))
+	require.NoError(t, err)
+	outcome := bindingProof(t, bindingGenesis(), outputKey,
+		receiver.PubKey(), nil, SDKPoint(prior.AnchorOutpoint),
+		160, false)
+	outcome.AnchorTx.TxIn[0].Sequence = path.Sequence
+	outcome.AnchorTx.LockTime = path.LockTime
+	outcome.AnchorTx.TxOut[0].Value = 8000
+	fetch := txscript.NewCannedPrevOutputFetcher(path.PkScript, 9000)
+	sig, err := txscript.RawTxInTapscriptSignature(&outcome.AnchorTx,
+		txscript.NewTxSigHashes(&outcome.AnchorTx, fetch), 0, 9000,
+		path.PkScript, txscript.NewBaseTapLeaf(path.LeafScript),
+		txscript.SigHashDefault, receiver)
+	require.NoError(t, err)
+	witness, err := policy.SuccessWitness(
+		prior.TaprootAssetRoot, sig, preimage,
+	)
+	if refund {
+		witness, err = policy.TimeoutWitness(
+			prior.TaprootAssetRoot, sig,
+		)
+	}
+	require.NoError(t, err)
+	outcome.AnchorTx.TxIn[0].Witness = witness
+	outcome.BlockHeader.MerkleRoot = outcome.AnchorTx.TxHash()
+	chain := &bindingChain{tip: 161, unspent: true,
+		blocks: map[uint32]*wire.MsgBlock{
+			100: bindingBlock(deposit), 160: bindingBlock(outcome),
+		}}
+
+	r := &proofNode{
+		client:   &bindingSDK{valid: true},
+		chain:    chain,
+		minConfs: 1,
+	}
+	d := swapkit.Deposit{Outpoint: deposit.OutPoint().String(),
+		Proof: bindingRaw(
+			t,
+			deposit,
+		), Contract: contract, GroupKey: bindingPub(11), Amount: 1000}
+	s.Deposit, err = LoadDeposit(d, keychain.KeyLocator{})
+	require.NoError(t, err)
+	require.NoError(
+		t,
+		VerifyDeposit(
+			t.Context(),
+			r.wallet(),
+			chain,
+			1,
+			s.Deposit,
+			false,
+		),
+	)
+
+	return r, s, outcome, chain
+}
+
+func TestOutcomeRequiresExactSpendAndFreshRefund(t *testing.T) {
+	for _, refund := range []bool{false, true} {
+		name := "claim"
+		if refund {
+			name = "refund"
+		}
+		for _, mutation := range []string{testValid, testWrongSigner,
+			"wrong control", "other prevout", "other issuance",
+			"wrong recipient", "other group", "other amount", testReorg,
+			testSpentRefund} {
+			if mutation == testSpentRefund && !refund {
+				continue
+			}
+			t.Run(name+"/"+mutation, func(t *testing.T) {
+				testOutcomeBinding(t, refund, mutation)
+			})
+		}
+	}
+}
+
+func testOutcomeBinding(t *testing.T, refund bool, mutation string) {
+	t.Helper()
+	r, s, p, chain := bindingOutcome(t, refund)
+	switch mutation {
+	case testWrongSigner:
+		p.AnchorTx.TxIn[0].Witness[0][0] ^= 1
+	case "wrong control":
+		w := p.AnchorTx.TxIn[0].Witness
+		w[len(w)-1][0] ^= 1
+	case "other prevout":
+		p.AnchorTx.TxIn[0].PreviousOutPoint.Index++
+	case "other issuance":
+		s.Fallback.Outputs[0].IssuanceID[0] ^= 1
+	case "other group":
+		s.Fallback.Outputs[0].AssetRef =
+			sdk.AssetRefFromGroupKey(bindingPub(12))
+	case "other amount":
+		s.Fallback.Outputs[0].Amount++
+	case "wrong recipient":
+		old := p
+		p = bindingProof(t, bindingGenesis(), bindingKey(9).PubKey(),
+			bindingKey(9).PubKey(), nil, old.PrevOut, 160, false)
+		p.AnchorTx.TxIn[0].Sequence = old.AnchorTx.TxIn[0].Sequence
+		p.AnchorTx.TxIn[0].Witness = old.AnchorTx.TxIn[0].Witness
+		p.AnchorTx.LockTime = old.AnchorTx.LockTime
+		p.BlockHeader.MerkleRoot = p.AnchorTx.TxHash()
+		chain.blocks[160] = bindingBlock(p)
+		// The wrong recipient still has a coherent asset commitment and
+		// confirmed transaction. The contract gate must reject it.
+		_, err := verifyProof(
+			t.Context(),
+			r.wallet(),
+			r.chain,
+			r.minConfs,
+			bindingRaw(t, p),
+			s.Offer.Terms.GroupKey,
+			1000,
+			refund,
+		)
+		require.NoError(t, err)
+	case testReorg:
+		chain.blocks[160].Header.Nonce++
+	case testSpentRefund:
+		chain.unspent = false
+	}
+	err := VerifyOutcome(
+		t.Context(),
+		r.wallet(),
+		r.chain,
+		r.minConfs,
+		s,
+		bindingRaw(t, p),
+		refund,
+		refund,
+	)
+	if mutation == testValid {
+		require.NoError(t, err)
+	} else {
+		require.Error(t, err)
+	}
+}
+
+func TestPersistedRefundProofRecheckedAfterReorg(t *testing.T) {
+	r, s, p, chain := bindingOutcome(t, true)
+	raw := bindingRaw(t, p)
+	require.NoError(
+		t,
+		VerifyOutcome(
+			t.Context(),
+			r.wallet(),
+			r.chain,
+			r.minConfs,
+			s,
+			raw,
+			true,
+			true,
+		),
+	)
+	stored := append([]byte(nil), raw...)
+
+	// Persisting a proof does not freeze its current-chain validity.
+	chain.blocks[160].Header.Nonce++
+	err := VerifyOutcome(
+		t.Context(),
+		r.wallet(),
+		r.chain,
+		r.minConfs,
+		s,
+		stored,
+		true,
+		true,
+	)
+	require.ErrorIs(t, err, swapkit.ErrPending)
+}
+
+func TestReorgClassificationPrecedesSDKVerification(t *testing.T) {
+	p := bindingProof(t, bindingGenesis(), bindingKey(2).PubKey(),
+		bindingKey(3).PubKey(), nil, bindingGenesis().FirstPrevOut,
+		100, false)
+	chain := &bindingChain{tip: 101, unspent: true,
+		blocks: map[uint32]*wire.MsgBlock{100: bindingBlock(p)}}
+	r := &proofNode{
+		client:   &bindingSDK{valid: false},
+		chain:    chain,
+		minConfs: 1,
+	}
+	chain.blocks[100].Header.Nonce++
+	_, err := verifyProof(
+		t.Context(),
+		r.wallet(),
+		r.chain,
+		r.minConfs,
+		bindingRaw(t, p),
+		bindingPub(11),
+		1000,
+		true,
+	)
+	require.ErrorIs(t, err, swapkit.ErrPending)
+
+	// Restoring the chain match never bypasses full SDK verification.
+	chain.blocks[100].Header.Nonce--
+	_, err = verifyProof(
+		t.Context(),
+		r.wallet(),
+		r.chain,
+		r.minConfs,
+		bindingRaw(t, p),
+		bindingPub(11),
+		1000,
+		true,
+	)
+	require.ErrorIs(t, err, swapkit.ErrInvalid)
+}
+
 // proofNode holds only test services. Tests call production primitives directly.
 type proofNode struct {
 	client   sdk.Client
@@ -168,7 +565,6 @@ func (s *bindingSDK) GetInfo(
 }
 
 func fixtureNodeInfo() *sdk.Info { return &sdk.Info{Version: "0.8.8", Network: "regtest"} }
-
 func fixtureVerified(raw []byte, valid bool) (*sdk.VerifyProofResponse, error) {
 	p, err := LastProof(raw)
 	if err != nil {
