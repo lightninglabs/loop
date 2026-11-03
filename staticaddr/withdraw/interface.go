@@ -21,13 +21,16 @@ type AddressManager interface {
 }
 
 type DepositManager interface {
+	// WithWithdrawalLock commits a DB-only ownership update while excluding
+	// competing deposit events, then reconciles the persisted runtime state.
+	WithWithdrawalLock(context.Context, []wire.OutPoint,
+		func([]*deposit.Deposit) error) error
+
+	// ReconcileWithdrawal restores cached states from the authoritative store.
+	ReconcileWithdrawal(context.Context, []wire.OutPoint) error
+
 	// EnsureDepositsFresh reconciles active deposits with the wallet view.
 	EnsureDepositsFresh(ctx context.Context) error
-
-	// HoldActiveDeposits prevents wallet reconciliation from removing the
-	// selected deposits and defers their expiry while still Deposited,
-	// until the returned release function is called.
-	HoldActiveDeposits(outpoints []wire.OutPoint) (func(), error)
 
 	// GetActiveDepositsInState returns all active deposits in the given
 	// state.

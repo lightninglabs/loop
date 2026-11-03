@@ -163,6 +163,33 @@ type StaticAddressSwapUpdate struct {
 	UpdateTimestamp time.Time
 }
 
+type StaticAddressWithdrawalV2Claim struct {
+	DepositID    []byte
+	WithdrawalID string
+}
+
+type StaticAddressWithdrawalV2Deposit struct {
+	WithdrawalID string
+	DepositID    []byte
+}
+
+type StaticAddressWithdrawalV2Update struct {
+	WithdrawalID    string
+	Revision        int64
+	State           string
+	UpdateTimestamp time.Time
+}
+
+type StaticAddressWithdrawalsV2 struct {
+	WithdrawalID   string
+	Version        int64
+	Revision       int64
+	State          string
+	WorkflowData   []byte
+	InitiationTime time.Time
+	LegacySource   sql.NullString
+}
+
 type Swap struct {
 	ID               int32
 	SwapHash         []byte

@@ -3,7 +3,7 @@ name: Release Notes
 on:
   pull_request:
     branches:
-      - "*"
+      - "**"
     types:
       - opened
       - reopened

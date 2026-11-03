@@ -46,8 +46,13 @@ var (
 	// and are available to the client.
 	Deposited = fsm.StateType("Deposited")
 
-	// Withdrawing signals that the withdrawal transaction has been
-	// broadcast, awaiting sufficient confirmations.
+	// WithdrawalReserved means a durable withdrawal owns the deposit before
+	// publication. The withdrawal owner must reconcile or release that claim.
+	WithdrawalReserved = fsm.StateType("WithdrawalReserved")
+
+	// Withdrawing means a signed transaction and publication obligation are
+	// durable. Publication may already have happened; recovery must reconcile
+	// that transaction before the deposit can be released.
 	Withdrawing = fsm.StateType("Withdrawing")
 
 	// Withdrawn signals that the withdrawal transaction has been confirmed.
@@ -167,6 +172,19 @@ type FSM struct {
 	// stopOnce ensures Stop is idempotent.
 	stopOnce sync.Once
 
+	// eventToken serializes all runtime events with authoritative withdrawal
+	// readback. It is acquired before deposit locks and protects reseeding the
+	// embedded legacy machine, including against previously queued expiry.
+	eventOnce  sync.Once
+	eventToken chan struct{}
+
+	// withdrawalFenced blocks selection and events after an uncertain readback.
+	// Writes hold the event token, Manager.mu and deposit lock; readers hold
+	// one of those locks.
+	withdrawalFenced bool
+
+	cancel context.CancelFunc
+
 	// quitChan stops after the FSM stops consuming blockNtfnChan.
 	quitChan chan struct{}
 
@@ -192,7 +210,9 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 		return nil, fmt.Errorf("unable to get static address: %w", err)
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
 	depoFsm := &FSM{
+		cancel:               cancel,
 		cfg:                  cfg,
 		deposit:              deposit,
 		params:               params,
@@ -208,6 +228,7 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	case version.ProtocolVersion_V0:
 
 	default:
+		cancel()
 		return nil, ErrProtocolVersionNotSupported
 	}
 
@@ -254,34 +275,104 @@ func (f *FSM) Stop() {
 
 	f.stopOnce.Do(func() {
 		close(f.stopChan)
+		if f.cancel != nil {
+			f.cancel()
+		}
 	})
 }
 
-// handleBlockNotification inspects the current block height and sends the
-// OnExpiry event to publish the expiry sweep transaction if the deposit timed
-// out, or it republishes the expiry sweep transaction if it was not yet swept.
+// acquireEvent also supports test FSMs constructed without NewFSM.
+func (f *FSM) acquireEvent(ctx context.Context) error {
+	f.eventOnce.Do(func() {
+		f.eventToken = make(chan struct{}, 1)
+		f.eventToken <- struct{}{}
+	})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-f.eventToken:
+		if err := ctx.Err(); err != nil {
+			f.releaseEvent()
+			return err
+		}
+		return nil
+	}
+}
+
+func (f *FSM) releaseEvent() {
+	f.eventToken <- struct{}{}
+}
+
+// SendEvent serializes external events with withdrawal cache reconciliation.
+// Manager transitions already hold the event token before locking deposits and
+// therefore invoke the embedded machine directly.
+func (f *FSM) SendEvent(ctx context.Context, event fsm.EventType,
+	eventCtx fsm.EventContext) error {
+
+	if err := f.acquireEvent(ctx); err != nil {
+		return err
+	}
+	defer f.releaseEvent()
+	if f.withdrawalFenced {
+		return ErrWithdrawalReconciliationRequired
+	}
+	select {
+	case <-f.stopChan:
+		return errors.New("deposit FSM stopped")
+	default:
+	}
+	return f.StateMachine.SendEvent(ctx, event, eventCtx)
+}
+
+// handleBlockNotification triggers expiry only when no withdrawal owns the
+// deposit, or republishes an existing expiry sweep under the same event gate.
 func (f *FSM) handleBlockNotification(ctx context.Context,
 	currentHeight uint32) {
 
-	if f.deposit.IsInFinalState() {
+	// A busy FSM already owns the event that must finish before expiry can
+	// proceed. Do not queue stale expiry goroutines behind a long action.
+	f.eventOnce.Do(func() {
+		f.eventToken = make(chan struct{}, 1)
+		f.eventToken <- struct{}{}
+	})
+	select {
+	case <-f.eventToken:
+	default:
 		return
 	}
-
-	// If the deposit is expired but not yet sufficiently confirmed, we
-	// republish the expiry sweep transaction.
-	if f.deposit.IsExpired(currentHeight, f.params.Expiry) {
-		if f.deposit.IsInState(WaitForExpirySweep) {
-			f.PublishDepositExpirySweepAction(ctx, nil)
-		} else {
-			go func() {
-				err := f.SendEvent(ctx, OnExpiry, nil)
-				if err != nil {
-					log.Debugf("error sending OnExpiry "+
-						"event: %v", err)
-				}
-			}()
+	go func() {
+		defer f.releaseEvent()
+		if ctx.Err() != nil || f.withdrawalFenced {
+			return
 		}
-	}
+		select {
+		case <-f.stopChan:
+			return
+		default:
+		}
+		if f.deposit.IsInFinalState() ||
+			!f.deposit.IsExpired(currentHeight, f.params.Expiry) {
+
+			return
+		}
+		if f.deposit.IsInState(WithdrawalReserved) ||
+			f.deposit.IsInState(Withdrawing) {
+
+			return
+		}
+		if f.deposit.IsInState(WaitForExpirySweep) {
+			f.deposit.Lock()
+			defer f.deposit.Unlock()
+			f.PublishDepositExpirySweepAction(ctx, nil)
+			return
+		}
+		if err := f.StateMachine.SendEvent(ctx, OnExpiry, nil); err != nil {
+			log.Debugf("error sending OnExpiry event: %v", err)
+		}
+	}()
 }
 
 // DepositStatesV0 returns the states a deposit can be in.
@@ -340,6 +431,13 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			},
 			Action: f.FinalizeDepositAction,
 		},
+		WithdrawalReserved: fsm.State{
+			Transitions: fsm.Transitions{
+				OnRecover: WithdrawalReserved,
+				OnExpiry:  WithdrawalReserved,
+			},
+			Action: fsm.NoOpAction,
+		},
 		Withdrawing: fsm.State{
 			Transitions: fsm.Transitions{
 				OnWithdrawn: Withdrawn,
@@ -352,18 +450,13 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				// reinstate the withdrawal.
 				OnRecover: Withdrawing,
 
-				// A precondition for the Withdrawing state is
-				// that the withdrawal transaction has been
-				// broadcast. If the deposit expires while the
-				// withdrawal isn't confirmed, we can ignore the
-				// expiry.
+				// A signed transaction may already be published, including
+				// after an uncertain RPC response. The withdrawal owner
+				// reconciles that obligation before releasing the deposit.
 				OnExpiry: Withdrawing,
 
-				// If the withdrawal failed we go back to
-				// Deposited, hoping that another withdrawal
-				// attempt will be successful. Alternatively,
-				// the client can wait for the timeout sweep.
-				fsm.OnError: Deposited,
+				// A generic error must not release a published withdrawal.
+				// The durable withdrawal owner reconciles its outcome.
 			},
 			Action: fsm.NoOpAction,
 		},

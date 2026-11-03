@@ -13,15 +13,20 @@ type Querier interface {
 	AllDeposits(ctx context.Context) ([]Deposit, error)
 	AllStaticAddresses(ctx context.Context) ([]StaticAddress, error)
 	CancelBatch(ctx context.Context, id int32) error
+	ClaimWithdrawalWorkflowDeposit(ctx context.Context, arg ClaimWithdrawalWorkflowDepositParams) (int64, error)
+	CountWithdrawalDepositUpdatesAtTime(ctx context.Context, arg CountWithdrawalDepositUpdatesAtTimeParams) (int64, error)
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) error
 	CreateReservation(ctx context.Context, arg CreateReservationParams) error
 	CreateStaticAddress(ctx context.Context, arg CreateStaticAddressParams) error
 	CreateWithdrawal(ctx context.Context, arg CreateWithdrawalParams) error
 	CreateWithdrawalDeposit(ctx context.Context, arg CreateWithdrawalDepositParams) error
+	CreateWithdrawalWorkflow(ctx context.Context, arg CreateWithdrawalWorkflowParams) (int64, error)
+	CreateWithdrawalWorkflowDeposit(ctx context.Context, arg CreateWithdrawalWorkflowDepositParams) error
 	DepositForOutpoint(ctx context.Context, arg DepositForOutpointParams) (Deposit, error)
 	DepositIDsForSwapHash(ctx context.Context, swapHash []byte) ([][]byte, error)
 	DepositsForSwapHash(ctx context.Context, swapHash []byte) ([]DepositsForSwapHashRow, error)
 	FetchLiquidityParams(ctx context.Context) ([]byte, error)
+	GetActiveWithdrawalWorkflowMembership(ctx context.Context, depositID []byte) ([]string, error)
 	GetAllWithdrawals(ctx context.Context) ([]Withdrawal, error)
 	GetBatchSweeps(ctx context.Context, batchID int32) ([]Sweep, error)
 	GetBatchSweptAmount(ctx context.Context, batchID int32) (int64, error)
@@ -50,6 +55,13 @@ type Querier interface {
 	GetUnconfirmedBatches(ctx context.Context) ([]SweepBatch, error)
 	GetWithdrawalDeposits(ctx context.Context, withdrawalID []byte) ([][]byte, error)
 	GetWithdrawalIDByDepositID(ctx context.Context, depositID []byte) ([]byte, error)
+	GetWithdrawalMigrationDepositUpdate(ctx context.Context, depositID []byte) (DepositUpdate, error)
+	GetWithdrawalWorkflow(ctx context.Context, withdrawalID string) (StaticAddressWithdrawalsV2, error)
+	GetWithdrawalWorkflowByLegacySource(ctx context.Context, legacySource sql.NullString) (StaticAddressWithdrawalsV2, error)
+	GetWithdrawalWorkflowClaim(ctx context.Context, depositID []byte) (string, error)
+	GetWithdrawalWorkflowDeposits(ctx context.Context, withdrawalID string) ([][]byte, error)
+	GetWithdrawalWorkflowUpdates(ctx context.Context, withdrawalID string) ([]StaticAddressWithdrawalV2Update, error)
+	GetWithdrawalWorkflows(ctx context.Context) ([]StaticAddressWithdrawalsV2, error)
 	InsertBatch(ctx context.Context, arg InsertBatchParams) (int32, error)
 	InsertDepositUpdate(ctx context.Context, arg InsertDepositUpdateParams) error
 	InsertHtlcKeys(ctx context.Context, arg InsertHtlcKeysParams) error
@@ -64,11 +76,13 @@ type Querier interface {
 	InsertStaticAddressMetaUpdate(ctx context.Context, arg InsertStaticAddressMetaUpdateParams) (int32, error)
 	InsertSwap(ctx context.Context, arg InsertSwapParams) error
 	InsertSwapUpdate(ctx context.Context, arg InsertSwapUpdateParams) error
+	InsertWithdrawalWorkflowUpdate(ctx context.Context, arg InsertWithdrawalWorkflowUpdateParams) error
 	IsStored(ctx context.Context, swapHash []byte) (bool, error)
 	MapDepositToSwap(ctx context.Context, arg MapDepositToSwapParams) error
 	OverrideSelectedSwapAmount(ctx context.Context, arg OverrideSelectedSwapAmountParams) error
 	OverrideSwapCosts(ctx context.Context, arg OverrideSwapCostsParams) error
 	RecordStaticAddressRiskDecision(ctx context.Context, arg RecordStaticAddressRiskDecisionParams) error
+	ReleaseWithdrawalWorkflowClaims(ctx context.Context, withdrawalID string) error
 	SetDepositOnchainCost(ctx context.Context, arg SetDepositOnchainCostParams) error
 	SwapHashForDepositID(ctx context.Context, depositID []byte) ([]byte, error)
 	UpdateBatch(ctx context.Context, arg UpdateBatchParams) error
@@ -78,6 +92,8 @@ type Querier interface {
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) error
 	UpdateStaticAddressLoopIn(ctx context.Context, arg UpdateStaticAddressLoopInParams) error
 	UpdateWithdrawal(ctx context.Context, arg UpdateWithdrawalParams) error
+	UpdateWithdrawalWorkflow(ctx context.Context, arg UpdateWithdrawalWorkflowParams) (int64, error)
+	UpdateWithdrawalWorkflowDepositTx(ctx context.Context, arg UpdateWithdrawalWorkflowDepositTxParams) error
 	UpsertLiquidityParams(ctx context.Context, params []byte) error
 	UpsertSweep(ctx context.Context, arg UpsertSweepParams) error
 }
