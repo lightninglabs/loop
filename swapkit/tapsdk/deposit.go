@@ -5,9 +5,89 @@ import (
 	"context"
 	"errors"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/taproot-assets/proof"
 )
+
+// AnchorTemplate constructs the Bitcoin transaction for one asset input.
+func AnchorTemplate(p *proof.Proof, receiver sdk.InternalKey, value int64,
+	spend *swapkit.SwapAnchorSpendInfo) ([]byte, error) {
+
+	if value < 330 || p == nil ||
+		p.OutPoint().Index >= uint32(len(p.AnchorTx.TxOut)) ||
+		p.AnchorTx.TxOut[p.OutPoint().Index] == nil {
+
+		return nil, swapkit.ErrInvalid
+	}
+	internal, err := btcec.ParsePubKey(receiver.PubKey[:])
+	if err != nil {
+		return nil, err
+	}
+	placeholder, err := txscript.PayToTaprootScript(
+		txscript.ComputeTaprootKeyNoScript(internal))
+	if err != nil {
+		return nil, err
+	}
+	point := p.OutPoint()
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(wire.NewTxIn(&point, nil, nil))
+	tx.AddTxOut(wire.NewTxOut(value, placeholder))
+	tx.TxIn[0].Sequence = 0xfffffffc
+	prev := p.AnchorTx.TxOut[point.Index]
+	if spend != nil {
+		if !bytes.Equal(prev.PkScript, spend.PkScript) {
+			return nil, swapkit.ErrInvalid
+		}
+		tx.LockTime = spend.LockTime
+		tx.TxIn[0].Sequence = spend.Sequence
+	}
+	packet, err := psbt.NewFromUnsignedTx(tx)
+	if err != nil {
+		return nil, err
+	}
+	packet.Inputs[0].WitnessUtxo = prev
+	if spend != nil {
+		packet.Inputs[0].TaprootInternalKey = spend.InternalKey[1:]
+		packet.Inputs[0].TaprootMerkleRoot = spend.TaprootMerkleRoot[:]
+		leaf := &psbt.TaprootTapLeafScript{
+			ControlBlock: spend.ControlBlock,
+			Script:       spend.LeafScript,
+			LeafVersion:  txscript.BaseLeafVersion,
+		}
+		leaves := []*psbt.TaprootTapLeafScript{leaf}
+		packet.Inputs[0].TaprootLeafScript = leaves
+	}
+	return EncodePSBT(packet)
+}
+
+// CustomRequest fixes one input/output with no passive assets or asset loss.
+func CustomRequest(input sdk.CustomAssetInput,
+	output sdk.CustomAssetOutput, anchor []byte,
+	signing sdk.CustomAnchorInputSigningPlan) *sdk.CustomAnchorRequest {
+
+	exact := &sdk.CustomAnchorCallerFundedExact{}
+	mode := sdk.CustomAnchorFundingCallerFundedExact
+	return &sdk.CustomAnchorRequest{
+		Inputs:  []sdk.CustomAssetInput{input},
+		Outputs: []sdk.CustomAssetOutput{output}, AnchorPSBT: anchor,
+		Funding: sdk.CustomAnchorFundingPlan{
+			Mode:              mode,
+			CallerFundedExact: exact,
+		},
+		PassiveAssets: sdk.CustomAnchorPassiveAssets{
+			Policy: sdk.CustomAnchorPassiveReject,
+		},
+		LossPolicy: sdk.CustomAnchorLossPolicy{
+			Mode: sdk.CustomAnchorLossReject,
+		},
+		SigningPlans: []sdk.CustomAnchorInputSigningPlan{signing},
+	}
+}
 
 // FundingProof selects the exact confirmed wallet output for a deposit.
 // It inspects Loop policy; the subsequent SDK Build verifies lineage once.
