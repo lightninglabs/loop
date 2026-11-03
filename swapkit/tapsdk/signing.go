@@ -23,6 +23,30 @@ func FinalizeScriptSpend(ctx context.Context, signer lndclient.SignerClient,
 	key keychain.KeyLocator, pkg *sdk.CustomAnchorTransferPackage,
 	preimage *[32]byte) (*sdk.CustomAnchorTransferPackage, error) {
 
+	final, err := SignScriptSpend(ctx, signer, key, pkg, preimage)
+	if err != nil {
+		return nil, err
+	}
+	packet, err := DecodePSBT(final.AnchorPsbt)
+	if err != nil {
+		return nil, err
+	}
+	if err := psbt.MaybeFinalizeAll(packet); err != nil {
+		return nil, err
+	}
+	raw, err := EncodePSBT(packet)
+	if err != nil {
+		return nil, err
+	}
+	return pkg.WithFinalAnchorPSBT(raw)
+}
+
+// SignScriptSpend signs the one bound contract input. A wallet-funded
+// caller can then sign its fee inputs before sealing the final anchor PSBT.
+func SignScriptSpend(ctx context.Context, signer lndclient.SignerClient,
+	key keychain.KeyLocator, pkg *sdk.CustomAnchorTransferPackage,
+	preimage *[32]byte) (*sdk.CustomAnchorTransferPackage, error) {
+
 	if err := CheckSigningPolicy(pkg); err != nil {
 		return nil, err
 	}
@@ -66,20 +90,5 @@ func FinalizeScriptSpend(ctx context.Context, signer lndclient.SignerClient,
 	if preimage != nil {
 		unlock = append([][]byte{preimage[:]}, unlock...)
 	}
-	final, err := pkg.ApplyScriptPathWitness(request.ID, unlock)
-	if err != nil {
-		return nil, err
-	}
-	packet, err = DecodePSBT(final.AnchorPsbt)
-	if err != nil {
-		return nil, err
-	}
-	if err := psbt.MaybeFinalizeAll(packet); err != nil {
-		return nil, err
-	}
-	raw, err := EncodePSBT(packet)
-	if err != nil {
-		return nil, err
-	}
-	return pkg.WithFinalAnchorPSBT(raw)
+	return pkg.ApplyScriptPathWitness(request.ID, unlock)
 }

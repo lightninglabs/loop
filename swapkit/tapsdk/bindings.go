@@ -162,6 +162,17 @@ func anchorScript(a swapkit.AnchorPlan, assets sdk.Hash) ([]byte, error) {
 	)
 }
 
+// IsolatedAssetRoot checks the exact input binding and requires the disclosed
+// asset to open the entire anchor. It returns the asset commitment root for
+// constructing a contract witness. The caller verifies history and chain state.
+func (b InputBinding) IsolatedAssetRoot(p *proof.Proof) (sdk.Hash, error) {
+	if err := b.validate(p); err != nil {
+		return sdk.Hash{}, err
+	}
+	assets, _, err := isolatedRoots(p)
+	return assets, err
+}
+
 // InspectInputProof checks exact contract terms and current-chain policy before
 // native SDK Build verifies the full lineage. It does not authorize a spend.
 func InspectInputProof(
@@ -186,10 +197,7 @@ func InspectInputProof(
 	if err != nil {
 		return nil, err
 	}
-	if err := binding.validate(p); err != nil {
-		return nil, err
-	}
-	if _, _, err := isolatedRoots(p); err != nil {
+	if _, err := binding.IsolatedAssetRoot(p); err != nil {
 		return nil, err
 	}
 	if err := checkConfirmation(ctx, chain, minConfs, p, unspent); err != nil {

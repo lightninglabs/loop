@@ -420,7 +420,7 @@ func TestQuoteRateConsistency(t *testing.T) {
 		{"over", "106", "100", 0, 0, false},
 		{"expensive prepay", "1", "1000", 0, 0, false},
 		{"expensive probe", "1000", "1", 0, 0, false},
-		{"invalid", "0", "100", 0, 0, false},
+		{invalidCase, "0", "100", 0, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := compareQuoteRates(

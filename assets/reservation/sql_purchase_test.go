@@ -47,7 +47,6 @@ func testPurchaseQuote(r *Reservation) *swapserverrpc.AssetReservationQuote {
 }
 
 func testApproval(t *testing.T, r *Reservation) *looprpc.ApproveAssetReservationRequest {
-
 	t.Helper()
 	hash, err := QuoteHash(r.Quote)
 	require.NoError(t, err)

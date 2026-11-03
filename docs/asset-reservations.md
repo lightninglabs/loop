@@ -1,9 +1,12 @@
 # Asset reservations
 
-Status: a fresh, local implementation on `hai/asset-reservations-stepwise`,
-based on the shared asset kit at `81e876cd`. Reservation purchase comes first;
-asset Loop Out will build on it. Purchases require `--experimental` and
-`--tapd.activate` in standalone loopd. They are not production-ready yet.
+Experimental reservation purchases use Loop's shared swapkit with tap-sdk
+v0.1.1 and Taproot Assets v0.8.8. New purchases require tapd v0.8.8 or
+later. The two parties co-sign the Bitcoin
+anchor. The server alone can refund it after the quoted CSV delay, measured
+from funding confirmation. Clients enable purchases with `--experimental`
+and `--tapd.activate` in standalone loopd. A later asset Loop Out consumes
+the purchased reservation.
 
 The tapd v0.8.8 reservation itests cover a BTC-only payer, a full-amount
 hold probe, delivery through Ready, client and server restarts, proof-size

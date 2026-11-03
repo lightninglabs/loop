@@ -21,6 +21,7 @@ import (
 // not require separate statements, which could observe different snapshots.
 type reservationQueryCounter struct {
 	sqlc.DBTX
+
 	calls int
 }
 
@@ -141,16 +142,14 @@ func TestSqlStoreStateFilter(t *testing.T) {
 func testReservation() *Reservation {
 	_, pubkey := btcec.PrivKeyFromBytes([]byte{1})
 	return &Reservation{
-		ID: ID{1},
-		Terms: Terms{
-			AssetID:               [32]byte{2},
-			Amount:                10000,
-			Fee:                   11,
-			CSVDelay:              1440,
-			RequiredConfirmations: 3,
-			ExecutionDelta:        90,
-			MinUsableBlocks:       1000,
-		},
+		ID:                    ID{1},
+		AssetID:               [32]byte{2},
+		Amount:                10000,
+		Fee:                   11,
+		CSVDelay:              1440,
+		RequiredConfirmations: 3,
+		ExecutionDelta:        90,
+		MinUsableBlocks:       1000,
 		ClientKey: keychain.KeyDescriptor{
 			PubKey: pubkey,
 			KeyLocator: keychain.KeyLocator{

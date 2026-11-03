@@ -2800,8 +2800,6 @@ func TestListUnspentDeposits(t *testing.T) {
 }
 
 type assetReservationRPCManager struct {
-	assetReservationManager
-
 	record        *assetreservation.Reservation
 	records       []*assetreservation.Reservation
 	state         fsm.StateType
@@ -3039,17 +3037,15 @@ func TestAssetReservationRPCSkipProbe(t *testing.T) {
 // testRPCAssetReservation supplies the saved terms exposed by the RPC handlers.
 func testRPCAssetReservation() *assetreservation.Reservation {
 	return &assetreservation.Reservation{
-		ID:    assetreservation.ID{1},
-		State: assetreservation.AwaitApproval,
-		Terms: assetreservation.Terms{
-			AssetID:               [32]byte{2},
-			Amount:                10000,
-			Fee:                   11,
-			CSVDelay:              1440,
-			RequiredConfirmations: 3,
-			ExecutionDelta:        90,
-			MinUsableBlocks:       1000,
-		},
+		ID:                    assetreservation.ID{1},
+		State:                 assetreservation.AwaitApproval,
+		AssetID:               [32]byte{2},
+		Amount:                10000,
+		Fee:                   11,
+		CSVDelay:              1440,
+		RequiredConfirmations: 3,
+		ExecutionDelta:        90,
+		MinUsableBlocks:       1000,
 		Quote: &swapserverrpc.AssetReservationQuote{
 			ReservationId:           []byte{1},
 			PrepayAmountMsat:        11000,

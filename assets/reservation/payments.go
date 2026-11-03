@@ -318,6 +318,7 @@ func (p *LndPayments) TrackProbe(ctx context.Context, r *Reservation,
 func receiveProbeUpdates(stream interface {
 	Recv() (*lnrpc.Payment, error)
 }, observe func(*lnrpc.Payment) error) error {
+
 	for {
 		update, err := stream.Recv()
 		if err != nil {
