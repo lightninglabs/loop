@@ -19,7 +19,10 @@ service AssetReservations {
 message BuyAssetReservationRequest {
     // A fresh, nonzero 32-byte ID makes lost-response retries idempotent.
     bytes reservation_id = 1;
+    // Set exactly one of asset_id or group_key.
     bytes asset_id = 2;
+    // Compressed, tweaked Taproot Assets group key.
+    bytes group_key = 5;
     uint64 amount = 3;
     // Skip automatic probing for a new purchase. Reusing an ID preserves its
     // saved progress. Approve must still set skip_probe if no probe succeeded.
@@ -59,7 +62,10 @@ message ClientAssetReservation {
     // Reservation identity and principal.
     bytes reservation_id = 1;
     string state = 2;
+    // Exact issuance reserved on chain, empty until selected for a group.
     bytes asset_id = 3;
+    bytes group_key = 27;
+    bytes payment_asset_id = 28;
     uint64 amount = 4;
 
     // Quote identity, validity, and receiving edge.

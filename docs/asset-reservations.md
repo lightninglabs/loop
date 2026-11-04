@@ -26,6 +26,17 @@ fee estimate. The actual prepay routing limit remains the conventional Loop Out
 limit: 10 sats plus 2%. `--max_routing_fee` sets an explicit limit in sats;
 `--yes` skips the approval prompt, but still requires a successful probe.
 
+Choose exactly one selector. `--asset_id` requires the same issuance for
+funding, the probe and the prepay. `--group_key <compressed-hex>` accepts
+fungible members of that group. The server quotes one on-chain issuance
+with sufficient spendable units and the issuance carried by its configured
+Lightning channel. These may differ. The client verifies both issuances
+against the requested group with its own tapd before sending a probe.
+The quote and displayed issuances are immutable across retries. Reusing the
+purchase ID with a different selector fails. A channel containing multiple
+distinct issuances cannot provide the issuance-specific Lightning quotes
+used by this version.
+
 If the server lacks available asset inventory or Bitcoin funding fees, the
 purchase ends immediately in `QuoteRejected`. The CLI displays
 `cannot initiate swap: rpc error: code = OutOfRange desc = amount above current maximum`.

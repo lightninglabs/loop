@@ -110,6 +110,13 @@ func (p *LndPayments) ValidateQuote(_ context.Context,
 	if err != nil {
 		return err
 	}
+	paymentID := terms.AssetID
+	if q.Group != nil {
+		if len(q.Group.PaymentAssetId) != 32 {
+			return errors.New("invalid payment issuance")
+		}
+		paymentID = [32]byte(q.Group.PaymentAssetId)
+	}
 	var rfq rfqrpc.PeerAcceptedBuyQuote
 	if err := proto.Unmarshal(q.PrepayRfq, &rfq); err != nil {
 		return err
@@ -120,7 +127,7 @@ func (p *LndPayments) ValidateQuote(_ context.Context,
 	}
 	_, err = payment.ValidateInvoice(q.PrepayInvoice, &rfq,
 		payment.InvoiceTerms{
-			AssetID:      terms.AssetID,
+			AssetID:      paymentID,
 			Amount:       terms.Fee,
 			Hash:         *prepay.PaymentHash,
 			Payee:        [33]byte(q.ReceivingNodeKey),
@@ -142,7 +149,7 @@ func (p *LndPayments) ValidateQuote(_ context.Context,
 	}
 	_, err = payment.ValidateInvoice(q.ProbeInvoice, &probeRFQ,
 		payment.InvoiceTerms{
-			AssetID:      terms.AssetID,
+			AssetID:      paymentID,
 			Amount:       terms.Amount,
 			Hash:         ProbeHash(ID(q.ReservationId)),
 			Payee:        [33]byte(q.ReceivingNodeKey),

@@ -57,12 +57,16 @@ func (f *FSM) RequestQuoteAction(ctx context.Context,
 		return OnQuoteFailed
 	}
 	// Reuse the saved ID and key so a lost reply finds the same purchase.
+	selector := r.selector()
+	id, group := selector.Bytes()
 	response, err := f.cfg.Server.QuoteAssetReservation(ctx,
 		&swapserverrpc.QuoteAssetReservationRequest{
-			ReservationId: r.ID[:],
-			AssetId:       r.AssetID[:],
-			Amount:        r.Amount,
-			ClientKey:     r.ClientKey.PubKey.SerializeCompressed(),
+			ReservationId:   r.ID[:],
+			AssetId:         id,
+			GroupKey:        group,
+			ProtocolVersion: selector.ProtocolVersion(),
+			Amount:          r.Amount,
+			ClientKey:       r.ClientKey.PubKey.SerializeCompressed(),
 		},
 	)
 	if status.Code(err) == codes.OutOfRange {
@@ -92,6 +96,15 @@ func (f *FSM) RequestQuoteAction(ctx context.Context,
 	}
 	if err := f.cfg.Payments.ValidateQuote(ctx, response.Quote); err != nil {
 		return f.rejectQuote(err)
+	}
+	if response.Quote.Group != nil {
+		err := f.cfg.Wallet.VerifyGroup(ctx, response.Quote)
+		if errors.Is(err, ErrInvalidReservation) {
+			return f.rejectQuote(err)
+		}
+		if err != nil {
+			return f.stayInState(err)
+		}
 	}
 	r.Quote = proto.Clone(response.Quote).(*swapserverrpc.AssetReservationQuote)
 	r.Terms, _ = TermsFromRPC(r.Quote.Terms)

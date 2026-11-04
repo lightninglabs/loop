@@ -94,7 +94,16 @@ func (r *Reservation) ValidateQuote(
 	if err != nil {
 		return err
 	}
-	if terms.AssetID != r.AssetID || terms.Amount != r.Amount ||
+	if r.GroupKey == ([33]byte{}) {
+		if q.Group != nil || terms.AssetID != r.AssetID {
+			return errors.New("quote changes exact issuance")
+		}
+	} else if !bytes.Equal(q.GetGroup().GetGroupKey(), r.GroupKey[:]) ||
+		len(q.Group.PaymentAssetId) != 32 || [32]byte(q.Group.PaymentAssetId) == ([32]byte{}) {
+
+		return errors.New("quote changes requested group or lacks payment issuance")
+	}
+	if terms.Amount != r.Amount ||
 		(r.Fee != 0 && terms != r.Terms) {
 
 		return errors.New("quote changes reservation terms")

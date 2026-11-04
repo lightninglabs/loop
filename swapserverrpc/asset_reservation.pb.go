@@ -96,12 +96,14 @@ func (AssetReservationStatus) EnumDescriptor() ([]byte, []int) {
 
 type QuoteAssetReservationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The initial protocol version is 0. Reject unsupported versions.
+	// Exact purchases use version 0; group purchases use version 1.
 	ProtocolVersion uint32 `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
 	// A client-generated, nonzero 32-byte ID, stable across retries.
 	ReservationId []byte `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	AssetId       []byte `protobuf:"bytes,3,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	Amount        uint64 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	// Set exactly one selector. A group request uses protocol version 1.
+	AssetId  []byte `protobuf:"bytes,3,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	GroupKey []byte `protobuf:"bytes,6,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
+	Amount   uint64 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
 	// A 33-byte compressed public key whose secret the client controls.
 	ClientKey     []byte `protobuf:"bytes,5,opt,name=client_key,json=clientKey,proto3" json:"client_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -155,6 +157,13 @@ func (x *QuoteAssetReservationRequest) GetReservationId() []byte {
 func (x *QuoteAssetReservationRequest) GetAssetId() []byte {
 	if x != nil {
 		return x.AssetId
+	}
+	return nil
+}
+
+func (x *QuoteAssetReservationRequest) GetGroupKey() []byte {
+	if x != nil {
+		return x.GroupKey
 	}
 	return nil
 }
@@ -434,7 +443,9 @@ type AssetReservationQuote struct {
 	// amount and route hint to the exact asset fee. Contains no secrets.
 	PrepayRfq []byte `protobuf:"bytes,12,opt,name=prepay_rfq,json=prepayRfq,proto3" json:"prepay_rfq,omitempty"`
 	// Native receiving RFQ binding the probe to terms.amount asset units.
-	ProbeRfq      []byte `protobuf:"bytes,13,opt,name=probe_rfq,json=probeRfq,proto3" json:"probe_rfq,omitempty"`
+	ProbeRfq []byte `protobuf:"bytes,13,opt,name=probe_rfq,json=probeRfq,proto3" json:"probe_rfq,omitempty"`
+	// Present only on group requests. Covered by the approval hash.
+	Group         *AssetReservationGroup `protobuf:"bytes,14,opt,name=group,proto3" json:"group,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -556,6 +567,13 @@ func (x *AssetReservationQuote) GetPrepayRfq() []byte {
 func (x *AssetReservationQuote) GetProbeRfq() []byte {
 	if x != nil {
 		return x.ProbeRfq
+	}
+	return nil
+}
+
+func (x *AssetReservationQuote) GetGroup() *AssetReservationGroup {
+	if x != nil {
+		return x.Group
 	}
 	return nil
 }
@@ -865,15 +883,79 @@ func (x *AssetReservationProof) GetProof() []byte {
 	return nil
 }
 
+// Group membership evidence for the on-chain issuance in terms.asset_id and
+// the issuance carried by the configured Lightning channel. First proof is
+// the group anchor, followed by any distinct member issuance proofs needed.
+type AssetReservationGroup struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	GroupKey       []byte                 `protobuf:"bytes,1,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
+	PaymentAssetId []byte                 `protobuf:"bytes,2,opt,name=payment_asset_id,json=paymentAssetId,proto3" json:"payment_asset_id,omitempty"`
+	IssuanceProofs [][]byte               `protobuf:"bytes,3,rep,name=issuance_proofs,json=issuanceProofs,proto3" json:"issuance_proofs,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AssetReservationGroup) Reset() {
+	*x = AssetReservationGroup{}
+	mi := &file_asset_reservation_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssetReservationGroup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssetReservationGroup) ProtoMessage() {}
+
+func (x *AssetReservationGroup) ProtoReflect() protoreflect.Message {
+	mi := &file_asset_reservation_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssetReservationGroup.ProtoReflect.Descriptor instead.
+func (*AssetReservationGroup) Descriptor() ([]byte, []int) {
+	return file_asset_reservation_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AssetReservationGroup) GetGroupKey() []byte {
+	if x != nil {
+		return x.GroupKey
+	}
+	return nil
+}
+
+func (x *AssetReservationGroup) GetPaymentAssetId() []byte {
+	if x != nil {
+		return x.PaymentAssetId
+	}
+	return nil
+}
+
+func (x *AssetReservationGroup) GetIssuanceProofs() [][]byte {
+	if x != nil {
+		return x.IssuanceProofs
+	}
+	return nil
+}
+
 var File_asset_reservation_proto protoreflect.FileDescriptor
 
 const file_asset_reservation_proto_rawDesc = "" +
 	"\n" +
-	"\x17asset_reservation.proto\x12\alooprpc\"\xc2\x01\n" +
+	"\x17asset_reservation.proto\x12\alooprpc\"\xdf\x01\n" +
 	"\x1cQuoteAssetReservationRequest\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12%\n" +
 	"\x0ereservation_id\x18\x02 \x01(\fR\rreservationId\x12\x19\n" +
-	"\basset_id\x18\x03 \x01(\fR\aassetId\x12\x16\n" +
+	"\basset_id\x18\x03 \x01(\fR\aassetId\x12\x1b\n" +
+	"\tgroup_key\x18\x06 \x01(\fR\bgroupKey\x12\x16\n" +
 	"\x06amount\x18\x04 \x01(\x04R\x06amount\x12\x1d\n" +
 	"\n" +
 	"client_key\x18\x05 \x01(\fR\tclientKey\"m\n" +
@@ -893,7 +975,7 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\tcsv_delay\x18\x04 \x01(\rR\bcsvDelay\x125\n" +
 	"\x16required_confirmations\x18\x05 \x01(\rR\x15requiredConfirmations\x12'\n" +
 	"\x0fexecution_delta\x18\x06 \x01(\rR\x0eexecutionDelta\x12*\n" +
-	"\x11min_usable_blocks\x18\a \x01(\rR\x0fminUsableBlocks\"\x8d\x04\n" +
+	"\x11min_usable_blocks\x18\a \x01(\rR\x0fminUsableBlocks\"\xc3\x04\n" +
 	"\x15AssetReservationQuote\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x124\n" +
 	"\x05terms\x18\x02 \x01(\v2\x1e.looprpc.AssetReservationTermsR\x05terms\x12\x1d\n" +
@@ -912,7 +994,8 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"expires_at\x18\v \x01(\x03R\texpiresAt\x12\x1d\n" +
 	"\n" +
 	"prepay_rfq\x18\f \x01(\fR\tprepayRfq\x12\x1b\n" +
-	"\tprobe_rfq\x18\r \x01(\fR\bprobeRfq\"\x94\x04\n" +
+	"\tprobe_rfq\x18\r \x01(\fR\bprobeRfq\x124\n" +
+	"\x05group\x18\x0e \x01(\v2\x1e.looprpc.AssetReservationGroupR\x05group\"\x94\x04\n" +
 	"\x10AssetReservation\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x124\n" +
 	"\x05quote\x18\x02 \x01(\v2\x1e.looprpc.AssetReservationQuoteR\x05quote\x125\n" +
@@ -936,7 +1019,11 @@ const file_asset_reservation_proto_rawDesc = "" +
 	"\x15AssetReservationProof\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x12\x1a\n" +
 	"\boutpoint\x18\x02 \x01(\tR\boutpoint\x12\x14\n" +
-	"\x05proof\x18\x03 \x01(\fR\x05proof*\xe5\x02\n" +
+	"\x05proof\x18\x03 \x01(\fR\x05proof\"\x87\x01\n" +
+	"\x15AssetReservationGroup\x12\x1b\n" +
+	"\tgroup_key\x18\x01 \x01(\fR\bgroupKey\x12(\n" +
+	"\x10payment_asset_id\x18\x02 \x01(\fR\x0epaymentAssetId\x12'\n" +
+	"\x0fissuance_proofs\x18\x03 \x03(\fR\x0eissuanceProofs*\xe5\x02\n" +
 	"\x16AssetReservationStatus\x12\x1d\n" +
 	"\x19ASSET_RESERVATION_UNKNOWN\x10\x00\x12\x1d\n" +
 	"\x19ASSET_RESERVATION_QUOTING\x10\x01\x12&\n" +
@@ -968,7 +1055,7 @@ func file_asset_reservation_proto_rawDescGZIP() []byte {
 }
 
 var file_asset_reservation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_asset_reservation_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_asset_reservation_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_asset_reservation_proto_goTypes = []any{
 	(AssetReservationStatus)(0),           // 0: looprpc.AssetReservationStatus
 	(*QuoteAssetReservationRequest)(nil),  // 1: looprpc.QuoteAssetReservationRequest
@@ -980,28 +1067,30 @@ var file_asset_reservation_proto_goTypes = []any{
 	(*ListAssetReservationsRequest)(nil),  // 7: looprpc.ListAssetReservationsRequest
 	(*ListAssetReservationsResponse)(nil), // 8: looprpc.ListAssetReservationsResponse
 	(*AssetReservationProof)(nil),         // 9: looprpc.AssetReservationProof
+	(*AssetReservationGroup)(nil),         // 10: looprpc.AssetReservationGroup
 }
 var file_asset_reservation_proto_depIdxs = []int32{
 	2,  // 0: looprpc.CancelAssetReservationRequest.reservation:type_name -> looprpc.AssetReservationSelector
 	4,  // 1: looprpc.AssetReservationQuote.terms:type_name -> looprpc.AssetReservationTerms
-	5,  // 2: looprpc.AssetReservation.quote:type_name -> looprpc.AssetReservationQuote
-	0,  // 3: looprpc.AssetReservation.state:type_name -> looprpc.AssetReservationStatus
-	6,  // 4: looprpc.ListAssetReservationsResponse.reservations:type_name -> looprpc.AssetReservation
-	1,  // 5: looprpc.AssetReservationService.QuoteAssetReservation:input_type -> looprpc.QuoteAssetReservationRequest
-	2,  // 6: looprpc.AssetReservationService.GetAssetReservation:input_type -> looprpc.AssetReservationSelector
-	7,  // 7: looprpc.AssetReservationService.ListAssetReservations:input_type -> looprpc.ListAssetReservationsRequest
-	2,  // 8: looprpc.AssetReservationService.GetAssetReservationProof:input_type -> looprpc.AssetReservationSelector
-	3,  // 9: looprpc.AssetReservationService.CancelAssetReservation:input_type -> looprpc.CancelAssetReservationRequest
-	6,  // 10: looprpc.AssetReservationService.QuoteAssetReservation:output_type -> looprpc.AssetReservation
-	6,  // 11: looprpc.AssetReservationService.GetAssetReservation:output_type -> looprpc.AssetReservation
-	8,  // 12: looprpc.AssetReservationService.ListAssetReservations:output_type -> looprpc.ListAssetReservationsResponse
-	9,  // 13: looprpc.AssetReservationService.GetAssetReservationProof:output_type -> looprpc.AssetReservationProof
-	6,  // 14: looprpc.AssetReservationService.CancelAssetReservation:output_type -> looprpc.AssetReservation
-	10, // [10:15] is the sub-list for method output_type
-	5,  // [5:10] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	10, // 2: looprpc.AssetReservationQuote.group:type_name -> looprpc.AssetReservationGroup
+	5,  // 3: looprpc.AssetReservation.quote:type_name -> looprpc.AssetReservationQuote
+	0,  // 4: looprpc.AssetReservation.state:type_name -> looprpc.AssetReservationStatus
+	6,  // 5: looprpc.ListAssetReservationsResponse.reservations:type_name -> looprpc.AssetReservation
+	1,  // 6: looprpc.AssetReservationService.QuoteAssetReservation:input_type -> looprpc.QuoteAssetReservationRequest
+	2,  // 7: looprpc.AssetReservationService.GetAssetReservation:input_type -> looprpc.AssetReservationSelector
+	7,  // 8: looprpc.AssetReservationService.ListAssetReservations:input_type -> looprpc.ListAssetReservationsRequest
+	2,  // 9: looprpc.AssetReservationService.GetAssetReservationProof:input_type -> looprpc.AssetReservationSelector
+	3,  // 10: looprpc.AssetReservationService.CancelAssetReservation:input_type -> looprpc.CancelAssetReservationRequest
+	6,  // 11: looprpc.AssetReservationService.QuoteAssetReservation:output_type -> looprpc.AssetReservation
+	6,  // 12: looprpc.AssetReservationService.GetAssetReservation:output_type -> looprpc.AssetReservation
+	8,  // 13: looprpc.AssetReservationService.ListAssetReservations:output_type -> looprpc.ListAssetReservationsResponse
+	9,  // 14: looprpc.AssetReservationService.GetAssetReservationProof:output_type -> looprpc.AssetReservationProof
+	6,  // 15: looprpc.AssetReservationService.CancelAssetReservation:output_type -> looprpc.AssetReservation
+	11, // [11:16] is the sub-list for method output_type
+	6,  // [6:11] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_asset_reservation_proto_init() }
@@ -1019,7 +1108,7 @@ func file_asset_reservation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_asset_reservation_proto_rawDesc), len(file_asset_reservation_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -24,7 +24,7 @@ INSERT INTO asset_reservations (
     client_pubkey,
     client_key_family,
     client_key_index,
-    created_at
+    created_at, group_key
 ) VALUES (
     $1,
     $2,
@@ -37,7 +37,7 @@ INSERT INTO asset_reservations (
     $9,
     $10,
     $11,
-    $12
+    $12, $13
 ) ON CONFLICT (reservation_id) DO NOTHING
 `
 
@@ -54,6 +54,7 @@ type CreateAssetReservationParams struct {
 	ClientKeyFamily       int32
 	ClientKeyIndex        int64
 	CreatedAt             time.Time
+	GroupKey              []byte
 }
 
 func (q *Queries) CreateAssetReservation(ctx context.Context, arg CreateAssetReservationParams) (int64, error) {
@@ -70,6 +71,7 @@ func (q *Queries) CreateAssetReservation(ctx context.Context, arg CreateAssetRes
 		arg.ClientKeyFamily,
 		arg.ClientKeyIndex,
 		arg.CreatedAt,
+		arg.GroupKey,
 	)
 	if err != nil {
 		return 0, err
@@ -78,7 +80,7 @@ func (q *Queries) CreateAssetReservation(ctx context.Context, arg CreateAssetRes
 }
 
 const getAssetReservation = `-- name: GetAssetReservation :one
-SELECT id, reservation_id, asset_id, amount, fee, csv_delay, required_confirmations, execution_delta, min_usable_blocks, client_pubkey, client_key_family, client_key_index, created_at, quote, max_route_fee_msat, skip_probe, main_probe, probes_checked_at, prepay_route_fee_msat, main_route_fee_msat, payment_hash, paying_node_key, payment_request, payment_result, funding_outpoint, confirmation_height, prepay_credit, deposit_proof, probe_node_key, probe_request, probe_result, probe_deadline, probe_fee_known FROM asset_reservations WHERE reservation_id = $1
+SELECT id, reservation_id, asset_id, amount, fee, csv_delay, required_confirmations, execution_delta, min_usable_blocks, client_pubkey, client_key_family, client_key_index, created_at, quote, max_route_fee_msat, skip_probe, main_probe, probes_checked_at, prepay_route_fee_msat, main_route_fee_msat, payment_hash, paying_node_key, payment_request, payment_result, funding_outpoint, confirmation_height, prepay_credit, deposit_proof, probe_node_key, probe_request, probe_result, probe_deadline, probe_fee_known, group_key FROM asset_reservations WHERE reservation_id = $1
 `
 
 func (q *Queries) GetAssetReservation(ctx context.Context, reservationID []byte) (AssetReservation, error) {
@@ -118,12 +120,13 @@ func (q *Queries) GetAssetReservation(ctx context.Context, reservationID []byte)
 		&i.ProbeResult,
 		&i.ProbeDeadline,
 		&i.ProbeFeeKnown,
+		&i.GroupKey,
 	)
 	return i, err
 }
 
 const getAssetReservationSnapshot = `-- name: GetAssetReservationSnapshot :one
-SELECT r.id, r.reservation_id, r.asset_id, r.amount, r.fee, r.csv_delay, r.required_confirmations, r.execution_delta, r.min_usable_blocks, r.client_pubkey, r.client_key_family, r.client_key_index, r.created_at, r.quote, r.max_route_fee_msat, r.skip_probe, r.main_probe, r.probes_checked_at, r.prepay_route_fee_msat, r.main_route_fee_msat, r.payment_hash, r.paying_node_key, r.payment_request, r.payment_result, r.funding_outpoint, r.confirmation_height, r.prepay_credit, r.deposit_proof, r.probe_node_key, r.probe_request, r.probe_result, r.probe_deadline, r.probe_fee_known, u.update_state, u.update_timestamp
+SELECT r.id, r.reservation_id, r.asset_id, r.amount, r.fee, r.csv_delay, r.required_confirmations, r.execution_delta, r.min_usable_blocks, r.client_pubkey, r.client_key_family, r.client_key_index, r.created_at, r.quote, r.max_route_fee_msat, r.skip_probe, r.main_probe, r.probes_checked_at, r.prepay_route_fee_msat, r.main_route_fee_msat, r.payment_hash, r.paying_node_key, r.payment_request, r.payment_result, r.funding_outpoint, r.confirmation_height, r.prepay_credit, r.deposit_proof, r.probe_node_key, r.probe_request, r.probe_result, r.probe_deadline, r.probe_fee_known, r.group_key, u.update_state, u.update_timestamp
 FROM asset_reservations r
 LEFT JOIN asset_reservation_updates u ON u.id = (
     SELECT id FROM asset_reservation_updates
@@ -176,6 +179,7 @@ func (q *Queries) GetAssetReservationSnapshot(ctx context.Context, reservationID
 		&i.AssetReservation.ProbeResult,
 		&i.AssetReservation.ProbeDeadline,
 		&i.AssetReservation.ProbeFeeKnown,
+		&i.AssetReservation.GroupKey,
 		&i.UpdateState,
 		&i.UpdateTimestamp,
 	)
@@ -217,7 +221,7 @@ func (q *Queries) GetAssetReservationUpdates(ctx context.Context, reservationID 
 }
 
 const getAssetReservations = `-- name: GetAssetReservations :many
-SELECT r.id, r.reservation_id, r.asset_id, r.amount, r.fee, r.csv_delay, r.required_confirmations, r.execution_delta, r.min_usable_blocks, r.client_pubkey, r.client_key_family, r.client_key_index, r.created_at, r.quote, r.max_route_fee_msat, r.skip_probe, r.main_probe, r.probes_checked_at, r.prepay_route_fee_msat, r.main_route_fee_msat, r.payment_hash, r.paying_node_key, r.payment_request, r.payment_result, r.funding_outpoint, r.confirmation_height, r.prepay_credit, r.deposit_proof, r.probe_node_key, r.probe_request, r.probe_result, r.probe_deadline, r.probe_fee_known, u.update_state, u.update_timestamp
+SELECT r.id, r.reservation_id, r.asset_id, r.amount, r.fee, r.csv_delay, r.required_confirmations, r.execution_delta, r.min_usable_blocks, r.client_pubkey, r.client_key_family, r.client_key_index, r.created_at, r.quote, r.max_route_fee_msat, r.skip_probe, r.main_probe, r.probes_checked_at, r.prepay_route_fee_msat, r.main_route_fee_msat, r.payment_hash, r.paying_node_key, r.payment_request, r.payment_result, r.funding_outpoint, r.confirmation_height, r.prepay_credit, r.deposit_proof, r.probe_node_key, r.probe_request, r.probe_result, r.probe_deadline, r.probe_fee_known, r.group_key, u.update_state, u.update_timestamp
 FROM asset_reservations r
 LEFT JOIN asset_reservation_updates u ON u.id = (
     SELECT id FROM asset_reservation_updates
@@ -300,6 +304,7 @@ func (q *Queries) GetAssetReservations(ctx context.Context, arg GetAssetReservat
 			&i.AssetReservation.ProbeResult,
 			&i.AssetReservation.ProbeDeadline,
 			&i.AssetReservation.ProbeFeeKnown,
+			&i.AssetReservation.GroupKey,
 			&i.UpdateState,
 			&i.UpdateTimestamp,
 		); err != nil {

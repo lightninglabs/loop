@@ -33,6 +33,9 @@ type Reservation struct {
 	// lifetime once a quote is validated.
 	Terms
 
+	// GroupKey preserves the original selector even after choosing an issuance.
+	GroupKey [33]byte
+
 	// ID identifies this purchase across retries and restarts.
 	ID ID
 
@@ -92,12 +95,18 @@ func (r *Reservation) Validate() error {
 		return errors.New("invalid asset reservation")
 	}
 
+	if _, err := ParseAssetSelector(r.selector().Bytes()); err != nil {
+		return err
+	}
 	if r.Fee == 0 {
+		if r.GroupKey != ([33]byte{}) && r.AssetID != ([32]byte{}) {
+			return errors.New("unquoted group reservation has an issuance")
+		}
 		requested := Terms{
 			AssetID: r.AssetID,
 			Amount:  r.Amount,
 		}
-		if r.Terms != requested || r.AssetID == ([32]byte{}) ||
+		if r.Terms != requested ||
 			r.Amount == 0 || r.Amount > math.MaxInt64 || r.Quote != nil {
 
 			return errors.New("invalid unquoted reservation")

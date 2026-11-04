@@ -6,9 +6,8 @@ import (
 )
 
 // Terms records the asset amounts and lifetime offered for a reservation.
-// The client initially fills only AssetID and Amount from the purchase request.
-// The server preserves those values and fills Fee and the lifetime fields from
-// its pricing and lifetime policies when creating the quote.
+// For a group request the server chooses an on-chain issuance, otherwise
+// the client supplies it. Fee and lifetime come from the server quote.
 //
 // The client validates and saves the returned terms before requesting approval.
 // Approving the quote's hash accepts its asset fee and BTC prepay amount. The
@@ -17,9 +16,8 @@ import (
 // The field comments describe the full flow; Validate alone checks only amounts
 // and lifetime consistency.
 type Terms struct {
-	// AssetID identifies the asset requested by the client. The client
-	// checks the quote against its request and the reservation proof against
-	// this saved ID.
+	// AssetID is the exact on-chain issuance, zero while a group request
+	// awaits its first quote.
 	AssetID [32]byte
 
 	// Amount is the requested reservation principal, in indivisible asset

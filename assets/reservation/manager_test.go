@@ -52,7 +52,7 @@ func TestClientManagerDuplicateRequests(t *testing.T) {
 	var requests sync.WaitGroup
 	for range 4 {
 		requests.Go(func() {
-			_, err := m.NewPurchase(ctx, h.id, [32]byte{2}, 10000, false)
+			_, err := m.NewPurchase(ctx, h.id, AssetSelector{AssetID: [32]byte{2}}, 10000, false)
 			results <- err
 		})
 	}
@@ -64,9 +64,9 @@ func TestClientManagerDuplicateRequests(t *testing.T) {
 		r, err := m.Wake(ctx, h.id)
 		return err == nil && r.State == AwaitApproval
 	}, 2*time.Second, time.Millisecond)
-	_, err := m.NewPurchase(ctx, h.id, [32]byte{2}, 10001, false)
+	_, err := m.NewPurchase(ctx, h.id, AssetSelector{AssetID: [32]byte{2}}, 10001, false)
 	require.ErrorIs(t, err, ErrRequestConflict)
-	_, err = m.NewPurchase(ctx, ID{9}, [32]byte{2}, 10000, false)
+	_, err = m.NewPurchase(ctx, ID{9}, AssetSelector{AssetID: [32]byte{2}}, 10000, false)
 	require.ErrorIs(t, err, ErrReservationLimit)
 	reservations, err := m.List(ctx, StateFilter{})
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func TestClientManagerRestoresBeyondAdmissionLimit(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, AwaitApproval, r.State)
 	}
-	_, err := m.NewPurchase(t.Context(), ID{3}, [32]byte{2}, 10000, false)
+	_, err := m.NewPurchase(t.Context(), ID{3}, AssetSelector{AssetID: [32]byte{2}}, 10000, false)
 	require.ErrorIs(t, err, ErrReservationLimit)
 	stop()
 	require.Zero(t, h.sends)
@@ -170,7 +170,7 @@ func TestClientManagerSkipsProbeAcrossRestart(t *testing.T) {
 	h.blockQuote = true
 	h.quoteStarted = make(chan struct{}, 1)
 	m, stop := startClientManager(t, h.cfg, 1)
-	_, err := m.NewPurchase(t.Context(), h.id, [32]byte{2}, 10000, true)
+	_, err := m.NewPurchase(t.Context(), h.id, AssetSelector{AssetID: [32]byte{2}}, 10000, true)
 	require.NoError(t, err)
 	select {
 	case <-h.quoteStarted:
@@ -311,7 +311,7 @@ func TestClientManagerCancelsCreation(t *testing.T) {
 			response := make(chan error, 1)
 			go func() {
 				_, err := m.NewPurchase(
-					requestCtx, h.id, [32]byte{2}, 10000, false,
+					requestCtx, h.id, AssetSelector{AssetID: [32]byte{2}}, 10000, false,
 				)
 				response <- err
 			}()

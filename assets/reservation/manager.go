@@ -31,7 +31,7 @@ type ManagerConfig struct {
 type managerRequest struct {
 	ctx       context.Context
 	id        ID
-	assetID   [32]byte
+	selector  AssetSelector
 	amount    uint64
 	skipProbe bool
 	create    bool
@@ -304,7 +304,7 @@ func (m *Manager) create(ctx context.Context, request *managerRequest,
 
 	r, err := m.cfg.FSM.Store.GetReservation(ctx, request.id)
 	if err == nil {
-		if r.AssetID != request.assetID || r.Amount != request.amount {
+		if r.selector() != request.selector || r.Amount != request.amount {
 			return nil, ErrRequestConflict
 		}
 		return r, nil
@@ -326,7 +326,8 @@ func (m *Manager) create(ctx context.Context, request *managerRequest,
 		ID:        request.id,
 		ClientKey: *key,
 		State:     RequestQuote,
-		AssetID:   request.assetID,
+		AssetID:   request.selector.AssetID,
+		GroupKey:  request.selector.GroupKey,
 		Amount:    request.amount,
 		SkipProbe: request.skipProbe,
 	}
@@ -386,10 +387,13 @@ func (m *Manager) submit(request *managerRequest) (*Reservation, error) {
 // while a worker requests the quote. Reuse id after a lost response to retrieve
 // the same reservation and client key; changing its asset or amount is rejected.
 // skipProbe applies only to a new purchase. Payment requires separate approval.
-func (m *Manager) NewPurchase(ctx context.Context, id ID, assetID [32]byte,
+func (m *Manager) NewPurchase(ctx context.Context, id ID, selector AssetSelector,
 	amount uint64, skipProbe bool) (*Reservation, error) {
 
-	if id == (ID{}) || assetID == ([32]byte{}) || amount == 0 ||
+	if _, err := ParseAssetSelector(selector.Bytes()); err != nil {
+		return nil, err
+	}
+	if id == (ID{}) || amount == 0 ||
 		amount > math.MaxInt64 {
 
 		return nil, errors.New("invalid reservation request")
@@ -397,7 +401,7 @@ func (m *Manager) NewPurchase(ctx context.Context, id ID, assetID [32]byte,
 	return m.submit(&managerRequest{
 		ctx:       ctx,
 		id:        id,
-		assetID:   assetID,
+		selector:  selector,
 		amount:    amount,
 		create:    true,
 		skipProbe: skipProbe,

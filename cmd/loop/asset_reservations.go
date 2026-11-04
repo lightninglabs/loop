@@ -20,6 +20,7 @@ import (
 
 const (
 	assetIDFlag     = "asset_id"
+	groupKeyFlag    = "group_key"
 	assetAmountFlag = "amt"
 )
 
@@ -35,8 +36,12 @@ var assetCommand = &cli.Command{
 				Usage: "quote, approve, and buy a reservation",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:     assetIDFlag,
-						Required: true,
+						Name:  assetIDFlag,
+						Usage: "require this exact issuance on chain and on Lightning",
+					},
+					&cli.StringFlag{
+						Name:  groupKeyFlag,
+						Usage: "accept a fungible member of this compressed group key",
 					},
 					&cli.Uint64Flag{
 						Name:     assetAmountFlag,
@@ -142,7 +147,16 @@ func reservationSelectorID(id []byte) *looprpc.ClientAssetReservationSelector {
 }
 
 func buyAssetReservation(ctx context.Context, cmd *cli.Command) error {
-	assetID, err := reservationID(cmd.String(assetIDFlag))
+	idText, groupText := cmd.String(assetIDFlag), cmd.String(groupKeyFlag)
+	assetID, err := hex.DecodeString(idText)
+	if err != nil || hex.EncodeToString(assetID) != idText {
+		return errors.New("invalid asset ID hex")
+	}
+	group, err := hex.DecodeString(groupText)
+	if err != nil || hex.EncodeToString(group) != groupText {
+		return errors.New("invalid group key hex")
+	}
+	_, err = reservation.ParseAssetSelector(assetID, group)
 	if err != nil {
 		return err
 	}
@@ -171,6 +185,7 @@ func buyAssetReservation(ctx context.Context, cmd *cli.Command) error {
 	r, err := client.Buy(ctx, &looprpc.BuyAssetReservationRequest{
 		ReservationId: id,
 		AssetId:       assetID,
+		GroupKey:      group,
 		Amount:        cmd.Uint64(assetAmountFlag),
 		SkipProbe:     cmd.Bool("skip_probe"),
 	})
@@ -186,6 +201,11 @@ func buyAssetReservation(ctx context.Context, cmd *cli.Command) error {
 	}
 	if r.State == string(reservation.AwaitApproval) {
 		printRespJSON(r)
+		if len(r.GroupKey) != 0 {
+			fmt.Printf("Asset group: %x\nOn-chain issuance: %x\n"+
+				"Lightning issuance: %x\n", r.GroupKey, r.AssetId,
+				r.PaymentAssetId)
+		}
 		fmt.Print(reservationFeeInfo(r))
 		fmt.Print(reservationProbeInfo(r))
 		approval, err := reservationApproval(cmd, r)
@@ -245,11 +265,15 @@ func approveAssetReservation(ctx context.Context,
 	}
 	// Approval may have committed even if neither reply reached us. Keep
 	// the retry key explicit so the user does not buy another reservation.
+	flag, key := "--asset_id", quoted.AssetId
+	if len(quoted.GroupKey) != 0 {
+		flag, key = "--group_key", quoted.GroupKey
+	}
 	return nil, fmt.Errorf("approval reply failed: %w; the daemon may still "+
 		"complete this purchase. Inspect it with `loop asset reservation get "+
 		"--reservation_id %x` or resume with `loop asset reservation buy "+
-		"--asset_id %x --amt %d --reservation_id %x`",
-		err, quoted.ReservationId, quoted.AssetId, quoted.Amount,
+		"%s %x --amt %d --reservation_id %x`",
+		err, quoted.ReservationId, flag, key, quoted.Amount,
 		quoted.ReservationId)
 }
 

@@ -92,6 +92,9 @@ func (w *WalletVerifier) Verify(ctx context.Context, r *Reservation,
 	if err != nil {
 		return result, err
 	}
+	if r.GroupKey != ([33]byte{}) && !IsGroupMember(&terminal.Asset, r.GroupKey[:]) {
+		return result, ErrInvalidReservation
+	}
 	hash, err := w.Chain.Chain.GetBlockHash(ctx, int64(terminal.BlockHeight))
 	if err != nil {
 		return result, err

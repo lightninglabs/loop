@@ -43,6 +43,7 @@ type AssetReservation struct {
 	ProbeResult           []byte
 	ProbeDeadline         sql.NullTime
 	ProbeFeeKnown         bool
+	GroupKey              []byte
 }
 
 type AssetReservationUpdate struct {

@@ -2812,7 +2812,7 @@ type assetReservationRPCManager struct {
 }
 
 func (m *assetReservationRPCManager) NewPurchase(_ context.Context,
-	_ assetreservation.ID, _ [32]byte, _ uint64, skipProbe bool) (
+	_ assetreservation.ID, _ assetreservation.AssetSelector, _ uint64, skipProbe bool) (
 	*assetreservation.Reservation, error) {
 
 	m.buys++

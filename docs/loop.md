@@ -66,7 +66,8 @@ The following flags are supported:
 
 | Name                    | Description                                                  | Type   | Default value |
 |-------------------------|--------------------------------------------------------------|--------|:-------------:|
-| `--asset_id="…"`        |                                                              | string |
+| `--asset_id="…"`        | require this exact issuance on chain and on Lightning        | string |
+| `--group_key="…"`       | accept a fungible member of this compressed group key        | string |
 | `--amt="…"`             | asset amount in indivisible units                            | uint   |      `0`      |
 | `--reservation_id="…"`  | resume this purchase ID                                      | string |
 | `--yes`                 | approve the displayed terms without a prompt                 | bool   |    `false`    |

@@ -11,7 +11,7 @@ INSERT INTO asset_reservations (
     client_pubkey,
     client_key_family,
     client_key_index,
-    created_at
+    created_at, group_key
 ) VALUES (
     $1,
     $2,
@@ -24,7 +24,7 @@ INSERT INTO asset_reservations (
     $9,
     $10,
     $11,
-    $12
+    $12, $13
 ) ON CONFLICT (reservation_id) DO NOTHING;
 
 -- name: GetAssetReservation :one

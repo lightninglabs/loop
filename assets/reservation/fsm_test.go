@@ -319,6 +319,10 @@ func (h *clientHarness) Pay(context.Context, *btcec.PublicKey,
 	return errors.New("lost send reply")
 }
 
+func (h *clientHarness) VerifyGroup(context.Context, *swapserverrpc.AssetReservationQuote) error {
+	return ErrInvalidReservation
+}
+
 func (h *clientHarness) DeriveKey(context.Context) (
 	*keychain.KeyDescriptor, error) {
 

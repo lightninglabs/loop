@@ -80,8 +80,11 @@ type BuyAssetReservationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// A fresh, nonzero 32-byte ID makes lost-response retries idempotent.
 	ReservationId []byte `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	AssetId       []byte `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	Amount        uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	// Set exactly one of asset_id or group_key.
+	AssetId []byte `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	// Compressed, tweaked Taproot Assets group key.
+	GroupKey []byte `protobuf:"bytes,5,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
+	Amount   uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
 	// Skip automatic probing for a new purchase. Reusing an ID preserves its
 	// saved progress. Approve must still set skip_probe if no probe succeeded.
 	SkipProbe     bool `protobuf:"varint,4,opt,name=skip_probe,json=skipProbe,proto3" json:"skip_probe,omitempty"`
@@ -129,6 +132,13 @@ func (x *BuyAssetReservationRequest) GetReservationId() []byte {
 func (x *BuyAssetReservationRequest) GetAssetId() []byte {
 	if x != nil {
 		return x.AssetId
+	}
+	return nil
+}
+
+func (x *BuyAssetReservationRequest) GetGroupKey() []byte {
+	if x != nil {
+		return x.GroupKey
 	}
 	return nil
 }
@@ -309,8 +319,11 @@ type ClientAssetReservation struct {
 	// Reservation identity and principal.
 	ReservationId []byte `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
 	State         string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
-	AssetId       []byte `protobuf:"bytes,3,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	Amount        uint64 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	// Exact issuance reserved on chain, empty until selected for a group.
+	AssetId        []byte `protobuf:"bytes,3,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	GroupKey       []byte `protobuf:"bytes,27,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
+	PaymentAssetId []byte `protobuf:"bytes,28,opt,name=payment_asset_id,json=paymentAssetId,proto3" json:"payment_asset_id,omitempty"`
+	Amount         uint64 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
 	// Quote identity, validity, and receiving edge.
 	QuoteHash      []byte `protobuf:"bytes,16,opt,name=quote_hash,json=quoteHash,proto3" json:"quote_hash,omitempty"`
 	QuoteExpiresAt int64  `protobuf:"varint,20,opt,name=quote_expires_at,json=quoteExpiresAt,proto3" json:"quote_expires_at,omitempty"`
@@ -398,6 +411,20 @@ func (x *ClientAssetReservation) GetState() string {
 func (x *ClientAssetReservation) GetAssetId() []byte {
 	if x != nil {
 		return x.AssetId
+	}
+	return nil
+}
+
+func (x *ClientAssetReservation) GetGroupKey() []byte {
+	if x != nil {
+		return x.GroupKey
+	}
+	return nil
+}
+
+func (x *ClientAssetReservation) GetPaymentAssetId() []byte {
+	if x != nil {
+		return x.PaymentAssetId
 	}
 	return nil
 }
@@ -692,10 +719,11 @@ var File_asset_reservations_proto protoreflect.FileDescriptor
 
 const file_asset_reservations_proto_rawDesc = "" +
 	"\n" +
-	"\x18asset_reservations.proto\x12\alooprpc\"\x95\x01\n" +
+	"\x18asset_reservations.proto\x12\alooprpc\"\xb2\x01\n" +
 	"\x1aBuyAssetReservationRequest\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x12\x19\n" +
-	"\basset_id\x18\x02 \x01(\fR\aassetId\x12\x16\n" +
+	"\basset_id\x18\x02 \x01(\fR\aassetId\x12\x1b\n" +
+	"\tgroup_key\x18\x05 \x01(\fR\bgroupKey\x12\x16\n" +
 	"\x06amount\x18\x03 \x01(\x04R\x06amount\x12\x1d\n" +
 	"\n" +
 	"skip_probe\x18\x04 \x01(\bR\tskipProbe\"s\n" +
@@ -710,11 +738,13 @@ const file_asset_reservations_proto_rawDesc = "" +
 	"quote_hash\x18\x02 \x01(\fR\tquoteHash\x12+\n" +
 	"\x12max_route_fee_msat\x18\x03 \x01(\x04R\x0fmaxRouteFeeMsat\x12\x1d\n" +
 	"\n" +
-	"skip_probe\x18\x04 \x01(\bR\tskipProbe\"\xb0\b\n" +
+	"skip_probe\x18\x04 \x01(\bR\tskipProbe\"\xf7\b\n" +
 	"\x16ClientAssetReservation\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\fR\rreservationId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x19\n" +
-	"\basset_id\x18\x03 \x01(\fR\aassetId\x12\x16\n" +
+	"\basset_id\x18\x03 \x01(\fR\aassetId\x12\x1b\n" +
+	"\tgroup_key\x18\x1b \x01(\fR\bgroupKey\x12(\n" +
+	"\x10payment_asset_id\x18\x1c \x01(\fR\x0epaymentAssetId\x12\x16\n" +
 	"\x06amount\x18\x04 \x01(\x04R\x06amount\x12\x1d\n" +
 	"\n" +
 	"quote_hash\x18\x10 \x01(\fR\tquoteHash\x12(\n" +

@@ -154,7 +154,7 @@ type assetReservationManager interface {
 	// NewPurchase saves an unpaid purchase or resumes the same ID when its
 	// asset and amount match. The skip flag applies only to new purchases;
 	// payment requires a separate approval.
-	NewPurchase(context.Context, assetreservation.ID, [32]byte, uint64,
+	NewPurchase(context.Context, assetreservation.ID, assetreservation.AssetSelector, uint64,
 		bool) (*assetreservation.Reservation, error)
 
 	// Get returns a saved snapshot, including completed purchases, without
@@ -3364,6 +3364,13 @@ func assetReservationResult(r *assetreservation.Reservation, err error) (
 		ProbeFeeKnown: r.Probes.FeeKnown &&
 			r.Probes.Main == assetreservation.ProbeSucceeded,
 	}
+	if r.GroupKey != ([33]byte{}) {
+		result.GroupKey = bytes.Clone(r.GroupKey[:])
+		if r.Quote == nil {
+			result.AssetId = nil
+		}
+		result.PaymentAssetId = bytes.Clone(r.Quote.GetGroup().GetPaymentAssetId())
+	}
 	if !r.Probes.CheckedAt.IsZero() {
 		result.ProbesCheckedAt = r.Probes.CheckedAt.Unix()
 	}
@@ -3400,11 +3407,12 @@ func (s *swapClientServer) Buy(ctx context.Context,
 	if s.assetReservationManager == nil {
 		return assetReservationResult(nil, errors.New("purchases are disabled"))
 	}
-	if req == nil || len(req.ReservationId) != 32 || len(req.AssetId) != 32 {
+	selector, err := assetreservation.ParseAssetSelector(req.GetAssetId(), req.GetGroupKey())
+	if err != nil || len(req.GetReservationId()) != 32 {
 		return nil, status.Error(codes.InvalidArgument, "invalid purchase request")
 	}
 	return assetReservationResult(s.assetReservationManager.NewPurchase(
-		ctx, assetreservation.ID(req.ReservationId), [32]byte(req.AssetId),
+		ctx, assetreservation.ID(req.ReservationId), selector,
 		req.Amount, req.SkipProbe,
 	))
 }

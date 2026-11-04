@@ -39,11 +39,13 @@ service AssetReservationService {
 }
 
 message QuoteAssetReservationRequest {
-    // The initial protocol version is 0. Reject unsupported versions.
+    // Exact purchases use version 0; group purchases use version 1.
     uint32 protocol_version = 1;
     // A client-generated, nonzero 32-byte ID, stable across retries.
     bytes reservation_id = 2;
+    // Set exactly one selector. A group request uses protocol version 1.
     bytes asset_id = 3;
+    bytes group_key = 6;
     uint64 amount = 4;
     // A 33-byte compressed public key whose secret the client controls.
     bytes client_key = 5;
@@ -106,6 +108,8 @@ message AssetReservationQuote {
     bytes prepay_rfq = 12;
     // Native receiving RFQ binding the probe to terms.amount asset units.
     bytes probe_rfq = 13;
+    // Present only on group requests. Covered by the approval hash.
+    AssetReservationGroup group = 14;
 }
 
 // AssetReservationStatus summarizes server progress for RPC callers. Several
@@ -162,4 +166,13 @@ message AssetReservationProof {
     bytes reservation_id = 1;
     string outpoint = 2;
     bytes proof = 3;
+}
+
+// Group membership evidence for the on-chain issuance in terms.asset_id and
+// the issuance carried by the configured Lightning channel. First proof is
+// the group anchor, followed by any distinct member issuance proofs needed.
+message AssetReservationGroup {
+    bytes group_key = 1;
+    bytes payment_asset_id = 2;
+    repeated bytes issuance_proofs = 3;
 }

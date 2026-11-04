@@ -4,8 +4,10 @@
 
 * Experimental clients can quote and purchase an on-chain asset reservation,
   verify its funding proof against the agreed CSV contract, and resume a
-  pending purchase after restarting. A reorg that invalidates a delivered
-  proof withdraws its readiness and advertised deadlines.
+  pending purchase after restarting. Buyers can request an exact issuance or
+  a fungible asset group and verify both quoted issuances before payment.
+  A reorg that invalidates a delivered proof withdraws its readiness and
+  advertised deadlines.
 
 * Share asset deposit, reservation and CSV/CLTV HTLC contracts through
   `swapkit`, with transfer, signing, proof and recovery helpers backed by

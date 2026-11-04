@@ -132,6 +132,13 @@ func readPurchase(row sqlc.AssetReservation, r *Reservation) error {
 		if err := proto.Unmarshal(row.Quote, r.Quote); err != nil {
 			return err
 		}
+		if r.GroupKey != ([33]byte{}) {
+			t, err := TermsFromRPC(r.Quote.Terms)
+			if err != nil {
+				return err
+			}
+			r.AssetID = t.AssetID
+		}
 	}
 	if len(row.PaymentRequest) != 0 {
 		if len(row.PaymentHash) != 32 || len(row.PayingNodeKey) != 33 {

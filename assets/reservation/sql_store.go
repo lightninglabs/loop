@@ -44,10 +44,13 @@ func (s *SqlStore) CreateReservation(ctx context.Context, r *Reservation) error 
 	next.UpdatedAt = next.CreatedAt
 	err := s.db.ExecTx(ctx, &loopdb.SqliteTxOptions{},
 		func(q *sqlc.Queries) error {
+			selector := r.selector()
+			_, group := selector.Bytes()
 			count, err := q.CreateAssetReservation(ctx,
 				sqlc.CreateAssetReservationParams{
 					ReservationID:         r.ID[:],
-					AssetID:               r.AssetID[:],
+					AssetID:               selector.AssetID[:],
+					GroupKey:              group,
 					Amount:                int64(r.Amount),
 					Fee:                   int64(r.Fee),
 					CsvDelay:              int32(r.CSVDelay),
@@ -227,6 +230,13 @@ func toReservation(row sqlc.AssetReservation, state string,
 		CreatedAt: row.CreatedAt.UTC(),
 		UpdatedAt: updatedAt.UTC(),
 	}
+	if len(row.GroupKey) != 0 {
+		s, err := ParseAssetSelector(nil, row.GroupKey)
+		if err != nil {
+			return nil, err
+		}
+		r.GroupKey = s.GroupKey
+	}
 	if err := readPurchase(row, r); err != nil {
 		return nil, err
 	}
@@ -237,7 +247,7 @@ func toReservation(row sqlc.AssetReservation, state string,
 }
 
 func sameRequest(a, b *Reservation) bool {
-	return a.ID == b.ID && a.AssetID == b.AssetID && a.Amount == b.Amount &&
+	return a.ID == b.ID && a.selector() == b.selector() && a.Amount == b.Amount &&
 		(a.Fee == 0 || b.Fee == 0 || a.Terms == b.Terms) &&
 		a.ClientKey.KeyLocator == b.ClientKey.KeyLocator &&
 		a.ClientKey.PubKey.IsEqual(b.ClientKey.PubKey)

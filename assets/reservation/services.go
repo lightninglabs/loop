@@ -81,6 +81,10 @@ type ReservationVerifier interface {
 	// before requesting a quote and reuse it when retrying that purchase.
 	DeriveKey(context.Context) (*keychain.KeyDescriptor, error)
 
+	// VerifyGroup authenticates the quoted funding and payment issuances
+	// against the requested group before probing or paying.
+	VerifyGroup(context.Context, *swapserverrpc.AssetReservationQuote) error
+
 	// Verify checks the supplied asset proof against the reservation's
 	// terms, keys, and funding output, and checks its anchor against the
 	// local chain. It returns the observed funding status; the caller must
