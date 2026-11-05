@@ -750,7 +750,9 @@ func (m *Manager) withdrawalChangeAddress(ctx context.Context,
 		}
 	}
 
-	return m.cfg.AddressManager.NewChangeAddress(ctx)
+	return m.cfg.AddressManager.NewChangeAddress(
+		ctx, staticutil.DepositPkScripts(deposits),
+	)
 }
 
 func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,

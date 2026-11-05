@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
@@ -42,6 +44,10 @@ var (
 	// ErrNoStaticAddress is returned when no static address parameters are
 	// present in the store.
 	ErrNoStaticAddress = errors.New("no static address parameters found")
+
+	// ErrStaticAddressNotFound is returned when a static address to update
+	// is not in the store.
+	ErrStaticAddressNotFound = errors.New("static address not found")
 )
 
 // ManagerConfig holds the configuration for the address manager.
@@ -290,15 +296,17 @@ func (m *Manager) walletAddressScripts(ctx context.Context) (
 	return scriptKeys, nil
 }
 
-// NewAddress creates the next externally visible receive static address.
+// NewAddress creates the next externally visible receive static address with
+// local label metadata. The label is never sent to the Loop server or included
+// in the address script.
 //
 // The first call also makes sure the legacy/root static address exists,
 // because receive and change addresses are derived from the server pubkey and
 // expiry returned for that root.
-func (m *Manager) NewAddress(ctx context.Context) (*btcutil.AddressTaproot,
-	int64, error) {
+func (m *Manager) NewAddress(ctx context.Context, label string) (
+	*btcutil.AddressTaproot, int64, error) {
 
-	addrParams, err := m.NewReceiveAddress(ctx)
+	addrParams, err := m.NewReceiveAddress(ctx, label)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -420,41 +428,48 @@ func (m *Manager) EnsureStaticAddressRoot(ctx context.Context) (*AddressParamete
 
 	return m.createAddressFromKey(
 		ctx, clientPubKey, serverPubKey, serverParams.Expiry,
-		version.AddressProtocolVersion(protocolVersion),
+		version.AddressProtocolVersion(protocolVersion), "",
 	)
 }
 
 // NewReceiveAddress derives, stores, imports and activates the next receive
 // family static address. It is used by `loop static new`.
-func (m *Manager) NewReceiveAddress(ctx context.Context) (*AddressParameters,
-	error) {
+func (m *Manager) NewReceiveAddress(ctx context.Context, label string) (
+	*AddressParameters, error) {
 
 	root, err := m.EnsureStaticAddressRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return m.newDerivedAddress(ctx, root, swap.StaticMultiAddressKeyFamily)
+	return m.newDerivedAddress(
+		ctx, root, swap.StaticMultiAddressKeyFamily, label,
+	)
 }
 
 // NewChangeAddress derives, stores, imports and activates the next change
-// family static address for callers requiring immediate activation.
-func (m *Manager) NewChangeAddress(ctx context.Context) (*AddressParameters,
-	error) {
+// family static address for callers requiring immediate activation. It inherits
+// the distinct labels of the spent static address scripts.
+func (m *Manager) NewChangeAddress(ctx context.Context,
+	spentPkScripts [][]byte) (*AddressParameters, error) {
 
 	root, err := m.EnsureStaticAddressRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return m.newDerivedAddress(ctx, root, swap.StaticAddressChangeKeyFamily)
+	return m.newDerivedAddress(
+		ctx, root, swap.StaticAddressChangeKeyFamily,
+		m.inheritedLabel(spentPkScripts),
+	)
 }
 
 // PrepareChangeAddress derives the next change address without persisting or
 // importing it. It first ensures that the shared static address root exists.
 // The caller must activate these same parameters before signing a spend to it.
-func (m *Manager) PrepareChangeAddress(ctx context.Context) (*AddressParameters,
-	error) {
+// The prepared address inherits the labels of the spent static address scripts.
+func (m *Manager) PrepareChangeAddress(ctx context.Context,
+	spentPkScripts [][]byte) (*AddressParameters, error) {
 
 	root, err := m.EnsureStaticAddressRoot(ctx)
 	if err != nil {
@@ -474,6 +489,10 @@ func (m *Manager) PrepareChangeAddress(ctx context.Context) (*AddressParameters,
 	params, _, err := m.addressParametersFromKey(
 		key, root.ServerPubkey, root.Expiry, root.ProtocolVersion,
 	)
+	if err != nil {
+		return nil, err
+	}
+	params.Label = m.inheritedLabel(spentPkScripts)
 	return params, err
 }
 
@@ -515,10 +534,60 @@ func (m *Manager) ActivateChangeAddress(ctx context.Context,
 	return m.persistAndActivateAddress(ctx, params, staticAddress)
 }
 
+// inheritedLabelSeparator joins the labels a change address inherits.
+const inheritedLabelSeparator = ", "
+
+// inheritedLabel joins the distinct labels of the given static address
+// scripts in spend order. Unknown and unlabeled scripts are skipped. Labels are
+// split on the separator first, so spending a change address doesn't repeat
+// the labels it already inherited. Labels that would push the result past the
+// label limit are dropped whole, so it never ends in a partial label.
+func (m *Manager) inheritedLabel(pkScripts [][]byte) string {
+	m.activeMu.Lock()
+	defer m.activeMu.Unlock()
+
+	var inherited []string
+	for _, pkScript := range pkScripts {
+		params := m.activeStaticAddresses[string(pkScript)]
+		if params == nil || params.Label == "" {
+			continue
+		}
+
+		// A change address's label is itself a joined list, so split it
+		// back into its labels before removing duplicates. Otherwise
+		// "ops, treasury" spent with "treasury" would repeat treasury.
+		parts := strings.SplitSeq(params.Label, inheritedLabelSeparator)
+		for part := range parts {
+			if part != "" && !slices.Contains(inherited, part) {
+				inherited = append(inherited, part)
+			}
+		}
+	}
+
+	// Add whole labels in spend order. If the next one would exceed the
+	// label limit, stop there, so the result never ends in a cut label.
+	var label string
+	for _, part := range inherited {
+		// The first label has nothing before it, so it gets no
+		// separator.
+		next := part
+		if label != "" {
+			next = label + inheritedLabelSeparator + part
+		}
+		if len(next) > labels.MaxLength {
+			break
+		}
+
+		label = next
+	}
+
+	return label
+}
+
 // newDerivedAddress derives a client key in the requested family and creates
 // an address using the root address's server key, expiry and protocol version.
 func (m *Manager) newDerivedAddress(ctx context.Context, root *AddressParameters,
-	keyFamily int32) (*AddressParameters, error) {
+	keyFamily int32, label string) (*AddressParameters, error) {
 
 	if err := m.lockIssuance(ctx); err != nil {
 		return nil, err
@@ -532,7 +601,7 @@ func (m *Manager) newDerivedAddress(ctx context.Context, root *AddressParameters
 
 	return m.createAddressFromKey(
 		ctx, clientPubKey, root.ServerPubkey, root.Expiry,
-		root.ProtocolVersion,
+		root.ProtocolVersion, label,
 	)
 }
 
@@ -540,8 +609,8 @@ func (m *Manager) newDerivedAddress(ctx context.Context, root *AddressParameters
 // and adding it to the active script index. The caller holds the issuance gate.
 func (m *Manager) createAddressFromKey(ctx context.Context,
 	clientPubKey *keychain.KeyDescriptor, serverPubKey *btcec.PublicKey,
-	expiry uint32, protocolVersion version.AddressProtocolVersion) (
-	*AddressParameters, error) {
+	expiry uint32, protocolVersion version.AddressProtocolVersion,
+	label string) (*AddressParameters, error) {
 
 	params, staticAddress, err := m.addressParametersFromKey(
 		clientPubKey, serverPubKey, expiry, protocolVersion,
@@ -549,6 +618,7 @@ func (m *Manager) createAddressFromKey(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	params.Label = label
 	err = m.persistAndActivateAddress(ctx, params, staticAddress)
 	if err != nil {
 		return nil, err
@@ -838,7 +908,44 @@ func (m *Manager) GetLegacyParameters(ctx context.Context) (*AddressParameters,
 	return &params, nil
 }
 
-// GetParameters returns active static address parameters for a pkScript.
+// UpdateStaticAddressLabel persists local metadata and publishes a new snapshot
+// for active readers. Existing snapshots remain immutable.
+func (m *Manager) UpdateStaticAddressLabel(ctx context.Context,
+	pkScript []byte, label string) error {
+
+	// Serialize with issuance, which can rebuild the active index from the
+	// database. Otherwise a rebuild that read the old label could publish
+	// it after this update. The startup load runs without the lock, but
+	// finishes before the RPC server accepts relabel requests.
+	if err := m.lockIssuance(ctx); err != nil {
+		return err
+	}
+	defer m.unlockIssuance()
+
+	if err := m.cfg.Store.UpdateStaticAddressLabel(
+		ctx, pkScript, label,
+	); err != nil {
+		return err
+	}
+
+	m.activeMu.Lock()
+	defer m.activeMu.Unlock()
+
+	key := string(pkScript)
+	if params := m.activeStaticAddresses[key]; params != nil {
+		updated := *params
+		updated.Label = label
+		m.activeStaticAddresses[key] = &updated
+		if m.rootAddress == params {
+			m.rootAddress = &updated
+		}
+	}
+
+	return nil
+}
+
+// GetParameters returns an immutable snapshot of active static address
+// parameters for a pkScript.
 func (m *Manager) GetParameters(pkScript []byte) *AddressParameters {
 	m.activeMu.Lock()
 	defer m.activeMu.Unlock()

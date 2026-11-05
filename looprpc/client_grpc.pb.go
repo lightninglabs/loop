@@ -121,6 +121,9 @@ type SwapClientClient interface {
 	//The CLI's static new and static deposit commands use this RPC. Only static
 	//deposit prints lncli instructions for funding the returned address.
 	NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error)
+	// loop: `static updatelabel`
+	//UpdateStaticAddressLabel updates the local label for a static address.
+	UpdateStaticAddressLabel(ctx context.Context, in *UpdateStaticAddressLabelRequest, opts ...grpc.CallOption) (*UpdateStaticAddressLabelResponse, error)
 	// loop: `static listunspentdeposits`
 	//ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error)
@@ -407,6 +410,15 @@ func (c *swapClientClient) NewStaticAddress(ctx context.Context, in *NewStaticAd
 	return out, nil
 }
 
+func (c *swapClientClient) UpdateStaticAddressLabel(ctx context.Context, in *UpdateStaticAddressLabelRequest, opts ...grpc.CallOption) (*UpdateStaticAddressLabelResponse, error) {
+	out := new(UpdateStaticAddressLabelResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/UpdateStaticAddressLabel", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error) {
 	out := new(ListUnspentDepositsResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListUnspentDeposits", in, out, opts...)
@@ -586,6 +598,9 @@ type SwapClientServer interface {
 	//The CLI's static new and static deposit commands use this RPC. Only static
 	//deposit prints lncli instructions for funding the returned address.
 	NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error)
+	// loop: `static updatelabel`
+	//UpdateStaticAddressLabel updates the local label for a static address.
+	UpdateStaticAddressLabel(context.Context, *UpdateStaticAddressLabelRequest) (*UpdateStaticAddressLabelResponse, error)
 	// loop: `static listunspentdeposits`
 	//ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error)
@@ -695,6 +710,9 @@ func (UnimplementedSwapClientServer) ListInstantOuts(context.Context, *ListInsta
 }
 func (UnimplementedSwapClientServer) NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NewStaticAddress not implemented")
+}
+func (UnimplementedSwapClientServer) UpdateStaticAddressLabel(context.Context, *UpdateStaticAddressLabelRequest) (*UpdateStaticAddressLabelResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateStaticAddressLabel not implemented")
 }
 func (UnimplementedSwapClientServer) ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListUnspentDeposits not implemented")
@@ -1186,6 +1204,24 @@ func _SwapClient_NewStaticAddress_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_UpdateStaticAddressLabel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateStaticAddressLabelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).UpdateStaticAddressLabel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/UpdateStaticAddressLabel",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).UpdateStaticAddressLabel(ctx, req.(*UpdateStaticAddressLabelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_ListUnspentDeposits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListUnspentDepositsRequest)
 	if err := dec(in); err != nil {
@@ -1432,6 +1468,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NewStaticAddress",
 			Handler:    _SwapClient_NewStaticAddress_Handler,
+		},
+		{
+			MethodName: "UpdateStaticAddressLabel",
+			Handler:    _SwapClient_UpdateStaticAddressLabel_Handler,
 		},
 		{
 			MethodName: "ListUnspentDeposits",
