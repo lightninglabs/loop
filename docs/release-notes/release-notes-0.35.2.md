@@ -4,7 +4,7 @@
 - **Release page:**
   [v0.35.2-beta](https://github.com/lightninglabs/loop/releases/tag/v0.35.2-beta)
 - **Previous release:** [v0.35.1-beta](release-notes-0.35.1.md)
-- **Next release:** [Next release](release-notes-next.md)
+- **Next release:** [v0.35.3-beta](release-notes-0.35.3.md)
 
 #### New Features
 
@@ -48,6 +48,8 @@
 
 #### Maintenance
 
+* Update the LoopRPC requirement to the revision used by this release.
+
 * `utils.MuSig2Sign` now takes the signers' raw 32-byte private keys and derives their public keys itself, instead of separate private and public key slices. Out-of-range keys are reduced modulo the secp256k1 group order, while keys that reduce to zero and calls with fewer than two signers are rejected. Go callers of this exported helper need to be updated.
 
 * Raise the minimum Go version to 1.27.3 and move the build and release
@@ -63,4 +65,5 @@
 - claravanstaden
 - claudell
 - dependabot[bot]
+- Olaoluwa Osuntokun
 - Slyghtning
