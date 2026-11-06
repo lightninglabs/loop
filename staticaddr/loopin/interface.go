@@ -63,6 +63,15 @@ type DepositManager interface {
 	TransitionDeposits(ctx context.Context, deposits []*deposit.Deposit,
 		event fsm.EventType, expectedFinalState fsm.StateType) error
 
+	// LockDepositsForSwap moves the deposits to LoopingIn for the swap.
+	LockDepositsForSwap(ctx context.Context, deposits []*deposit.Deposit,
+		swapHash lntypes.Hash) error
+
+	// ReleaseDepositsForSwap moves the deposits still looping in for the
+	// swap back to Deposited.
+	ReleaseDepositsForSwap(ctx context.Context,
+		deposits []*deposit.Deposit, swapHash lntypes.Hash) error
+
 	// DepositsForOutpoints returns all deposits that behind the given
 	// outpoints. If ignoreUnknown is false, the function returns an error
 	// if any of the outpoints is not known, no error otherwise.

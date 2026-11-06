@@ -83,10 +83,20 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		return event
 	}
 
+	// Generate the preimage first so the lock can record the swap hash.
+	var swapPreimage lntypes.Preimage
+	if _, err := rand.Read(swapPreimage[:]); err != nil {
+		err = fmt.Errorf("unable to create random swap preimage: %w",
+			err)
+
+		return returnError(err)
+	}
+	f.loopIn.SwapPreimage = swapPreimage
+	f.loopIn.SwapHash = swapPreimage.Hash()
+
 	// Lock the deposits and transition them to the LoopingIn state.
-	err := f.cfg.DepositManager.TransitionDeposits(
-		ctx, f.loopIn.Deposits, deposit.OnLoopInInitiated,
-		deposit.LoopingIn,
+	err := f.cfg.DepositManager.LockDepositsForSwap(
+		ctx, f.loopIn.Deposits, f.loopIn.SwapHash,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to loop-in deposits: %w", err)
@@ -108,17 +118,6 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		hasChange = changeAmount > 0 && changeAmount < totalDepositAmount
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
-
-	// Generate random preimage.
-	var swapPreimage lntypes.Preimage
-	if _, err = rand.Read(swapPreimage[:]); err != nil {
-		err = fmt.Errorf("unable to create random swap preimage: %w",
-			err)
-
-		return returnError(err)
-	}
-	f.loopIn.SwapPreimage = swapPreimage
-	f.loopIn.SwapHash = swapPreimage.Hash()
 
 	// Derive a client key for the HTLC.
 	keyDesc, err := f.cfg.WalletKit.DeriveNextKey(
@@ -1509,9 +1508,10 @@ func (f *FSM) UnlockDepositsAction(ctx context.Context,
 	return fsm.OnError
 }
 
+// unlockDeposits releases the deposits still looping in for this swap.
 func (f *FSM) unlockDeposits(ctx context.Context) error {
-	err := f.cfg.DepositManager.TransitionDeposits(
-		ctx, f.loopIn.Deposits, fsm.OnError, deposit.Deposited,
+	err := f.cfg.DepositManager.ReleaseDepositsForSwap(
+		ctx, f.loopIn.Deposits, f.loopIn.SwapHash,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to unlock deposits: %w", err)
