@@ -2729,9 +2729,14 @@ func filter(deposits []*deposit.Deposit, f filterFunc) []*looprpc.Deposit {
 			continue
 		}
 
+		// The deposit manager sets SwapHash under the deposit lock.
+		d.Lock()
+		depositSwapHash := d.SwapHash
+		d.Unlock()
+
 		swapHash := make([]byte, 0, len(lntypes.Hash{}))
-		if d.SwapHash != nil {
-			swapHash = d.SwapHash[:]
+		if depositSwapHash != nil {
+			swapHash = depositSwapHash[:]
 		}
 
 		hash := d.Hash

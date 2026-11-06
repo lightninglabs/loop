@@ -2628,6 +2628,7 @@ func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
 
 	require.Equal(t, []fsm.EventType{fsm.OnError}, depositMgr.events)
 	require.Equal(t, []fsm.StateType{deposit.Deposited}, depositMgr.states)
+	require.Equal(t, []lntypes.Hash{swapHash}, depositMgr.releasedFor)
 }
 
 // TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails
@@ -3184,6 +3185,57 @@ func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
 	}
 }
 
+// TestInitHtlcActionLocksDepositsForSwap checks that the deposits are locked
+// and released with the swap's hash.
+func TestInitHtlcActionLocksDepositsForSwap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	dep := &deposit.Deposit{
+		Value: 200_000,
+	}
+	dep.Hash = chainhash.Hash{0x21}
+	dep.SetState(deposit.Deposited)
+	loopIn := &StaticAddressLoopIn{
+		Deposits:              []*deposit.Deposit{dep},
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		PaymentTimeoutSeconds: DefaultPaymentTimeoutSeconds,
+		ProtocolVersion:       version.ProtocolVersion_V0,
+	}
+
+	depositMgr := newRecordingDepositManager(dep)
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		DepositManager: depositMgr,
+		WalletKit:      mockLnd.WalletKit,
+		LndClient:      mockLnd.Client,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		Server: &initHtlcTestServer{
+			loopInErr: errors.New("server rejected swap"),
+		},
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	event := f.InitHtlcAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.NotEqual(t, lntypes.Hash{}, loopIn.SwapHash)
+	require.Equal(t, []lntypes.Hash{loopIn.SwapHash}, depositMgr.lockedFor)
+
+	event = f.UnlockDepositsAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.Equal(t, []lntypes.Hash{loopIn.SwapHash}, depositMgr.releasedFor)
+	require.Equal(t, deposit.Deposited, dep.GetState())
+}
+
 // TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure verifies that the early
 // fee guard also cancels the pre-created invoice before returning an error.
 func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
@@ -3381,6 +3433,20 @@ func (n *noopDepositManager) TransitionDeposits(context.Context,
 	return nil
 }
 
+// LockDepositsForSwap implements DepositManager with a no-op.
+func (n *noopDepositManager) LockDepositsForSwap(context.Context,
+	[]*deposit.Deposit, lntypes.Hash) error {
+
+	return nil
+}
+
+// ReleaseDepositsForSwap implements DepositManager with a no-op.
+func (n *noopDepositManager) ReleaseDepositsForSwap(context.Context,
+	[]*deposit.Deposit, lntypes.Hash) error {
+
+	return nil
+}
+
 // DepositsForOutpoints implements DepositManager with a no-op.
 func (n *noopDepositManager) DepositsForOutpoints(_ context.Context,
 	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
@@ -3423,6 +3489,10 @@ type recordingDepositManager struct {
 	transitionChan chan depositTransition
 	events         []fsm.EventType
 	states         []fsm.StateType
+
+	// lockedFor and releasedFor record the swap hashes passed in.
+	lockedFor   []lntypes.Hash
+	releasedFor []lntypes.Hash
 }
 
 // newRecordingDepositManager returns a recordingDepositManager that owns the
@@ -3497,6 +3567,29 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	}
 
 	return nil
+}
+
+// LockDepositsForSwap records the swap hash and the transition to LoopingIn.
+func (r *recordingDepositManager) LockDepositsForSwap(ctx context.Context,
+	deposits []*deposit.Deposit, swapHash lntypes.Hash) error {
+
+	r.lockedFor = append(r.lockedFor, swapHash)
+
+	return r.TransitionDeposits(
+		ctx, deposits, deposit.OnLoopInInitiated, deposit.LoopingIn,
+	)
+}
+
+// ReleaseDepositsForSwap records the swap hash and the transition to
+// Deposited.
+func (r *recordingDepositManager) ReleaseDepositsForSwap(ctx context.Context,
+	deposits []*deposit.Deposit, swapHash lntypes.Hash) error {
+
+	r.releasedFor = append(r.releasedFor, swapHash)
+
+	return r.TransitionDeposits(
+		ctx, deposits, fsm.OnError, deposit.Deposited,
+	)
 }
 
 // DepositsForOutpoints returns copies of the manager's own deposit objects,
