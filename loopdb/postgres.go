@@ -3,11 +3,14 @@ package loopdb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/golang-migrate/migrate/v4"
 	postgres_migrate "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
@@ -16,6 +19,11 @@ import (
 
 const (
 	dsnTemplate = "postgres://%v:%v@%v:%d/%v?sslmode=%v"
+
+	// defaultMaxConns is the maximum number of open connections to the
+	// database server if no limit is configured. lnd and tapd use the same
+	// default.
+	defaultMaxConns = 25
 )
 
 var (
@@ -35,7 +43,7 @@ type PostgresConfig struct {
 	User               string `long:"user" description:"Database user."`
 	Password           string `long:"password" description:"Database user's password."` //nolint:gosec
 	DBName             string `long:"dbname" description:"Database name to use."`
-	MaxOpenConnections int32  `long:"maxconnections" description:"Max open connections to keep alive to the database server."`
+	MaxOpenConnections int32  `long:"maxconnections" description:"Maximum number of open connections to the database server. Defaults to 25 if unset."`
 	RequireSSL         bool   `long:"requiressl" description:"Whether to require using SSL (mode: require) when connecting to the server."`
 }
 
@@ -91,29 +99,26 @@ func NewPostgresStore(cfg *PostgresConfig,
 		return nil, err
 	}
 
+	// Bound the connection pool. Without a limit, concurrent queries open
+	// as many connections as they need, which can exceed the number of
+	// connections that the database server accepts.
+	maxConns := defaultMaxConns
+	if cfg.MaxOpenConnections > 0 {
+		maxConns = int(cfg.MaxOpenConnections)
+	}
+	rawDb.SetMaxOpenConns(maxConns)
+
 	if !cfg.SkipMigrations {
 		// Now that the database is open, populate the database with
 		// our set of schemas based on our embedded in-memory file
 		// system.
-		//
-		// First, we'll need to open up a new migration instance for
-		// our current target database: sqlite.
-		driver, err := postgres_migrate.WithInstance(
-			rawDb, &postgres_migrate.Config{},
-		)
-		if err != nil {
-			return nil, err
-		}
-
 		postgresFS := newReplacerFS(sqlSchemas, map[string]string{
 			"BLOB":                "BYTEA",
 			"INTEGER PRIMARY KEY": "SERIAL PRIMARY KEY",
 			txidSqlite:            txidPostgres,
 		})
 
-		err = applyMigrations(
-			postgresFS, driver, "sqlc/migrations", cfg.DBName,
-		)
+		err = applyPostgresMigrations(rawDb, postgresFS, cfg.DBName)
 		if err != nil {
 			return nil, err
 		}
@@ -141,6 +146,56 @@ func NewPostgresStore(cfg *PostgresConfig,
 		cfg:    cfg,
 		BaseDB: baseDB,
 	}, nil
+}
+
+// applyPostgresMigrations applies the migrations of the passed file system on a
+// connection of the database pool and hands the connection back once they are
+// done. A migration driver created by postgres_migrate.WithInstance keeps its
+// connection checked out until it is closed, which would also close the
+// database.
+func applyPostgresMigrations(db *sql.DB, migrationFS fs.FS,
+	dbName string) error {
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Open up a new migration instance for our current target database:
+	// postgres. It only holds session-level advisory locks while it
+	// migrates, so the connection can be reused afterwards.
+	driver, err := postgres_migrate.WithConnection(
+		ctx, conn, &postgres_migrate.Config{},
+	)
+	if err != nil {
+		_ = conn.Close()
+
+		return err
+	}
+
+	err = applyMigrations(migrationFS, driver, "sqlc/migrations", dbName)
+	if errors.Is(err, migrate.ErrLockTimeout) {
+		// The migrations gave up waiting for the migration lock, but
+		// their request for it stays pending on the connection until
+		// another migrator releases the lock, and closing the
+		// connection would wait for it. Hand the connection back in
+		// the background instead, once the request is done. The
+		// connection runs one query at a time, so the unlock runs
+		// after the request and releases the lock it may have got.
+		go func() {
+			_, _ = conn.ExecContext(
+				ctx, "SELECT pg_advisory_unlock_all()",
+			)
+			_ = conn.Close()
+		}()
+
+		return err
+	}
+
+	_ = conn.Close()
+
+	return err
 }
 
 // NewTestPostgresDB is a helper function that creates a Postgres database for
