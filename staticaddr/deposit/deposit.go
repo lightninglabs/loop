@@ -64,8 +64,8 @@ type OnchainCost struct {
 // Manager.mu before Deposit.Lock. Never acquire Manager.mu while holding a
 // Deposit lock.
 //
-// The state and ConfirmationHeight fields are mutable and protected by the
-// deposit lock.
+// The state, ConfirmationHeight and SwapHash fields are mutable and protected
+// by the deposit lock.
 type Deposit struct {
 	sync.Mutex
 
@@ -93,8 +93,9 @@ type Deposit struct {
 	// ExpirySweepTxid is the transaction id of the expiry sweep.
 	ExpirySweepTxid chainhash.Hash
 
-	// SwapHash is an optional reference to a static address loop-in swap
-	// that used this deposit.
+	// SwapHash is the loop-in that last locked or used this deposit.
+	// Locking sets it in memory only. It is stored when the loop-in is
+	// created.
 	SwapHash *lntypes.Hash
 
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
