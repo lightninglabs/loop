@@ -997,11 +997,113 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		deposit.SweepHtlcTimeout,
 	)
 
+	// mapDepositsToSwap maps the swap's deposits to the swap. It is only
+	// called once they are locked for its htlc timeout sweep, so that a
+	// deposit another swap completed with stays with that swap.
+	mapDepositsToSwap := func(reason string) error {
+		depositsToSwap := make(
+			map[deposit.ID]lntypes.Hash, len(f.loopIn.Deposits),
+		)
+		for _, d := range f.loopIn.Deposits {
+			if d != nil {
+				depositsToSwap[d.ID] = f.loopIn.SwapHash
+			}
+		}
+
+		err := f.cfg.Store.BatchMapDepositsToSwapHashes(
+			ctx, depositsToSwap,
+		)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			return fmt.Errorf("unable to map deposits to the swap "+
+				"after %s: %w", reason, err)
+		}
+
+		return nil
+	}
+
+	// htlcSpendsDeposits is set if the confirmed tx spends exactly the
+	// swap's signed deposits. The confirmation is registered by script, so
+	// any tx paying to the htlc script confirms it.
+	htlcSpendsDeposits := false
+
+	// addSpentDeposits replaces the swap's deposits with all its signed
+	// deposits, in signed order, if some are missing after a restart. The
+	// htlc timeout sweep rebuilds the htlc tx in deposit order. If any is
+	// no longer active, none are added.
+	addSpentDeposits := func(signed []wire.OutPoint) {
+		have := make(map[wire.OutPoint]struct{}, len(f.loopIn.Deposits))
+		for _, d := range f.loopIn.Deposits {
+			if d != nil {
+				have[d.OutPoint] = struct{}{}
+			}
+		}
+
+		var missing []string
+		signedStrings := make([]string, 0, len(signed))
+		for _, op := range signed {
+			signedStrings = append(signedStrings, op.String())
+			if _, ok := have[op]; !ok {
+				missing = append(missing, op.String())
+			}
+		}
+		if len(missing) == 0 {
+			return
+		}
+
+		// Use the deposit manager's own deposits, which the deposit
+		// state machines update, not copies from the store, in signed
+		// order.
+		deposits, ok := f.cfg.DepositManager.
+			AllStringOutpointsActiveDeposits(
+				signedStrings, fsm.EmptyState,
+			)
+		if !ok {
+			f.Errorf("htlc tx spent deposits %v that aren't all "+
+				"active, not adding %v to the swap", signedStrings,
+				missing)
+
+			return
+		}
+
+		f.Infof("htlc tx spent deposits %v that are missing from the "+
+			"swap, adding them", missing)
+
+		f.loopIn.Deposits = deposits
+
+		// The added deposits may not be locked for the htlc timeout
+		// sweep yet.
+		depositsLockedForHtlcTimeout = false
+	}
+
+	// mapDepositsIfSpent maps the deposits to the swap only if its own htlc
+	// tx spent them.
+	mapDepositsIfSpent := func(reason string) error {
+		if !htlcSpendsDeposits {
+			f.Warnf("confirmed htlc tx doesn't spend the deposits " +
+				"of the swap, not mapping them to the swap")
+
+			return nil
+		}
+
+		return mapDepositsToSwap(reason)
+	}
+
 	// transitionDepositsToHtlcTimeout locks deposits into timeout sweeping once
 	// the HTLC is confirmed and the invoice cannot be paid.
 	transitionDepositsToHtlcTimeout := func(reason string) error {
 		if depositsLockedForHtlcTimeout ||
 			depositsInState(deposit.SweepHtlcTimeout) {
+
+			// Map them again, in case loopd stopped between locking
+			// and mapping them.
+			err := mapDepositsIfSpent(reason)
+			if err != nil {
+				return err
+			}
 
 			depositsLockedForHtlcTimeout = true
 			return nil
@@ -1011,7 +1113,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			[]*deposit.Deposit, 0, len(f.loopIn.Deposits),
 		)
 		for _, d := range f.loopIn.Deposits {
-			if d != nil && d.IsInState(deposit.SweepHtlcTimeout) {
+			if d == nil {
+				return fmt.Errorf("nil deposit in swap %v",
+					f.loopIn.SwapHash)
+			}
+
+			if d.IsInState(deposit.SweepHtlcTimeout) {
 				continue
 			}
 
@@ -1035,19 +1142,20 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			// The transition can return an error after every deposit
 			// already reached the target state. Treat that as
 			// success, but never advance with a partial transition.
-			if depositsInState(deposit.SweepHtlcTimeout) {
-				depositsLockedForHtlcTimeout = true
-
-				return nil
+			if !depositsInState(deposit.SweepHtlcTimeout) {
+				return fmt.Errorf("unable to transition deposits "+
+					"to the htlc timeout sweeping state after "+
+					"%s: %w", reason, transitionErr)
 			}
-
-			return fmt.Errorf("unable to transition deposits to the htlc "+
-				"timeout sweeping state after %s: %w",
-				reason, transitionErr)
 		}
 		if !depositsInState(deposit.SweepHtlcTimeout) {
 			return fmt.Errorf("not all deposits reached the htlc timeout "+
 				"sweeping state after %s", reason)
+		}
+
+		err := mapDepositsIfSpent(reason)
+		if err != nil {
+			return err
 		}
 
 		depositsLockedForHtlcTimeout = true
@@ -1146,13 +1254,25 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		)
 	}
 
+	// signedOutpoints are the deposits the swap signed its htlc tx for.
+	signedOutpoints, err := f.loopIn.signedOutpoints()
+	if err != nil {
+		f.Warnf("unable to determine the deposits of the htlc tx: %v",
+			err)
+	}
+
 	htlcConfirmed := false
 	for {
 		select {
-		case <-htlcConfChan:
+		case conf := <-htlcConfChan:
 			f.Infof("htlc tx confirmed")
 
 			htlcConfirmed = true
+			htlcSpendsDeposits = conf != nil &&
+				spendsExactly(conf.Tx, signedOutpoints)
+			if htlcSpendsDeposits {
+				addSpentDeposits(signedOutpoints)
+			}
 			if invoiceCanceledForNonPayment {
 				err = transitionDepositsToHtlcTimeout(
 					"htlc confirmation after invoice cancellation",
