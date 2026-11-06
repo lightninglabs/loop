@@ -972,6 +972,18 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		return true
 	}
 
+	// anyDepositInState reports whether a selected deposit is in the
+	// requested state.
+	anyDepositInState := func(state fsm.StateType) bool {
+		for _, d := range f.loopIn.Deposits {
+			if d != nil && d.IsInState(state) {
+				return true
+			}
+		}
+
+		return false
+	}
+
 	// startPaymentDeadline arms the server payment timeout from the decision
 	// time when one is available.
 	startPaymentDeadline := func(reason string, startedAt time.Time) {
@@ -1098,25 +1110,71 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		return fsm.NoOp, true
 	}
 
-	// handleRiskRejected records a server rejection and only exits through
-	// the generic error path once the invoice can no longer settle.
-	handleRiskRejected := func(reason string,
-		decisionTime time.Time) fsm.EventType {
+	htlcConfirmed := false
 
+	// depositsSpent is set when a rejection finds the deposits spent
+	// before the htlc confirmation arrived. While they loop in, only the
+	// htlc can spend them.
+	depositsSpent := false
+
+	// handleRiskRejected cancels the invoice after a server rejection. The
+	// rejection is stored before the monitor sees it, so after a restart it
+	// can be handled before the htlc confirmation is delivered again. If
+	// the htlc already spent the deposits, they stay locked and the swap
+	// sweeps the htlc timeout path. Otherwise the swap fails, which unlocks
+	// the deposits.
+	handleRiskRejected := func(reason string) (fsm.EventType, bool) {
 		f.loopIn.ConfirmationRiskDecision =
 			ConfirmationRiskDecisionRejected
-		f.loopIn.ConfirmationRiskDecisionTime = decisionTime
+		f.loopIn.ConfirmationRiskDecisionTime = riskWatcher.decisionTime(
+			ctx, ConfirmationRiskDecisionRejected,
+		)
+
+		if deadlineTimer != nil {
+			deadlineTimer.Stop()
+		}
+		deadlineChan = nil
 
 		event, canceled := cancelInvoice(
 			"server rejected confirmation risk wait after " + reason,
 		)
 		if !canceled {
-			return event
+			return event, true
 		}
 
-		return f.HandleError(fmt.Errorf(
-			"server rejected confirmation risk wait after %s", reason,
-		))
+		// Deposits are only locked for the timeout sweep after an htlc
+		// confirmation, also if a previous lock stopped halfway.
+		if htlcConfirmed || anyDepositInState(deposit.SweepHtlcTimeout) {
+			err := transitionDepositsToHtlcTimeout(
+				"risk rejection after htlc confirmation",
+			)
+			if err != nil {
+				return retryMonitor(err), true
+			}
+
+			f.Infof("server rejected confirmation risk wait after "+
+				"%s, keeping the deposits for the htlc timeout "+
+				"sweep", reason)
+
+			return fsm.NoOp, false
+		}
+
+		// The htlc can spend the deposits before we see its confirmation.
+		spent, err := f.originalDepositOutpointUnavailable(ctx)
+		if err != nil {
+			return retryMonitor(err), true
+		}
+		if spent {
+			depositsSpent = true
+			f.Infof("server rejected confirmation risk wait after "+
+				"%s, deposits are spent, waiting for the htlc "+
+				"confirmation", reason)
+
+			return fsm.NoOp, false
+		}
+
+		return f.HandleError(fmt.Errorf("server rejected confirmation "+
+			"risk wait after %s", reason)), true
 	}
 
 	switch f.loopIn.ConfirmationRiskDecision {
@@ -1127,13 +1185,10 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		)
 
 	case ConfirmationRiskDecisionRejected:
-		decisionTime := riskWatcher.decisionTime(
-			ctx, ConfirmationRiskDecisionRejected,
-		)
-
-		return handleRiskRejected(
-			"recovered risk rejection", decisionTime,
-		)
+		event, done := handleRiskRejected("recovered risk rejection")
+		if done {
+			return event
+		}
 	}
 
 	info, err := f.cfg.LndClient.GetInfo(ctx)
@@ -1146,7 +1201,6 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		)
 	}
 
-	htlcConfirmed := false
 	for {
 		select {
 		case <-htlcConfChan:
@@ -1240,22 +1294,25 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				continue
 			}
 
+			if riskUpdate.decision == ConfirmationRiskDecisionRejected {
+				event, done := handleRiskRejected(riskUpdate.reason)
+				if done {
+					return event
+				}
+
+				continue
+			}
+
 			decisionTime := riskWatcher.decisionTime(
 				ctx, riskUpdate.decision,
 			)
 			f.loopIn.ConfirmationRiskDecision = riskUpdate.decision
 			f.loopIn.ConfirmationRiskDecisionTime = decisionTime
 
-			switch riskUpdate.decision {
-			case ConfirmationRiskDecisionAccepted:
+			if riskUpdate.decision == ConfirmationRiskDecisionAccepted {
 				startPaymentDeadline(
 					riskUpdate.reason,
 					f.loopIn.ConfirmationRiskDecisionTime,
-				)
-
-			case ConfirmationRiskDecisionRejected:
-				return handleRiskRejected(
-					riskUpdate.reason, decisionTime,
 				)
 			}
 
@@ -1286,7 +1343,20 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 				return event
 			}
 
-			if !htlcConfirmed {
+			// Locked deposits mean an earlier run saw the htlc
+			// confirm, for example before a restart.
+			if !htlcConfirmed &&
+				!anyDepositInState(deposit.SweepHtlcTimeout) {
+
+				// The htlc spent the deposits, wait for its
+				// confirmation to sweep it.
+				if depositsSpent {
+					f.Debugf("htlc timed out, waiting for the " +
+						"htlc confirmation")
+
+					continue
+				}
+
 				f.Infof("swap timed out, htlc not confirmed")
 
 				// If the htlc hasn't confirmed but the timeout
