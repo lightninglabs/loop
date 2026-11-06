@@ -1287,6 +1287,18 @@ func (m *mockDepositManager) TransitionDeposits(_ context.Context,
 	return nil
 }
 
+func (m *mockDepositManager) LockDepositsForSwap(_ context.Context,
+	_ []*deposit.Deposit, _ lntypes.Hash) error {
+
+	return nil
+}
+
+func (m *mockDepositManager) ReleaseDepositsForSwap(_ context.Context,
+	_ []*deposit.Deposit, _ lntypes.Hash) error {
+
+	return nil
+}
+
 func (m *mockDepositManager) DepositsForOutpoints(_ context.Context,
 	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
 

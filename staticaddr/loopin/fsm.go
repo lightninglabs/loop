@@ -119,9 +119,11 @@ var (
 	// the deposits to the looped-in state.
 	SucceededTransitioningFailed = fsm.StateType("SucceededTransitioningFailed") //nolint:lll
 
-	// UnlockDeposits is the state where the deposits are reset. This
-	// happens when the state machine encountered an error and the swap
-	// process needs to start from the beginning.
+	// UnlockDeposits is the state where the swap moves the deposits that
+	// are still looping in for it back to Deposited. Deposits that another
+	// loop-in, a withdrawal or a channel open took in the meantime are left
+	// alone. This happens when the state machine encountered an error and
+	// the swap process needs to start from the beginning.
 	UnlockDeposits = fsm.StateType("UnlockDeposits")
 
 	// Failed is the state the swap is in if it failed.

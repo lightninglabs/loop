@@ -30,6 +30,9 @@ import (
 
 const testTimeout = 5 * time.Second
 
+// testSwapInvoice stands in for the swap invoice of a loop-in that added one.
+const testSwapInvoice = "lnbcrt1swapinvoice"
+
 // TestHandleInvoiceUpdate verifies that invoice state updates map to the
 // monitor events expected by the static address loop-in FSM.
 func TestHandleInvoiceUpdate(t *testing.T) {
@@ -1043,6 +1046,7 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
 		HtlcCltvExpiry:        2_000,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now().Add(-time.Hour),
@@ -1321,6 +1325,7 @@ func TestMonitorInvoiceAndHtlcTxUsesPersistedAcceptedRiskTime(t *testing.T) {
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
 		HtlcCltvExpiry:        2_000,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
@@ -1549,6 +1554,7 @@ func TestMonitorInvoiceAndHtlcTxPersistsRiskRejected(t *testing.T) {
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
 		HtlcCltvExpiry:        mockLnd.Height,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
@@ -1672,6 +1678,7 @@ func TestMonitorInvoiceAndHtlcTxRecoversAcceptedRiskDecision(t *testing.T) {
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:                     swapHash,
+		SwapInvoice:                  testSwapInvoice,
 		HtlcCltvExpiry:               2_000,
 		InitiationHeight:             uint32(mockLnd.Height),
 		InitiationTime:               time.Now(),
@@ -1772,6 +1779,7 @@ func TestMonitorInvoiceAndHtlcTxRecoversRejectedRiskDecision(t *testing.T) {
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:                     swapHash,
+		SwapInvoice:                  testSwapInvoice,
 		HtlcCltvExpiry:               mockLnd.Height,
 		InitiationHeight:             uint32(mockLnd.Height),
 		InitiationTime:               time.Now(),
@@ -2048,6 +2056,7 @@ func TestMonitorInvoiceAndHtlcTxStartsDeadlineAtLegacyMinConfs(t *testing.T) {
 	}
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
 		HtlcCltvExpiry:        2_000,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
@@ -2160,6 +2169,7 @@ func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackWithNotificationManager(
 	}
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
 		HtlcCltvExpiry:        2_000,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now().Add(-time.Hour),
@@ -2278,6 +2288,7 @@ func TestMonitorInvoiceAndHtlcTxStartsLegacyFallbackAtCurrentHeight(
 	}
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
 		HtlcCltvExpiry:        2_000,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now().Add(-time.Hour),
@@ -2408,6 +2419,7 @@ func TestMonitorInvoiceAndHtlcTxRefreshesDepositsForLegacyFallback(t *testing.T)
 	depositLookups := make(chan depositLookup, 1)
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
 		HtlcCltvExpiry:        2_000,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now().Add(-time.Hour),
@@ -2564,6 +2576,7 @@ func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
 		HtlcCltvExpiry:        mockLnd.Height,
 		InitiationHeight:      uint32(mockLnd.Height),
 		InitiationTime:        time.Now(),
@@ -2631,6 +2644,109 @@ func TestMonitorInvoiceAndHtlcTxUnlocksOnHtlcTimeoutWithoutDeadline(
 
 	require.Equal(t, []fsm.EventType{fsm.OnError}, depositMgr.events)
 	require.Equal(t, []fsm.StateType{deposit.Deposited}, depositMgr.states)
+	require.Equal(t, []lntypes.Hash{swapHash}, depositMgr.releasedFor)
+}
+
+// TestMonitorInvoiceAndHtlcTxTimeoutKeepsTakenDeposit checks that the release
+// at the htlc expiry leaves a deposit alone that another swap took after this
+// swap released it.
+func TestMonitorInvoiceAndHtlcTxTimeoutKeepsTakenDeposit(
+	t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	swapHash := lntypes.Hash{10, 11, 12}
+	depositOutpoint := wire.OutPoint{
+		Hash:  chainhash.Hash{10},
+		Index: 0,
+	}
+
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:              swapHash,
+		SwapInvoice:           testSwapInvoice,
+		HtlcCltvExpiry:        mockLnd.Height,
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		ProtocolVersion:       version.ProtocolVersion_V0,
+		ClientPubkey:          clientKey.PubKey(),
+		ServerPubkey:          serverKey.PubKey(),
+		PaymentTimeoutSeconds: 3_600,
+		DepositOutpoints: []string{
+			depositOutpoint.String(),
+		},
+		Deposits: []*deposit.Deposit{{
+			OutPoint: depositOutpoint,
+		}},
+	}
+	loopIn.SetState(MonitorInvoiceAndHtlcTx)
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractOpen,
+	})
+
+	depositMgr := newRecordingDepositManager(loopIn.Deposits...)
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		ChainNotifier:  mockLnd.ChainNotifier,
+		DepositManager: depositMgr,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		LndClient:      mockLnd.Client,
+		ChainParams:    mockLnd.ChainParams,
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	waitForMonitorSubscriptions(t, ctx, mockLnd)
+
+	// Another swap took the deposit after this swap released it.
+	otherSwap := lntypes.Hash{13, 14, 15}
+	taken := depositMgr.active[depositOutpoint]
+	taken.SetState(deposit.LoopingIn)
+	taken.SwapHash = &otherSwap
+
+	require.NoError(t, mockLnd.NotifyHeight(mockLnd.Height+1))
+
+	select {
+	case hash := <-mockLnd.FailInvoiceChannel:
+		require.Equal(t, swapHash, hash)
+
+	case <-ctx.Done():
+		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+	}
+
+	select {
+	case event := <-resultChan:
+		require.Equal(t, OnSwapTimedOut, event)
+
+	case <-ctx.Done():
+		t.Fatalf("monitor action did not exit: %v", ctx.Err())
+	}
+
+	require.Empty(t, depositMgr.events)
+	require.Equal(t, []lntypes.Hash{swapHash}, depositMgr.releasedFor)
+	require.True(t, taken.IsInState(deposit.LoopingIn))
+	require.Equal(t, &otherSwap, taken.SwapHash)
 }
 
 // TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails
@@ -2891,6 +3007,7 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:                     swapHash,
+		SwapInvoice:                  testSwapInvoice,
 		HtlcCltvExpiry:               mockLnd.Height + 1_000,
 		InitiationHeight:             uint32(mockLnd.Height),
 		InitiationTime:               time.Now(),
@@ -3054,6 +3171,7 @@ func TestSignHtlcTxActionCancelsWhenOriginalOutpointUnavailable(t *testing.T) {
 
 	loopIn := &StaticAddressLoopIn{
 		SwapHash:         swapHash,
+		SwapInvoice:      testSwapInvoice,
 		DepositOutpoints: []string{originalOutpoint.String()},
 	}
 
@@ -3185,6 +3303,59 @@ func TestInitHtlcActionCancelsInvoiceOnServerError(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("invoice was not canceled: %v", ctx.Err())
 	}
+}
+
+// TestInitHtlcActionLocksDepositsForSwap checks that the deposits are locked
+// and released with the swap's hash.
+func TestInitHtlcActionLocksDepositsForSwap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+
+	dep := &deposit.Deposit{
+		Value: 200_000,
+	}
+	dep.Hash = chainhash.Hash{0x21}
+	dep.SetState(deposit.Deposited)
+	loopIn := &StaticAddressLoopIn{
+		Deposits:              []*deposit.Deposit{dep},
+		InitiationHeight:      uint32(mockLnd.Height),
+		InitiationTime:        time.Now(),
+		PaymentTimeoutSeconds: DefaultPaymentTimeoutSeconds,
+		ProtocolVersion:       version.ProtocolVersion_V0,
+	}
+
+	depositMgr := newRecordingDepositManager(dep)
+	cfg := &Config{
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+		},
+		DepositManager: depositMgr,
+		WalletKit:      mockLnd.WalletKit,
+		LndClient:      mockLnd.Client,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		Server: &initHtlcTestServer{
+			loopInErr: errors.New("server rejected swap"),
+		},
+	}
+
+	f, err := NewFSM(ctx, loopIn, cfg, false)
+	require.NoError(t, err)
+
+	event := f.InitHtlcAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.NotEqual(t, lntypes.Hash{}, loopIn.SwapHash)
+	require.Equal(t, []lntypes.Hash{loopIn.SwapHash}, depositMgr.lockedFor)
+
+	event = f.UnlockDepositsAction(ctx, nil)
+	require.Equal(t, fsm.OnError, event)
+	require.Equal(
+		t, []lntypes.Hash{loopIn.SwapHash}, depositMgr.releasedFor,
+	)
+	require.Equal(t, deposit.Deposited, dep.GetState())
 }
 
 // TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure verifies that the early
@@ -3384,6 +3555,20 @@ func (n *noopDepositManager) TransitionDeposits(context.Context,
 	return nil
 }
 
+// LockDepositsForSwap implements DepositManager with a no-op.
+func (n *noopDepositManager) LockDepositsForSwap(context.Context,
+	[]*deposit.Deposit, lntypes.Hash) error {
+
+	return nil
+}
+
+// ReleaseDepositsForSwap implements DepositManager with a no-op.
+func (n *noopDepositManager) ReleaseDepositsForSwap(context.Context,
+	[]*deposit.Deposit, lntypes.Hash) error {
+
+	return nil
+}
+
 // DepositsForOutpoints implements DepositManager with a no-op.
 func (n *noopDepositManager) DepositsForOutpoints(_ context.Context,
 	outpoints []string, ignoreUnknown bool) ([]*deposit.Deposit, error) {
@@ -3426,6 +3611,10 @@ type recordingDepositManager struct {
 	transitionChan chan depositTransition
 	events         []fsm.EventType
 	states         []fsm.StateType
+
+	// lockedFor and releasedFor record the swap hashes passed in.
+	lockedFor   []lntypes.Hash
+	releasedFor []lntypes.Hash
 }
 
 // newRecordingDepositManager returns a recordingDepositManager that owns the
@@ -3500,6 +3689,56 @@ func (r *recordingDepositManager) TransitionDeposits(_ context.Context,
 	}
 
 	return nil
+}
+
+// LockDepositsForSwap records the swap hash and the transition to LoopingIn.
+func (r *recordingDepositManager) LockDepositsForSwap(ctx context.Context,
+	deposits []*deposit.Deposit, swapHash lntypes.Hash) error {
+
+	r.lockedFor = append(r.lockedFor, swapHash)
+
+	err := r.TransitionDeposits(
+		ctx, deposits, deposit.OnLoopInInitiated, deposit.LoopingIn,
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, d := range deposits {
+		if active, ok := r.active[d.OutPoint]; ok {
+			hash := swapHash
+			active.SwapHash = &hash
+		}
+	}
+
+	return nil
+}
+
+// ReleaseDepositsForSwap records the swap hash and the transition to
+// Deposited. Like the real manager, it leaves deposits recorded for another
+// swap alone.
+func (r *recordingDepositManager) ReleaseDepositsForSwap(ctx context.Context,
+	deposits []*deposit.Deposit, swapHash lntypes.Hash) error {
+
+	r.releasedFor = append(r.releasedFor, swapHash)
+
+	owned := make([]*deposit.Deposit, 0, len(deposits))
+	for _, d := range deposits {
+		active, ok := r.active[d.OutPoint]
+		if ok && active.SwapHash != nil &&
+			*active.SwapHash != swapHash {
+
+			continue
+		}
+		owned = append(owned, d)
+	}
+	if len(owned) == 0 {
+		return nil
+	}
+
+	return r.TransitionDeposits(
+		ctx, owned, fsm.OnError, deposit.Deposited,
+	)
 }
 
 // DepositsForOutpoints returns copies of the manager's own deposit objects,
