@@ -104,6 +104,11 @@ type StaticAddressLoopInStore interface {
 	// for the given deposit IDs.
 	SwapHashesForDepositIDs(ctx context.Context,
 		depositIDs []deposit.ID) (map[lntypes.Hash][]deposit.ID, error)
+
+	// BatchMapDepositsToSwapHashes maps the given deposits to their swap
+	// hashes in a single transaction.
+	BatchMapDepositsToSwapHashes(ctx context.Context,
+		depositsToHashes map[deposit.ID]lntypes.Hash) error
 }
 
 type QuoteGetter interface {

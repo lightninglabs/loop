@@ -3538,6 +3538,34 @@ func (r *recordingDepositManager) DepositsForOutpoints(_ context.Context,
 	return deposits, nil
 }
 
+// AllStringOutpointsActiveDeposits returns the manager's own deposit objects
+// for the outpoints, like the real manager. It returns false if one of them
+// isn't owned by the manager or isn't in the given state.
+func (r *recordingDepositManager) AllStringOutpointsActiveDeposits(
+	outpoints []string, state fsm.StateType) ([]*deposit.Deposit, bool) {
+
+	deposits := make([]*deposit.Deposit, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		op, err := wire.NewOutPointFromString(outpoint)
+		if err != nil {
+			return nil, false
+		}
+
+		d, ok := r.active[*op]
+		if !ok {
+			return nil, false
+		}
+
+		if state != fsm.EmptyState && !d.IsInState(state) {
+			return nil, false
+		}
+
+		deposits = append(deposits, d)
+	}
+
+	return deposits, true
+}
+
 type recordingRiskStore struct {
 	*mockStore
 
