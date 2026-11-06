@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -100,6 +101,11 @@ type Deposit struct {
 	// FinalizedWithdrawalTx is the coop-signed withdrawal transaction. It
 	// is republished on new block arrivals and on client restarts.
 	FinalizedWithdrawalTx *wire.MsgTx
+
+	// AddressParams are the static address parameters that produced this
+	// deposit's pkScript. Spending code must use these per-deposit
+	// parameters rather than assuming all deposits belong to one address.
+	AddressParams *script.Parameters
 
 	// OnchainCost is the deposit's share of the fee of its funding
 	// transaction. The manager determines it shortly after it finds the
@@ -194,6 +200,12 @@ func (d *Deposit) GetConfirmationHeight() int64 {
 // acquiring the deposit lock.
 func (d *Deposit) GetConfirmationHeightNoLock() int64 {
 	return d.ConfirmationHeight
+}
+
+// GetStaticAddressScript reconstructs the static address script for this
+// deposit's matched address parameters.
+func (d *Deposit) GetStaticAddressScript() (*script.StaticAddress, error) {
+	return d.AddressParams.StaticAddress()
 }
 
 // GetRandomDepositID generates a random deposit ID.

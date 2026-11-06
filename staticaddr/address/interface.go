@@ -4,17 +4,40 @@ import (
 	"context"
 
 	"github.com/lightninglabs/loop/staticaddr/script"
+	"github.com/lightningnetwork/lnd/keychain"
 )
+
+// AddressParameters describes one static address for callers of the address
+// manager API. It aliases the script-level parameters used to spend that address.
+type AddressParameters = script.Parameters
 
 // Store is the database interface that is used to store and retrieve
 // static addresses.
 type Store interface {
 	// CreateStaticAddress inserts a new static address with its parameters
 	// into the store.
-	CreateStaticAddress(ctx context.Context,
-		addrParams *script.Parameters) error
+	CreateStaticAddress(ctx context.Context, addrParams *AddressParameters) error
+
+	// GetStaticAddressID retrieves the static address row ID for the
+	// address script.
+	GetStaticAddressID(ctx context.Context, pkScript []byte) (int32, error)
+
+	// ListStaticAddresses retrieves up to limit addresses in ascending ID
+	// order, strictly after afterID. Use zero to start from the beginning.
+	ListStaticAddresses(ctx context.Context, afterID, limit int32) (
+		[]*AddressParameters, error)
 
 	// GetAllStaticAddresses retrieves all static addresses from the store.
-	GetAllStaticAddresses(ctx context.Context) ([]*script.Parameters,
-		error)
+	GetAllStaticAddresses(ctx context.Context) ([]*AddressParameters, error)
+
+	// GetLegacyParameters retrieves the first static address created for the
+	// L402. This is the immutable legacy/root address that anchors existing
+	// single-address deposits.
+	GetLegacyParameters(ctx context.Context) (*AddressParameters, error)
+
+	// GetMaxStaticAddressHtlcKeyIndex returns the highest client key index
+	// of the given family used by a static address loop-in HTLC. The boolean
+	// is false if no such HTLC key exists.
+	GetMaxStaticAddressHtlcKeyIndex(ctx context.Context,
+		family keychain.KeyFamily) (uint32, bool, error)
 }

@@ -50,8 +50,8 @@
       "data": {
         "lines": [
           "{\n",
+          "    \"legacy_root_address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n",
           "    \"relative_expiry_blocks\": \"14400\",\n",
-          "    \"static_address\": \"bcrt1pfu9g59aqtxd39653f76y4c8z7r3t9tmcvrvhl57a3dgj3epdwxdqcd9fpw\",\n",
           "    \"total_num_deposits\": 1,\n",
           "    \"value_channels_opened\": \"0\",\n",
           "    \"value_deposited_satoshis\": \"2500000\",\n",
