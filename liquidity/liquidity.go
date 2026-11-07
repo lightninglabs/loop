@@ -382,7 +382,7 @@ func (m *Manager) GetParameters() Parameters {
 func (m *Manager) SetParameters(ctx context.Context,
 	req *clientrpc.LiquidityParameters) error {
 
-	params, err := RpcToParameters(req)
+	params, err := RpcToParameters(req, m.cfg.Lnd.ChainParams)
 	if err != nil {
 		return err
 	}
