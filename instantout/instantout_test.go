@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
@@ -303,4 +304,23 @@ func TestNewInstantOutRejectsUnsupportedDestAddr(t *testing.T) {
 			require.Empty(t, manager.activeInstantOuts)
 		})
 	}
+}
+
+// TestNewInstantOutRejectsWrongNetworkDestAddr verifies that an instant out
+// cannot pay to an address of another network.
+func TestNewInstantOutRejectsWrongNetworkDestAddr(t *testing.T) {
+	addr, err := btcutil.NewAddressWitnessPubKeyHash(
+		make([]byte, 20), &chaincfg.TestNet3Params,
+	)
+	require.NoError(t, err)
+
+	// A manager that only knows the network verifies that the destination
+	// is rejected before the swap starts.
+	manager := &Manager{cfg: &Config{Network: &chaincfg.MainNetParams}}
+
+	_, err = manager.NewInstantOut(
+		t.Context(), nil, addr.EncodeAddress(), 0,
+	)
+	require.ErrorIs(t, err, utils.ErrWrongNetwork)
+	require.Empty(t, manager.activeInstantOuts)
 }

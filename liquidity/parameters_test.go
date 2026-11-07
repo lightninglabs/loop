@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -164,8 +165,9 @@ func TestParametersRejectUnsupportedDestAddr(t *testing.T) {
 }
 
 // TestSetParametersDestAddr verifies that the autoloop destination address is
-// decoded for the active network. Base58 addresses and raw public keys used to
-// crash loopd, because the decoder dereferences the chain parameters for them.
+// decoded and checked for the active network. Base58 addresses and raw public
+// keys used to crash loopd, because the decoder dereferences the chain
+// parameters for them.
 func TestSetParametersDestAddr(t *testing.T) {
 	_, lnd := newTestConfig()
 	params := lnd.ChainParams
@@ -178,7 +180,17 @@ func TestSetParametersDestAddr(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(
+		make([]byte, 20), params,
+	)
+	require.NoError(t, err)
+
 	mainnetP2PKH, err := btcutil.NewAddressPubKeyHash(
+		make([]byte, 20), &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+
+	mainnetP2WPKH, err := btcutil.NewAddressWitnessPubKeyHash(
 		make([]byte, 20), &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
@@ -207,9 +219,19 @@ func TestSetParametersDestAddr(t *testing.T) {
 			err: ErrUnsupportedDestAddr,
 		},
 		{
+			name:     "p2wpkh",
+			addr:     p2wpkh.EncodeAddress(),
+			destAddr: p2wpkh,
+		},
+		{
 			name: "p2pkh of another network",
 			addr: mainnetP2PKH.EncodeAddress(),
 			err:  btcutil.ErrUnknownAddressType,
+		},
+		{
+			name: "p2wpkh of another network",
+			addr: mainnetP2WPKH.EncodeAddress(),
+			err:  utils.ErrWrongNetwork,
 		},
 		{
 			name: "default",

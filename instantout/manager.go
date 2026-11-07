@@ -156,6 +156,11 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 			return nil, err
 		}
 
+		err = utils.CheckAddrNetwork(sweepAddr, m.cfg.Network)
+		if err != nil {
+			return nil, err
+		}
+
 		// Reject the destination types that loop out rejects too.
 		if !utils.IsSupportedDestAddr(sweepAddr) {
 			return nil, fmt.Errorf("unsupported destination "+

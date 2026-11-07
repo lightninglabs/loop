@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
@@ -439,6 +440,47 @@ func TestPersistParams(t *testing.T) {
 		t, LoopInSourceStaticAddress,
 		manager.GetParameters().LoopInSource,
 	)
+}
+
+// TestRestoreParamsWrongNetworkDestAddr verifies that loopd removes a saved
+// autoloop destination address of another network at startup, instead of
+// failing to start.
+func TestRestoreParamsWrongNetworkDestAddr(t *testing.T) {
+	ctx := t.Context()
+
+	var paramsBytes []byte
+	cfg, _ := newTestConfig()
+	cfg.FetchLiquidityParams = func(context.Context) ([]byte, error) {
+		return paramsBytes, nil
+	}
+	cfg.PutLiquidityParams = func(_ context.Context, data []byte) error {
+		paramsBytes = data
+
+		return nil
+	}
+	manager := NewManager(cfg)
+
+	// The mock lnd runs on testnet3. Earlier versions could save a mainnet
+	// destination address there.
+	destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+		make([]byte, 20), &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+
+	req, err := ParametersToRpc(defaultParameters)
+	require.NoError(t, err)
+	req.AutoloopDestAddress = destAddr.EncodeAddress()
+	req.AutoMaxInFlight = 3
+	require.NoError(t, manager.saveParams(ctx, req))
+
+	// The other params are restored without the destination address.
+	require.NoError(t, manager.restoreParams(ctx))
+	require.Nil(t, manager.GetParameters().DestAddr)
+	require.Equal(t, 3, manager.GetParameters().MaxAutoInFlight)
+
+	req, err = manager.loadParams(ctx)
+	require.NoError(t, err)
+	require.Empty(t, req.AutoloopDestAddress)
 }
 
 // TestStaticAddressAutoloopRequiresExperimental verifies that static-address
