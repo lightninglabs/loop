@@ -1,8 +1,11 @@
 package liquidity
 
 import (
+	"encoding/hex"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/stretchr/testify/require"
@@ -107,6 +110,54 @@ func TestValidateRestrictions(t *testing.T) {
 				testCase.server, testCase.client,
 			)
 			require.Equal(t, testCase.err, err)
+		})
+	}
+}
+
+// TestParametersRejectUnsupportedDestAddr verifies that autoloop cannot sweep
+// to a destination type that loop out rejects.
+func TestParametersRejectUnsupportedDestAddr(t *testing.T) {
+	params := &chaincfg.MainNetParams
+
+	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(
+		make([]byte, 20), params,
+	)
+	require.NoError(t, err)
+
+	// The compressed secp256k1 generator point serves as a raw public key.
+	pubKey, err := hex.DecodeString("0279be667ef9dcbbac55a06295ce870b0" +
+		"7029bfcdb2dce28d959f2815b16f81798")
+	require.NoError(t, err)
+
+	rawPubKey, err := btcutil.NewAddressPubKey(pubKey, params)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+		addr btcutil.Address
+		err  error
+	}{
+		{
+			name: "p2wpkh",
+			addr: p2wpkh,
+		},
+		{
+			name: "raw public key",
+			addr: rawPubKey,
+			err:  ErrUnsupportedDestAddr,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, _ := newTestConfig()
+			manager := NewManager(cfg)
+
+			newParams := defaultParameters
+			newParams.DestAddr = test.addr
+
+			err := manager.setParameters(t.Context(), newParams)
+			require.ErrorIs(t, err, test.err)
 		})
 	}
 }
