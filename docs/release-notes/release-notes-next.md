@@ -24,6 +24,10 @@
   keeps the deposits locked and sweeps the htlc timeout path once the htlc
   times out.
 
+* Setting a P2PKH or P2SH address or a raw public key as the autoloop
+  destination no longer crashes loopd. The address is now decoded for the
+  active network, and a raw public key is rejected.
+
 #### Maintenance
 
 #### Contributors (Alphabetical Order)

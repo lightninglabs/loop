@@ -1,6 +1,7 @@
 package liquidity
 
 import (
+	"context"
 	"encoding/hex"
 	"testing"
 
@@ -158,6 +159,87 @@ func TestParametersRejectUnsupportedDestAddr(t *testing.T) {
 
 			err := manager.setParameters(t.Context(), newParams)
 			require.ErrorIs(t, err, test.err)
+		})
+	}
+}
+
+// TestSetParametersDestAddr verifies that the autoloop destination address is
+// decoded for the active network. Base58 addresses and raw public keys used to
+// crash loopd, because the decoder dereferences the chain parameters for them.
+func TestSetParametersDestAddr(t *testing.T) {
+	_, lnd := newTestConfig()
+	params := lnd.ChainParams
+
+	p2pkh, err := btcutil.NewAddressPubKeyHash(make([]byte, 20), params)
+	require.NoError(t, err)
+
+	p2sh, err := btcutil.NewAddressScriptHashFromHash(
+		make([]byte, 20), params,
+	)
+	require.NoError(t, err)
+
+	mainnetP2PKH, err := btcutil.NewAddressPubKeyHash(
+		make([]byte, 20), &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		addr     string
+		destAddr btcutil.Address
+		err      error
+	}{
+		{
+			name:     "p2pkh",
+			addr:     p2pkh.EncodeAddress(),
+			destAddr: p2pkh,
+		},
+		{
+			name:     "p2sh",
+			addr:     p2sh.EncodeAddress(),
+			destAddr: p2sh,
+		},
+		{
+			// The compressed secp256k1 generator point.
+			name: "raw public key",
+			addr: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce" +
+				"28d959f2815b16f81798",
+			err: ErrUnsupportedDestAddr,
+		},
+		{
+			name: "p2pkh of another network",
+			addr: mainnetP2PKH.EncodeAddress(),
+			err:  btcutil.ErrUnknownAddressType,
+		},
+		{
+			name: "default",
+			addr: "default",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, _ := newTestConfig()
+			cfg.PutLiquidityParams = func(context.Context,
+				[]byte) error {
+
+				return nil
+			}
+			manager := NewManager(cfg)
+
+			req, err := ParametersToRpc(defaultParameters)
+			require.NoError(t, err)
+			req.AutoloopDestAddress = test.addr
+
+			err = manager.SetParameters(t.Context(), req)
+			require.ErrorIs(t, err, test.err)
+			if test.err != nil {
+				return
+			}
+
+			require.Equal(
+				t, test.destAddr, manager.GetParameters().DestAddr,
+			)
 		})
 	}
 }
