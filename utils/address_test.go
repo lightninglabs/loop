@@ -65,3 +65,65 @@ func TestIsSupportedDestAddr(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckAddrNetwork checks that an address is only accepted on its own
+// network.
+func TestCheckAddrNetwork(t *testing.T) {
+	t.Parallel()
+
+	hash20 := make([]byte, 20)
+
+	p2pkh, err := btcutil.NewAddressPubKeyHash(
+		hash20, &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+
+	p2wpkh, err := btcutil.NewAddressWitnessPubKeyHash(
+		hash20, &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+
+	regtestP2WPKH, err := btcutil.NewAddressWitnessPubKeyHash(
+		hash20, &chaincfg.RegressionNetParams,
+	)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		addr   btcutil.Address
+		params *chaincfg.Params
+		err    error
+	}{
+		{
+			name:   "p2pkh",
+			addr:   p2pkh,
+			params: &chaincfg.MainNetParams,
+		},
+		{
+			name:   "p2pkh of another network",
+			addr:   p2pkh,
+			params: &chaincfg.TestNet3Params,
+			err:    ErrWrongNetwork,
+		},
+		{
+			name:   "p2wpkh",
+			addr:   p2wpkh,
+			params: &chaincfg.MainNetParams,
+		},
+		{
+			name:   "p2wpkh of another network",
+			addr:   regtestP2WPKH,
+			params: &chaincfg.MainNetParams,
+			err:    ErrWrongNetwork,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckAddrNetwork(test.addr, test.params)
+			require.ErrorIs(t, err, test.err)
+		})
+	}
+}

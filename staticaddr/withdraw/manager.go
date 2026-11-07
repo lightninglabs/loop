@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -560,6 +561,12 @@ func (m *Manager) withdrawalAddress(ctx context.Context, destAddr string,
 		if err != nil {
 			return nil, err
 		}
+
+		err = utils.CheckAddrNetwork(address, m.cfg.ChainParams)
+		if err != nil {
+			return nil, err
+		}
+
 		if prevPkScript == nil {
 			return address, nil
 		}

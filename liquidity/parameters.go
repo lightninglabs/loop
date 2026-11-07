@@ -491,6 +491,11 @@ func RpcToParameters(req *clientrpc.LiquidityParameters,
 			if err != nil {
 				return nil, err
 			}
+
+			err = utils.CheckAddrNetwork(destaddr, chainParams)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

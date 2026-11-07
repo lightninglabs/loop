@@ -184,6 +184,20 @@ var sweepHtlcTests = []struct {
 		},
 	},
 	{
+		name:        "dest address of another network",
+		amount:      100_000,
+		satPerVByte: 10,
+		expectErrMsg: "invalid dest_address: address belongs to " +
+			"another network",
+		expectLogs:     []string{},
+		expectRegister: false,
+		modifyReq: func(req *looprpc.SweepHtlcRequest) {
+			// A mainnet P2WPKH address from BIP 173. The mock lnd
+			// runs on testnet3.
+			req.DestAddress = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+		},
+	},
+	{
 		name:           "no matching swap",
 		amount:         100_000,
 		satPerVByte:    10,

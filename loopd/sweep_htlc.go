@@ -207,6 +207,12 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 			return nil, status.Errorf(codes.InvalidArgument,
 				"invalid dest_address: %v", err)
 		}
+
+		err = utils.CheckAddrNetwork(sweepAddr, chainParams)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid dest_address: %v", err)
+		}
 	}
 
 	var (

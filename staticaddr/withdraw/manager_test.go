@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -752,6 +753,15 @@ func TestWithdrawalAddress(t *testing.T) {
 	address, err = m.withdrawalAddress(t.Context(), "", nil)
 	require.NoError(t, err)
 	require.Equal(t, walletAddress.String(), address.String())
+
+	// A withdrawal can't pay to an address of another network.
+	mainnetAddress, err := btcutil.NewAddressTaproot(
+		bytes.Repeat([]byte{3}, 32), &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+
+	_, err = m.withdrawalAddress(t.Context(), mainnetAddress.String(), nil)
+	require.ErrorIs(t, err, utils.ErrWrongNetwork)
 
 	// A fee bump pays the address of the withdrawal that it replaces, and
 	// can't request another one.
