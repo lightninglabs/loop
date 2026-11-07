@@ -164,6 +164,11 @@ var (
 	// a extended public key account is set.
 	ErrAmbiguousDestAddr = errors.New("ambiguous destination address")
 
+	// ErrUnsupportedDestAddr is returned when the destination address has
+	// a type that loop out does not pay to.
+	ErrUnsupportedDestAddr = errors.New("unsupported destination address " +
+		"type")
+
 	// ErrAccountAndAddrType indicates if an account is set but the
 	// account address type is not or vice versa.
 	ErrAccountAndAddrType = errors.New("account and address type have " +

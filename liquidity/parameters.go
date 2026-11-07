@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -279,6 +280,12 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 		len(p.Account) > 0 {
 
 		return ErrAmbiguousDestAddr
+	}
+
+	// Autoloop must not sweep to a destination type that loop out
+	// rejects.
+	if p.DestAddr != nil && !utils.IsSupportedDestAddr(p.DestAddr) {
+		return fmt.Errorf("%w: %T", ErrUnsupportedDestAddr, p.DestAddr)
 	}
 
 	// If an account is specified the respective address type must be

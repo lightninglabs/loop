@@ -6,6 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
@@ -268,4 +269,38 @@ func TestNewInstantOutRejectsNegativeMaxSwapFee(t *testing.T) {
 
 	_, err := manager.NewInstantOut(t.Context(), nil, "", -1)
 	require.ErrorContains(t, err, "maximum swap fee must not be negative")
+}
+
+// TestNewInstantOutRejectsUnsupportedDestAddr verifies that an instant out
+// cannot pay to a destination type that loop out rejects.
+func TestNewInstantOutRejectsUnsupportedDestAddr(t *testing.T) {
+	tests := []struct {
+		name string
+		addr string
+	}{
+		{
+			// The compressed secp256k1 generator point.
+			name: "raw public key",
+			addr: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce" +
+				"28d959f2815b16f81798",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// A manager that only knows the network verifies that
+			// the destination is rejected before the swap starts.
+			manager := &Manager{
+				cfg: &Config{Network: &chaincfg.MainNetParams},
+			}
+
+			_, err := manager.NewInstantOut(
+				t.Context(), nil, test.addr, 0,
+			)
+			require.ErrorContains(
+				t, err, "unsupported destination address type",
+			)
+			require.Empty(t, manager.activeInstantOuts)
+		})
+	}
 }
