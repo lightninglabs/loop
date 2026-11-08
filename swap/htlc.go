@@ -5,14 +5,14 @@ import (
 	"errors"
 	"fmt"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -58,7 +58,7 @@ type HtlcScript interface {
 
 	// lockingConditions return the address, pkScript and sigScript (if
 	// required) for a htlc script.
-	lockingConditions(HtlcOutputType, *chaincfg.Params) (btcutil.Address,
+	lockingConditions(HtlcOutputType, *chaincfg.Params) (btcaddr.Address,
 		[]byte, []byte, error)
 
 	// MaxSuccessWitnessSize returns the maximum witness size for the
@@ -95,7 +95,7 @@ type Htlc struct {
 	Hash        lntypes.Hash
 	OutputType  HtlcOutputType
 	ChainParams *chaincfg.Params
-	Address     btcutil.Address
+	Address     btcaddr.Address
 	SigScript   []byte
 }
 
@@ -223,7 +223,7 @@ func NewHtlcV3(muSig2Version input.MuSig2Version, cltvExpiry int32,
 // segwitV0LockingConditions provides the address, pkScript and sigScript (if
 // required) for the segwit v0 script and output type provided.
 func segwitV0LockingConditions(outputType HtlcOutputType,
-	chainParams *chaincfg.Params, script []byte) (btcutil.Address,
+	chainParams *chaincfg.Params, script []byte) (btcaddr.Address,
 	[]byte, []byte, error) {
 
 	switch outputType {
@@ -233,7 +233,7 @@ func segwitV0LockingConditions(outputType HtlcOutputType,
 			return nil, nil, nil, err
 		}
 
-		address, err := btcutil.NewAddressWitnessScriptHash(
+		address, err := btcaddr.NewAddressWitnessScriptHash(
 			pkScript[2:],
 			chainParams,
 		)
@@ -485,7 +485,7 @@ func (h *HtlcScriptV2) SigHash() txscript.SigHashType {
 // lockingConditions return the address, pkScript and sigScript (if
 // required) for a htlc script.
 func (h *HtlcScriptV2) lockingConditions(htlcOutputType HtlcOutputType,
-	params *chaincfg.Params) (btcutil.Address, []byte, []byte, error) {
+	params *chaincfg.Params) (btcaddr.Address, []byte, []byte, error) {
 
 	return segwitV0LockingConditions(htlcOutputType, params, h.script)
 }
@@ -793,7 +793,7 @@ func (h *HtlcScriptV3) SigHash() txscript.SigHashType {
 // lockingConditions return the address, pkScript and sigScript (if required)
 // for a htlc script.
 func (h *HtlcScriptV3) lockingConditions(outputType HtlcOutputType,
-	chainParams *chaincfg.Params) (btcutil.Address, []byte, []byte, error) {
+	chainParams *chaincfg.Params) (btcaddr.Address, []byte, []byte, error) {
 
 	// HtlcV3 can only have taproot output type, because we utilize
 	// tapscript claim paths.
@@ -803,7 +803,7 @@ func (h *HtlcScriptV3) lockingConditions(outputType HtlcOutputType,
 	}
 
 	// Generate a tapscript address from our tree.
-	address, err := btcutil.NewAddressTaproot(
+	address, err := btcaddr.NewAddressTaproot(
 		schnorr.SerializePubKey(h.TaprootKey), chainParams,
 	)
 	if err != nil {

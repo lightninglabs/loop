@@ -7,15 +7,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/stretchr/testify/require"
 )
 
 var (
 	boltDbFile = "../loopdb-kon"
 	addr       = "bc1p4g493qcmzt79r87363fvyvq5sfz58q5gsz74g2c4ejqy5xnpcpesh3yq2y"
-	addrBtc, _ = btcutil.DecodeAddress(addr, &chaincfg.MainNetParams)
+	addrBtc, _ = btcaddr.DecodeAddress(addr, &chaincfg.MainNetParams)
 )
 
 // TestMigrationFromOnDiskBoltdb tests migrating from an on-disk boltdb to an

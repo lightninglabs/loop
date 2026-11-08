@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
@@ -342,7 +343,7 @@ func TestAutoloopAddress(t *testing.T) {
 
 	// Decode a dummy p2wkh address to use as the destination address for
 	// the swaps.
-	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
+	addr, err := btcaddr.DecodeAddress(p2wkhAddr, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1275,7 +1276,7 @@ func TestEasyAutoloop(t *testing.T) {
 
 	// Decode a dummy p2wkh address to use as the destination address for
 	// the swaps.
-	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
+	addr, err := btcaddr.DecodeAddress(p2wkhAddr, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1545,7 +1546,7 @@ func TestEasyAssetAutoloop(t *testing.T) {
 	// Common variables for asset tests.
 	assetId := [32]byte{0x01}
 	assetStr := hex.EncodeToString(assetId[:])
-	addr, err := btcutil.DecodeAddress(p2wkhAddr, nil)
+	addr, err := btcaddr.DecodeAddress(p2wkhAddr, nil)
 	require.NoError(t, err)
 
 	// Sub-test 1: Single asset channel.

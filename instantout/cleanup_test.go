@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
@@ -142,7 +143,7 @@ func newInitCleanupTestFSM(t *testing.T,
 	)
 
 	_, pubKey := btcec.PrivKeyFromBytes([]byte{1})
-	sweepAddress, err := btcutil.NewAddressWitnessPubKeyHash(
+	sweepAddress, err := btcaddr.NewAddressWitnessPubKeyHash(
 		make([]byte, 20), &chaincfg.TestNet3Params,
 	)
 	require.NoError(t, err)

@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop"
@@ -120,7 +121,7 @@ func (s *staticAddrTestAddressManager) ListUnspent(context.Context,
 }
 
 func (s *staticAddrTestAddressManager) GetTaprootAddress(
-	*btcec.PublicKey, *btcec.PublicKey, int64) (*btcutil.AddressTaproot,
+	*btcec.PublicKey, *btcec.PublicKey, int64) (*btcaddr.AddressTaproot,
 	error) {
 
 	return nil, nil

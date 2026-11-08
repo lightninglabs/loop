@@ -6,11 +6,12 @@ import (
 	"database/sql"
 	"fmt"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/loopdb"
@@ -354,7 +355,7 @@ func (s *SQLStore) sqlInstantOutToInstantOut(ctx context.Context,
 		reservations = append(reservations, reservation)
 	}
 
-	sweepAddress, err := btcutil.DecodeAddress(row.SweepAddress, s.network)
+	sweepAddress, err := btcaddr.DecodeAddress(row.SweepAddress, s.network)
 	if err != nil {
 		return nil, err
 	}

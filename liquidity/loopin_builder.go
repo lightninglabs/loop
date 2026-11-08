@@ -3,7 +3,7 @@ package liquidity
 import (
 	"context"
 
-	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/swap"

@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
@@ -181,6 +182,20 @@ var sweepHtlcTests = []struct {
 		expectRegister: false,
 		modifyReq: func(req *looprpc.SweepHtlcRequest) {
 			req.HtlcAddress = "notanaddress"
+		},
+	},
+	{
+		name:        "dest address of another network",
+		amount:      100_000,
+		satPerVByte: 10,
+		expectErrMsg: "invalid dest_address: address belongs to " +
+			"another network",
+		expectLogs:     []string{},
+		expectRegister: false,
+		modifyReq: func(req *looprpc.SweepHtlcRequest) {
+			// A mainnet P2WPKH address from BIP 173. The mock lnd
+			// runs on testnet3.
+			req.DestAddress = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
 		},
 	},
 	{
@@ -601,7 +616,7 @@ func TestSweepHtlcCooperative(t *testing.T) {
 				PkScript: htlc.PkScript,
 			})
 			outpoint := wire.OutPoint{Hash: fundingTx.TxHash()}
-			destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+			destAddr, err := btcaddr.NewAddressWitnessPubKeyHash(
 				bytes.Repeat([]byte{5}, 20), lnd.ChainParams,
 			)
 			require.NoError(t, err)
@@ -834,7 +849,7 @@ func TestSweepHtlcStateless(t *testing.T) {
 			})
 			outpoint := wire.OutPoint{Hash: fundingTx.TxHash()}
 
-			destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+			destAddr, err := btcaddr.NewAddressWitnessPubKeyHash(
 				bytes.Repeat([]byte{2}, 20), lnd.ChainParams,
 			)
 			require.NoError(t, err)
@@ -976,7 +991,7 @@ func TestSweepHtlcStatelessRejectsInvalidSignature(t *testing.T) {
 	})
 	outpoint := wire.OutPoint{Hash: fundingTx.TxHash()}
 
-	destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+	destAddr, err := btcaddr.NewAddressWitnessPubKeyHash(
 		bytes.Repeat([]byte{3}, 20), lnd.ChainParams,
 	)
 	require.NoError(t, err)
@@ -1079,7 +1094,7 @@ func TestSweepHtlcStatelessOnChainAddressMismatch(t *testing.T) {
 	htlc := statelessTestHtlc(
 		t, lnd, preimage, 500, serverPubKey, clientPubKey,
 	)
-	observedAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+	observedAddr, err := btcaddr.NewAddressWitnessPubKeyHash(
 		bytes.Repeat([]byte{4}, 20), lnd.ChainParams,
 	)
 	require.NoError(t, err)
@@ -1615,7 +1630,7 @@ func TestSweepHtlc(t *testing.T) {
 				ProtocolVersion:  loopdb.ProtocolVersionHtlcV2,
 			}
 
-			destAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+			destAddr, err := btcaddr.NewAddressWitnessPubKeyHash(
 				bytes.Repeat([]byte{1}, 20), lnd.ChainParams,
 			)
 			require.NoError(t, err)
@@ -1788,7 +1803,7 @@ func TestSweepHtlc(t *testing.T) {
 			// record does not define one.
 			expectedAddr := loopOut.Contract.DestAddr
 			if req.DestAddress != "" {
-				expectedAddr, err = btcutil.DecodeAddress(
+				expectedAddr, err = btcaddr.DecodeAddress(
 					req.DestAddress, lnd.ChainParams,
 				)
 				require.NoError(t, err)

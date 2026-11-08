@@ -11,7 +11,7 @@ runs:
     - name: Clone LiT repository
       uses: actions/checkout@v4
       with:
-        repository: lightninglabs/lightning-terminal
+        repository: ${{ env.LITD_ITEST_REPOSITORY || 'lightninglabs/lightning-terminal' }}
         ref: ${{ env.LITD_ITEST_BRANCH }}
         path: lightning-terminal
 

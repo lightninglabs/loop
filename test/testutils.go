@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	btcaddr "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -28,8 +29,8 @@ var (
 )
 
 // GetDestAddr deterministically generates a sweep address for testing.
-func GetDestAddr(t *testing.T, nr byte) btcutil.Address {
-	destAddr, err := btcutil.NewAddressScriptHash(
+func GetDestAddr(t *testing.T, nr byte) btcaddr.Address {
+	destAddr, err := btcaddr.NewAddressScriptHash(
 		[]byte{nr}, &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)

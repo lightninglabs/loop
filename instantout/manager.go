@@ -7,10 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
+	btcaddr "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/instantout/reservation"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -144,15 +146,26 @@ func (m *Manager) NewInstantOut(ctx context.Context,
 	}
 
 	var (
-		sweepAddr btcutil.Address
+		sweepAddr btcaddr.Address
 		err       error
 	)
 	if sweepAddress != "" {
-		sweepAddr, err = btcutil.DecodeAddress(
+		sweepAddr, err = btcaddr.DecodeAddress(
 			sweepAddress, m.cfg.Network,
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		err = utils.CheckAddrNetwork(sweepAddr, m.cfg.Network)
+		if err != nil {
+			return nil, err
+		}
+
+		// Reject the destination types that loop out rejects too.
+		if !utils.IsSupportedDestAddr(sweepAddr) {
+			return nil, fmt.Errorf("unsupported destination "+
+				"address type %T", sweepAddr)
 		}
 	}
 
