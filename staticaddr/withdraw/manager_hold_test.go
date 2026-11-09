@@ -137,7 +137,7 @@ func (a *heldWithdrawalAddress) GetStaticAddress(context.Context) (
 	return a.addr, nil
 }
 
-func (a *heldWithdrawalAddress) NewChangeAddress(context.Context) (
+func (a *heldWithdrawalAddress) NewChangeAddress(context.Context, [][]byte) (
 	*address.AddressParameters, error) {
 
 	return nil, errors.New("unexpected change address request")

@@ -65,8 +65,16 @@ func TestPrepareChangeAddressDefersActivation(t *testing.T) {
 	t.Parallel()
 
 	h, wallet := newChangeActivationTest(t)
-	params, err := h.manager.PrepareChangeAddress(t.Context())
+	root, err := h.manager.EnsureStaticAddressRoot(t.Context())
 	require.NoError(t, err)
+	require.NoError(t, h.manager.UpdateStaticAddressLabel(
+		t.Context(), root.PkScript, "treasury",
+	))
+	params, err := h.manager.PrepareChangeAddress(
+		t.Context(), [][]byte{root.PkScript},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "treasury", params.Label)
 	require.Zero(t, params.ID)
 	require.EqualValues(
 		t, swap.StaticAddressChangeKeyFamily, params.KeyLocator.Family,
@@ -117,7 +125,7 @@ func TestNewChangeAddressStillActivatesImmediately(t *testing.T) {
 	t.Parallel()
 
 	h, wallet := newChangeActivationTest(t)
-	params, err := h.manager.NewChangeAddress(t.Context())
+	params, err := h.manager.NewChangeAddress(t.Context(), nil)
 	require.NoError(t, err)
 	require.Positive(t, params.ID)
 	require.Same(t, params, h.manager.GetParameters(params.PkScript))
@@ -183,7 +191,7 @@ func TestActivateChangeAddressRejectsInvalidParams(t *testing.T) {
 
 			h, wallet := newChangeActivationTest(t)
 			params, err := h.manager.PrepareChangeAddress(
-				t.Context(),
+				t.Context(), nil,
 			)
 			require.NoError(t, err)
 			pkScript := bytes.Clone(params.PkScript)
@@ -215,7 +223,7 @@ func TestChangeActivationImportFailureRetainsAddress(t *testing.T) {
 
 			h, wallet := newChangeActivationTest(t)
 			params, err := h.manager.PrepareChangeAddress(
-				t.Context(),
+				t.Context(), nil,
 			)
 			require.NoError(t, err)
 			wallet.importErr = errors.New("wallet import failed")
@@ -267,11 +275,11 @@ func TestPreparedChangeAddressesAllowInterleavedIssuance(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	first, err := h.manager.PrepareChangeAddress(ctx)
+	first, err := h.manager.PrepareChangeAddress(ctx, nil)
 	require.NoError(t, err)
-	receive, err := h.manager.NewReceiveAddress(ctx)
+	receive, err := h.manager.NewReceiveAddress(ctx, "")
 	require.NoError(t, err)
-	second, err := h.manager.PrepareChangeAddress(ctx)
+	second, err := h.manager.PrepareChangeAddress(ctx, nil)
 	require.NoError(t, err)
 	require.Greater(t, second.KeyLocator.Index, first.KeyLocator.Index)
 	require.NotEqual(t, first.PkScript, second.PkScript)

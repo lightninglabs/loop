@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "new",
+      "--label",
+      "treasury",
+      "--network=regtest"
+    ],
+    "env": {},
+    "version": "0.33.3-beta commit=v0.33.3-beta-64-g61e66756cf18d59da00a8da4209bd7534865058a commit_hash=61e66756cf18d59da00a8da4209bd7534865058a",
+    "duration": 5017708500,
+    "clock_start_unix": 1784236590
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "stdin",
+      "data": {
+        "text": "y\n"
+      }
+    },
+    {
+      "time_ms": 0,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "\n",
+          "WARNING: Be aware that loosing your l402.token file in .loop under your home directory will take your ability to spend funds sent to the static address via loop-ins or withdrawals. You will have to wait until the deposit expires and your loop client sweeps the funds back to your lnd wallet. The deposit expiry could be months in the future.\n",
+          "\n",
+          "CONTINUE WITH NEW ADDRESS? (y/n): "
+        ]
+      }
+    },
+    {
+      "time_ms": 0,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/NewStaticAddress",
+        "event": "request",
+        "message_type": "looprpc.NewStaticAddressRequest",
+        "payload": {
+          "client_key": "",
+          "label": "treasury"
+        }
+      }
+    },
+    {
+      "time_ms": 5017,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/NewStaticAddress",
+        "event": "response",
+        "message_type": "looprpc.NewStaticAddressResponse",
+        "payload": {
+          "address": "bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6",
+          "expiry": 14400,
+          "label": "treasury"
+        }
+      }
+    },
+    {
+      "time_ms": 5017,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"address\": \"bcrt1prm4cgnjnmmd5v50g9x9tg844unk0n3tn3dxq9y24y2yfhezm4l5qecmcr6\",\n",
+          "    \"expiry\": 14400,\n",
+          "    \"label\": \"treasury\"\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 5017,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}
