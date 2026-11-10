@@ -206,6 +206,18 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		}
 	}
 
+	// Signing info messages are optional on the wire, but all three are
+	// required before we can negotiate the HTLC transactions.
+	if loopInResp == nil || loopInResp.StandardHtlcInfo == nil ||
+		loopInResp.HighFeeHtlcInfo == nil ||
+		loopInResp.ExtremeFeeHtlcInfo == nil {
+
+		pushEmptySigs()
+
+		return returnError(errors.New("server response is missing " +
+			"htlc signing info"))
+	}
+
 	serverPubkey, err := btcec.ParsePubKey(loopInResp.HtlcServerPubKey)
 	if err != nil {
 		pushEmptySigs()

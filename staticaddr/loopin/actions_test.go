@@ -3638,6 +3638,7 @@ type initHtlcTestServer struct {
 
 	loopInResp *swapserverrpc.ServerStaticAddressLoopInResponse
 	loopInErr  error
+	pushed     []*swapserverrpc.PushStaticAddressHtlcSigsRequest
 }
 
 // ServerStaticAddressLoopIn returns the canned response configured by the test.
@@ -3648,11 +3649,12 @@ func (s *initHtlcTestServer) ServerStaticAddressLoopIn(context.Context,
 	return s.loopInResp, s.loopInErr
 }
 
-// PushStaticAddressHtlcSigs accepts the abandonment signal used by error-path
-// tests without adding additional assertions.
-func (s *initHtlcTestServer) PushStaticAddressHtlcSigs(context.Context,
-	*swapserverrpc.PushStaticAddressHtlcSigsRequest, ...grpc.CallOption,
+// PushStaticAddressHtlcSigs records the abandonment signal in error-path tests.
+func (s *initHtlcTestServer) PushStaticAddressHtlcSigs(_ context.Context,
+	req *swapserverrpc.PushStaticAddressHtlcSigsRequest, _ ...grpc.CallOption,
 ) (*swapserverrpc.PushStaticAddressHtlcSigsResponse, error) {
+
+	s.pushed = append(s.pushed, req)
 
 	return &swapserverrpc.PushStaticAddressHtlcSigsResponse{}, nil
 }
@@ -3898,6 +3900,94 @@ func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
 			require.Equal(t, lnwire.NewMSatFromSatoshis(
 				depositAmount-tc.fee,
 			), *invoice.MilliSat)
+		})
+	}
+}
+
+// TestInitHtlcActionRejectsMissingSigningInfo verifies that incomplete responses
+// abort the swap, cancel its invoice and release deposits instead of panicking.
+func TestInitHtlcActionRejectsMissingSigningInfo(t *testing.T) {
+	t.Parallel()
+
+	for _, missing := range []string{
+		"standard", "high fee", "extreme fee", "all", "response",
+	} {
+		t.Run(missing, func(t *testing.T) {
+			t.Parallel()
+
+			mockLnd := test.NewMockLnd()
+			_, serverKey := test.CreateKey(21)
+			response := testStaticAddressLoopInResponse(
+				serverKey.SerializeCompressed(),
+			)
+			switch missing {
+			case "standard":
+				response.StandardHtlcInfo = nil
+			case "high fee":
+				response.HighFeeHtlcInfo = nil
+			case "extreme fee":
+				response.ExtremeFeeHtlcInfo = nil
+			case "all":
+				response.StandardHtlcInfo = nil
+				response.HighFeeHtlcInfo = nil
+				response.ExtremeFeeHtlcInfo = nil
+			case "response":
+				response = nil
+			}
+			server := &initHtlcTestServer{loopInResp: response}
+			dep := &deposit.Deposit{Value: 500_000}
+			manager := newRecordingDepositManager(dep)
+			loopIn := &StaticAddressLoopIn{
+				Deposits: []*deposit.Deposit{dep},
+				DepositOutpoints: []string{
+					dep.OutPoint.String(),
+				},
+				QuotedSwapFee:    1_000,
+				InitiationHeight: uint32(mockLnd.Height),
+			}
+			f := &FSM{
+				StateMachine: &fsm.StateMachine{},
+				loopIn:       loopIn,
+				cfg: &Config{
+					Server:         server,
+					DepositManager: manager,
+					LndClient:      mockLnd.Client,
+					WalletKit:      mockLnd.WalletKit,
+					ChainParams:    mockLnd.ChainParams,
+				},
+			}
+			f.cfg.InvoicesClient = mockLnd.LndServices.Invoices
+			f.cfg.ValidateLoopInContract = testValidateLoopInContract
+
+			var event fsm.EventType
+			require.NotPanics(t, func() {
+				event = f.InitHtlcAction(t.Context(), nil)
+			})
+			require.Equal(t, fsm.OnError, event)
+			require.EqualError(t, f.LastActionError,
+				"server response is missing htlc signing info")
+
+			// Only an empty abandonment request is sent to the server.
+			require.Len(t, server.pushed, 1)
+			require.Equal(t,
+				&swapserverrpc.PushStaticAddressHtlcSigsRequest{
+					SwapHash: loopIn.SwapHash[:],
+				}, server.pushed[0])
+
+			// Invoice cancellation happens before the action returns.
+			require.NotEmpty(t, loopIn.SwapInvoice)
+			select {
+			case hash := <-mockLnd.FailInvoiceChannel:
+				require.Equal(t, loopIn.SwapHash, hash)
+			default:
+				t.Fatal("swap invoice was not canceled")
+			}
+
+			states := f.LoopInStatesV0()
+			require.Equal(t, UnlockDeposits,
+				states[InitHtlcTx].Transitions[event])
+			states[UnlockDeposits].Action(t.Context(), nil)
+			require.Equal(t, deposit.Deposited, dep.GetState())
 		})
 	}
 }

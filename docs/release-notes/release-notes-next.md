@@ -6,6 +6,9 @@
 
 #### Bug Fixes
 
+* Reject incomplete static-address loop-in signing responses without crashing
+  the daemon.
+
 * Reject invalid static-address loop-in fee quotes before creating invoices.
 
 * The `postgres.maxconnections` option now limits the number of open
