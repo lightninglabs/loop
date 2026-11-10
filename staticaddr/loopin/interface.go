@@ -114,13 +114,21 @@ type QuoteGetter interface {
 		numDeposits uint32, fast bool) (*loop.LoopInQuote, error)
 }
 
-// TxOutChecker checks whether outpoints are still available in the chain
-// backend's UTXO view.
+// TxOutChecker checks outpoints against lnd's wallet transactions. This is
+// lnd's wallet view, not the chain's UTXO set: lnd can miss or forget
+// transactions that are valid on chain.
 type TxOutChecker interface {
 	// GetTxOuts returns entries for the requested outpoints that are
 	// available and unspent. Missing entries are unavailable or spent.
 	GetTxOuts(ctx context.Context, outpoints []wire.OutPoint) (
 		map[wire.OutPoint]*wire.TxOut, error)
+
+	// SpentByTxPayingTo reports whether a wallet transaction spends one of
+	// the outpoints and has an output with the given pkScript. Only
+	// unconfirmed transactions and transactions confirmed at or above
+	// startHeight are considered.
+	SpentByTxPayingTo(ctx context.Context, outpoints []wire.OutPoint,
+		pkScript []byte, startHeight int32) (bool, error)
 }
 
 type NotificationManager interface {

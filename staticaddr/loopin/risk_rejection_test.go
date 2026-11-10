@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
@@ -48,11 +49,21 @@ func newRiskRejectionTest(t *testing.T, ctx context.Context,
 		invoicesClient(mockLnd),
 	)
 	f.loopIn.HtlcCltvExpiry = mockLnd.Height
+	f.loopIn.InitiationHeight = riskRejectionInitiationHeight
 	f.loopIn.Deposits[0].SetState(deposit.LoopingIn)
 	depositMgr.transitionChan = make(chan depositTransition, 4)
 
-	// The deposit is unspent until a test spends it.
+	// Use a non-zero outpoint, so the spender lookup checks can tell it
+	// apart from a zeroed one. The deposit is unspent until a test spends
+	// it.
+	f.loopIn.Deposits[0].OutPoint = wire.OutPoint{
+		Hash:  chainhash.Hash{7},
+		Index: 2,
+	}
 	outpoint := f.loopIn.Deposits[0].OutPoint
+	depositMgr.active = map[wire.OutPoint]*deposit.Deposit{
+		outpoint: f.loopIn.Deposits[0],
+	}
 	f.loopIn.DepositOutpoints = []string{outpoint.String()}
 	txOutChecker := &recordingTxOutChecker{
 		txOuts: map[wire.OutPoint]*wire.TxOut{outpoint: {}},
@@ -79,10 +90,62 @@ func newRiskRejectionTest(t *testing.T, ctx context.Context,
 	}
 }
 
-// spendDeposits makes the deposits unavailable, as after the htlc tx spent
-// them.
+// spendDeposits makes lnd's wallet list the htlc tx spending the deposits, so
+// the deposits are no longer available either.
 func (r *riskRejectionTest) spendDeposits() {
 	r.txOuts.txOuts = nil
+	r.txOuts.htlcSpent = true
+}
+
+// replaceDeposits makes the deposits unavailable in lnd's wallet without an
+// htlc tx, as after their funding transaction was replaced or another
+// transaction spent them. Before the fix, an unavailable deposit was taken as
+// spent by the htlc tx.
+func (r *riskRejectionTest) replaceDeposits() {
+	r.txOuts.txOuts = nil
+	r.txOuts.htlcSpent = false
+}
+
+// riskRejectionInitiationHeight is the swap's initiation height in the risk
+// rejection tests. It is above htlcTxReorgLookback, so the spender lookup's
+// start height is bounded.
+const riskRejectionInitiationHeight = 1000
+
+// requireSpenderLookup checks that every spender lookup asked about the swap's
+// deposits and htlc pkScript, starting htlcTxReorgLookback blocks below the
+// swap's initiation height.
+func (r *riskRejectionTest) requireSpenderLookup() {
+	htlc, err := r.f.loopIn.getHtlc(r.f.cfg.ChainParams)
+	require.NoError(r.t, err)
+
+	require.NotEmpty(r.t, r.txOuts.spendOutpoints)
+	for i, outpoints := range r.txOuts.spendOutpoints {
+		require.Equal(
+			r.t, []wire.OutPoint{r.f.loopIn.Deposits[0].OutPoint},
+			outpoints,
+		)
+		require.Equal(r.t, htlc.PkScript, r.txOuts.spendPkScripts[i])
+		require.Equal(
+			r.t, int32(riskRejectionInitiationHeight-
+				htlcTxReorgLookback),
+			r.txOuts.spendStartHeights[i],
+		)
+	}
+}
+
+// requireFailed checks that the monitor failed the swap without locking the
+// deposits. The FSM then unlocks them in UnlockDeposits.
+func (r *riskRejectionTest) requireFailed(resultChan chan fsm.EventType) {
+	require.Equal(r.t, fsm.OnError, r.result(resultChan))
+	require.ErrorContains(
+		r.t, r.f.LastActionError,
+		"server rejected confirmation risk wait",
+	)
+	require.Empty(r.t, r.depositMgr.transitions)
+	require.Equal(
+		r.t, ConfirmationRiskDecisionRejected,
+		r.f.loopIn.ConfirmationRiskDecision,
+	)
 }
 
 // recoverRejection sets up the swap as loaded from the store after the
@@ -332,6 +395,7 @@ func TestRiskRejectionRecoveredBeforeLock(t *testing.T) {
 	r.confirmHtlc(reg)
 	r.requireLockedForTimeoutSweep()
 	r.requireTimeoutSweep(resultChan)
+	r.requireSpenderLookup()
 }
 
 // TestRiskRejectionRetryAfterFailedLock checks that a failed deposit lock
@@ -497,4 +561,75 @@ func TestRiskRejectionStopsPaymentDeadline(t *testing.T) {
 	r.confirmHtlc(reg)
 	r.requireLockedForTimeoutSweep()
 	r.requireTimeoutSweep(resultChan)
+}
+
+// TestRiskRejectionAfterDepositReplacement checks that a rejection after the
+// deposit's funding transaction was replaced fails the swap. The deposit is
+// gone, but no htlc tx spent it, so no htlc confirmation can come.
+func TestRiskRejectionAfterDepositReplacement(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	r := newRiskRejectionTest(t, ctx, defaultInvoices)
+	resultChan, _ := r.start(ctx)
+
+	r.replaceDeposits()
+	r.reject()
+	r.requireInvoiceCanceled()
+	r.requireFailed(resultChan)
+	r.requireSpenderLookup()
+}
+
+// TestRiskRejectionRecoveredAfterDepositReplacement checks a restart with a
+// stored rejection after the deposit's funding transaction was replaced. The
+// swap fails instead of waiting for an htlc confirmation that can't come.
+func TestRiskRejectionRecoveredAfterDepositReplacement(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	r := newRiskRejectionTest(t, ctx, defaultInvoices)
+	r.recoverRejection()
+	r.replaceDeposits()
+
+	resultChan, _ := r.start(ctx)
+	r.requireInvoiceCanceled()
+	r.requireFailed(resultChan)
+	r.requireSpenderLookup()
+}
+
+// TestRiskRejectionRecoveredReplacementAfterHtlcExpiry checks a restart after
+// the htlc expiry with a stored rejection and a replaced deposit. The stored
+// rejection fails the swap before the monitor handles any block, so the swap
+// doesn't wait for the htlc although it already expired.
+func TestRiskRejectionRecoveredReplacementAfterHtlcExpiry(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	r := newRiskRejectionTest(t, ctx, defaultInvoices)
+	r.recoverRejection()
+	r.replaceDeposits()
+	r.f.loopIn.HtlcCltvExpiry = r.mockLnd.Height - 10
+
+	resultChan, _ := r.start(ctx)
+	r.requireInvoiceCanceled()
+	r.requireFailed(resultChan)
+}
+
+// TestRiskRejectionSpenderCheckError checks that a failed lookup of the
+// deposits' spender retries the monitor instead of releasing the deposits.
+func TestRiskRejectionSpenderCheckError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	r := newRiskRejectionTest(t, ctx, defaultInvoices)
+	r.recoverRejection()
+	r.txOuts.err = errors.New("list transactions failed")
+
+	resultChan, _ := r.start(ctx)
+	r.requireInvoiceCanceled()
+
+	require.Equal(t, OnRecover, r.result(resultChan))
+	require.Empty(t, r.depositMgr.transitions)
+	require.NotContains(t, r.depositMgr.states, deposit.Deposited)
+	r.requireSpenderLookup()
 }

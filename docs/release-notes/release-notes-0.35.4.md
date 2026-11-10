@@ -34,8 +34,13 @@
   longer gives up the deposits when the server rejects the confirmation risk
   wait, also when the rejection is handled again after a restart. The client
   keeps the deposits locked and sweeps the HTLC timeout path once the HTLC
-  times out.
+  times out. Without an observed HTLC confirmation, the client only keeps the
+  deposits if lnd's wallet shows that the HTLC transaction spent them.
+  Otherwise, for example when a deposit's funding transaction was replaced
+  and lnd doesn't list an HTLC transaction, the rejection fails the swap and
+  releases the deposits, as in v0.35.3.
   [PR #1278](https://github.com/lightninglabs/loop/pull/1278)
+  [PR #1288](https://github.com/lightninglabs/loop/pull/1288)
 
 * Setting a P2PKH or P2SH address or a raw public key as the autoloop
   destination no longer crashes loopd. The address is now decoded for the

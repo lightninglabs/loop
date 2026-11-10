@@ -86,6 +86,116 @@ func TestLndTxOutChecker(t *testing.T) {
 	})
 }
 
+// TestLndTxOutCheckerSpentByTxPayingTo checks that only a wallet transaction
+// that spends one of the outpoints and pays to the pkScript counts.
+func TestLndTxOutCheckerSpentByTxPayingTo(t *testing.T) {
+	htlcPkScript := []byte{0x51, 0x20, 0x01}
+	changePkScript := []byte{0x51, 0x20, 0x02}
+	deposit := wire.OutPoint{Hash: [32]byte{1}, Index: 0}
+	secondDeposit := wire.OutPoint{Hash: [32]byte{3}, Index: 1}
+	otherOutpoint := wire.OutPoint{Hash: [32]byte{2}, Index: 0}
+
+	// The lookup must list transactions from the given start height and
+	// include unconfirmed ones.
+	const startHeight int32 = 500
+
+	spendingTx := func(prev wire.OutPoint, pkScript []byte) *wire.MsgTx {
+		tx := wire.NewMsgTx(2)
+		tx.AddTxIn(wire.NewTxIn(&prev, nil, nil))
+		tx.AddTxOut(wire.NewTxOut(1000, pkScript))
+
+		return tx
+	}
+
+	// htlcTxWithChange spends a non-deposit outpoint and the second
+	// deposit, and has a change output before the htlc output.
+	htlcTxWithChange := wire.NewMsgTx(2)
+	htlcTxWithChange.AddTxIn(wire.NewTxIn(&otherOutpoint, nil, nil))
+	htlcTxWithChange.AddTxIn(wire.NewTxIn(&secondDeposit, nil, nil))
+	htlcTxWithChange.AddTxOut(wire.NewTxOut(500, changePkScript))
+	htlcTxWithChange.AddTxOut(wire.NewTxOut(1000, htlcPkScript))
+
+	tests := []struct {
+		name  string
+		txs   []lndclient.Transaction
+		spent bool
+	}{{
+		name: "htlc tx spends the deposit",
+		txs: []lndclient.Transaction{{
+			Tx: spendingTx(deposit, htlcPkScript),
+		}},
+		spent: true,
+	}, {
+		name: "other tx spends the deposit",
+		txs: []lndclient.Transaction{{
+			Tx: spendingTx(deposit, []byte{0x00, 0x14}),
+		}},
+	}, {
+		name: "tx pays to the htlc without spending the deposit",
+		txs: []lndclient.Transaction{{
+			Tx: spendingTx(otherOutpoint, htlcPkScript),
+		}},
+	}, {
+		name: "htlc tx listed after unrelated transactions",
+		txs: []lndclient.Transaction{{
+			Tx: spendingTx(otherOutpoint, []byte{0x00, 0x14}),
+		}, {
+			Tx: spendingTx(deposit, []byte{0x00, 0x14}),
+		}, {
+			Tx: spendingTx(deposit, htlcPkScript),
+		}},
+		spent: true,
+	}, {
+		name: "later input spends a later deposit, htlc after change",
+		txs: []lndclient.Transaction{{
+			Tx: htlcTxWithChange,
+		}},
+		spent: true,
+	}, {
+		name: "no wallet transactions",
+	}, {
+		// lndclient fails the whole call if it can't parse a raw tx,
+		// so this only guards against a nil Tx from other clients.
+		name: "transaction without raw tx",
+		txs: []lndclient.Transaction{{
+			PreviousOutpoints: []*lnrpc.PreviousOutPoint{{
+				Outpoint: deposit.String(),
+			}},
+		}},
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &mockTxListLightningClient{txs: tc.txs}
+			checker := NewLndTxOutChecker(client)
+
+			spent, err := checker.SpentByTxPayingTo(
+				t.Context(),
+				[]wire.OutPoint{deposit, secondDeposit},
+				htlcPkScript, startHeight,
+			)
+			require.NoError(t, err)
+			require.Equal(t, tc.spent, spent)
+			require.Equal(t, []txListCall{{
+				startHeight: startHeight,
+				endHeight:   -1,
+			}}, client.calls)
+		})
+	}
+
+	t.Run("returns error", func(t *testing.T) {
+		expectedErr := errors.New("list transactions failed")
+		client := &mockTxListLightningClient{err: expectedErr}
+		checker := NewLndTxOutChecker(client)
+
+		_, err := checker.SpentByTxPayingTo(
+			t.Context(), []wire.OutPoint{deposit}, htlcPkScript,
+			startHeight,
+		)
+		require.ErrorIs(t, err, expectedErr)
+	})
+}
+
 type txListCall struct {
 	startHeight int32
 	endHeight   int32
@@ -109,4 +219,25 @@ func (m *mockTxListLightningClient) ListTransactions(_ context.Context,
 	})
 
 	return m.txs, m.err
+}
+
+// TestHtlcTxSearchStartHeight checks that the htlc tx lookup starts
+// htlcTxReorgLookback blocks below the initiation height, clamped to zero.
+func TestHtlcTxSearchStartHeight(t *testing.T) {
+	tests := []struct {
+		initiationHeight uint32
+		startHeight      int32
+	}{
+		{initiationHeight: 0, startHeight: 0},
+		{initiationHeight: htlcTxReorgLookback, startHeight: 0},
+		{initiationHeight: htlcTxReorgLookback + 1, startHeight: 1},
+		{initiationHeight: 900_000, startHeight: 900_000 - 144},
+	}
+
+	for _, tc := range tests {
+		require.Equal(
+			t, tc.startHeight,
+			htlcTxSearchStartHeight(tc.initiationHeight),
+		)
+	}
 }
