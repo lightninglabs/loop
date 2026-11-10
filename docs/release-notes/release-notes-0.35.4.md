@@ -1,6 +1,6 @@
 # Loop Client Release Notes
 
-- **Release date:** Unreleased
+- **Release date:** 2026-11-11
 - **Release page:**
   [v0.35.4-beta](https://github.com/lightninglabs/loop/releases/tag/v0.35.4-beta)
 - **Previous release:** [v0.35.3-beta](release-notes-0.35.3.md)
@@ -26,8 +26,7 @@
   connections to the Postgres server. It was ignored before, so concurrent
   requests could open more connections than the server accepts. If the option
   isn't set, loopd now opens at most 25 connections. Migration connections
-  are returned to the pool, and waiting for the migration lock respects the
-  configured timeout.
+  are returned to the pool.
   [PR #1262](https://github.com/lightninglabs/loop/pull/1262)
 
 * A static address loop-in whose HTLC had already spent its deposits no
