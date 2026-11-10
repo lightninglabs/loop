@@ -23,6 +23,11 @@ import (
 )
 
 const (
+	// minStaticAddressCSVExpiry allows a freshly confirmed deposit to meet
+	// the loop-in selection margin: 1000 HTLC blocks plus 50 safety blocks.
+	// Keep this in sync with the loopin package. It adds no waiting window.
+	minStaticAddressCSVExpiry = uint32(1050)
+
 	// maxStaticAddressCSVExpiry is the maximum CSV delay that we accept
 	// from the server for a static address timeout path: 200 days at 144
 	// blocks per day.
@@ -259,6 +264,10 @@ func validateServerAddressParams(
 	switch {
 	case expiry == 0:
 		return fmt.Errorf("static address CSV expiry must be non-zero")
+
+	case expiry < minStaticAddressCSVExpiry:
+		return fmt.Errorf("static address CSV expiry %v is below "+
+			"minimum %v", expiry, minStaticAddressCSVExpiry)
 
 	case expiry&^wire.SequenceLockTimeMask != 0:
 		return fmt.Errorf("static address expiry does not fit into "+

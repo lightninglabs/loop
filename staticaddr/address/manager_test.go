@@ -3,6 +3,7 @@ package address
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -10,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/staticaddr/loopin"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -26,7 +28,7 @@ var (
 
 	defaultServerPubkey, _ = btcec.ParsePubKey(defaultServerPubkeyBytes)
 
-	defaultExpiry = uint32(100)
+	defaultExpiry = uint32(2000)
 )
 
 type mockStaticAddressClient struct {
@@ -176,6 +178,18 @@ func TestNewAddressValidatesServerResponse(t *testing.T) {
 			expected: "static address CSV expiry must be non-zero",
 		},
 		{
+			name:     "one block expiry",
+			resp:     newServerNewAddressResponse(1),
+			expected: "below minimum",
+		},
+		{
+			name: "below minimum expiry",
+			resp: newServerNewAddressResponse(
+				minStaticAddressCSVExpiry - 1,
+			),
+			expected: "below minimum",
+		},
+		{
 			name: "seconds flag",
 			resp: newServerNewAddressResponse(
 				wire.SequenceLockTimeIsSeconds | 1,
@@ -213,19 +227,44 @@ func TestNewAddressValidatesServerResponse(t *testing.T) {
 
 			_, _, err := testContext.manager.NewAddress(t.Context())
 			require.ErrorContains(t, err, test.expected)
+
+			addresses, err := testContext.manager.cfg.Store.
+				GetAllStaticAddresses(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, addresses)
 		})
 	}
 }
 
-// TestNewAddressAcceptsMaxCSVExpiry tests the upper valid CSV boundary.
-func TestNewAddressAcceptsMaxCSVExpiry(t *testing.T) {
-	testContext := NewAddressManagerTestContextWithResponse(
-		t, newServerNewAddressResponse(maxStaticAddressCSVExpiry),
-	)
+// TestNewAddressAcceptsCSVBoundaries tests the valid CSV boundaries.
+func TestNewAddressAcceptsCSVBoundaries(t *testing.T) {
+	for _, csv := range []uint32{
+		minStaticAddressCSVExpiry, minStaticAddressCSVExpiry + 1,
+		maxStaticAddressCSVExpiry,
+	} {
+		t.Run(fmt.Sprint(csv), func(t *testing.T) {
+			testContext := NewAddressManagerTestContextWithResponse(
+				t, newServerNewAddressResponse(csv),
+			)
 
-	_, expiry, err := testContext.manager.NewAddress(t.Context())
-	require.NoError(t, err)
-	require.EqualValues(t, maxStaticAddressCSVExpiry, expiry)
+			_, expiry, err := testContext.manager.NewAddress(t.Context())
+			require.NoError(t, err)
+			require.EqualValues(t, csv, expiry)
+		})
+	}
+}
+
+// TestMinimumCSVMatchesLoopInSelection keeps address issuance aligned with
+// loop-in selection without introducing a production dependency on loopin.
+func TestMinimumCSVMatchesLoopInSelection(t *testing.T) {
+	require.EqualValues(t,
+		loopin.DefaultLoopInOnChainCltvDelta+loopin.DepositHtlcDelta,
+		minStaticAddressCSVExpiry)
+
+	// The minimum permits selection immediately upon confirmation, but
+	// does not reserve an additional block for waiting to start the swap.
+	require.True(t, loopin.IsSwappable(500, 500, minStaticAddressCSVExpiry))
+	require.False(t, loopin.IsSwappable(500, 501, minStaticAddressCSVExpiry))
 }
 
 // GenerateExpectedTaprootAddress generates the expected taproot address that
