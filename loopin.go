@@ -196,6 +196,17 @@ func newLoopInSwap(globalCtx context.Context, cfg *swapConfig,
 		return nil, ErrSwapFeeTooHigh
 	}
 
+	// Validate the server quote before subtraction and conversion to msat.
+	// A negative fee can wrap the invoice amount into a smaller payable
+	// invoice, while a fee at or above the swap amount leaves no positive
+	// amount for the server to pay.
+	if swapFee < 0 || swapFee >= request.Amount {
+		log.Warnf("Invalid swap fee %v for swap amount %v", swapFee,
+			request.Amount)
+
+		return nil, ErrInvalidSwapFee
+	}
+
 	// Calculate the swap invoice amount. The prepay is added which
 	// effectively forces the server to pay us back our prepayment on a
 	// successful swap.

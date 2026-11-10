@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -72,6 +73,25 @@ func (c *cancelErrorInvoicesMock) CancelInvoice(context.Context,
 	lntypes.Hash) error {
 
 	return c.err
+}
+
+// loopInQuoteServerMock is a swap server mock that quotes a configurable
+// loop-in swap fee.
+type loopInQuoteServerMock struct {
+	*serverMock
+
+	swapFee btcutil.Amount
+}
+
+// GetLoopInQuote returns a loop-in quote with the configured swap fee.
+func (s *loopInQuoteServerMock) GetLoopInQuote(context.Context,
+	btcutil.Amount, route.Vertex, *route.Vertex, [][]zpay32.HopHint, string,
+	uint32, bool) (*LoopInQuote, error) {
+
+	return &LoopInQuote{
+		SwapFee:   s.swapFee,
+		CltvDelta: testChargeOnChainCltvDelta,
+	}, nil
 }
 
 // TestIsInvoiceAlreadySettledError verifies the local and gRPC error forms
@@ -528,6 +548,136 @@ func TestLoopInSwapInvoiceRouteHintsMatchProbe(t *testing.T) {
 
 	test.RequireRouteHintsEqual(t, req.RouteHints, probeRouteHints)
 	test.RequireRouteHintsEqual(t, probeRouteHints, swapRouteHints)
+}
+
+// TestLoopInValidatesSwapFee verifies that invalid quotes cannot create
+// invoices and that valid fees retain the exact invoice amount.
+func TestLoopInValidatesSwapFee(t *testing.T) {
+	t.Parallel()
+
+	const amount = btcutil.Amount(50_000)
+	tests := []struct {
+		name        string
+		fee         btcutil.Amount
+		maxFee      btcutil.Amount
+		expectedErr error
+	}{
+		{
+			name:        "negative",
+			fee:         -1,
+			maxFee:      1_000,
+			expectedErr: ErrInvalidSwapFee,
+		},
+		{
+			name:        "minimum integer",
+			fee:         math.MinInt64,
+			maxFee:      1_000,
+			expectedErr: ErrInvalidSwapFee,
+		},
+		{
+			// The invoice amount in msat wraps to 384 msat.
+			name:        "wrapped small invoice",
+			fee:         amount - 18_446_744_073_709_552,
+			maxFee:      1_000,
+			expectedErr: ErrInvalidSwapFee,
+		},
+		{
+			// The invoice amount in msat wraps to zero, which lnd
+			// turns into an invoice that accepts any amount.
+			name:        "wrapped zero value invoice",
+			fee:         amount - (1 << 61),
+			maxFee:      1_000,
+			expectedErr: ErrInvalidSwapFee,
+		},
+		{
+			name:        "equal to amount",
+			fee:         amount,
+			maxFee:      amount,
+			expectedErr: ErrInvalidSwapFee,
+		},
+		{
+			name:        "above amount",
+			fee:         amount + 1,
+			maxFee:      amount + 1,
+			expectedErr: ErrInvalidSwapFee,
+		},
+		{
+			name:        "maximum integer",
+			fee:         math.MaxInt64,
+			maxFee:      math.MaxInt64,
+			expectedErr: ErrInvalidSwapFee,
+		},
+		{
+			name:        "above maximum",
+			fee:         1_001,
+			maxFee:      1_000,
+			expectedErr: ErrSwapFeeTooHigh,
+		},
+		{
+			name:   "zero fee",
+			fee:    0,
+			maxFee: 1_000,
+		},
+		{
+			name:   "positive fee",
+			fee:    1_000,
+			maxFee: 1_000,
+		},
+		{
+			name:   "one sat remaining",
+			fee:    amount - 1,
+			maxFee: amount - 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			testCtx := newLoopInTestContext(t)
+			lnd := testCtx.lnd
+			server := &loopInQuoteServerMock{
+				serverMock: testCtx.server,
+				swapFee:    tc.fee,
+			}
+			cfg := newSwapConfig(
+				&lnd.LndServices, testCtx.store, server, nil,
+				clock.NewTestClock(time.Unix(123, 0)),
+			)
+
+			req := testLoopInRequest
+			req.Amount = amount
+			req.MaxSwapFee = tc.maxFee
+
+			_, err := newLoopInSwap(t.Context(), cfg, 600, &req)
+			if tc.expectedErr != nil {
+				require.ErrorIs(t, err, tc.expectedErr)
+
+				// The quote is rejected before an invoice is
+				// created or the swap is sent to the server.
+				require.Empty(t, lnd.Invoices)
+				require.Empty(
+					t, lnd.SingleInvoiceSubcribeChannel,
+				)
+				require.Empty(t, server.swapInvoice)
+				require.Empty(t, server.probeInvoice)
+
+				return
+			}
+			require.NoError(t, err)
+
+			// Both invoices carry the swap amount minus the fee.
+			for _, invoice := range []string{
+				server.swapInvoice, server.probeInvoice,
+			} {
+				_, _, _, invoiceAmt, err := swap.DecodeInvoice(
+					lnd.ChainParams, invoice,
+				)
+				require.NoError(t, err)
+				require.Equal(t, amount-tc.fee, invoiceAmt)
+			}
+		})
+	}
 }
 
 func testLoopInSuccess(t *testing.T) {
