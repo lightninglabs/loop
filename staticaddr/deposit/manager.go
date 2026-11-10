@@ -31,6 +31,11 @@ const (
 	// the deposit state machine.
 	DefaultTransitionTimeout = 5 * time.Second
 
+	// minNotifyRetryInterval is the first delay before the manager retries
+	// a block notification that it deferred because lnd's tip was changing
+	// or reconciliation failed. The delay doubles up to PollInterval.
+	minNotifyRetryInterval = time.Second
+
 	// PollInterval is the interval in which we poll for new deposits to our
 	// static address.
 	PollInterval = 10 * time.Second
@@ -155,24 +160,41 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
-	// Reconcile immediately on startup so deposits are available
-	// before the first ticker fires.
-	confirmationTipHeight, err := m.reconcileDeposits(ctx)
-	if err != nil {
-		log.Errorf("unable to reconcile deposits: %v", err)
-	} else if confirmationTipHeight != 0 {
-		// The startup height was consumed before recovered deposit FSMs
-		// existed. Replay it so already-expired recovered deposits can act
-		// immediately, but only after their wallet view and confirmation
-		// heights are fresh.
-		err = m.notifyActiveDeposits(
-			ctx, expiryNotificationHeight(
-				startupHeight, confirmationTipHeight,
-			),
-		)
+	// A block whose notification was deferred is retried on a timer, since
+	// the poll ticker only reconciles and no further block may arrive.
+	var (
+		retryHeight   uint32
+		retryDelay    time.Duration
+		retryNotifyCh <-chan time.Time
+	)
+	handleBlock := func(height uint32) error {
+		notified, err := m.reconcileAndNotify(ctx, height)
 		if err != nil {
 			return err
 		}
+
+		if notified {
+			retryNotifyCh = nil
+			retryDelay = 0
+
+			return nil
+		}
+
+		retryDelay = nextNotifyRetryDelay(retryDelay)
+		retryHeight = height
+		retryNotifyCh = time.After(retryDelay)
+
+		return nil
+	}
+
+	// Reconcile immediately on startup so deposits are available before
+	// the first ticker fires. The startup height was consumed before
+	// recovered deposit FSMs existed. Replay it so already-expired
+	// recovered deposits can act immediately, but only after their wallet
+	// view and confirmation heights are fresh.
+	err = handleBlock(startupHeight)
+	if err != nil {
+		return err
 	}
 
 	// Start the deposit notifier.
@@ -191,21 +213,16 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		case height := <-newBlockChan:
 			m.currentHeight.Store(uint32(height))
 
-			confirmationTipHeight, err :=
-				m.reconcileDeposits(ctx)
+			// A new block supersedes a pending retry.
+			retryDelay = 0
+			err = handleBlock(uint32(height))
 			if err != nil {
-				log.Errorf("unable to reconcile deposits: %v", err)
-				continue
-			}
-			if confirmationTipHeight == 0 {
-				continue
+				return err
 			}
 
-			err = m.notifyActiveDeposits(
-				ctx, expiryNotificationHeight(
-					uint32(height), confirmationTipHeight,
-				),
-			)
+		case <-retryNotifyCh:
+			retryNotifyCh = nil
+			err = handleBlock(retryHeight)
 			if err != nil {
 				return err
 			}
@@ -222,6 +239,42 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// reconcileAndNotify reconciles the deposits and informs the active deposit
+// FSMs about the block height. It returns false if the notification has to be
+// retried, because reconciliation failed or lnd's tip was changing.
+func (m *Manager) reconcileAndNotify(ctx context.Context,
+	height uint32) (bool, error) {
+
+	confirmationTipHeight, err := m.reconcileDeposits(ctx)
+	if err != nil {
+		log.Errorf("unable to reconcile deposits: %v", err)
+
+		return false, nil
+	}
+	if confirmationTipHeight == 0 {
+		return false, nil
+	}
+
+	err = m.notifyActiveDeposits(
+		ctx, expiryNotificationHeight(height, confirmationTipHeight),
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// nextNotifyRetryDelay returns the delay before the next retry of a deferred
+// block notification, doubling the previous delay up to PollInterval.
+func nextNotifyRetryDelay(prev time.Duration) time.Duration {
+	if prev == 0 {
+		return minNotifyRetryInterval
+	}
+
+	return min(2*prev, PollInterval)
 }
 
 // notifyActiveDeposits informs active deposit FSMs about a new block height.
