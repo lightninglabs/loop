@@ -39,7 +39,7 @@ const (
 	// change these values.
 	appMajor uint = 0
 	appMinor uint = 35
-	appPatch uint = 3
+	appPatch uint = 4
 
 	// appPreRelease MUST only contain characters from semanticAlphabet per
 	// the semantic versioning spec.
