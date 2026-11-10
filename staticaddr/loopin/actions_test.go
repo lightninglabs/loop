@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
@@ -20,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -3788,4 +3791,113 @@ func TestMonitorInvoiceAndHtlcTxSweepsTimeoutAfterLegacyRefresh(t *testing.T) {
 
 	require.Same(t, liveDeposit, f.loopIn.Deposits[0])
 	require.True(t, liveDeposit.IsInState(deposit.SweepHtlcTimeout))
+}
+
+// TestInitHtlcActionValidatesSwapFee verifies that invalid quotes cannot
+// create invoices and that valid fees retain the exact invoice amount.
+func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
+	t.Parallel()
+
+	const depositAmount = btcutil.Amount(10_000)
+	tests := []struct {
+		name           string
+		fee            btcutil.Amount
+		selectedAmount btcutil.Amount
+		valid          bool
+	}{
+		{name: "negative", fee: -1},
+		{name: "minimum integer", fee: math.MinInt64},
+		{name: "wrapped one sat invoice", fee: math.MinInt64 + 9_999},
+		{name: "equal to amount", fee: depositAmount},
+		{name: "above amount", fee: depositAmount + 1},
+		{name: "maximum integer", fee: math.MaxInt64},
+		{
+			name:           "equal to partial swap amount",
+			fee:            5_000,
+			selectedAmount: 5_000,
+		},
+		{name: "zero fee", fee: 0, valid: true},
+		{name: "positive fee", fee: 1_000, valid: true},
+		{
+			name:  "one sat remaining",
+			fee:   depositAmount - 1,
+			valid: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mockLnd := test.NewMockLnd()
+			_, serverKey := test.CreateKey(21)
+			server := &mockStaticAddressServer{
+				response: testStaticAddressLoopInResponse(
+					serverKey.SerializeCompressed(),
+				),
+			}
+			dep := &deposit.Deposit{Value: depositAmount}
+			manager := newRecordingDepositManager(dep)
+			loopIn := &StaticAddressLoopIn{
+				Deposits: []*deposit.Deposit{dep},
+				DepositOutpoints: []string{
+					dep.OutPoint.String(),
+				},
+				SelectedAmount:   tc.selectedAmount,
+				QuotedSwapFee:    tc.fee,
+				InitiationHeight: uint32(mockLnd.Height),
+				InitiationTime:   time.Now(),
+			}
+			f := &FSM{
+				StateMachine: &fsm.StateMachine{},
+				cfg: &Config{
+					Server:         server,
+					DepositManager: manager,
+					LndClient:      mockLnd.Client,
+					WalletKit:      mockLnd.WalletKit,
+					ChainParams:    mockLnd.ChainParams,
+					Store:          &mockStore{},
+
+					MaxStaticAddrHtlcFeePercentage:       1,
+					MaxStaticAddrHtlcBackupFeePercentage: 1,
+				},
+				loopIn: loopIn,
+			}
+
+			f.cfg.ValidateLoopInContract = testValidateLoopInContract
+
+			event := f.InitHtlcAction(t.Context(), nil)
+			if !tc.valid {
+				require.Equal(t, fsm.OnError, event)
+				require.ErrorIs(
+					t, f.LastActionError, ErrInvalidSwapFee,
+				)
+				require.Empty(t, mockLnd.Invoices)
+				require.Empty(t, loopIn.SwapInvoice)
+				require.Nil(t, server.request)
+
+				// The init error path releases the deposits.
+				states := f.LoopInStatesV0()
+				require.Equal(t, UnlockDeposits,
+					states[InitHtlcTx].Transitions[event])
+				states[UnlockDeposits].Action(t.Context(), nil)
+				require.Equal(
+					t, deposit.Deposited, dep.GetState(),
+				)
+				return
+			}
+
+			require.Equal(t, OnHtlcInitiated, event)
+			require.NoError(t, f.LastActionError)
+			require.NotNil(t, server.request)
+			invoice, err := zpay32.Decode(
+				server.request.SwapInvoice, mockLnd.ChainParams,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, invoice.MilliSat)
+			require.Equal(t, lnwire.NewMSatFromSatoshis(
+				depositAmount-tc.fee,
+			), *invoice.MilliSat)
+		})
+	}
 }

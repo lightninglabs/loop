@@ -44,6 +44,10 @@ const (
 )
 
 var (
+	// ErrInvalidSwapFee is returned when the quoted fee is negative or
+	// leaves no positive swap invoice amount.
+	ErrInvalidSwapFee = errors.New("invalid swap fee")
+
 	// ErrFeeTooHigh is returned if the server sets a fee rate for the htlc
 	// tx that is too high. We prevent here against a low htlc timeout sweep
 	// amount.
@@ -106,6 +110,11 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		swapAmount = f.loopIn.SelectedAmount
 		changeAmount = totalDepositAmount - swapAmount
 		hasChange = changeAmount > 0 && changeAmount < totalDepositAmount
+	}
+	// Validate the server quote before subtraction and conversion to msat
+	// so an invalid fee cannot wrap into a smaller payable invoice.
+	if f.loopIn.QuotedSwapFee < 0 || f.loopIn.QuotedSwapFee >= swapAmount {
+		return returnError(ErrInvalidSwapFee)
 	}
 	swapInvoiceAmt := swapAmount - f.loopIn.QuotedSwapFee
 
