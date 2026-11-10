@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/lndclient"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -281,6 +283,12 @@ func (p Parameters) validate(minConfs int32, openChans []lndclient.ChannelInfo,
 		return ErrAmbiguousDestAddr
 	}
 
+	// Autoloop must not sweep to a destination type that loop out
+	// rejects.
+	if p.DestAddr != nil && !utils.IsSupportedDestAddr(p.DestAddr) {
+		return fmt.Errorf("%w: %T", ErrUnsupportedDestAddr, p.DestAddr)
+	}
+
 	// If an account is specified the respective address type must be
 	// specified as well, or both must be unset.
 	if len(p.Account) == 0 !=
@@ -462,9 +470,10 @@ func loopInSourceToRPC(source LoopInSource) (clientrpc.LoopInSource, error) {
 }
 
 // RpcToParameters takes a `LiquidityParameters` and creates a `Parameters`
-// from it.
-func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
-	error) {
+// from it. It decodes the autoloop destination address for the network with
+// the given chain parameters.
+func RpcToParameters(req *clientrpc.LiquidityParameters,
+	chainParams *chaincfg.Params) (*Parameters, error) {
 
 	feeLimit, err := rpcToFee(req)
 	if err != nil {
@@ -477,8 +486,13 @@ func RpcToParameters(req *clientrpc.LiquidityParameters) (*Parameters,
 			destaddr = nil
 		} else {
 			destaddr, err = btcutil.DecodeAddress(
-				req.AutoloopDestAddress, nil,
+				req.AutoloopDestAddress, chainParams,
 			)
+			if err != nil {
+				return nil, err
+			}
+
+			err = utils.CheckAddrNetwork(destaddr, chainParams)
 			if err != nil {
 				return nil, err
 			}

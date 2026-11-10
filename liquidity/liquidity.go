@@ -50,6 +50,7 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	clientrpc "github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightninglabs/taproot-assets/rfqmsg"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/funding"
@@ -163,6 +164,11 @@ var (
 	// ErrAmbiguousDestAddr is returned when a destination address and
 	// a extended public key account is set.
 	ErrAmbiguousDestAddr = errors.New("ambiguous destination address")
+
+	// ErrUnsupportedDestAddr is returned when the destination address has
+	// a type that loop out does not pay to.
+	ErrUnsupportedDestAddr = errors.New("unsupported destination address " +
+		"type")
 
 	// ErrAccountAndAddrType indicates if an account is set but the
 	// account address type is not or vice versa.
@@ -304,17 +310,10 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.cfg.AutoloopTicker.Resume()
 	defer m.cfg.AutoloopTicker.Stop()
 
-	// Before we start the main loop, load the params from db.
-	req, err := m.loadParams(ctx)
+	// Before we start the main loop, restore the params from db.
+	err := m.restoreParams(ctx)
 	if err != nil {
 		return err
-	}
-
-	// Set the params if there's one.
-	if req != nil {
-		if err := m.SetParameters(ctx, req); err != nil {
-			return err
-		}
 	}
 
 	for {
@@ -377,7 +376,7 @@ func (m *Manager) GetParameters() Parameters {
 func (m *Manager) SetParameters(ctx context.Context,
 	req *clientrpc.LiquidityParameters) error {
 
-	params, err := RpcToParameters(req)
+	params, err := RpcToParameters(req, m.cfg.Lnd.ChainParams)
 	if err != nil {
 		return err
 	}
@@ -451,6 +450,35 @@ func (m *Manager) saveParams(ctx context.Context, req proto.Message) error {
 	}
 
 	return nil
+}
+
+// restoreParams sets the parameters saved in the db, if there are any.
+func (m *Manager) restoreParams(ctx context.Context) error {
+	req, err := m.loadParams(ctx)
+	if err != nil {
+		return err
+	}
+
+	// There is nothing to restore if no params were saved.
+	if req == nil {
+		return nil
+	}
+
+	err = m.SetParameters(ctx, req)
+	if !errors.Is(err, utils.ErrWrongNetwork) {
+		return err
+	}
+
+	// Earlier versions saved the autoloop destination address without
+	// checking its network. Remove such an address, so that autoloop pays
+	// to wallet addresses, instead of failing to start: the params can't
+	// be changed while loopd is down.
+	log.Warnf("Removing the saved autoloop destination address %v: %v",
+		req.AutoloopDestAddress, err)
+
+	req.AutoloopDestAddress = ""
+
+	return m.SetParameters(ctx, req)
 }
 
 // loadParams unmarshals a serialized RPC request from db and returns the RPC

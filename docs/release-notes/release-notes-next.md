@@ -24,6 +24,15 @@
   keeps the deposits locked and sweeps the htlc timeout path once the htlc
   times out.
 
+* Setting a P2PKH or P2SH address or a raw public key as the autoloop
+  destination no longer crashes loopd. The address is now decoded for the
+  active network, and a raw public key is rejected.
+
+* Autoloop, Instant Out, static address withdrawals and manual HTLC sweeps now
+  reject destination addresses of another network, as Loop Out already did. If
+  the saved autoloop destination belongs to another network, loopd removes it
+  at startup, and autoloop pays to wallet addresses.
+
 #### Maintenance
 
 #### Contributors (Alphabetical Order)

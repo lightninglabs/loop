@@ -38,6 +38,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/withdraw"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -3055,14 +3056,7 @@ func validateLoopOutRequest(ctx context.Context, lnd lndclient.LightningClient,
 
 	// Check that the provided destination address is a supported
 	// address format.
-	switch sweepAddr.(type) {
-	case *btcutil.AddressTaproot,
-		*btcutil.AddressWitnessScriptHash,
-		*btcutil.AddressWitnessPubKeyHash,
-		*btcutil.AddressScriptHash,
-		*btcutil.AddressPubKeyHash:
-
-	default:
+	if !utils.IsSupportedDestAddr(sweepAddr) {
 		return 0, errInvalidAddress
 	}
 
