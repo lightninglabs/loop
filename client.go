@@ -34,6 +34,10 @@ var (
 	// high.
 	ErrSwapFeeTooHigh = errors.New("swap fee too high")
 
+	// ErrInvalidSwapFee is returned when the quoted swap fee is negative or
+	// leaves no positive swap invoice amount.
+	ErrInvalidSwapFee = errors.New("invalid swap fee")
+
 	// ErrPrepayAmountTooHigh is returned when the prepay invoice amount is
 	// too high.
 	ErrPrepayAmountTooHigh = errors.New("prepay amount too high")
