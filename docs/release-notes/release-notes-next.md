@@ -2,6 +2,12 @@
 
 #### New Features
 
+* Share asset deposit, reservation and CSV/CLTV HTLC contracts through
+  `swapkit`, with transfer, signing, proof and recovery helpers backed by
+  `github.com/lightninglabs/tap-sdk` v0.1.1 and Taproot Assets v0.8.8. New on-chain
+  asset swaps require tapd v0.8.8 or later. Shared helpers also authenticate
+  group issuance evidence and register issuance metadata before verification.
+
 #### Breaking Changes
 
 #### Bug Fixes

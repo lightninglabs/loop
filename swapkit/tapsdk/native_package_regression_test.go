@@ -2,12 +2,92 @@ package tapsdk
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
+
+type changingProofSDK struct {
+	sdk.Client
+
+	change func()
+	calls  int
+}
+
+func (s *changingProofSDK) VerifyProof(_ context.Context,
+	raw []byte) (*sdk.VerifyProofResponse, error) {
+
+	s.calls++
+	s.change()
+	return fixtureVerified(raw, true)
+}
+
+// TestProofFreshnessAfterSDKVerification changes chain state while tapd is
+// verifying the proof. Validation before that RPC cannot authorize a stale
+// confirmation or an output that was spent before verification completed.
+func TestProofFreshnessAfterSDKVerification(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*bindingChain)
+	}{
+		{
+			name: testReorg,
+			change: func(c *bindingChain) {
+				c.blocks[100].Header.Nonce++
+			},
+		},
+		{
+			name: "lost confirmation depth",
+			change: func(c *bindingChain) {
+				c.tip = 100
+			},
+		},
+		{
+			name: testSpentOutput,
+			change: func(c *bindingChain) {
+				c.unspent = false
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := bindingProof(t, bindingGenesis(),
+				bindingKey(2).PubKey(), bindingKey(3).PubKey(),
+				nil, bindingGenesis().FirstPrevOut, 100, false)
+			chain := &bindingChain{
+				tip: 101, unspent: true,
+				blocks: map[uint32]*wire.MsgBlock{
+					100: bindingBlock(p),
+				},
+			}
+			client := &changingProofSDK{change: func() {
+				test.change(chain)
+			}}
+			node := &proofNode{
+				client:   client,
+				chain:    chain,
+				minConfs: 2,
+			}
+			verified, err := verifyProof(
+				t.Context(),
+				node.wallet(),
+				node.chain,
+				node.minConfs,
+				bindingRaw(t, p),
+				bindingPub(11),
+				1000,
+				true,
+			)
+			require.ErrorIs(t, err, swapkit.ErrPending)
+			require.Nil(t, verified)
+			require.Equal(t, 1, client.calls)
+		})
+	}
+}
 
 // nativeSignedFixture completes the public package using the existing LND
 // session fixture. Both packages retain the same committed transaction.
@@ -125,4 +205,11 @@ func TestNativeClaimPackageRequiresFinalWitness(t *testing.T) {
 			require.Nil(t, bound)
 		})
 	}
+}
+
+func (s *changingProofSDK) GetInfo(
+	context.Context,
+) (*sdk.Info, error) {
+
+	return fixtureNodeInfo(), nil
 }
