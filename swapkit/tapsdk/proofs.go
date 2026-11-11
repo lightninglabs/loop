@@ -459,6 +459,21 @@ func declareOPTrue(ctx context.Context, wallet *sdk.Wallet,
 	if err != nil {
 		return err
 	}
+	// A caller-provided witness is peer input. Declaring it binds the asset
+	// script key to this internal key and tweak in tapd's wallet, so verify
+	// that the leaf and control block actually commit to the script key
+	// before registering it. This accepts both the legacy NUMS tree and an
+	// SDK supplied-key tree; it rejects a witness whose control block names
+	// an unrelated internal key.
+	spend := &sdk.CustomAssetOPTrueSpendInfo{
+		LeafScript:   bytes.Clone(witness[0]),
+		LeafVersion:  uint8(control.LeafVersion),
+		ControlBlock: bytes.Clone(witness[1]),
+		InternalKey:  internal,
+	}
+	if err := spend.Validate(scriptKey); err != nil {
+		return err
+	}
 	_, err = wallet.Client().
 		DeclareScriptKey(ctx, &sdk.DeclareScriptKeyRequest{
 			ScriptKey: sdk.ScriptKey{PubKey: scriptKey,

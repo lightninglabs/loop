@@ -80,6 +80,11 @@ func DiscoverOutcome(ctx context.Context, wallet *sdk.Wallet,
 		return nil, err
 	}
 	found := spendingTransaction(block, point)
+	if found == nil {
+		// A faithful Chain returns a block that spends the point, but a
+		// stale or inconsistent response must not panic the recovery.
+		return nil, swapkit.ErrPending
+	}
 	if len(found.TxIn) != 1 || len(found.TxOut) != 1 {
 		return nil, swapkit.ErrInvalid
 	}
@@ -192,7 +197,11 @@ func DiscoverPreimage(ctx context.Context, chain Chain,
 	if err != nil {
 		return swapkit.PreimageResult{}, err
 	}
-	for _, input := range spendingTransaction(block, point).TxIn {
+	found := spendingTransaction(block, point)
+	if found == nil {
+		return swapkit.PreimageResult{}, nil
+	}
+	for _, input := range found.TxIn {
 		if input.PreviousOutPoint != point {
 			continue
 		}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/taproot-assets/tappsbt"
 )
 
 // HTLC constructs the existing V3 Bitcoin contract for the offered swap.
@@ -53,6 +54,12 @@ func validateRecoveryPackage(offer swapkit.Offer, d *DepositContext,
 
 		return nil, swapkit.ErrInvalid
 	}
+	// The peer owns the package it hands us, including its publication
+	// metadata. A fallback must be broadcast normally, so reject a package
+	// that would be logged without reaching the network.
+	if pkg.Publish.SkipAnchorTxBroadcast || pkg.Publish.ExternalBroadcast {
+		return nil, swapkit.ErrInvalid
+	}
 	packet, err := DecodePSBT(pkg.AnchorPsbt)
 	if err != nil {
 		return nil, err
@@ -62,6 +69,45 @@ func validateRecoveryPackage(offer swapkit.Offer, d *DepositContext,
 	if len(tx.TxIn) != 1 || len(tx.TxOut) != 1 || tx.Version != 2 ||
 		tx.LockTime != 0 || tx.TxIn[0].Sequence != 0xfffffffc ||
 		fee <= 0 || out.AnchorValueSat-330 < fee {
+
+		return nil, swapkit.ErrInvalid
+	}
+	// The MuSig2 sighash is taken over the committed PSBT's own previous
+	// output. A peer that only changes the signed input value or script
+	// obtains a complete signature that is invalid for the real deposit, so
+	// bind the signed prevout to the authenticated deposit output here.
+	committed, err := DecodePSBT(pkg.CommittedAnchorPsbt)
+	if err != nil {
+		return nil, err
+	}
+	prevout := d.Proof.AnchorTx.TxOut[d.Proof.OutPoint().Index]
+	if len(committed.UnsignedTx.TxIn) != 1 || len(committed.Inputs) != 1 ||
+		committed.UnsignedTx.TxIn[0].PreviousOutPoint !=
+			d.Proof.OutPoint() ||
+		committed.Inputs[0].WitnessUtxo == nil ||
+		committed.Inputs[0].WitnessUtxo.Value != prevout.Value ||
+		!bytes.Equal(committed.Inputs[0].WitnessUtxo.PkScript,
+			prevout.PkScript) {
+
+		return nil, swapkit.ErrInvalid
+	}
+	// The Bitcoin transaction can be valid while the committed asset carries
+	// its own timelock that tapd's VM rejects at every height below it. The
+	// kit never agreed to such an asset, so reject it before signing.
+	if len(pkg.ActiveVirtualPsbts) != 1 {
+		return nil, swapkit.ErrInvalid
+	}
+	vPkt, err := tappsbt.Decode(pkg.ActiveVirtualPsbts[0])
+	if err != nil {
+		return nil, err
+	}
+	if len(vPkt.Outputs) != 1 {
+		return nil, swapkit.ErrInvalid
+	}
+	vOut := vPkt.Outputs[0]
+	if vOut.LockTime != 0 || vOut.RelativeLockTime != 0 ||
+		vOut.Asset == nil || vOut.Asset.LockTime != 0 ||
+		vOut.Asset.RelativeLockTime != 0 {
 
 		return nil, swapkit.ErrInvalid
 	}
