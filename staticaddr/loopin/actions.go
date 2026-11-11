@@ -545,28 +545,36 @@ func (f *FSM) shouldStartLegacyConfirmationFallback(ctx context.Context,
 	)
 }
 
-// originalDepositOutpointUnavailable checks the original selected deposit
-// outpoints against the chain backend's UTXO view.
-func (f *FSM) originalDepositOutpointUnavailable(ctx context.Context) (
-	bool, error) {
-
-	if f.cfg.TxOutChecker == nil {
-		return false, nil
-	}
-
-	if len(f.loopIn.DepositOutpoints) == 0 {
-		return false, nil
-	}
-
+// depositOutpoints parses the original selected deposit outpoints.
+func (f *FSM) depositOutpoints() ([]wire.OutPoint, error) {
 	outpoints := make([]wire.OutPoint, len(f.loopIn.DepositOutpoints))
 	for i, outpointStr := range f.loopIn.DepositOutpoints {
 		outpoint, err := wire.NewOutPointFromString(outpointStr)
 		if err != nil {
-			return false, fmt.Errorf("invalid deposit outpoint %q: %w",
-				outpointStr, err)
+			return nil, fmt.Errorf("invalid deposit outpoint "+
+				"%q: %w", outpointStr, err)
 		}
 
 		outpoints[i] = *outpoint
+	}
+
+	return outpoints, nil
+}
+
+// originalDepositOutpointUnavailable reports whether an original selected
+// deposit outpoint is missing from lnd's wallet transactions or spent by one
+// of them. This is lnd's wallet view, not the chain's UTXO set, and it doesn't
+// say what spent or removed the outpoint.
+func (f *FSM) originalDepositOutpointUnavailable(ctx context.Context) (
+	bool, error) {
+
+	if f.cfg.TxOutChecker == nil || len(f.loopIn.DepositOutpoints) == 0 {
+		return false, nil
+	}
+
+	outpoints, err := f.depositOutpoints()
+	if err != nil {
+		return false, err
 	}
 
 	txOuts, err := f.cfg.TxOutChecker.GetTxOuts(ctx, outpoints)
@@ -581,6 +589,52 @@ func (f *FSM) originalDepositOutpointUnavailable(ctx context.Context) (
 	}
 
 	return false, nil
+}
+
+// htlcTxSpentDeposits reports whether lnd's wallet lists a transaction that
+// spends an original selected deposit and pays to the swap's htlc. Only the
+// htlc tx does both, so a deposit that is gone for another reason, for example
+// because its funding transaction was replaced, doesn't count, unless lnd
+// still lists an htlc tx that spent it.
+func (f *FSM) htlcTxSpentDeposits(ctx context.Context,
+	htlcPkScript []byte) (bool, error) {
+
+	if f.cfg.TxOutChecker == nil || len(f.loopIn.DepositOutpoints) == 0 {
+		return false, nil
+	}
+
+	outpoints, err := f.depositOutpoints()
+	if err != nil {
+		return false, err
+	}
+
+	spent, err := f.cfg.TxOutChecker.SpentByTxPayingTo(
+		ctx, outpoints, htlcPkScript,
+		htlcTxSearchStartHeight(f.loopIn.InitiationHeight),
+	)
+	if err != nil {
+		return false, fmt.Errorf("unable to look up deposit "+
+			"spender: %w", err)
+	}
+
+	return spent, nil
+}
+
+// htlcTxReorgLookback is how many blocks below the swap's initiation height
+// the htlc tx lookup starts. The htlc tx can only be created after the swap
+// starts, but after a reorg it can confirm in a block below the height the
+// client saw at initiation.
+const htlcTxReorgLookback = 144
+
+// htlcTxSearchStartHeight returns the lowest block height at which the swap's
+// htlc tx is looked up, clamped to zero. Swaps without an initiation height
+// search the whole wallet history.
+func htlcTxSearchStartHeight(initiationHeight uint32) int32 {
+	if initiationHeight <= htlcTxReorgLookback {
+		return 0
+	}
+
+	return int32(initiationHeight - htlcTxReorgLookback)
 }
 
 // SignHtlcTxAction is called if the htlc was initialized and the server
@@ -1133,9 +1187,8 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	htlcConfirmed := false
 
-	// depositsSpent is set when a rejection finds the deposits spent
-	// before the htlc confirmation arrived. While they loop in, only the
-	// htlc can spend them.
+	// depositsSpent is set when a rejection finds that the htlc tx spent
+	// the deposits before its confirmation arrived.
 	depositsSpent := false
 
 	// handleRiskRejected cancels the invoice after a server rejection. The
@@ -1181,15 +1234,19 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		}
 
 		// The htlc can spend the deposits before we see its confirmation.
-		spent, err := f.originalDepositOutpointUnavailable(ctx)
+		// Only wait for it if lnd lists the htlc tx spending them. A
+		// deposit that is gone because its funding transaction was
+		// replaced, or because another transaction spent it, never
+		// leads to an htlc confirmation.
+		spent, err := f.htlcTxSpentDeposits(ctx, htlc.PkScript)
 		if err != nil {
 			return retryMonitor(err), true
 		}
 		if spent {
 			depositsSpent = true
 			f.Infof("server rejected confirmation risk wait after "+
-				"%s, deposits are spent, waiting for the htlc "+
-				"confirmation", reason)
+				"%s, the htlc tx spent the deposits, waiting "+
+				"for its confirmation", reason)
 
 			return fsm.NoOp, false
 		}

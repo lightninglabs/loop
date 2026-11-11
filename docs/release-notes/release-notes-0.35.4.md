@@ -1,6 +1,6 @@
 # Loop Client Release Notes
 
-- **Release date:** Unreleased
+- **Release date:** 2026-11-11
 - **Release page:**
   [v0.35.4-beta](https://github.com/lightninglabs/loop/releases/tag/v0.35.4-beta)
 - **Previous release:** [v0.35.3-beta](release-notes-0.35.3.md)
@@ -26,16 +26,20 @@
   connections to the Postgres server. It was ignored before, so concurrent
   requests could open more connections than the server accepts. If the option
   isn't set, loopd now opens at most 25 connections. Migration connections
-  are returned to the pool, and waiting for the migration lock respects the
-  configured timeout.
+  are returned to the pool.
   [PR #1262](https://github.com/lightninglabs/loop/pull/1262)
 
 * A static address loop-in whose HTLC had already spent its deposits no
   longer gives up the deposits when the server rejects the confirmation risk
   wait, also when the rejection is handled again after a restart. The client
   keeps the deposits locked and sweeps the HTLC timeout path once the HTLC
-  times out.
+  times out. Without an observed HTLC confirmation, the client only keeps the
+  deposits if lnd's wallet shows that the HTLC transaction spent them.
+  Otherwise, for example when a deposit's funding transaction was replaced
+  and lnd doesn't list an HTLC transaction, the rejection fails the swap and
+  releases the deposits, as in v0.35.3.
   [PR #1278](https://github.com/lightninglabs/loop/pull/1278)
+  [PR #1288](https://github.com/lightninglabs/loop/pull/1288)
 
 * Setting a P2PKH or P2SH address or a raw public key as the autoloop
   destination no longer crashes loopd. The address is now decoded for the

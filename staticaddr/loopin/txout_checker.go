@@ -1,14 +1,17 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 )
 
-// lndTxOutChecker checks outpoint availability using lnd's wallet transaction
-// view. It omits outputs already spent by a wallet-known transaction.
+// lndTxOutChecker checks outpoints against lnd's wallet transaction view. It
+// reports outputs that a wallet transaction creates and none spends, and
+// whether a wallet transaction that spends one of them pays to a given
+// pkScript.
 type lndTxOutChecker struct {
 	client lndclient.LightningClient
 }
@@ -76,4 +79,48 @@ func (c *lndTxOutChecker) GetTxOuts(ctx context.Context,
 	}
 
 	return txOuts, nil
+}
+
+// SpentByTxPayingTo reports whether lnd's wallet lists a transaction that
+// spends one of the outpoints and has an output with the given pkScript. It
+// only lists unconfirmed transactions and transactions confirmed at or above
+// startHeight, so the lookup doesn't decode the whole wallet history.
+func (c *lndTxOutChecker) SpentByTxPayingTo(ctx context.Context,
+	outpoints []wire.OutPoint, pkScript []byte,
+	startHeight int32) (bool, error) {
+
+	wanted := make(map[wire.OutPoint]struct{}, len(outpoints))
+	for _, outpoint := range outpoints {
+		wanted[outpoint] = struct{}{}
+	}
+
+	txs, err := c.client.ListTransactions(ctx, startHeight, -1)
+	if err != nil {
+		return false, err
+	}
+
+	for _, tx := range txs {
+		if tx.Tx == nil || !paysTo(tx.Tx, pkScript) {
+			continue
+		}
+
+		for _, txIn := range tx.Tx.TxIn {
+			if _, ok := wanted[txIn.PreviousOutPoint]; ok {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// paysTo reports whether the transaction has an output with the pkScript.
+func paysTo(tx *wire.MsgTx, pkScript []byte) bool {
+	for _, txOut := range tx.TxOut {
+		if bytes.Equal(txOut.PkScript, pkScript) {
+			return true
+		}
+	}
+
+	return false
 }

@@ -64,8 +64,10 @@ type Config struct {
 	// LndClient is used to add invoices and select hop hints.
 	LndClient lndclient.LightningClient
 
-	// TxOutChecker checks that selected deposits are still available before
-	// the client gives the server HTLC signatures.
+	// TxOutChecker checks the selected deposits against lnd's wallet
+	// transactions. It is used before the client gives the server HTLC
+	// signatures, and after a risk rejection to find out whether the htlc
+	// tx spent the deposits.
 	TxOutChecker TxOutChecker
 
 	// InvoicesClient is used to subscribe to invoice settlements and
