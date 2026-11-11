@@ -104,3 +104,35 @@ func OPTrueSpendInfo(output sdk.CustomAnchorAssetOutputSummary) (
 	}
 	return spend, nil
 }
+
+// AssetInput supplies a proof-selected OP_TRUE asset to the native SDK. This
+// binds the exact issuance, quantity, outpoint and script key before generic
+// SDK proof verification; the FSM still checks the current chain and contract.
+func AssetInput(output sdk.CustomAnchorAssetOutputSummary,
+	raw []byte) (sdk.CustomAssetInput, error) {
+
+	spend, err := OPTrueSpendInfo(output)
+	if err != nil {
+		return sdk.CustomAssetInput{}, err
+	}
+	p, err := LastProof(raw)
+	if err != nil {
+		return sdk.CustomAssetInput{}, err
+	}
+	if sdk.AssetID(p.Asset.ID()) != output.IssuanceID ||
+		p.Asset.Amount != output.Amount ||
+		p.OutPoint() != SDKPoint(output.AnchorOutpoint) ||
+		!bytes.Equal(p.Asset.ScriptKey.PubKey.SerializeCompressed()[1:],
+			output.ScriptKey[1:]) {
+
+		return sdk.CustomAssetInput{}, swapkit.ErrInvalid
+	}
+	return sdk.CustomAssetInput{
+		ID: output.LogicalOutputID, AssetRef: output.AssetRef,
+		Amount: output.Amount, ProofFile: bytes.Clone(raw),
+		Witness: sdk.CustomAssetWitnessPlan{
+			Mode:  sdk.CustomAssetWitnessCallerProvided,
+			Stack: spend.WitnessStack(),
+		},
+	}, nil
+}
