@@ -70,3 +70,32 @@ func TestVerifiedSummaryAcceptsGroupParity(t *testing.T) {
 	response.DecodedProof.AssetRef = sdk.AssetRefFromGroupKey(bindingPub(12))
 	require.ErrorIs(t, checkVerifiedSummary(response, p), swapkit.ErrInvalid)
 }
+
+func TestDepositAndOfferAcceptGroupParity(t *testing.T) {
+	_, s, _, _ := bindingOutcome(t, false)
+	d := s.Deposit
+	p := d.Proof
+	contract := d.Contract
+	group, ok := contract.Output.AssetRef.GroupKey()
+	require.True(t, ok)
+	group[0] ^= 1
+	contract.Output.AssetRef = sdk.AssetRefFromGroupKey(group)
+	require.NoError(t, checkDepositContract(d.Deposit, contract, p))
+	s.Offer.Terms.GroupKey[0] ^= 1
+	_, err := NewSwap(s.Offer, d, nil)
+	require.NoError(t, err)
+
+	for _, relative := range []bool{false, true} {
+		changed := *p
+		changed.Asset = *p.Asset.Copy()
+		if relative {
+			changed.Asset.RelativeLockTime = 1
+		} else {
+			changed.Asset.LockTime = 1
+		}
+		require.ErrorIs(t,
+			checkDepositContract(d.Deposit, contract, &changed),
+			swapkit.ErrInvalid,
+		)
+	}
+}
