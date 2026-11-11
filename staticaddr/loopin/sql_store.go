@@ -1,9 +1,12 @@
 package loopin
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,9 +14,11 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/loopdb/sqlc"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightningnetwork/lnd/clock"
@@ -76,6 +81,11 @@ type Querier interface {
 	GetStaticAddressLoopInSwapsByStates(ctx context.Context,
 		states sql.NullString) ([]sqlc.GetStaticAddressLoopInSwapsByStatesRow,
 		error)
+
+	// GetPaidStaticAddressLoopInClaims retrieves compact ownership metadata
+	// for paid terminal swaps without joining their deposit and key records.
+	GetPaidStaticAddressLoopInClaims(context.Context, int32) (
+		[]sqlc.GetPaidStaticAddressLoopInClaimsRow, error)
 
 	// GetLoopInSwapUpdates retrieves all updates for a loop-in swap.
 	GetLoopInSwapUpdates(ctx context.Context,
@@ -217,6 +227,36 @@ func (s *SqlStore) GetStaticAddressLoopInSwapsByStates(ctx context.Context,
 	return loopIns, nil
 }
 
+// GetPaidStaticAddressLoopInClaims loads only the persisted terminal state and
+// original input snapshots needed by startup's conservative ownership check.
+func (s *SqlStore) GetPaidStaticAddressLoopInClaims(ctx context.Context,
+	afterID int32) ([]LoopInClaim, error) {
+
+	rows, err := s.baseDB.GetPaidStaticAddressLoopInClaims(ctx, afterID)
+	if err != nil {
+		return nil, err
+	}
+	claims := make([]LoopInClaim, 0, len(rows))
+	for _, row := range rows {
+		hash, err := lntypes.MakeHash(row.SwapHash)
+		if err != nil {
+			return nil, err
+		}
+		claim := LoopInClaim{
+			ID:       row.SwapID,
+			SwapHash: hash,
+			State:    fsm.StateType(row.UpdateState),
+		}
+		if row.DepositOutpoints != "" {
+			claim.DepositOutpoints = strings.Split(
+				row.DepositOutpoints, OutpointSeparator,
+			)
+		}
+		claims = append(claims, claim)
+	}
+	return claims, nil
+}
+
 func toJointStringStates(states []fsm.StateType) string {
 	return strings.Join(toStrings(states), ",")
 }
@@ -243,6 +283,11 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 
 	if len(loopIn.Deposits) == 0 {
 		return errors.New("loop-in must have at least one deposit")
+	}
+
+	fundingTxs, err := serializeFundingTxs(loopIn.FundingTxs)
+	if err != nil {
+		return fmt.Errorf("unable to encode funding transactions: %w", err)
 	}
 
 	amountRequested := int64(loopIn.TotalDepositAmount())
@@ -293,6 +338,18 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 		SelectedAmount:          int64(loopIn.SelectedAmount),
 		PaymentTimeoutSeconds:   int32(loopIn.PaymentTimeoutSeconds),
 		Fast:                    loopIn.Fast,
+		FundingTxs:              fundingTxs,
+	}
+	if loopIn.ChangeAddressParams != nil {
+		if loopIn.ChangeAddressParams.ID == 0 {
+			return errors.New("static address change parameters " +
+				"missing database ID")
+		}
+
+		staticAddressLoopInParams.ChangeStaticAddressID = sql.NullInt32{
+			Int32: loopIn.ChangeAddressParams.ID,
+			Valid: true,
+		}
 	}
 
 	updateTime := sqlStoreUpdateTime(s.clock)
@@ -303,7 +360,7 @@ func (s *SqlStore) CreateLoopIn(ctx context.Context,
 	}
 
 	var updateID int32
-	err := s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
+	err = s.baseDB.ExecTx(ctx, loopdb.NewSqlWriteOpts(),
 		func(q Querier) error {
 			err := q.InsertSwap(ctx, swapArgs)
 			if err != nil {
@@ -494,6 +551,8 @@ func (s *SqlStore) BatchMapDepositsToSwapHashes(ctx context.Context,
 }
 
 // SwapHashesForDepositIDs retrieves the swap hashes for the given deposit IDs.
+// Deposits that are unknown or not mapped to a swap are skipped, so they don't
+// hide the swaps of the remaining deposits from the caller.
 func (s *SqlStore) SwapHashesForDepositIDs(ctx context.Context,
 	depositIDs []deposit.ID) (map[lntypes.Hash][]deposit.ID, error) {
 
@@ -502,14 +561,14 @@ func (s *SqlStore) SwapHashesForDepositIDs(ctx context.Context,
 		swapHash, err := s.baseDB.SwapHashForDepositID(ctx, id[:])
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return nil, nil
+				continue
 			}
 
 			return nil, err
 		}
 
 		if swapHash == nil {
-			return nil, nil
+			continue
 		}
 
 		if len(swapHash) != lntypes.HashSize {
@@ -576,7 +635,7 @@ func toDeposits(rows []sqlc.DepositsForSwapHashRow) ([]*deposit.Deposit,
 			return nil, err
 		}
 
-		sqlcDeposit := sqlc.Deposit{
+		sqlcDeposit := sqlc.AllDepositsRow{
 			DepositID:             id[:],
 			TxHash:                d.TxHash,
 			Amount:                d.Amount,
@@ -587,6 +646,16 @@ func toDeposits(rows []sqlc.DepositsForSwapHashRow) ([]*deposit.Deposit,
 			FinalizedWithdrawalTx: d.FinalizedWithdrawalTx,
 			OnchainCost:           d.OnchainCost,
 			OnchainCostKnown:      d.OnchainCostKnown,
+			SwapHash:              d.SwapHash,
+			StaticAddressID:       d.StaticAddressID,
+			ClientPubkey:          d.ClientPubkey,
+			ServerPubkey:          d.ServerPubkey,
+			Expiry:                d.Expiry,
+			ClientKeyFamily:       d.ClientKeyFamily,
+			ClientKeyIndex:        d.ClientKeyIndex,
+			Pkscript:              d.Pkscript,
+			ProtocolVersion:       d.ProtocolVersion,
+			InitiationHeight:      d.InitiationHeight,
 		}
 
 		sqlcDepositUpdate := sqlc.DepositUpdate{
@@ -612,6 +681,11 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	swap sqlc.GetStaticAddressLoopInSwapRow,
 	deposits []sqlc.DepositsForSwapHashRow,
 	updates []sqlc.StaticAddressSwapUpdate) (*StaticAddressLoopIn, error) {
+
+	fundingTxs, err := deserializeFundingTxs(swap.FundingTxs)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode funding transactions: %w", err)
+	}
 
 	swapHash, err := lntypes.MakeHash(swap.SwapHash)
 	if err != nil {
@@ -667,7 +741,13 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	}
 	depositList = orderDepositsBySnapshot(depositList, depositOutpoints)
 
+	changeAddressParams, err := toChangeAddressParameters(swap)
+	if err != nil {
+		return nil, err
+	}
+
 	loopIn := &StaticAddressLoopIn{
+		ID:               swap.ID,
 		SwapHash:         swapHash,
 		SwapPreimage:     swapPreImage,
 		HtlcCltvExpiry:   swap.CltvExpiry,
@@ -689,6 +769,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		LastHop:               swap.LastHop,
 		QuotedSwapFee:         btcutil.Amount(swap.QuotedSwapFeeSatoshis),
 		DepositOutpoints:      depositOutpoints,
+		FundingTxs:            fundingTxs,
 		SelectedAmount:        btcutil.Amount(swap.SelectedAmount),
 		Fast:                  swap.Fast,
 		ConfirmationRiskDecision: ConfirmationRiskDecision(
@@ -700,6 +781,7 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 		HtlcTimeoutSweepAddress: timeoutAddress,
 		HtlcTimeoutSweepTxHash:  htlcTimeoutSweepTxHash,
 		Deposits:                depositList,
+		ChangeAddressParams:     changeAddressParams,
 	}
 	if swap.ConfirmationRiskDecisionTime.Valid {
 		loopIn.ConfirmationRiskDecisionTime =
@@ -716,6 +798,61 @@ func toStaticAddressLoopIn(_ context.Context, network *chaincfg.Params,
 	return loopIn, nil
 }
 
+// serializeFundingTxs stores each distinct funding parent once, without its
+// witness. A missing snapshot is SQL NULL rather than an empty JSON payload.
+func serializeFundingTxs(txs []*wire.MsgTx) ([]byte, error) {
+	if len(txs) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[chainhash.Hash]struct{}, len(txs))
+	rawTxs := make([][]byte, 0, len(txs))
+	for _, tx := range txs {
+		if err := validateFundingTransaction(tx); err != nil {
+			return nil, err
+		}
+		hash := tx.TxHash()
+		if _, exists := seen[hash]; exists {
+			continue
+		}
+		var raw bytes.Buffer
+		if err := tx.SerializeNoWitness(&raw); err != nil {
+			return nil, err
+		}
+		seen[hash] = struct{}{}
+		rawTxs = append(rawTxs, raw.Bytes())
+	}
+	return json.Marshal(rawTxs)
+}
+
+// deserializeFundingTxs rejects malformed snapshots instead of allowing an
+// incomplete transaction to serve as evidence that an HTLC cannot confirm.
+func deserializeFundingTxs(encoded []byte) ([]*wire.MsgTx, error) {
+	if len(encoded) == 0 {
+		return nil, nil
+	}
+	var rawTxs [][]byte
+	if err := json.Unmarshal(encoded, &rawTxs); err != nil {
+		return nil, err
+	}
+	txs := make([]*wire.MsgTx, 0, len(rawTxs))
+	for _, rawTx := range rawTxs {
+		reader := bytes.NewReader(rawTx)
+		tx := wire.NewMsgTx(2)
+		if err := tx.DeserializeNoWitness(reader); err != nil {
+			return nil, err
+		}
+		if reader.Len() != 0 {
+			return nil, errors.New("invalid funding transaction snapshot")
+		}
+		if err := validateFundingTransaction(tx); err != nil {
+			return nil, err
+		}
+		txs = append(txs, tx)
+	}
+	return txs, nil
+}
+
 // orderDepositsBySnapshot returns deposits ordered by the stored outpoint
 // snapshot when the current deposit rows still match that snapshot. If any
 // snapshot outpoint no longer maps to a current deposit row, recovery keeps the
@@ -727,19 +864,22 @@ func orderDepositsBySnapshot(deposits []*deposit.Deposit,
 		return deposits
 	}
 
-	byOutpoint := make(map[string]*deposit.Deposit, len(deposits))
+	byOutpoint := make(map[wire.OutPoint]*deposit.Deposit, len(deposits))
 	for _, d := range deposits {
-		outpoint := d.OutPoint.String()
-		if _, ok := byOutpoint[outpoint]; ok {
+		if _, ok := byOutpoint[d.OutPoint]; ok {
 			return deposits
 		}
 
-		byOutpoint[outpoint] = d
+		byOutpoint[d.OutPoint] = d
 	}
 
 	orderedDeposits := make([]*deposit.Deposit, len(depositOutpoints))
-	for i, outpoint := range depositOutpoints {
-		d, ok := byOutpoint[outpoint]
+	for i, encoded := range depositOutpoints {
+		outpoint, err := wire.NewOutPointFromString(encoded)
+		if err != nil {
+			return deposits
+		}
+		d, ok := byOutpoint[*outpoint]
 		if !ok {
 			return deposits
 		}
@@ -748,4 +888,26 @@ func orderDepositsBySnapshot(deposits []*deposit.Deposit,
 	}
 
 	return orderedDeposits
+}
+
+// toChangeAddressParameters converts the optional joined static address row
+// into the change address parameters used to verify batched sweepless sweeps.
+func toChangeAddressParameters(row sqlc.GetStaticAddressLoopInSwapRow) (
+	*address.AddressParameters, error) {
+
+	if !row.ChangeStaticAddressID.Valid {
+		return nil, nil
+	}
+
+	return address.ParametersFromRow(sqlc.StaticAddress{
+		ID:               row.ChangeStaticAddressID.Int32,
+		ClientPubkey:     row.ChangeClientPubkey,
+		ServerPubkey:     row.ChangeServerPubkey,
+		Expiry:           row.ChangeExpiry.Int32,
+		Pkscript:         row.ChangePkscript,
+		ClientKeyFamily:  row.ChangeClientKeyFamily.Int32,
+		ClientKeyIndex:   row.ChangeClientKeyIndex.Int32,
+		ProtocolVersion:  row.ChangeProtocolVersion.Int32,
+		InitiationHeight: row.ChangeInitiationHeight.Int32,
+	})
 }

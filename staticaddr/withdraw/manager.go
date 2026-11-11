@@ -3,13 +3,13 @@ package withdraw
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -19,8 +19,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
+	"github.com/lightninglabs/loop/swap"
 	staticaddressrpc "github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/funding"
@@ -286,8 +288,7 @@ func (m *Manager) recoverWithdrawals(ctx context.Context) error {
 			}
 
 			err = m.handleWithdrawal(
-				ctx, deposits, tx.TxHash(),
-				tx.TxOut[0].PkScript,
+				ctx, deposits, tx.TxHash(), tx.TxOut[0].PkScript,
 			)
 			if err != nil {
 				return err
@@ -612,40 +613,62 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	selectedWithdrawalAmount int64,
 	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
 
-	// Create a musig2 session for each deposit.
-	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, nil, err
+	if len(deposits) == 0 {
+		return nil, nil, errors.New("no deposits selected")
 	}
 
-	staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	sessions, clientNonces, idx, err := staticutil.CreateMusig2SessionsPerDeposit(
-		ctx, m.cfg.Signer, deposits, addrParams, staticAddress,
+	// Create a musig2 session for each deposit. Each selected deposit carries
+	// the address parameters that produced the output, so withdrawals can
+	// spend inputs from multiple static addresses in one transaction.
+	pendingSessions, clientNonces, idx, err := staticutil.CreateMusig2SessionsPerDeposit(
+		ctx, m.cfg.Signer, deposits,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	params, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("couldn't get confirmation "+
-			"height for deposit, %w", err)
-	}
+	defer func() {
+		err := staticutil.CleanupMusig2Sessions(
+			ctx, m.cfg.Signer, pendingSessions,
+		)
+		if err != nil {
+			log.Warnf("Unable to clean up withdrawal MuSig2 "+
+				"sessions: %v", err)
+		}
+	}()
 
 	outpoints := toOutpoints(deposits)
-	prevOuts, err := staticutil.ToPrevOuts(deposits, params.PkScript)
+	prevOuts, err := staticutil.ToPrevOuts(deposits)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	depositDescriptors, err := staticutil.DepositAddressDescriptors(deposits)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to prepare static address "+
+			"input proofs: %w", err)
+	}
+
+	withdrawalAmount, changeAmount, err := CalculateWithdrawalTxValues(
+		deposits, btcutil.Amount(selectedWithdrawalAmount), feeRate,
+		withdrawalAddress, commitmentType,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error calculating funding tx "+
+			"values: %w", err)
+	}
+
+	var changeParams *address.AddressParameters
+	if changeAmount > 0 {
+		changeParams, err = m.withdrawalChangeAddress(ctx, deposits)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to create static "+
+				"address change output: %w", err)
+		}
+	}
+
 	withdrawalTx, unsignedPsbt, err := m.createWithdrawalTx(
-		ctx, outpoints, deposits, prevOuts,
-		btcutil.Amount(selectedWithdrawalAmount), withdrawalAddress,
-		feeRate, commitmentType,
+		outpoints, prevOuts, withdrawalAmount, changeAmount,
+		withdrawalAddress, changeParams,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -653,15 +676,16 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 
 	// Request the server to sign the withdrawal transaction.
 	//
-	// The withdrawal and change amount are sent to the server with the
-	// expectation that the server just signs the transaction, without
-	// performing fee calculations and dust considerations. The client is
-	// responsible for that.
+	// All withdrawal outputs, including any change output, are encoded in
+	// the PSBT. The server signs the transaction as constructed without
+	// performing fee calculations or dust handling. The client is
+	// responsible for both.
 	// nolint:lll
 	sigResp, err := m.cfg.StaticAddressServerClient.ServerPsbtWithdrawDeposits(
 		ctx, &staticaddressrpc.ServerPsbtWithdrawRequest{
-			WithdrawalPsbt:  unsignedPsbt,
-			DepositToNonces: clientNonces,
+			WithdrawalPsbt:         unsignedPsbt,
+			DepositToNonces:        clientNonces,
+			DepositToClientPubkeys: depositDescriptors,
 		},
 	)
 	if err != nil {
@@ -693,7 +717,7 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	// Next we'll get our sweep tx signatures.
 	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
 	finalizedTx, err := m.signMusig2Tx(
-		ctx, prevOutFetcher, m.cfg.Signer, withdrawalTx, sessions,
+		ctx, prevOutFetcher, m.cfg.Signer, withdrawalTx, pendingSessions,
 		sigResp.SigningInfo, idx,
 	)
 	if err != nil {
@@ -701,6 +725,39 @@ func (m *Manager) CreateFinalizedWithdrawalTx(ctx context.Context,
 	}
 
 	return finalizedTx, unsignedPsbt, nil
+}
+
+// withdrawalChangeAddress reuses the change address of a pending withdrawal
+// when its fee is bumped. The persisted transaction also preserves this
+// association across restarts, including legacy root-address change.
+func (m *Manager) withdrawalChangeAddress(ctx context.Context,
+	deposits []*deposit.Deposit) (*address.AddressParameters, error) {
+
+	d := deposits[0]
+	d.Lock()
+	var previousTx *wire.MsgTx
+	if d.IsInStateNoLock(deposit.Withdrawing) {
+		previousTx = d.FinalizedWithdrawalTx
+	}
+	d.Unlock()
+
+	if previousTx != nil {
+		if len(previousTx.TxOut) == 0 {
+			return nil, errors.New("previous withdrawal tx has no outputs")
+		}
+		changePkScript, err := withdrawalChangePkScript(
+			previousTx, previousTx.TxOut[0].PkScript,
+			m.cfg.AddressManager,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if changePkScript != nil {
+			return m.cfg.AddressManager.GetParameters(changePkScript), nil
+		}
+	}
+
+	return m.cfg.AddressManager.NewChangeAddress(ctx)
 }
 
 func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
@@ -740,22 +797,63 @@ func (m *Manager) publishFinalizedWithdrawalTx(ctx context.Context,
 	return true, nil
 }
 
+func withdrawalChangePkScript(tx *wire.MsgTx, withdrawalPkScript []byte,
+	addressManager AddressManager) ([]byte, error) {
+
+	if tx == nil || addressManager == nil {
+		return nil, nil
+	}
+
+	var changePkScript []byte
+	for i, txOut := range tx.TxOut {
+		params := addressManager.GetParameters(txOut.PkScript)
+		if params == nil {
+			continue
+		}
+		legacy := int32(params.KeyLocator.Family) ==
+			swap.StaticSingleAddressKeyFamily
+		if !legacy && int32(params.KeyLocator.Family) !=
+			swap.StaticAddressChangeKeyFamily {
+
+			continue
+		}
+
+		// Legacy withdrawals append root-address change after the
+		// destination. Both outputs may pay the root, so retain the
+		// second output in that case instead of excluding it as a
+		// withdrawal destination.
+		if bytes.Equal(txOut.PkScript, withdrawalPkScript) &&
+			(!legacy || len(tx.TxOut) != 2 || i != 1) {
+
+			continue
+		}
+
+		if changePkScript != nil {
+			return nil, fmt.Errorf("confirmed withdrawal %v has multiple "+
+				"static-address change outputs", tx.TxHash())
+		}
+
+		changePkScript = txOut.PkScript
+	}
+
+	return changePkScript, nil
+}
+
 // handleWithdrawal starts a goroutine that listens for the spent of the first
 // input of the withdrawal transaction.
 func (m *Manager) handleWithdrawal(ctx context.Context,
-	deposits []*deposit.Deposit, txHash chainhash.Hash,
-	withdrawalPkscript []byte) error {
-
-	addrParams, err := m.cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		log.Errorf("error retrieving address params: %v", err)
-
-		return fmt.Errorf("withdrawal failed")
-	}
+	deposits []*deposit.Deposit, originalTxHash chainhash.Hash,
+	withdrawalPkScript []byte) error {
 
 	d := deposits[0]
+	if d.AddressParams == nil {
+		return fmt.Errorf("missing static address parameters for %v",
+			d.OutPoint)
+	}
+	depositPkScript := d.AddressParams.PkScript
+
 	spentChan, errChan, err := m.cfg.ChainNotifier.RegisterSpendNtfn(
-		ctx, &d.OutPoint, addrParams.PkScript,
+		ctx, &d.OutPoint, depositPkScript,
 		int32(d.GetConfirmationHeight()),
 	)
 	if err != nil {
@@ -766,13 +864,15 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 		select {
 		case spentTx := <-spentChan:
 			spendingHeight := uint32(spentTx.SpendingHeight)
+
 			// If the transaction received one confirmation, we
 			// ensure re-org safety by waiting for some more
 			// confirmations.
 			confChan, confErrChan, err :=
 				m.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 					ctx, spentTx.SpenderTxHash,
-					withdrawalPkscript, MinConfs,
+					withdrawalPkScript,
+					MinConfs,
 					int32(m.initiationHeight.Load()),
 				)
 			if err != nil {
@@ -786,30 +886,12 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 
 			select {
 			case tx := <-confChan:
-				err = m.cfg.DepositManager.TransitionDeposits(
-					ctx, deposits, deposit.OnWithdrawn,
-					deposit.Withdrawn,
+				err := m.finalizeWithdrawal(
+					ctx, deposits, originalTxHash, withdrawalPkScript,
+					tx.Tx, spendingHeight,
 				)
 				if err != nil {
-					log.Errorf("Error transitioning "+
-						"deposits: %v", err)
-				}
-
-				// Remove the withdrawal tx from the active
-				// withdrawals to stop republishing it on block
-				// arrivals.
-				m.mu.Lock()
-				delete(m.finalizedWithdrawalTxns, txHash)
-				m.mu.Unlock()
-
-				// Persist info about the finalized withdrawal.
-				err = m.cfg.Store.UpdateWithdrawal(
-					ctx, deposits, tx.Tx, spendingHeight,
-					addrParams.PkScript,
-				)
-				if err != nil {
-					log.Errorf("Error persisting "+
-						"withdrawal: %v", err)
+					log.Errorf("Error finalizing withdrawal: %v", err)
 				}
 
 			case err := <-confErrChan:
@@ -834,6 +916,48 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	return nil
 }
 
+// finalizeWithdrawal saves confirmation accounting before retiring the pending
+// withdrawal. A missing history row does not block confirmed deposits from
+// finalizing; other failures leave the withdrawal pending for recovery.
+func (m *Manager) finalizeWithdrawal(ctx context.Context,
+	deposits []*deposit.Deposit, originalTxHash chainhash.Hash,
+	withdrawalPkScript []byte, tx *wire.MsgTx, spendingHeight uint32) error {
+
+	changePkScript, err := withdrawalChangePkScript(
+		tx, withdrawalPkScript, m.cfg.AddressManager,
+	)
+	if err != nil {
+		return fmt.Errorf("identifying withdrawal change: %w", err)
+	}
+
+	err = m.cfg.Store.UpdateWithdrawal(
+		ctx, deposits, tx, spendingHeight, changePkScript,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		// The initial history insert can fail while the withdrawal proceeds.
+		// Its absence must not keep confirmed deposits pending forever.
+		log.Warnf("Confirmed withdrawal %v has no history record; "+
+			"finalizing deposits without withdrawal accounting", tx.TxHash())
+	} else if err != nil {
+		return fmt.Errorf("persisting withdrawal: %w", err)
+	}
+
+	err = m.cfg.DepositManager.TransitionDeposits(
+		ctx, deposits, deposit.OnWithdrawn, deposit.Withdrawn,
+	)
+	if err != nil {
+		return fmt.Errorf("transitioning withdrawn deposits: %w", err)
+	}
+
+	// Only stop republishing after the deposit state has been saved and
+	// existing history updated. A restart can retry either unfinished step.
+	m.mu.Lock()
+	delete(m.finalizedWithdrawalTxns, originalTxHash)
+	m.mu.Unlock()
+
+	return nil
+}
+
 func toOutpoints(deposits []*deposit.Deposit) []wire.OutPoint {
 	outpoints := make([]wire.OutPoint, len(deposits))
 	for i, d := range deposits {
@@ -847,11 +971,12 @@ func toOutpoints(deposits []*deposit.Deposit) []wire.OutPoint {
 }
 
 // signMusig2Tx adds the server nonces to the musig2 sessions and signs the
-// transaction.
+// transaction. Fully combined sessions are removed from pendingSessions because
+// lnd already releases them; the caller only needs to clean up the remainder.
 func (m *Manager) signMusig2Tx(ctx context.Context,
 	prevOutFetcher *txscript.MultiPrevOutFetcher,
 	signer lndclient.SignerClient, tx *wire.MsgTx,
-	sessions map[string]*input.MuSig2SessionInfo,
+	pendingSessions map[string]*input.MuSig2SessionInfo,
 	sigInfo map[string]*staticaddressrpc.ServerPsbtWithdrawSigningInfo,
 	depositsToIdx map[string]int) (*wire.MsgTx, error) {
 
@@ -885,7 +1010,7 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 				"deposit %v", deposit)
 		}
 
-		session, ok := sessions[deposit]
+		session, ok := pendingSessions[deposit]
 		if !ok {
 			return nil, errors.New("session not found")
 		}
@@ -953,6 +1078,7 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 			return nil, errors.New("expected all signatures to " +
 				"be combined")
 		}
+		delete(pendingSessions, deposit)
 
 		tx.TxIn[depositsToIdx[deposit]].Witness = wire.TxWitness{
 			sig,
@@ -962,12 +1088,12 @@ func (m *Manager) signMusig2Tx(ctx context.Context,
 	return tx, nil
 }
 
-func (m *Manager) createWithdrawalTx(ctx context.Context,
-	outpoints []wire.OutPoint, deposits []*deposit.Deposit,
+func (m *Manager) createWithdrawalTx(
+	outpoints []wire.OutPoint,
 	prevOuts map[wire.OutPoint]*wire.TxOut,
-	selectedWithdrawalAmount btcutil.Amount, withdrawAddr btcutil.Address,
-	feeRate chainfee.SatPerKWeight,
-	commitmentType lnrpc.CommitmentType) (*wire.MsgTx, []byte, error) {
+	withdrawalAmount, changeAmount btcutil.Amount,
+	withdrawAddr btcutil.Address,
+	changeParams *address.AddressParameters) (*wire.MsgTx, []byte, error) {
 
 	// First Create the tx.
 	msgTx := wire.NewMsgTx(2)
@@ -978,15 +1104,6 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 		msgTx.AddTxIn(&wire.TxIn{
 			PreviousOutPoint: outpoint,
 		})
-	}
-
-	withdrawalAmount, changeAmount, err := CalculateWithdrawalTxValues(
-		deposits, selectedWithdrawalAmount, feeRate,
-		withdrawAddr, commitmentType,
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error calculating funding tx "+
-			"values: %w", err)
 	}
 
 	// For the user's convenience, we check that the change amount is lower
@@ -1014,30 +1131,14 @@ func (m *Manager) createWithdrawalTx(ctx context.Context,
 	})
 
 	if changeAmount > 0 {
-		// Send change back to the same static address.
-		staticAddress, err := m.cfg.AddressManager.GetStaticAddress(ctx)
-		if err != nil {
-			log.Errorf("error retrieving taproot address %v", err)
-
-			return nil, nil, fmt.Errorf("withdrawal failed")
-		}
-
-		changeAddress, err := btcutil.NewAddressTaproot(
-			schnorr.SerializePubKey(staticAddress.TaprootKey),
-			m.cfg.ChainParams,
-		)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		changeScript, err := txscript.PayToAddrScript(changeAddress)
-		if err != nil {
-			return nil, nil, err
+		if changeParams == nil {
+			return nil, nil, fmt.Errorf("missing static address " +
+				"change parameters")
 		}
 
 		msgTx.AddTxOut(&wire.TxOut{
 			Value:    int64(changeAmount),
-			PkScript: changeScript,
+			PkScript: changeParams.PkScript,
 		})
 	}
 

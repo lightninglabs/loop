@@ -52,7 +52,8 @@ func depositsByFundingTx(deposits []*Deposit) [][]*Deposit {
 // fees of their funding transactions, which are looked up in the client
 // wallet once each. It returns the costs by outpoint, so the deposits only
 // need their outpoint set. isDeposit reports whether an outpoint is a known
-// deposit.
+// deposit. isStaticAddress recognizes owned scripts even before their deposits
+// have been retained.
 //
 // It stops at the first funding transaction it can't look up, for example
 // because lnd is unavailable or loopd is shutting down, and returns the costs
@@ -60,13 +61,13 @@ func depositsByFundingTx(deposits []*Deposit) [][]*Deposit {
 // deposits it didn't determine are left out, so that they can be looked up
 // again later.
 func onchainCosts(ctx context.Context, getter walletTxGetter,
-	isDeposit func(wire.OutPoint) bool,
+	isDeposit func(wire.OutPoint) bool, isStaticAddress func([]byte) bool,
 	deposits []*Deposit) (map[wire.OutPoint]OnchainCost, error) {
 
 	costs := make(map[wire.OutPoint]OnchainCost, len(deposits))
 	for _, txDeposits := range depositsByFundingTx(deposits) {
 		txCosts, err := fundingTxCosts(
-			ctx, getter, isDeposit, txDeposits,
+			ctx, getter, isDeposit, isStaticAddress, txDeposits,
 		)
 		if err != nil {
 			return costs, err
@@ -81,7 +82,7 @@ func onchainCosts(ctx context.Context, getter walletTxGetter,
 // fundingTxCosts looks up the funding transaction of the given deposits, which
 // all have the same one, and returns their on-chain costs.
 func fundingTxCosts(ctx context.Context, getter walletTxGetter,
-	isDeposit func(wire.OutPoint) bool,
+	isDeposit func(wire.OutPoint) bool, isStaticAddress func([]byte) bool,
 	deposits []*Deposit) (map[wire.OutPoint]OnchainCost, error) {
 
 	txid := deposits[0].Hash
@@ -101,13 +102,13 @@ func fundingTxCosts(ctx context.Context, getter walletTxGetter,
 		return nil, fmt.Errorf("funding tx %v: %w", txid, err)
 	}
 
-	return txOnchainCosts(tx, isDeposit, deposits), nil
+	return txOnchainCosts(tx, isDeposit, isStaticAddress, deposits), nil
 }
 
 // txOnchainCosts returns the on-chain cost of the given deposits, which were
 // all created by the given wallet transaction.
 func txOnchainCosts(tx lndclient.Transaction,
-	isDeposit func(wire.OutPoint) bool,
+	isDeposit func(wire.OutPoint) bool, isStaticAddress func([]byte) bool,
 	deposits []*Deposit) map[wire.OutPoint]OnchainCost {
 
 	costs := make(map[wire.OutPoint]OnchainCost, len(deposits))
@@ -138,7 +139,7 @@ func txOnchainCosts(tx lndclient.Transaction,
 		return costs
 	}
 
-	outputs := fundingTxDeposits(tx.Tx, isDeposit)
+	outputs := fundingTxDeposits(tx.Tx, isDeposit, isStaticAddress)
 	for _, d := range deposits {
 		share, err := depositFeeShare(tx.Tx, tx.Fee, d.Index, outputs)
 		if err != nil {
@@ -172,15 +173,18 @@ func setCosts(costs map[wire.OutPoint]OnchainCost, deposits []*Deposit,
 }
 
 // fundingTxDeposits returns the indexes of the outputs of a funding
-// transaction that are known deposits, so that deposits to different static
-// addresses are all included.
+// transaction that belong to static addresses. Script ownership includes
+// deposits not yet retained by the concurrent deposit reconciliation.
 func fundingTxDeposits(tx *wire.MsgTx,
-	isDeposit func(wire.OutPoint) bool) map[uint32]struct{} {
+	isDeposit func(wire.OutPoint) bool,
+	isStaticAddress func([]byte) bool) map[uint32]struct{} {
 
 	txHash := tx.TxHash()
 	indexes := make(map[uint32]struct{})
-	for i := range tx.TxOut {
-		if isDeposit(wire.OutPoint{Hash: txHash, Index: uint32(i)}) {
+	for i, txOut := range tx.TxOut {
+		if isDeposit(wire.OutPoint{Hash: txHash, Index: uint32(i)}) ||
+			isStaticAddress(txOut.PkScript) {
+
 			indexes[uint32(i)] = struct{}{}
 		}
 	}

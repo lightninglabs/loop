@@ -162,8 +162,11 @@ service SwapClient {
     rpc ListInstantOuts (ListInstantOutsRequest)
         returns (ListInstantOutsResponse);
 
-    /* loop: `static newstaticaddress`
-    NewStaticAddress requests a new static address for loop-ins from the server.
+    /* loop: `static new`
+    NewStaticAddress derives a fresh static receive address on every request.
+    This RPC never funds the address.
+    The CLI's static new and static deposit commands use this RPC. Only static
+    deposit prints lncli instructions for funding the returned address.
     */
     rpc NewStaticAddress (NewStaticAddressRequest)
         returns (NewStaticAddressResponse);
@@ -1802,18 +1805,22 @@ message NewStaticAddressRequest {
     The client's public key for the 2-of-2 MuSig2 taproot static address.
     */
     bytes client_key = 1;
+
+    // Reserved for the funding field from the unreleased combined RPC.
+    reserved 2;
+    reserved "send_coins_request";
 }
 
 message NewStaticAddressResponse {
-    /*
-    The taproot static address.
-    */
+    // The newly derived taproot static address.
     string address = 1;
 
-    /*
-    The CSV expiry of the static address.
-    */
+    // The CSV expiry of the static address in blocks.
     uint32 expiry = 2;
+
+    // Reserved for the funding field from the unreleased combined RPC.
+    reserved 3;
+    reserved "send_coins_response";
 }
 
 message ListUnspentDepositsRequest {
@@ -1945,12 +1952,15 @@ message StaticAddressSummaryRequest {
 
 message StaticAddressSummaryResponse {
     /*
-    The static address of the client.
+    Deprecated: The legacy/root static address anchoring derived addresses.
+    New deposits should use fresh addresses returned by NewStaticAddress; this
+    address must not be treated as the current receive address.
     */
-    string static_address = 1;
+    string static_address = 1 [deprecated = true];
 
     /*
-    The CSV expiry of the static address.
+    The shared CSV delay in blocks inherited by all static addresses derived
+    from the legacy/root address.
     */
     uint64 relative_expiry_blocks = 2;
 
@@ -2138,6 +2148,11 @@ message Deposit {
     partial.
     */
     OnchainCostStatus cost_onchain_status = 9;
+
+    /*
+    The static address that the deposit was sent to.
+    */
+    string static_address = 10;
 }
 
 message StaticAddressWithdrawal {

@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/staticaddr/address"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -38,13 +39,41 @@ type AddressManager interface {
 	GetStaticAddressParameters(ctx context.Context) (*script.Parameters,
 		error)
 
-	// GetStaticAddress returns the deposit address for the given client and
-	// server public keys.
-	GetStaticAddress(ctx context.Context) (*script.StaticAddress, error)
+	// PrepareChangeAddress derives a fresh change key and script without
+	// persisting the address or importing a wallet watch.
+	PrepareChangeAddress(ctx context.Context) (*address.AddressParameters,
+		error)
+
+	// ActivateChangeAddress persists and imports the prepared address before
+	// the swap is stored or any spend signatures are released.
+	ActivateChangeAddress(ctx context.Context,
+		params *address.AddressParameters) error
 }
 
 // DepositManager handles the interaction of loop-ins with deposits.
 type DepositManager interface {
+	// LockDepositsForLoopIn claims deposited inputs for one swap, including
+	// the initialization window before that swap is stored.
+	LockDepositsForLoopIn(context.Context, []*deposit.Deposit,
+		lntypes.Hash) error
+
+	// ReleaseLoopInDeposits resets only deposits still owned by this swap.
+	ReleaseLoopInDeposits(context.Context, []*deposit.Deposit,
+		lntypes.Hash) error
+
+	// RestoreLoopInClaim repairs only in-memory ownership during startup,
+	// before recovered swaps or new requests can release the deposit.
+	RestoreLoopInClaim(context.Context, []*deposit.Deposit,
+		lntypes.Hash) error
+
+	// GetLoopInClaim returns the current in-memory owner, including claims
+	// made before persistence and ownership repairs made during startup.
+	GetLoopInClaim(wire.OutPoint) (lntypes.Hash, bool)
+
+	// ClearLoopInClaim prevents cleanup by any recovered swap from releasing
+	// a deposit whose owner is ambiguous at startup. It retains its lock.
+	ClearLoopInClaim(wire.OutPoint)
+
 	// EnsureDepositsFresh reconciles active deposits with the wallet view.
 	EnsureDepositsFresh(ctx context.Context) error
 
@@ -75,6 +104,15 @@ type DepositManager interface {
 		error)
 }
 
+// LoopInClaim contains the ownership metadata needed to reconcile a recovered
+// deposit without loading the swap's keys, deposits and full update history.
+type LoopInClaim struct {
+	ID               int32
+	SwapHash         lntypes.Hash
+	DepositOutpoints []string
+	State            fsm.StateType
+}
+
 // StaticAddressLoopInStore provides access to the static address loop-in DB.
 type StaticAddressLoopInStore interface {
 	// CreateLoopIn creates a loop-in record in the database.
@@ -87,6 +125,12 @@ type StaticAddressLoopInStore interface {
 	// states.
 	GetStaticAddressLoopInSwapsByStates(ctx context.Context,
 		states []fsm.StateType) ([]*StaticAddressLoopIn, error)
+
+	// GetPaidStaticAddressLoopInClaims returns only the metadata for paid
+	// terminal swaps newer than afterID, including successful swaps whose
+	// deposit write failed.
+	GetPaidStaticAddressLoopInClaims(context.Context, int32) (
+		[]LoopInClaim, error)
 
 	// IsStored checks if the loop-in is already stored in the database.
 	IsStored(ctx context.Context, swapHash lntypes.Hash) (bool, error)
@@ -129,6 +173,13 @@ type TxOutChecker interface {
 	// startHeight are considered.
 	SpentByTxPayingTo(ctx context.Context, outpoints []wire.OutPoint,
 		pkScript []byte, startHeight int32) (bool, error)
+}
+
+// depositSpendChecker supplements availability with positive proof that an
+// original input was confirmed in a transaction that does not fund this HTLC.
+type depositSpendChecker interface {
+	CheckDepositSpend(context.Context, []wire.OutPoint, []byte, []*wire.MsgTx) (
+		map[wire.OutPoint]*wire.TxOut, bool, error)
 }
 
 type NotificationManager interface {

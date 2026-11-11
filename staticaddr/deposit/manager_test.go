@@ -19,6 +19,7 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,73 @@ var (
 
 	defaultDepositConfirmations = uint32(3)
 )
+
+// TestRestoreLoopInClaim protects a recovered newer owner from delayed cleanup
+// by the failed older swap named in the legacy durable mapping.
+func TestRestoreLoopInClaim(t *testing.T) {
+	h := newManagerTestContext(t)
+	m := h.manager
+	params, err := h.mockAddressManager.GetStaticAddressParameters(t.Context())
+	require.NoError(t, err)
+	a, b := lntypes.Hash{1}, lntypes.Hash{2}
+	d := &Deposit{
+		Hash: chainhash.Hash{32}, AddressParams: params, SwapHash: new(a),
+	}
+	d.SetState(LoopingIn)
+	sm, err := NewFSM(t.Context(), d, m.cfg, m.finalizedDepositChan, true)
+	require.NoError(t, err)
+	m.activeDeposits[d.OutPoint] = sm
+	m.deposits[d.OutPoint] = d
+	m.loopInOwners[d.OutPoint] = a
+	deposits := []*Deposit{d}
+	require.NoError(t, m.RestoreLoopInClaim(t.Context(), deposits, b))
+
+	// A's stale cleanup can run after the ownership repair. It must leave
+	// the still-LoopingIn B claim untouched even though SwapHash still says A.
+	cleanup := make(chan error, 1)
+	go func() {
+		cleanup <- m.ReleaseLoopInDeposits(t.Context(), deposits, a)
+	}()
+	require.NoError(t, <-cleanup)
+	require.Equal(t, LoopingIn, d.GetState())
+	require.Equal(t, b, m.loopInOwners[d.OutPoint])
+	require.Equal(t, a, *d.SwapHash)
+	require.NoError(t, m.ReleaseLoopInDeposits(t.Context(), deposits, b))
+	require.Equal(t, Deposited, d.GetState())
+	require.Empty(t, m.loopInOwners)
+
+	// Restoration is a claim repair, not permission to take a deposit that
+	// is already unlocked or being used by another operation.
+	require.Error(t, m.RestoreLoopInClaim(t.Context(), deposits, a))
+	require.Empty(t, m.loopInOwners)
+}
+
+// TestLoopedInTransitionPersistenceFailure shows why a paid swap can reach
+// Succeeded even when its durable deposit remains LoopingIn: the entry hook's
+// failed write does not fail the manager's state transition.
+func TestLoopedInTransitionPersistenceFailure(t *testing.T) {
+	h := newManagerTestContext(t)
+	m := h.manager
+	store := m.cfg.Store.(*mockStore)
+	for _, call := range store.ExpectedCalls {
+		if call.Method == "UpdateDeposit" {
+			call.Return(errors.New("temporary deposit write failure"))
+		}
+	}
+	params, err := h.mockAddressManager.GetStaticAddressParameters(t.Context())
+	require.NoError(t, err)
+	d := &Deposit{Hash: chainhash.Hash{33}, AddressParams: params}
+	d.SetState(LoopingIn)
+	sm, err := NewFSM(t.Context(), d, m.cfg, m.finalizedDepositChan, true)
+	require.NoError(t, err)
+	t.Cleanup(sm.Stop)
+	m.activeDeposits[d.OutPoint] = sm
+	m.deposits[d.OutPoint] = d
+	require.NoError(t, m.TransitionDeposits(t.Context(),
+		[]*Deposit{d}, OnLoopedIn, LoopedIn))
+	require.Equal(t, LoopedIn, d.GetState())
+	store.AssertCalled(t, "UpdateDeposit", mock.Anything, d)
+}
 
 type mockStaticAddressClient struct {
 	mock.Mock
@@ -119,6 +187,17 @@ func (m *mockAddressManager) GetStaticAddressParameters(ctx context.Context) (
 
 	return args.Get(0).(*script.Parameters),
 		args.Error(1)
+}
+
+func (m *mockAddressManager) GetParameters(
+	pkScript []byte) *script.Parameters {
+
+	args := m.Called(pkScript)
+	if args.Get(0) == nil {
+		return nil
+	}
+
+	return args.Get(0).(*script.Parameters)
 }
 
 func (m *mockAddressManager) GetStaticAddress(ctx context.Context) (
@@ -263,7 +342,7 @@ func (m *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	_ ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
 	chan error, error) {
 
-	args := m.Called(ctx, pkScript, heightHint)
+	args := m.Called(ctx, outpoint, pkScript, heightHint)
 	return args.Get(0).(chan *chainntnfs.SpendDetail),
 		args.Get(1).(chan error), args.Error(2)
 }
@@ -353,6 +432,11 @@ func TestManager(t *testing.T) {
 	}
 
 	// Ensure that the deposit is waiting for a confirmation notification.
+	testContext.spendChan <- &chainntnfs.SpendDetail{
+		SpentOutPoint:  &expiryTx.TxIn[0].PreviousOutPoint,
+		SpendingTx:     expiryTx,
+		SpendingHeight: int32(defaultDepositConfirmations + defaultExpiry),
+	}
 	testContext.confChan <- &chainntnfs.TxConfirmation{
 		BlockHeight: defaultDepositConfirmations + defaultExpiry + 3,
 		Tx:          expiryTx,
@@ -581,6 +665,34 @@ func TestManagerSkipsExpiryWhileLndIsCatchingUp(t *testing.T) {
 	}
 }
 
+func TestRecoverDepositsKeepsSpentWithdrawing(t *testing.T) {
+	ctx := context.Background()
+
+	id, err := GetRandomDepositID()
+	require.NoError(t, err)
+
+	storedDeposit := &Deposit{
+		ID:                 id,
+		Hash:               chainhash.Hash{2},
+		Index:              2,
+		state:              Withdrawing,
+		Value:              btcutil.Amount(100000),
+		ConfirmationHeight: 42,
+	}
+
+	testContext := newManagerTestContextWithStoredDeposits(
+		t, []*Deposit{storedDeposit}, nil,
+	)
+
+	err = testContext.manager.recoverDeposits(ctx)
+	require.NoError(t, err)
+
+	deposits, err := testContext.manager.GetActiveDepositsInState(Withdrawing)
+	require.NoError(t, err)
+	require.Len(t, deposits, 1)
+	require.Equal(t, storedDeposit.OutPoint, deposits[0].OutPoint)
+}
+
 // ManagerTestContext is a helper struct that contains all the necessary
 // components to test the reservation manager.
 type ManagerTestContext struct {
@@ -589,6 +701,8 @@ type ManagerTestContext struct {
 	mockLnd                 *test.LndMockServices
 	mockStaticAddressClient *mockStaticAddressClient
 	mockAddressManager      *mockAddressManager
+	spendChan               chan *chainntnfs.SpendDetail
+	spendErrChan            chan error
 	confChan                chan *chainntnfs.TxConfirmation
 	confErrChan             chan error
 	blockChan               chan int32
@@ -597,19 +711,9 @@ type ManagerTestContext struct {
 
 // newManagerTestContext creates a new test context for the reservation manager.
 func newManagerTestContext(t *testing.T) *ManagerTestContext {
-	mockLnd := test.NewMockLnd()
-	lndContext := test.NewContext(t, mockLnd)
-
-	mockStaticAddressClient := new(mockStaticAddressClient)
-	mockAddressManager := new(mockAddressManager)
-	mockStore := new(mockStore)
-	mockChainNotifier := new(MockChainNotifier)
-	confChan := make(chan *chainntnfs.TxConfirmation)
-	confErrChan := make(chan error)
-	blockChan := make(chan int32)
-	blockErrChan := make(chan error)
-
 	ID, err := GetRandomDepositID()
+	require.NoError(t, err)
+
 	utxo := &lnwallet.Utxo{
 		AddressType:   lnwallet.TaprootPubkey,
 		Value:         btcutil.Amount(100000),
@@ -620,7 +724,7 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 			Index: 0xffffffff,
 		},
 	}
-	require.NoError(t, err)
+
 	storedDeposits := []*Deposit{
 		{
 			ID:                   ID,
@@ -632,6 +736,27 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		},
 	}
 
+	return newManagerTestContextWithStoredDeposits(
+		t, storedDeposits, []*lnwallet.Utxo{utxo},
+	)
+}
+
+func newManagerTestContextWithStoredDeposits(t *testing.T,
+	storedDeposits []*Deposit, utxos []*lnwallet.Utxo) *ManagerTestContext {
+
+	mockLnd := test.NewMockLnd()
+	lndContext := test.NewContext(t, mockLnd)
+
+	mockStaticAddressClient := new(mockStaticAddressClient)
+	mockAddressManager := new(mockAddressManager)
+	mockStore := new(mockStore)
+	mockChainNotifier := new(MockChainNotifier)
+	spendChan := make(chan *chainntnfs.SpendDetail)
+	spendErrChan := make(chan error)
+	confChan := make(chan *chainntnfs.TxConfirmation)
+	confErrChan := make(chan error)
+	blockChan := make(chan int32)
+	blockErrChan := make(chan error)
 	mockStore.On(
 		"AllDeposits", mock.Anything,
 	).Return(storedDeposits, nil)
@@ -640,17 +765,29 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		"UpdateDeposit", mock.Anything, mock.Anything,
 	).Return(nil)
 
+	staticAddress, addrParams := generateStaticAddress(
+		context.Background(), mockLnd, lndContext.T,
+	)
+	for _, storedDeposit := range storedDeposits {
+		if storedDeposit.AddressParams == nil {
+			storedDeposit.AddressParams = addrParams
+		}
+	}
+
 	var manager *Manager
+
 	mockAddressManager.On(
 		"GetStaticAddressParameters", mock.Anything,
-	).Return(&script.Parameters{
-		Expiry: defaultExpiry,
-	}, nil)
+	).Return(addrParams, nil)
 
 	mockAddressManager.On(
 		"ListUnspent", mock.Anything, mock.Anything, mock.Anything,
 	).Return(func() []*lnwallet.Utxo {
-		currentUtxo := *utxo
+		if len(utxos) != 1 {
+			return utxos
+		}
+
+		currentUtxo := *utxos[0]
 		currentHeight := manager.currentHeight.Load()
 		if currentHeight < defaultDepositConfirmations {
 			currentUtxo.Confirmations = 0
@@ -668,6 +805,10 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		"RegisterConfirmationsNtfn", mock.Anything, mock.Anything,
 		mock.Anything, mock.Anything, mock.Anything,
 	).Return(confChan, confErrChan, nil)
+	mockChainNotifier.On(
+		"RegisterSpendNtfn", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything,
+	).Return(spendChan, spendErrChan, nil)
 
 	mockChainNotifier.On("RegisterBlockEpochNtfn", mock.Anything).Return(
 		blockChan, blockErrChan, nil,
@@ -698,15 +839,13 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 		mockLnd:                 mockLnd,
 		mockStaticAddressClient: mockStaticAddressClient,
 		mockAddressManager:      mockAddressManager,
+		spendChan:               spendChan,
+		spendErrChan:            spendErrChan,
 		confChan:                confChan,
 		confErrChan:             confErrChan,
 		blockChan:               blockChan,
 		blockErrChan:            blockErrChan,
 	}
-
-	staticAddress := generateStaticAddress(
-		context.Background(), testContext,
-	)
 	mockAddressManager.On(
 		"GetStaticAddress", mock.Anything,
 	).Return(staticAddress, nil)
@@ -714,19 +853,30 @@ func newManagerTestContext(t *testing.T) *ManagerTestContext {
 	return testContext
 }
 
-func generateStaticAddress(ctx context.Context,
-	t *ManagerTestContext) *script.StaticAddress {
+func generateStaticAddress(ctx context.Context, mockLnd *test.LndMockServices,
+	t *testing.T) (*script.StaticAddress, *script.Parameters) {
 
-	keyDescriptor, err := t.mockLnd.WalletKit.DeriveNextKey(
-		ctx, swap.StaticAddressKeyFamily,
+	keyDescriptor, err := mockLnd.WalletKit.DeriveNextKey(
+		ctx, swap.StaticSingleAddressKeyFamily,
 	)
-	require.NoError(t.context.T, err)
+	require.NoError(t, err)
 
 	staticAddress, err := script.NewStaticAddress(
 		input.MuSig2Version100RC2, int64(defaultExpiry),
 		keyDescriptor.PubKey, defaultServerPubkey,
 	)
-	require.NoError(t.context.T, err)
+	require.NoError(t, err)
 
-	return staticAddress
+	pkScript, err := staticAddress.StaticAddressScript()
+	require.NoError(t, err)
+
+	return staticAddress, &script.Parameters{
+		ID:              1,
+		ClientPubkey:    keyDescriptor.PubKey,
+		ServerPubkey:    defaultServerPubkey,
+		Expiry:          defaultExpiry,
+		PkScript:        pkScript,
+		KeyLocator:      keyDescriptor.KeyLocator,
+		ProtocolVersion: 0,
+	}
 }
