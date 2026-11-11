@@ -23,6 +23,11 @@
   until `loopd` was restarted. A recovery attempt that is retried after a
   failure also no longer outlives `loopd`'s shutdown.
 
+* Harden the shared `swapkit` adapter against hostile peer input: bind a
+  recovery fallback to the authenticated deposit before co-signing, verify a
+  caller-provided asset witness before declaring it, recognize annex spends,
+  and report a reorg during outcome verification as retryable.
+
 #### Maintenance
 
 * Update the OpenTelemetry Go SDK from v1.45.0 to v1.47.0 in Loop and
