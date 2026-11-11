@@ -118,6 +118,12 @@ func validateInventoryProof(p *proof.Proof) error {
 			return fmt.Errorf("split asset witness is incomplete")
 		}
 	}
+	// Disclosed alt leaves are used to reconstruct the anchor commitment, so
+	// a malformed one (for example a missing script key) must be rejected
+	// before its commitment key is derived.
+	if err := asset.ValidAltLeaves(p.AltLeaves); err != nil {
+		return fmt.Errorf("invalid asset alt leaves: %w", err)
+	}
 	return nil
 }
 

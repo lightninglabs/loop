@@ -113,8 +113,10 @@ single-input Loop In contexts and SDK compact paths require isolated anchors.
 ## Group evidence and issuance metadata
 
 `VerifyGroupMembership` authenticates an anchor-first set of genesis proofs
-against an independently supplied group and required issuance IDs. The caller
-sets the aggregate proof-byte limit and decides which issuances its quote needs.
+against an independently supplied group and required issuance IDs. Each decoded
+proof's asset is validated before it is reused, so malformed evidence is
+rejected rather than panicking while it is re-encoded. The caller sets the
+aggregate proof-byte limit and decides which issuances its quote needs.
 `SameGroupKey` uses the SDK's x-only identity comparison after validating both
 compressed keys. `IsGroupMember` checks declared fungible group identity only;
 it is not proof verification.

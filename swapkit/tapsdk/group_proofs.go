@@ -50,7 +50,8 @@ func VerifyGroupMembership(ctx context.Context, verifier RPCProofVerifier,
 		}
 		total += len(raw)
 		p, err := proof.Decode(raw)
-		if err != nil || !p.Asset.HasGenesisWitnessForGroup() ||
+		if err != nil || p.Asset.Validate() != nil ||
+			!p.Asset.HasGenesisWitnessForGroup() ||
 			!IsGroupMember(&p.Asset, groupKey) ||
 			(i == 0) != (p.GroupKeyReveal != nil) {
 

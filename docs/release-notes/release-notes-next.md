@@ -24,9 +24,10 @@
   failure also no longer outlives `loopd`'s shutdown.
 
 * Harden the shared `swapkit` adapter against hostile peer input: bind a
-  recovery fallback to the authenticated deposit before co-signing, verify a
-  caller-provided asset witness before declaring it, recognize annex spends,
-  and report a reorg during outcome verification as retryable.
+  recovery fallback to the authenticated deposit before co-signing, validate
+  malformed group and alt-leaf proofs before reuse, verify a caller-provided
+  asset witness before declaring it, recognize annex spends, and report a
+  reorg during outcome verification as retryable.
 
 #### Maintenance
 
