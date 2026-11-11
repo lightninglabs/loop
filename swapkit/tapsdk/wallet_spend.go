@@ -30,6 +30,16 @@ func rebuildObservedSpend(
 
 		return nil, swapkit.ErrInvalid
 	}
+	// Reconstruction replays the mined script-path stack minus its leaf and
+	// control block. A BIP-341 annex would shift those two elements, so the
+	// reconstructed witness would carry the wrong stack. An observed annex
+	// spend is rare and not reconstructable here, so reject it up front
+	// rather than mis-slice it.
+	if len(observed.TxIn[0].Witness) !=
+		len(witnessWithoutAnnex(observed.TxIn[0].Witness)) {
+
+		return nil, swapkit.ErrInvalid
+	}
 	p, err := LastProof(inputProof)
 	if err != nil {
 		return nil, err
@@ -137,6 +147,14 @@ func VerifyWalletSpend(
 	if err != nil {
 		return err
 	}
+	// verifyProof confirmed the proof against the chain, but a reorg between
+	// that check and this re-read would replace the block at this height.
+	// Without the agreed transaction the loop below falls through to
+	// ErrInvalid; report the reorg as retryable instead, matching every other
+	// stale-evidence path.
+	if block.BlockHash() != p.BlockHeader.BlockHash() {
+		return swapkit.ErrPending
+	}
 	for _, tx := range block.Transactions {
 		if tx.TxHash() != p.AnchorTx.TxHash() {
 			continue
@@ -167,7 +185,20 @@ func spendsLeaf(tx *wire.MsgTx, prior sdk.CustomAnchorAssetOutputSummary,
 
 		return false
 	}
-	w := tx.TxIn[0].Witness
+	w := witnessWithoutAnnex(tx.TxIn[0].Witness)
 	return len(w) >= 3 && bytes.Equal(w[len(w)-2], spend.LeafScript) &&
 		bytes.Equal(w[len(w)-1], spend.ControlBlock)
+}
+
+// witnessWithoutAnnex drops a BIP-341 annex. A taproot witness carries an annex
+// when its final element begins with the annex tag and at least one other
+// element precedes it. The annex is not part of the script-path stack, so the
+// agreed leaf and control block are the last two elements once it is removed.
+func witnessWithoutAnnex(w [][]byte) [][]byte {
+	if len(w) >= 2 && len(w[len(w)-1]) > 0 &&
+		w[len(w)-1][0] == txscript.TaprootAnnexTag {
+
+		return w[:len(w)-1]
+	}
+	return w
 }

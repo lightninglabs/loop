@@ -21,6 +21,11 @@
   already using, and a failed lock no longer resets deposits that a withdrawal
   or a channel open has taken.
 
+* Harden the shared `swapkit` adapter against hostile peer input: bind a
+  recovery fallback to the authenticated deposit before co-signing, verify a
+  caller-provided asset witness before declaring it, recognize annex spends,
+  and report a reorg during outcome verification as retryable.
+
 #### Maintenance
 
 #### Contributors (Alphabetical Order)

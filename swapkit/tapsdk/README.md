@@ -66,9 +66,12 @@ Use the following order for a confirmed-input transaction:
    complete batch of active and passive bindings and their union commitment.
    Both enforce bounded genesis provenance and the live tapd v0.8.8 floor.
 3. `PrepareInputs` restores exact confirmed proof lineage and declares public
-   asset witnesses. Call the native `wallet.NewCustomAnchorTxBuilder().Build`.
-   Native SDK Build verifies lineage and constructs allocations and commitments;
-   do not repeat generic proof verification before Build.
+   asset witnesses. A caller-provided witness is verified to commit to its input
+   script key before it is declared, so a peer cannot bind a wallet script key
+   to an unrelated internal key. Call the native
+   `wallet.NewCustomAnchorTxBuilder().Build`. Native SDK Build verifies lineage
+   and constructs allocations and commitments; do not repeat generic proof
+   verification before Build.
 4. Call `ApprovePlan` with the independently retained Bitcoin template, concrete
    `OutputBinding` allocations and absolute fee cap. It checks every issuance,
    allocation, asset key derivation, Bitcoin contract and complete transaction
@@ -167,6 +170,16 @@ validation uses the committed PSBT because finalization can remove its sighash
 metadata. Recovery of an observed refund preserves its mined version, locktime
 and sequence, including older non-RBF refunds. A digest does not itself cover final witnesses: those
 are independently validated by the native SDK.
+
+`NewSwap` validates a peer's fallback package against the authenticated deposit
+before it is ever co-signed. It binds the committed PSBT's signed previous
+output to the deposit output, rejects a committed asset that carries its own
+lock time, and requires normal publication (no skip-broadcast). The observed
+refund and claim discovery helpers tolerate a `Chain` that returns a block
+without the watched spend, recognize the agreed leaf when the spend carries a
+BIP-341 annex, and reject an annex spend from reconstruction rather than
+mis-slicing its witness. A reorg observed while verifying an outcome is
+reported as retryable, not invalid.
 
 ## Validation
 

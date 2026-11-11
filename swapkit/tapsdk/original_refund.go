@@ -67,8 +67,16 @@ func DiscoverOriginalRefund(ctx context.Context, wallet *sdk.Wallet,
 		return nil, err
 	}
 	tx := spendingTransaction(block, base.OutPoint())
-	if len(tx.TxIn) != 1 || len(tx.TxOut) != 1 {
+	if tx == nil {
+		// A faithful Chain returns a block that spends the point, but a
+		// stale or inconsistent response must not panic the recovery.
 		return nil, swapkit.ErrPending
+	}
+	// A confirmed spend with extra inputs or outputs cannot be rebuilt into
+	// a single-input recovery proof and never will be, so it is terminal.
+	// DiscoverOutcome classifies the same shape identically.
+	if len(tx.TxIn) != 1 || len(tx.TxOut) != 1 {
+		return nil, swapkit.ErrInvalid
 	}
 	if !spendsLeaf(tx, c.Output, spend) {
 		return nil, swapkit.ErrPending
