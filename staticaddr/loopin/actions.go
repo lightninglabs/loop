@@ -239,6 +239,15 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 		return returnError(err)
 	}
 
+	// Make sure no deposit can expire before the htlc times out. The
+	// error is kept separately since pushEmptySigs overwrites err.
+	expiryErr := f.validateDepositExpiry(ctx, loopInResp.HtlcExpiry)
+	if expiryErr != nil {
+		pushEmptySigs()
+
+		return returnError(expiryErr)
+	}
+
 	f.loopIn.HtlcCltvExpiry = loopInResp.HtlcExpiry
 	f.htlcServerNonces, err = toNonces(loopInResp.StandardHtlcInfo.Nonces)
 	if err != nil {
@@ -369,6 +378,41 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	event = OnHtlcInitiated
 
 	return event
+}
+
+// validateDepositExpiry checks that every deposit of the swap expires at least
+// DepositHtlcDelta blocks after the htlc expiry chosen by the server. If a
+// deposit expired first, its expiry sweep would run while the htlc tx that
+// spent the deposit can still be pending, and the deposit would leave the
+// swap before the htlc timeout path can be swept. An unconfirmed deposit is
+// assumed to confirm in the block after the swap was initiated, the earliest
+// expiry it can have. This holds because initiateLoopIn refreshes the deposits
+// against the wallet before it records the initiation height.
+func (f *FSM) validateDepositExpiry(ctx context.Context,
+	htlcExpiry int32) error {
+
+	params, err := f.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to get static address parameters: "+
+			"%w", err)
+	}
+
+	for _, d := range f.loopIn.Deposits {
+		confHeight := d.GetConfirmationHeight()
+		if confHeight <= 0 {
+			confHeight = int64(f.loopIn.InitiationHeight) + 1
+		}
+
+		expiryHeight := confHeight + int64(params.Expiry)
+		if expiryHeight < int64(htlcExpiry)+DepositHtlcDelta {
+			return fmt.Errorf("deposit %v expires at height %d, "+
+				"less than %d blocks after the htlc expiry %d",
+				d.OutPoint, expiryHeight, DepositHtlcDelta,
+				htlcExpiry)
+		}
+	}
+
+	return nil
 }
 
 // cancelSwapInvoice cancels the current swap invoice using a detached,

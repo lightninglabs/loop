@@ -793,6 +793,7 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 		StateMachine: &fsm.StateMachine{},
 		cfg: &Config{
 			Server:                               server,
+			AddressManager:                       testAddressManager(),
 			DepositManager:                       &noopDepositManager{},
 			LndClient:                            mockLnd.Client,
 			WalletKit:                            mockLnd.WalletKit,
@@ -920,6 +921,7 @@ func TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence(t *testing.T) {
 		StateMachine: &fsm.StateMachine{},
 		cfg: &Config{
 			Server:                               server,
+			AddressManager:                       testAddressManager(),
 			DepositManager:                       &noopDepositManager{},
 			LndClient:                            mockLnd.Client,
 			WalletKit:                            mockLnd.WalletKit,
@@ -1015,6 +1017,16 @@ func testStaticAddressRouteHints() [][]zpay32.HopHint {
 				FeeProportionalMillionths: 203,
 				CLTVExpiryDelta:           33,
 			},
+		},
+	}
+}
+
+// testAddressManager returns static address parameters with a CSV expiry
+// that leaves enough room after the htlc expiry used in InitHtlcAction tests.
+func testAddressManager() *mockAddressManager {
+	return &mockAddressManager{
+		params: &script.Parameters{
+			Expiry: 2_000,
 		},
 	}
 }
@@ -3382,6 +3394,7 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 		AddressManager: &mockAddressManager{
 			params: &script.Parameters{
 				ProtocolVersion: version.ProtocolVersion_V0,
+				Expiry:          2_000,
 			},
 		},
 		DepositManager: &noopDepositManager{},
@@ -3505,11 +3518,18 @@ type mockAddressManager struct {
 	// staticAddress contains the derived static address returned to the
 	// test.
 	staticAddress *script.StaticAddress
+
+	// paramsErr is returned instead of the address parameters if set.
+	paramsErr error
 }
 
 // GetStaticAddressParameters returns the configured address parameters.
 func (m *mockAddressManager) GetStaticAddressParameters(_ context.Context) (
 	*script.Parameters, error) {
+
+	if m.paramsErr != nil {
+		return nil, m.paramsErr
+	}
 
 	return m.params, nil
 }
@@ -4120,6 +4140,7 @@ func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
 				StateMachine: &fsm.StateMachine{},
 				cfg: &Config{
 					Server:         server,
+					AddressManager: testAddressManager(),
 					DepositManager: manager,
 					LndClient:      mockLnd.Client,
 					WalletKit:      mockLnd.WalletKit,
@@ -4166,6 +4187,216 @@ func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
 			require.Equal(t, lnwire.NewMSatFromSatoshis(
 				depositAmount-tc.fee,
 			), *invoice.MilliSat)
+		})
+	}
+}
+
+// TestInitHtlcActionRejectsHtlcExpiryAfterDeposit verifies that the client
+// aborts a swap if the server chooses an htlc expiry that leaves less than
+// DepositHtlcDelta blocks before a deposit expires. Otherwise the deposit can
+// expire while the htlc tx that spent it is still pending.
+func TestInitHtlcActionRejectsHtlcExpiryAfterDeposit(t *testing.T) {
+	t.Parallel()
+
+	const (
+		initHeight = 1_000
+		htlcExpiry = initHeight + DefaultLoopInOnChainCltvDelta
+
+		// okConf is the lowest confirmation height that is still
+		// accepted with a CSV expiry of csv.
+		csv    = 1_100
+		okConf = htlcExpiry + DepositHtlcDelta - csv
+
+		// okUnconfCsv is the lowest CSV expiry that is still accepted
+		// for an unconfirmed deposit.
+		okUnconfCsv = htlcExpiry + DepositHtlcDelta - initHeight - 1
+	)
+
+	errParams := errors.New("params unavailable")
+
+	tests := []struct {
+		name        string
+		csvExpiry   uint32
+		confHeights []int64
+		paramsErr   error
+		valid       bool
+	}{
+		{
+			name:        "confirmed, expires at the buffer",
+			csvExpiry:   csv,
+			confHeights: []int64{okConf},
+			valid:       true,
+		},
+		{
+			name:        "confirmed, expires inside the buffer",
+			csvExpiry:   csv,
+			confHeights: []int64{okConf - 1},
+		},
+		{
+			name:        "unconfirmed, expires at the buffer",
+			csvExpiry:   okUnconfCsv,
+			confHeights: []int64{0},
+			valid:       true,
+		},
+		{
+			name:        "unconfirmed, expires inside the buffer",
+			csvExpiry:   okUnconfCsv - 1,
+			confHeights: []int64{0},
+		},
+		{
+			name:        "negative height counts as unconfirmed",
+			csvExpiry:   okUnconfCsv,
+			confHeights: []int64{-1},
+			valid:       true,
+		},
+		{
+			name:        "all deposits expire at the safety buffer",
+			csvExpiry:   csv,
+			confHeights: []int64{okConf, okConf, okConf},
+			valid:       true,
+		},
+		{
+			name:        "first deposit expires inside the buffer",
+			csvExpiry:   csv,
+			confHeights: []int64{okConf - 1, okConf, okConf},
+		},
+		{
+			name:        "middle deposit expires inside the buffer",
+			csvExpiry:   csv,
+			confHeights: []int64{okConf, okConf - 1, okConf},
+		},
+		{
+			name:        "last deposit expires inside the buffer",
+			csvExpiry:   csv,
+			confHeights: []int64{okConf, okConf, okConf - 1},
+		},
+		{
+			name:        "address parameters unavailable",
+			csvExpiry:   csv,
+			confHeights: []int64{okConf},
+			paramsErr:   errParams,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mockLnd := test.NewMockLnd()
+			_, serverKey := test.CreateKey(21)
+			response := testStaticAddressLoopInResponse(
+				serverKey.SerializeCompressed(),
+			)
+			response.HtlcExpiry = htlcExpiry
+			server := &initHtlcTestServer{loopInResp: response}
+
+			var (
+				deposits  []*deposit.Deposit
+				outpoints []string
+			)
+			for i, confHeight := range tc.confHeights {
+				dep := &deposit.Deposit{
+					OutPoint: wire.OutPoint{
+						Index: uint32(i),
+					},
+					Value:              500_000,
+					ConfirmationHeight: confHeight,
+				}
+				deposits = append(deposits, dep)
+				outpoints = append(
+					outpoints, dep.OutPoint.String(),
+				)
+			}
+			manager := newRecordingDepositManager(deposits...)
+
+			loopIn := &StaticAddressLoopIn{
+				Deposits:         deposits,
+				DepositOutpoints: outpoints,
+				QuotedSwapFee:    1_000,
+				InitiationHeight: initHeight,
+				InitiationTime:   time.Now(),
+			}
+			cfg := &Config{
+				Server: server,
+				AddressManager: &mockAddressManager{
+					params: &script.Parameters{
+						Expiry: tc.csvExpiry,
+					},
+					paramsErr: tc.paramsErr,
+				},
+				DepositManager: manager,
+				LndClient:      mockLnd.Client,
+				WalletKit:      mockLnd.WalletKit,
+				InvoicesClient: mockLnd.LndServices.Invoices,
+				ChainParams:    mockLnd.ChainParams,
+				Store:          &mockStore{},
+			}
+			cfg.ValidateLoopInContract = testValidateLoopInContract
+			cfg.MaxStaticAddrHtlcFeePercentage = 1
+			cfg.MaxStaticAddrHtlcBackupFeePercentage = 1
+
+			f := &FSM{
+				StateMachine: &fsm.StateMachine{},
+				loopIn:       loopIn,
+				cfg:          cfg,
+			}
+
+			event := f.InitHtlcAction(t.Context(), nil)
+			if tc.valid {
+				require.Equal(t, OnHtlcInitiated, event)
+				require.NoError(t, f.LastActionError)
+				require.Empty(t, server.pushed)
+				require.Empty(t, mockLnd.FailInvoiceChannel)
+
+				return
+			}
+
+			require.Equal(t, fsm.OnError, event)
+			if tc.paramsErr != nil {
+				require.ErrorIs(
+					t, f.LastActionError, tc.paramsErr,
+				)
+			} else {
+				require.ErrorContains(
+					t, f.LastActionError,
+					"blocks after the htlc expiry",
+				)
+			}
+			require.Zero(t, loopIn.HtlcCltvExpiry)
+
+			// Only an empty abandonment request is sent to the
+			// server.
+			require.Len(t, server.pushed, 1)
+			require.Equal(t,
+				&swapserverrpc.PushStaticAddressHtlcSigsRequest{
+					SwapHash: loopIn.SwapHash[:],
+				}, server.pushed[0])
+
+			// The swap invoice is canceled before the action
+			// returns.
+			require.NotEmpty(t, loopIn.SwapInvoice)
+			select {
+			case hash := <-mockLnd.FailInvoiceChannel:
+				require.Equal(t, loopIn.SwapHash, hash)
+			default:
+				t.Fatal("swap invoice was not canceled")
+			}
+
+			// The init error path releases the deposits.
+			for _, dep := range deposits {
+				require.Equal(
+					t, deposit.LoopingIn, dep.GetState(),
+				)
+			}
+			states := f.LoopInStatesV0()
+			require.Equal(t, UnlockDeposits,
+				states[InitHtlcTx].Transitions[event])
+			states[UnlockDeposits].Action(t.Context(), nil)
+			for _, dep := range deposits {
+				require.Equal(
+					t, deposit.Deposited, dep.GetState(),
+				)
+			}
 		})
 	}
 }

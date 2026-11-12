@@ -14,6 +14,11 @@
   A static Loop In also no longer locks a deposit that another Loop In is
   already using, and a failed lock no longer resets deposits that a withdrawal
   or a channel open has taken.
+* Static address loop-ins now abort if the server sets an HTLC expiry that
+  leaves less than 50 blocks before a selected deposit expires. A deposit that
+  expired first left the swap for its expiry sweep. If the HTLC transaction
+  had already spent the deposit, that sweep could never confirm and the HTLC
+  output was never swept back.
 
 #### Maintenance
 
