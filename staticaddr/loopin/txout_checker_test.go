@@ -196,6 +196,93 @@ func TestLndTxOutCheckerSpentByTxPayingTo(t *testing.T) {
 	})
 }
 
+// TestLndTxOutCheckerConfirmedSpendingTx checks that only a confirmed wallet
+// transaction that spends the exact outpoint is returned.
+func TestLndTxOutCheckerConfirmedSpendingTx(t *testing.T) {
+	outpoint := wire.OutPoint{Hash: [32]byte{1}, Index: 1}
+	sameHashOutpoint := wire.OutPoint{Hash: [32]byte{1}, Index: 0}
+	otherOutpoint := wire.OutPoint{Hash: [32]byte{2}, Index: 1}
+
+	const startHeight int32 = 500
+
+	spendingTx := func(prevs ...wire.OutPoint) *wire.MsgTx {
+		tx := wire.NewMsgTx(2)
+		for _, prev := range prevs {
+			tx.AddTxIn(wire.NewTxIn(&prev, nil, nil))
+		}
+		tx.AddTxOut(wire.NewTxOut(1000, []byte{0x51, 0x20, 0x01}))
+
+		return tx
+	}
+
+	spend := spendingTx(otherOutpoint, outpoint)
+
+	tests := []struct {
+		name string
+		txs  []lndclient.Transaction
+		want *wire.MsgTx
+	}{{
+		name: "confirmed spend in a later input",
+		txs: []lndclient.Transaction{{
+			Tx:            spendingTx(otherOutpoint),
+			Confirmations: 3,
+		}, {
+			Tx:            spend,
+			Confirmations: 1,
+		}},
+		want: spend,
+	}, {
+		name: "unconfirmed spend",
+		txs: []lndclient.Transaction{{
+			Tx: spendingTx(outpoint),
+		}},
+	}, {
+		name: "spend of another output of the same tx",
+		txs: []lndclient.Transaction{{
+			Tx:            spendingTx(sameHashOutpoint),
+			Confirmations: 1,
+		}},
+	}, {
+		name: "no wallet transactions",
+	}, {
+		name: "transaction without raw tx",
+		txs: []lndclient.Transaction{{
+			Confirmations: 1,
+			PreviousOutpoints: []*lnrpc.PreviousOutPoint{{
+				Outpoint: outpoint.String(),
+			}},
+		}},
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &mockTxListLightningClient{txs: tc.txs}
+			checker := NewLndTxOutChecker(client)
+
+			tx, err := checker.ConfirmedSpendingTx(
+				t.Context(), outpoint, startHeight,
+			)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, tx)
+			require.Equal(t, []txListCall{{
+				startHeight: startHeight,
+				endHeight:   -1,
+			}}, client.calls)
+		})
+	}
+
+	t.Run("returns error", func(t *testing.T) {
+		expectedErr := errors.New("list transactions failed")
+		client := &mockTxListLightningClient{err: expectedErr}
+		checker := NewLndTxOutChecker(client)
+
+		_, err := checker.ConfirmedSpendingTx(
+			t.Context(), outpoint, startHeight,
+		)
+		require.ErrorIs(t, err, expectedErr)
+	})
+}
+
 type txListCall struct {
 	startHeight int32
 	endHeight   int32

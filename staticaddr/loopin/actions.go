@@ -1522,12 +1522,12 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 // htlc tx or creating or publishing the htlc timeout sweep transaction fails.
 const htlcTimeoutSweepRetryDelay = time.Hour
 
-// defaultHtlcTxLookupTimeout is the default maximum time to wait for a spend
-// when looking up the htlc tx to sweep, or the tx that already spent the htlc
-// output. The wait ends as soon as a confirmed spend is found, which is right
-// away when the spend is already confirmed. The timeout only matters while
-// the spend is unconfirmed, for example an earlier sweep of ours, or never
-// confirms.
+// defaultHtlcTxLookupTimeout is the default maximum time to wait for lnd to
+// report a spend when looking up the htlc tx to sweep, or the tx that already
+// spent the htlc output. The wait ends as soon as a confirmed spend is
+// reported, which is right away when the spend is already confirmed. After the
+// timeout, lnd's wallet is checked for a confirmed spend that lnd didn't
+// report.
 const defaultHtlcTxLookupTimeout = 30 * time.Minute
 
 // SweepHtlcTimeoutAction is called if the server published the htlc tx without
@@ -1804,8 +1804,9 @@ func (f *FSM) fetchHtlcTx(ctx context.Context) (*wire.MsgTx, error) {
 	)
 }
 
-// waitForSpend returns the tx that spends the outpoint, waiting at most the
-// htlc tx lookup timeout. The labels are for logs and errors.
+// waitForSpend returns the confirmed tx that spends the outpoint. If lnd
+// doesn't report the spend within the htlc tx lookup timeout, lnd's wallet is
+// checked before giving up. The labels are for logs and errors.
 func (f *FSM) waitForSpend(ctx context.Context, outpoint wire.OutPoint,
 	pkScript []byte, description, spender string) (*wire.MsgTx, error) {
 
@@ -1849,9 +1850,44 @@ func (f *FSM) waitForSpend(ctx context.Context, outpoint wire.OutPoint,
 			return nil, ctx.Err()
 		}
 
+		// If lnd's historical spend scan fails, lnd neither reports
+		// the error nor starts a new scan when we register again, so a
+		// past spend is only found after lnd restarts. See
+		// lightningnetwork/lnd#11234. Check lnd's wallet instead.
+		tx := f.walletSpendingTx(ctx, outpoint, description)
+		if tx != nil {
+			f.Infof("%s %v spent by %s %v, found in the wallet",
+				description, outpoint, spender, tx.TxHash())
+
+			return tx, nil
+		}
+
 		return nil, fmt.Errorf("%s %v was not spent within %v",
 			description, outpoint, lookupTimeout)
 	}
+}
+
+// walletSpendingTx returns a confirmed tx from lnd's wallet that spends the
+// outpoint, or nil if the wallet lists none or the lookup fails.
+func (f *FSM) walletSpendingTx(ctx context.Context, outpoint wire.OutPoint,
+	description string) *wire.MsgTx {
+
+	if f.cfg.TxOutChecker == nil {
+		return nil
+	}
+
+	tx, err := f.cfg.TxOutChecker.ConfirmedSpendingTx(
+		ctx, outpoint,
+		htlcTxSearchStartHeight(f.loopIn.InitiationHeight),
+	)
+	if err != nil {
+		f.Warnf("unable to look up the spend of %s %v in the "+
+			"wallet: %v", description, outpoint, err)
+
+		return nil
+	}
+
+	return tx
 }
 
 // toNonces converts a byte slice to a 66 byte slice.

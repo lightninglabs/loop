@@ -141,6 +141,12 @@ type TxOutChecker interface {
 	// startHeight are considered.
 	SpentByTxPayingTo(ctx context.Context, outpoints []wire.OutPoint,
 		pkScript []byte, startHeight int32) (bool, error)
+
+	// ConfirmedSpendingTx returns a confirmed wallet transaction that
+	// spends the outpoint, or nil if there is none. Only transactions
+	// confirmed at or above startHeight are considered.
+	ConfirmedSpendingTx(ctx context.Context, outpoint wire.OutPoint,
+		startHeight int32) (*wire.MsgTx, error)
 }
 
 type NotificationManager interface {

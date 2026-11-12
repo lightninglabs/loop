@@ -33,6 +33,9 @@ const (
 	testMaxHtlcBackupFeePct = 0.5
 )
 
+// notSpentErr is part of the error of a spend lookup that timed out.
+const notSpentErr = "was not spent within"
+
 // recordingSweepSigner records the sign descriptors of the htlc timeout sweep
 // and returns dummy signatures.
 type recordingSweepSigner struct {
@@ -630,7 +633,7 @@ func TestFetchHtlcTxFailures(t *testing.T) {
 
 				return true
 			},
-			err: "was not spent within",
+			err: notSpentErr,
 		},
 		{
 			name: "shutdown",
@@ -707,6 +710,10 @@ func TestHtlcTimeoutSweepOutputAlreadySpent(t *testing.T) {
 		// paysSweepAddress is set if that tx pays the sweep address.
 		paysSweepAddress bool
 
+		// inWallet is set if the spend is only found in lnd's wallet,
+		// because lnd's spend notification never comes.
+		inWallet bool
+
 		err string
 	}{
 		{
@@ -718,6 +725,20 @@ func TestHtlcTimeoutSweepOutputAlreadySpent(t *testing.T) {
 			name:  "spent by a tx paying elsewhere",
 			spent: true,
 			err:   "doesn't pay the sweep address",
+		},
+		{
+			name: "earlier sweep only found in the " +
+				"wallet",
+			spent:            true,
+			paysSweepAddress: true,
+			inWallet:         true,
+		},
+		{
+			name: "tx paying elsewhere only found in " +
+				"the wallet",
+			spent:    true,
+			inWallet: true,
+			err:      "doesn't pay the sweep address",
 		},
 		{
 			name: "not spent",
@@ -755,6 +776,36 @@ func TestHtlcTimeoutSweepOutputAlreadySpent(t *testing.T) {
 			)
 			require.NoError(t, err)
 
+			// An earlier sweep with another fee, or a tx paying
+			// elsewhere, spent the output.
+			sweepPkScript, err := txscript.PayToAddrScript(
+				loopIn.HtlcTimeoutSweepAddress,
+			)
+			require.NoError(t, err)
+			pkScript := sweepPkScript
+			if !tc.paysSweepAddress {
+				pkScript = []byte{0x00, 0x14, 0x01}
+			}
+
+			spendingTx := wire.NewMsgTx(2)
+			spendingTx.AddTxIn(&wire.TxIn{
+				PreviousOutPoint: htlcOutpoint,
+			})
+			spendingTx.AddTxOut(&wire.TxOut{
+				Value:    1_000,
+				PkScript: pkScript,
+			})
+			spendingTx.LockTime = 1
+
+			if tc.inWallet {
+				walletTxs := map[wire.OutPoint]*wire.MsgTx{
+					htlcOutpoint: spendingTx,
+				}
+				f.cfg.TxOutChecker = &recordingTxOutChecker{
+					spendingTxs: walletTxs,
+				}
+			}
+
 			errChan := make(chan error, 1)
 			go func() {
 				errChan <- f.createAndPublishHtlcTimeoutSweepTx(ctx)
@@ -777,27 +828,7 @@ func TestHtlcTimeoutSweepOutputAlreadySpent(t *testing.T) {
 			require.Equal(t, htlcOutpoint, *spendReg.Outpoint)
 			require.Equal(t, htlc.PkScript, spendReg.PkScript)
 
-			// An earlier sweep with another fee, or a tx paying
-			// elsewhere, spent the output.
-			sweepPkScript, err := txscript.PayToAddrScript(
-				loopIn.HtlcTimeoutSweepAddress,
-			)
-			require.NoError(t, err)
-			pkScript := sweepPkScript
-			if !tc.paysSweepAddress {
-				pkScript = []byte{0x00, 0x14, 0x01}
-			}
-
-			spendingTx := wire.NewMsgTx(2)
-			spendingTx.AddTxIn(&wire.TxIn{
-				PreviousOutPoint: htlcOutpoint,
-			})
-			spendingTx.AddTxOut(&wire.TxOut{
-				Value:    1_000,
-				PkScript: pkScript,
-			})
-			spendingTx.LockTime = 1
-			if tc.spent {
+			if tc.spent && !tc.inWallet {
 				select {
 				case spendReg.SpendChannel <- &chainntnfs.SpendDetail{
 					SpentOutPoint: spendReg.Outpoint,
@@ -859,4 +890,128 @@ func TestSweepHtlcTimeoutActionReportsLookupError(t *testing.T) {
 	event := f.SweepHtlcTimeoutAction(ctx, nil)
 	require.Equal(t, fsm.NoOp, event)
 	require.ErrorContains(t, f.LastActionError, "loop-in has no deposits")
+}
+
+// TestHtlcTimeoutSweepWalletFallback verifies that the sweep takes the htlc tx
+// from lnd's wallet when lnd never reports the deposit spend, which happens
+// when lnd's historical spend scan fails.
+func TestHtlcTimeoutSweepWalletFallback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+
+		// inWallet is set if lnd's wallet lists the htlc tx.
+		inWallet bool
+
+		// walletErr is the error of the wallet lookup.
+		walletErr error
+
+		err string
+	}{
+		{
+			name:     "htlc tx found in the wallet",
+			inWallet: true,
+		},
+		{
+			name: "htlc tx not in the wallet",
+			err:  notSpentErr,
+		},
+		{
+			name:      "wallet lookup fails",
+			walletErr: errors.New("list transactions failed"),
+			err:       notSpentErr,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(), 10*time.Second,
+			)
+			defer cancel()
+
+			mockLnd := test.NewMockLnd()
+			loopIn, variants := newHtlcVariantTestLoopIn(t, mockLnd)
+			htlcTx := variants[testHighHtlcFeeRate]
+			depositOutpoint := loopIn.Deposits[0].OutPoint
+
+			checker := &recordingTxOutChecker{err: tc.walletErr}
+			if tc.inWallet {
+				walletTxs := map[wire.OutPoint]*wire.MsgTx{
+					depositOutpoint: htlcTx,
+				}
+				checker.spendingTxs = walletTxs
+			}
+
+			f := newHtlcSweepTestFSM(
+				t, ctx, mockLnd, loopIn, &noopSigner{},
+			)
+			f.cfg.HtlcTxLookupTimeout = 100 * time.Millisecond
+			f.cfg.TxOutChecker = checker
+
+			errChan := make(chan error, 1)
+			go func() {
+				err := f.createAndPublishHtlcTimeoutSweepTx(ctx)
+				errChan <- err
+			}()
+
+			// lnd accepts the registration but never reports the
+			// spend.
+			receiveDepositSpendReg(t, ctx, mockLnd, loopIn)
+
+			// The mock publish blocks until the tx is read.
+			var sweepTx *wire.MsgTx
+			if tc.err == "" {
+				select {
+				case sweepTx = <-mockLnd.TxPublishChannel:
+				case <-ctx.Done():
+					t.Fatalf("htlc timeout sweep not "+
+						"published: %v", ctx.Err())
+				}
+			}
+
+			var err error
+			select {
+			case err = <-errChan:
+			case <-ctx.Done():
+				t.Fatalf("sweep attempt did not return: %v",
+					ctx.Err())
+			}
+
+			require.Equal(
+				t, []wire.OutPoint{depositOutpoint},
+				checker.spendingTxOutpoints,
+			)
+			require.Equal(
+				t, []int32{htlcTxSearchStartHeight(
+					loopIn.InitiationHeight,
+				)},
+				checker.spendingTxStartHeights,
+			)
+
+			if tc.err != "" {
+				require.ErrorContains(t, err, tc.err)
+				require.Nil(t, loopIn.HtlcTimeoutSweepTxHash)
+
+				return
+			}
+
+			require.NoError(t, err)
+
+			htlc, err := loopIn.getHtlc(mockLnd.ChainParams)
+			require.NoError(t, err)
+			htlcOutpoint, _, err := loopIn.htlcOutput(
+				htlcTx, htlc.PkScript,
+			)
+			require.NoError(t, err)
+			require.Len(t, sweepTx.TxIn, 1)
+			require.Equal(
+				t, htlcOutpoint,
+				sweepTx.TxIn[0].PreviousOutPoint,
+			)
+		})
+	}
 }
