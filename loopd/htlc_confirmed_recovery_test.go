@@ -169,8 +169,8 @@ func newHtlcConfirmedRecoveryFixture(
 	}
 }
 
-// waitForConfRegistration waits for the recovery worker to register a single
-// confirmation notification.
+// waitForConfRegistration waits for the recovery worker to register its
+// confirmation notification and returns the registration.
 func waitForConfRegistration(t *testing.T, ctx context.Context,
 	lnd *test.LndMockServices) *test.ConfRegistration {
 
@@ -333,6 +333,87 @@ func TestHtlcConfirmedRecoveryManagerPublishesSweep(t *testing.T) {
 
 	require.NoError(t, waitForManagerExit(t, ctx, runErrChan))
 	require.NoError(t, fixture.lnd.IsDone())
+}
+
+// TestHtlcConfirmedRecoveryManagerHonorsHtlcConfirmations verifies that the
+// worker waits for the confirmation depth stored with the swap before it
+// publishes the preimage, and for one confirmation when the stored depth is
+// zero or one.
+func TestHtlcConfirmedRecoveryManagerHonorsHtlcConfirmations(t *testing.T) {
+	defer test.Guard(t)()
+
+	setLogger(newFormatLogger())
+
+	testCases := []struct {
+		name        string
+		storedConfs uint32
+		expectConfs int32
+	}{
+		{
+			name:        "unset depth uses one confirmation",
+			storedConfs: 0,
+			expectConfs: 1,
+		},
+		{
+			name:        "depth one",
+			storedConfs: 1,
+			expectConfs: 1,
+		},
+		{
+			name:        "depth two",
+			storedConfs: 2,
+			expectConfs: 2,
+		},
+		{
+			name:        "depth six",
+			storedConfs: 6,
+			expectConfs: 6,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newHtlcConfirmedRecoveryFixture(t)
+			fixture.swap.Contract.HtlcConfirmations =
+				testCase.storedConfs
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(), htlcConfirmedRecoveryTestTimeout,
+			)
+			defer cancel()
+
+			runErrChan := make(chan error, 1)
+
+			go func() {
+				runErrChan <- fixture.manager.run(ctx)
+			}()
+
+			ntfn := &swapserverrpc.ServerHtlcConfirmedNotification{
+				SwapHash:     fixture.swap.Hash[:],
+				HtlcOutpoint: fixture.outpoint.String(),
+				HtlcAddress:  fixture.htlc.Address.String(),
+				SatPerVbyte:  25,
+			}
+			fixture.subscriber.ntfnChan <- ntfn
+			close(fixture.subscriber.ntfnChan)
+
+			reg := waitForConfRegistration(t, ctx, fixture.lnd)
+			require.Equal(t, testCase.expectConfs, reg.NumConfs)
+
+			fixture.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+				Tx:          fixture.fundingTx,
+				BlockHeight: 321,
+			}
+
+			waitForSignOutputRawRequest(t, ctx, fixture.lnd)
+			waitForPublishedTx(t, ctx, fixture.lnd)
+
+			require.NoError(
+				t, waitForManagerExit(t, ctx, runErrChan),
+			)
+			require.NoError(t, fixture.lnd.IsDone())
+		})
+	}
 }
 
 // TestHtlcConfirmedRecoveryManagerIgnoresZeroFeeRate verifies that a zero-fee
