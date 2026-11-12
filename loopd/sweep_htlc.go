@@ -395,11 +395,18 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 
 	// Wait for a confirmation so we can read the full transaction even if
-	// it's not in our wallet.
-	infof("sweephtlc: registering conf ntfn for %v hint=%v",
-		req.Outpoint, heightHint)
+	// it's not in our wallet. A stored swap may require more than one
+	// confirmation before its preimage is revealed, so honor that depth.
+	// Stateless recovery has no stored value and uses one confirmation.
+	numConfs := int32(1)
+	if targetSwap != nil && targetSwap.Contract.HtlcConfirmations > 1 {
+		numConfs = int32(targetSwap.Contract.HtlcConfirmations)
+	}
+
+	infof("sweephtlc: registering conf ntfn for %v hint=%v confs=%v",
+		req.Outpoint, heightHint, numConfs)
 	confChan, errChan, err := notifier.RegisterConfirmationsNtfn(
-		ctx, &htlcOutpoint.Hash, htlcPkScript, 1,
+		ctx, &htlcOutpoint.Hash, htlcPkScript, numConfs,
 		heightHint,
 	)
 	if err != nil {
