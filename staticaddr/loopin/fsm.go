@@ -178,8 +178,12 @@ func (f *FSM) LoopInStatesV0() fsm.States {
 		SignHtlcTx: fsm.State{
 			Transitions: fsm.Transitions{
 				OnHtlcTxSigned: MonitorInvoiceAndHtlcTx,
-				OnRecover:      UnlockDeposits,
-				fsm.OnError:    UnlockDeposits,
+
+				// After a restart we can't tell whether the
+				// server got our signatures, so we keep the
+				// deposits and monitor the htlc.
+				OnRecover:   MonitorInvoiceAndHtlcTx,
+				fsm.OnError: UnlockDeposits,
 			},
 			Action: f.SignHtlcTxAction,
 		},

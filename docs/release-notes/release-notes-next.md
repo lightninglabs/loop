@@ -14,6 +14,11 @@
   A static Loop In also no longer locks a deposit that another Loop In is
   already using, and a failed lock no longer resets deposits that a withdrawal
   or a channel open has taken.
+* A static Loop In no longer releases its deposits when pushing its HTLC
+  signatures to the server fails or when loopd restarts during signing. The
+  server may have received the signatures and can publish the HTLC, so the
+  swap keeps monitoring it and the deposits stay locked until the swap's
+  payment deadline, or the HTLC expiry at the latest.
 
 #### Maintenance
 
