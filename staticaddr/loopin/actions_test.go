@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -1095,6 +1096,7 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 
 	f, err := NewFSM(ctx, loopIn, cfg, false)
 	require.NoError(t, err)
+	htlcConf := htlcConfirmation(t, f)
 
 	resultChan := make(chan fsm.EventType, 1)
 	go func() {
@@ -1113,7 +1115,7 @@ func TestMonitorInvoiceAndHtlcTxLocksConfirmedHtlcAtDeadline(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
 	}
-	confRegistration.ConfChan <- nil
+	confRegistration.ConfChan <- htlcConf
 
 	select {
 	case hash := <-mockLnd.FailInvoiceChannel:
@@ -2771,6 +2773,7 @@ func TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails(
 	)
 	f.loopIn.HtlcCltvExpiry = mockLnd.Height
 	depositMgr.err = errors.New("transition failed")
+	htlcConf := htlcConfirmation(t, f)
 
 	resultChan := make(chan fsm.EventType, 1)
 	go func() {
@@ -2790,7 +2793,7 @@ func TestMonitorInvoiceAndHtlcTxDoesNotAdvanceWhenTimeoutDepositTransitionFails(
 		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
 	}
 
-	confRegistration.ConfChan <- nil
+	confRegistration.ConfChan <- htlcConf
 
 	select {
 	case transition := <-depositMgr.transitionChan:
@@ -2860,6 +2863,7 @@ func TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits(t *testing.T) 
 		return nil
 	}
 	depositMgr.transitionChan = make(chan depositTransition, 2)
+	htlcConf := htlcConfirmation(t, f)
 
 	runMonitor := func(runCtx context.Context) chan fsm.EventType {
 		resultChan := make(chan fsm.EventType, 1)
@@ -2881,7 +2885,7 @@ func TestMonitorInvoiceAndHtlcTxRetriesOnlyPendingTimeoutDeposits(t *testing.T) 
 			t.Fatalf("htlc conf registration not received: %v",
 				runCtx.Err())
 		}
-		confRegistration.ConfChan <- nil
+		confRegistration.ConfChan <- htlcConf
 
 		return resultChan
 	}
@@ -3044,6 +3048,895 @@ func newInvoiceMonitorTestFSM(t *testing.T, ctx context.Context,
 	require.NoError(t, err)
 
 	return f, depositMgr
+}
+
+// htlcConfirmation returns a confirmation of an htlc tx that spends the
+// deposits the loop-in was signed for and pays to its htlc.
+func htlcConfirmation(t *testing.T, f *FSM) *chainntnfs.TxConfirmation {
+	t.Helper()
+
+	htlc, err := f.loopIn.getHtlc(f.cfg.ChainParams)
+	require.NoError(t, err)
+
+	outpoints, err := f.htlcTxInputs()
+	require.NoError(t, err)
+
+	tx := wire.NewMsgTx(2)
+	for _, outpoint := range outpoints {
+		tx.AddTxIn(&wire.TxIn{PreviousOutPoint: outpoint})
+	}
+	tx.AddTxOut(&wire.TxOut{Value: 100_000, PkScript: htlc.PkScript})
+
+	return &chainntnfs.TxConfirmation{Tx: tx}
+}
+
+// TestMonitorInvoiceAndHtlcTxIgnoresDecoyHtlcConf verifies that a confirmation
+// of a tx that pays to the htlc script but doesn't spend the deposits doesn't
+// lock the deposits for the htlc timeout sweep. The htlc confirmation is
+// registered by pkScript only, so lnd reports the first tx paying to the htlc
+// script, which the server can create from its own funds. The monitor then
+// watches the deposit spend and confirms the htlc tx by its txid. A deposit
+// spend by a tx that isn't the htlc tx doesn't confirm the htlc either.
+func TestMonitorInvoiceAndHtlcTxIgnoresDecoyHtlcConf(t *testing.T) {
+	// dustDecoy pays a dust output to the htlc from an input the server
+	// controls, without spending the deposits.
+	dustDecoy := func(htlcPkScript []byte) *chainntnfs.TxConfirmation {
+		tx := wire.NewMsgTx(2)
+		tx.AddTxIn(&wire.TxIn{
+			PreviousOutPoint: wire.OutPoint{
+				Hash: chainhash.Hash{0xde, 0xad},
+			},
+		})
+		tx.AddTxOut(&wire.TxOut{Value: 330, PkScript: htlcPkScript})
+
+		return &chainntnfs.TxConfirmation{Tx: tx}
+	}
+
+	tests := []struct {
+		name  string
+		decoy func(htlcPkScript []byte) *chainntnfs.TxConfirmation
+
+		// spentByHtlc is whether the htlc tx spends the deposits,
+		// instead of a tx that doesn't pay to the htlc.
+		spentByHtlc bool
+	}{
+		{
+			name:        "dust output from foreign input",
+			decoy:       dustDecoy,
+			spentByHtlc: true,
+		},
+		{
+			name: "nil confirmation",
+			decoy: func([]byte) *chainntnfs.TxConfirmation {
+				return nil
+			},
+			spentByHtlc: true,
+		},
+		{
+			name:  "deposits spent by other tx",
+			decoy: dustDecoy,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			testMonitorIgnoresDecoyHtlcConf(
+				t, tc.decoy, tc.spentByHtlc,
+			)
+		})
+	}
+}
+
+// testMonitorIgnoresDecoyHtlcConf delivers the decoy confirmation and then the
+// deposit spend, and checks that only the htlc tx locks the deposits.
+func testMonitorIgnoresDecoyHtlcConf(t *testing.T,
+	decoy func(htlcPkScript []byte) *chainntnfs.TxConfirmation,
+	spentByHtlc bool) {
+
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{32, 33, 34}
+
+	// With the invoice canceled, an htlc confirmation locks the deposits
+	// for the timeout sweep right away.
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractCanceled,
+	})
+
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
+		mockLnd.LndServices.Invoices,
+	)
+	depositMgr.transitionChan = make(chan depositTransition, 4)
+
+	dep := f.loopIn.Deposits[0]
+	dep.OutPoint = wire.OutPoint{Hash: chainhash.Hash{7}, Index: 1}
+	dep.SetState(deposit.LoopingIn)
+	depositMgr.active = map[wire.OutPoint]*deposit.Deposit{
+		dep.OutPoint: dep,
+	}
+	f.loopIn.DepositOutpoints = []string{dep.OutPoint.String()}
+	f.loopIn.AddressParams = &script.Parameters{
+		PkScript: []byte{0x51, 0x20, 0x01},
+	}
+
+	htlc, err := f.loopIn.getHtlc(f.cfg.ChainParams)
+	require.NoError(t, err)
+	htlcConf := htlcConfirmation(t, f)
+	htlcTxid := htlcConf.Tx.TxHash()
+
+	resultChan := make(chan fsm.EventType, 1)
+	go func() {
+		resultChan <- f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
+	}()
+
+	select {
+	case <-mockLnd.SingleInvoiceSubcribeChannel:
+	case <-ctx.Done():
+		t.Fatalf("invoice subscription not registered: %v", ctx.Err())
+	}
+
+	var confReg *test.ConfRegistration
+	select {
+	case confReg = <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc conf registration not received: %v", ctx.Err())
+	}
+	require.Nil(t, confReg.TxID)
+
+	confReg.ConfChan <- decoy(htlc.PkScript)
+
+	// The monitor must ignore the decoy and watch the deposit spend
+	// instead of locking the deposits.
+	var spendReg *test.SpendRegistration
+	select {
+	case transition := <-depositMgr.transitionChan:
+		t.Fatalf("decoy confirmation moved deposits to %v",
+			transition.state)
+
+	case spendReg = <-mockLnd.RegisterSpendChannel:
+
+	case <-ctx.Done():
+		t.Fatalf("deposit spend registration not received: %v",
+			ctx.Err())
+	}
+	require.Equal(t, dep.OutPoint, *spendReg.Outpoint)
+	require.Equal(t, f.loopIn.AddressParams.PkScript, spendReg.PkScript)
+
+	if !spentByHtlc {
+		otherTx := wire.NewMsgTx(2)
+		otherTx.AddTxIn(&wire.TxIn{PreviousOutPoint: dep.OutPoint})
+		otherTx.AddTxOut(&wire.TxOut{
+			Value:    100_000,
+			PkScript: []byte{0x51},
+		})
+		spendReg.SpendChannel <- &chainntnfs.SpendDetail{
+			SpendingTx: otherTx,
+		}
+
+		select {
+		case reg := <-mockLnd.RegisterConfChannel:
+			t.Fatalf("conf registered for tx %v that isn't the "+
+				"htlc tx", reg.TxID)
+
+		case transition := <-depositMgr.transitionChan:
+			t.Fatalf("deposit spend moved deposits to %v",
+				transition.state)
+
+		case <-time.After(200 * time.Millisecond):
+		}
+
+		cancel()
+		require.Equal(t, fsm.NoOp, <-resultChan)
+
+		return
+	}
+
+	// The htlc tx spends the deposit, and its confirmation is then
+	// registered by txid.
+	spendReg.SpendChannel <- &chainntnfs.SpendDetail{
+		SpendingTx: htlcConf.Tx,
+	}
+
+	select {
+	case confReg = <-mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc txid conf registration not received: %v",
+			ctx.Err())
+	}
+	require.NotNil(t, confReg.TxID)
+	require.Equal(t, htlcTxid, *confReg.TxID)
+	require.Empty(t, depositMgr.transitionChan)
+
+	confReg.ConfChan <- htlcConf
+
+	select {
+	case transition := <-depositMgr.transitionChan:
+		require.Equal(t, deposit.SweepHtlcTimeout, transition.state)
+
+	case <-ctx.Done():
+		t.Fatalf("deposits were not locked after the htlc "+
+			"confirmation: %v", ctx.Err())
+	}
+
+	cancel()
+	select {
+	case event := <-resultChan:
+		require.Equal(t, fsm.NoOp, event)
+
+	case <-time.After(time.Second):
+		t.Fatal("monitor action did not exit")
+	}
+}
+
+// decoyMonitorTest runs the monitor of a swap with a canceled invoice and one
+// deposit. The tests deliver a decoy confirmation and then drive the deposit
+// spend watch.
+type decoyMonitorTest struct {
+	t          *testing.T
+	ctx        context.Context
+	mockLnd    *test.LndMockServices
+	f          *FSM
+	depositMgr *recordingDepositManager
+	txOuts     *recordingTxOutChecker
+	resultChan chan fsm.EventType
+}
+
+func newDecoyMonitorTest(t *testing.T, ctx context.Context) *decoyMonitorTest {
+	mockLnd := test.NewMockLnd()
+	swapHash := lntypes.Hash{32, 33, 35}
+
+	// With the invoice canceled, an htlc confirmation locks the deposits
+	// for the timeout sweep right away.
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  swapHash,
+		State: invoices.ContractCanceled,
+	})
+
+	f, depositMgr := newInvoiceMonitorTestFSM(
+		t, ctx, mockLnd, swapHash, ConfirmationRiskDecisionNone,
+		mockLnd.LndServices.Invoices,
+	)
+	depositMgr.transitionChan = make(chan depositTransition, 4)
+
+	dep := f.loopIn.Deposits[0]
+	dep.OutPoint = wire.OutPoint{Hash: chainhash.Hash{7}, Index: 1}
+	dep.SetState(deposit.LoopingIn)
+	depositMgr.active = map[wire.OutPoint]*deposit.Deposit{
+		dep.OutPoint: dep,
+	}
+	f.loopIn.DepositOutpoints = []string{dep.OutPoint.String()}
+	f.loopIn.AddressParams = &script.Parameters{
+		PkScript: []byte{0x51, 0x20, 0x01},
+	}
+
+	// The htlc expires two blocks from now.
+	f.loopIn.HtlcCltvExpiry = mockLnd.Height + 2
+
+	txOuts := &recordingTxOutChecker{}
+	f.cfg.TxOutChecker = txOuts
+
+	return &decoyMonitorTest{
+		t:          t,
+		ctx:        ctx,
+		mockLnd:    mockLnd,
+		f:          f,
+		depositMgr: depositMgr,
+		txOuts:     txOuts,
+		resultChan: make(chan fsm.EventType, 1),
+	}
+}
+
+// htlcTx returns a fee variant of the htlc tx. Every variant spends the same
+// deposits and pays to the htlc, the output value makes the txid differ.
+func (d *decoyMonitorTest) htlcTx(value int64) *wire.MsgTx {
+	tx := htlcConfirmation(d.t, d.f).Tx
+	tx.TxOut[0].Value = value
+
+	return tx
+}
+
+// start runs the monitor and returns the htlc confirmation registration.
+func (d *decoyMonitorTest) start() *test.ConfRegistration {
+	go func() {
+		d.resultChan <- d.f.MonitorInvoiceAndHtlcTxAction(d.ctx, nil)
+	}()
+
+	select {
+	case <-d.mockLnd.SingleInvoiceSubcribeChannel:
+	case <-d.ctx.Done():
+		d.t.Fatalf("invoice subscription not registered: %v",
+			d.ctx.Err())
+	}
+
+	reg := d.confRegistration()
+	require.Nil(d.t, reg.TxID)
+
+	return reg
+}
+
+// confRegistration waits for the next htlc confirmation registration.
+func (d *decoyMonitorTest) confRegistration() *test.ConfRegistration {
+	select {
+	case reg := <-d.mockLnd.RegisterConfChannel:
+		return reg
+
+	case event := <-d.resultChan:
+		d.t.Fatalf("monitor exited with %v: %v", event,
+			d.f.LastActionError)
+
+	case <-d.ctx.Done():
+		d.t.Fatalf("htlc conf registration not received: %v",
+			d.ctx.Err())
+	}
+
+	return nil
+}
+
+// spendRegistration waits for the next deposit spend registration.
+func (d *decoyMonitorTest) spendRegistration() *test.SpendRegistration {
+	select {
+	case reg := <-d.mockLnd.RegisterSpendChannel:
+		require.NotNil(d.t, reg.ReorgChan)
+
+		return reg
+
+	case event := <-d.resultChan:
+		d.t.Fatalf("monitor exited with %v: %v", event,
+			d.f.LastActionError)
+
+	case <-d.ctx.Done():
+		d.t.Fatalf("deposit spend registration not received: %v",
+			d.ctx.Err())
+	}
+
+	return nil
+}
+
+// decoy confirms a dust output to the htlc that doesn't spend the deposits
+// and returns the deposit spend registration that follows.
+func (d *decoyMonitorTest) decoy(
+	reg *test.ConfRegistration) *test.SpendRegistration {
+
+	htlc, err := d.f.loopIn.getHtlc(d.f.cfg.ChainParams)
+	require.NoError(d.t, err)
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{0xde, 0xad},
+		},
+	})
+	tx.AddTxOut(&wire.TxOut{Value: 330, PkScript: htlc.PkScript})
+	reg.ConfChan <- &chainntnfs.TxConfirmation{Tx: tx}
+
+	return d.spendRegistration()
+}
+
+// spend reports the tx as the spender of the watched deposit and returns the
+// confirmation registration for its txid.
+func (d *decoyMonitorTest) spend(reg *test.SpendRegistration,
+	tx *wire.MsgTx) *test.ConfRegistration {
+
+	reg.SpendChannel <- &chainntnfs.SpendDetail{SpendingTx: tx}
+
+	confReg := d.confRegistration()
+	require.NotNil(d.t, confReg.TxID)
+	require.Equal(d.t, tx.TxHash(), *confReg.TxID)
+
+	return confReg
+}
+
+// confirm delivers the confirmation of the htlc tx and waits for the deposits
+// to be locked for the timeout sweep.
+func (d *decoyMonitorTest) confirm(reg *test.ConfRegistration,
+	tx *wire.MsgTx) {
+
+	reg.ConfChan <- &chainntnfs.TxConfirmation{Tx: tx}
+
+	select {
+	case transition := <-d.depositMgr.transitionChan:
+		require.Equal(
+			d.t, deposit.SweepHtlcTimeout, transition.state,
+		)
+
+	case <-d.ctx.Done():
+		d.t.Fatalf("deposits were not locked after the htlc "+
+			"confirmation: %v", d.ctx.Err())
+	}
+}
+
+// expire notifies a block at which the htlc has timed out.
+func (d *decoyMonitorTest) expire() {
+	height := max(d.mockLnd.Height, d.f.loopIn.HtlcCltvExpiry) + 1
+	require.NoError(d.t, d.mockLnd.NotifyHeight(height))
+}
+
+// requireWaiting checks that the monitor keeps running and didn't touch the
+// deposits.
+func (d *decoyMonitorTest) requireWaiting() {
+	select {
+	case event := <-d.resultChan:
+		d.t.Fatalf("monitor exited with %v: %v", event,
+			d.f.LastActionError)
+
+	case transition := <-d.depositMgr.transitionChan:
+		d.t.Fatalf("deposits moved to %v", transition.state)
+
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// result waits for the monitor to exit.
+func (d *decoyMonitorTest) result() fsm.EventType {
+	select {
+	case event := <-d.resultChan:
+		return event
+
+	case <-d.ctx.Done():
+		d.t.Fatalf("monitor did not exit: %v", d.ctx.Err())
+	}
+
+	return fsm.NoOp
+}
+
+// requireTimeoutSweep expires the htlc and checks that the swap sweeps it and
+// that the deposits were never released.
+func (d *decoyMonitorTest) requireTimeoutSweep() {
+	d.expire()
+	require.Equal(d.t, OnSweepHtlcTimeout, d.result())
+	require.NotContains(d.t, d.depositMgr.states, deposit.Deposited)
+}
+
+// requireTimedOut expires the htlc and checks that the swap times out and
+// releases the deposits.
+func (d *decoyMonitorTest) requireTimedOut() {
+	d.expire()
+	require.Equal(d.t, OnSwapTimedOut, d.result())
+	require.Equal(
+		d.t, []fsm.StateType{deposit.Deposited}, d.depositMgr.states,
+	)
+}
+
+// TestMonitorHtlcTimeoutWaitsForSpentDeposits verifies that the htlc timeout
+// doesn't release deposits the htlc tx already spent. After a decoy the htlc
+// tx is found from the deposit spend, and its confirmation can arrive after
+// the htlc expiry.
+func TestMonitorHtlcTimeoutWaitsForSpentDeposits(t *testing.T) {
+	// The spend watch reports the htlc tx before the htlc expires, and
+	// lnd's wallet isn't asked.
+	t.Run("spend seen by the monitor", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		d.f.cfg.TxOutChecker = nil
+		htlcTx := d.htlcTx(100_000)
+
+		spendReg := d.decoy(d.start())
+		confReg := d.spend(spendReg, htlcTx)
+
+		d.expire()
+		d.requireWaiting()
+
+		d.confirm(confReg, htlcTx)
+		d.requireTimeoutSweep()
+	})
+
+	// The monitor starts after the htlc expiry, so the block arrives
+	// before the deposit spend. lnd's wallet lists the htlc tx.
+	t.Run("start after htlc expiry", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		d.f.loopIn.HtlcCltvExpiry = d.mockLnd.Height - 10
+		d.txOuts.htlcSpent = true
+		htlcTx := d.htlcTx(100_000)
+
+		confReg := d.start()
+		d.requireWaiting()
+
+		spendReg := d.decoy(confReg)
+		confReg = d.spend(spendReg, htlcTx)
+		d.requireWaiting()
+
+		d.confirm(confReg, htlcTx)
+		d.requireTimeoutSweep()
+
+		// The lookup asked about the signed deposits and the htlc.
+		htlc, err := d.f.loopIn.getHtlc(d.f.cfg.ChainParams)
+		require.NoError(t, err)
+		signedOutpoints, err := d.f.depositOutpoints()
+		require.NoError(t, err)
+		require.NotEmpty(t, d.txOuts.spendOutpoints)
+		require.Equal(t, signedOutpoints, d.txOuts.spendOutpoints[0])
+		require.Equal(t, htlc.PkScript, d.txOuts.spendPkScripts[0])
+	})
+
+	// lnd's wallet lists the htlc tx at the htlc expiry and no longer
+	// lists it at the next block. The swap asks again and stops waiting.
+	t.Run("htlc tx gone at a later block", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		d.f.loopIn.HtlcCltvExpiry = d.mockLnd.Height - 10
+		d.txOuts.htlcSpentResults = []bool{true}
+
+		d.start()
+		d.requireWaiting()
+
+		d.requireTimedOut()
+		require.Len(t, d.txOuts.spendOutpoints, 2)
+	})
+
+	// A swap without an outpoint snapshot asks about its deposit rows.
+	t.Run("no outpoint snapshot", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		d.f.loopIn.DepositOutpoints = nil
+		d.f.loopIn.HtlcCltvExpiry = d.mockLnd.Height - 10
+		d.txOuts.htlcSpentResults = []bool{true}
+
+		d.start()
+		d.requireWaiting()
+
+		// Let the monitor exit before reading what it asked about.
+		d.requireTimedOut()
+		require.NotEmpty(t, d.txOuts.spendOutpoints)
+		require.Equal(
+			t, d.f.loopIn.Outpoints(), d.txOuts.spendOutpoints[0],
+		)
+	})
+
+	// A failed lookup must not release the deposits.
+	t.Run("lookup error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		d.f.loopIn.HtlcCltvExpiry = d.mockLnd.Height - 10
+		d.txOuts.err = errors.New("lnd unavailable")
+
+		d.start()
+		require.Equal(t, OnRecover, d.result())
+		require.Empty(t, d.depositMgr.states)
+	})
+
+	// The htlc tx didn't spend the deposits, so they are released.
+	t.Run("deposits not spent", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+
+		d.decoy(d.start())
+		d.requireTimedOut()
+		require.NotEmpty(t, d.txOuts.spendOutpoints)
+	})
+}
+
+// TestMonitorDropsHtlcTxOnReorg verifies that a reorg drops the htlc tx found
+// from the deposit spend. The deposits can then be spent by another signed
+// fee variant of the htlc tx, or not at all.
+func TestMonitorDropsHtlcTxOnReorg(t *testing.T) {
+	// The spend is reorged out and another fee variant of the htlc tx
+	// spends the deposits.
+	t.Run("spend reorg, other fee variant", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		variantA, variantB := d.htlcTx(100_000), d.htlcTx(99_000)
+		require.NotEqual(t, variantA.TxHash(), variantB.TxHash())
+
+		spendReg := d.decoy(d.start())
+		confReg := d.spend(spendReg, variantA)
+
+		// The reorg starts a new spend watch for the same deposit.
+		spendReg.ReorgChan <- struct{}{}
+		spendReg2 := d.spendRegistration()
+		require.Equal(t, *spendReg.Outpoint, *spendReg2.Outpoint)
+		require.Equal(t, spendReg.PkScript, spendReg2.PkScript)
+
+		// The txid of variant A is dropped, so a confirmation
+		// subscription that fails now registers by script again.
+		confReg.ErrChan <- errors.New("lnd restarting")
+		confReg = d.confRegistration()
+		require.Nil(t, confReg.TxID)
+
+		confReg = d.spend(spendReg2, variantB)
+		d.confirm(confReg, variantB)
+		d.requireTimeoutSweep()
+	})
+
+	// The spend is reorged out and the same htlc tx confirms again after
+	// the htlc expiry. lnd's wallet still lists it, so the deposits stay
+	// locked.
+	t.Run("spend reorg, htlc tx confirms again", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		d.txOuts.htlcSpent = true
+		htlcTx := d.htlcTx(100_000)
+
+		spendReg := d.decoy(d.start())
+		d.spend(spendReg, htlcTx)
+
+		spendReg.ReorgChan <- struct{}{}
+		spendReg = d.spendRegistration()
+
+		d.expire()
+		d.requireWaiting()
+
+		confReg := d.spend(spendReg, htlcTx)
+		d.confirm(confReg, htlcTx)
+		d.requireTimeoutSweep()
+		require.NotEmpty(t, d.txOuts.spendOutpoints)
+	})
+
+	// The spend is reorged out and the htlc tx is gone for good. The swap
+	// must not wait for it forever.
+	t.Run("spend reorg, htlc tx gone", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+
+		spendReg := d.decoy(d.start())
+		d.spend(spendReg, d.htlcTx(100_000))
+
+		spendReg.ReorgChan <- struct{}{}
+		d.spendRegistration()
+
+		d.requireTimedOut()
+		require.NotEmpty(t, d.txOuts.spendOutpoints)
+	})
+
+	// The spend is reorged out after the htlc tx confirmed. The
+	// confirmation no longer counts.
+	t.Run("spend reorg after confirmation", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		htlcTx := d.htlcTx(100_000)
+
+		// With an open invoice the confirmation doesn't lock the
+		// deposits yet.
+		d.mockLnd.SetInvoice(&lndclient.Invoice{
+			Hash:  d.f.loopIn.SwapHash,
+			State: invoices.ContractOpen,
+		})
+
+		spendReg := d.decoy(d.start())
+		confReg := d.spend(spendReg, htlcTx)
+		confReg.ConfChan <- &chainntnfs.TxConfirmation{Tx: htlcTx}
+
+		// The monitor must take the confirmation before the reorg.
+		require.Eventually(t, func() bool {
+			return len(confReg.ConfChan) == 0
+		}, testTimeout, 10*time.Millisecond)
+		d.requireWaiting()
+
+		spendReg.ReorgChan <- struct{}{}
+		d.spendRegistration()
+
+		d.requireTimedOut()
+	})
+
+	// A replaced spend registration has its own reorg channel, so a
+	// reorg it reports later is not handled a second time.
+	t.Run("reorg on a replaced registration", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+
+		spendReg := d.decoy(d.start())
+		d.spend(spendReg, d.htlcTx(100_000))
+
+		spendReg.ReorgChan <- struct{}{}
+		d.spendRegistration()
+
+		spendReg.ReorgChan <- struct{}{}
+		select {
+		case <-d.mockLnd.RegisterSpendChannel:
+			t.Fatal("reorg of a replaced registration was handled")
+
+		case <-time.After(200 * time.Millisecond):
+		}
+
+		d.requireTimedOut()
+	})
+
+	// A reorg reported by the confirmation subscription drops the txid
+	// too, so the confirmation is registered by script again.
+	t.Run("confirmation reorg", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+
+		spendReg := d.decoy(d.start())
+		confReg := d.spend(spendReg, d.htlcTx(100_000))
+
+		require.NotNil(t, confReg.ReorgChan)
+		confReg.ReorgChan <- struct{}{}
+		confReg = d.confRegistration()
+		require.Nil(t, confReg.TxID)
+
+		d.requireTimedOut()
+	})
+}
+
+// TestMonitorDepositSpendWatchErrors verifies that the monitor is retried if
+// the deposit spend can't be watched.
+func TestMonitorDepositSpendWatchErrors(t *testing.T) {
+	t.Run("subscription error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+
+		spendReg := d.decoy(d.start())
+		spendReg.ErrChan <- errors.New("lnd restarting")
+
+		require.Equal(t, OnRecover, d.result())
+		require.Empty(t, d.depositMgr.states)
+	})
+
+	t.Run("registration error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		defer cancel()
+
+		d := newDecoyMonitorTest(t, ctx)
+		d.f.loopIn.AddressParams = nil
+
+		confReg := d.start()
+		confReg.ConfChan <- &chainntnfs.TxConfirmation{
+			Tx: wire.NewMsgTx(2),
+		}
+
+		require.Equal(t, OnRecover, d.result())
+		require.Empty(t, d.depositMgr.states)
+	})
+}
+
+// TestMonitorWatchesSignedDepositOutpoints verifies that the monitor takes the
+// htlc tx inputs from the outpoints the htlc tx was signed for. The deposit
+// rows of a recovered swap can differ from them.
+func TestMonitorWatchesSignedDepositOutpoints(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	d := newDecoyMonitorTest(t, ctx)
+
+	// The swap was signed for two deposits, but only the second one is
+	// still mapped to it.
+	first := wire.OutPoint{Hash: chainhash.Hash{6}, Index: 3}
+	second := d.f.loopIn.Deposits[0].OutPoint
+	d.f.loopIn.DepositOutpoints = []string{
+		first.String(), second.String(),
+	}
+
+	htlcTx := d.htlcTx(100_000)
+	require.Len(t, htlcTx.TxIn, 2)
+
+	spendReg := d.decoy(d.start())
+	require.Equal(t, first, *spendReg.Outpoint)
+
+	confReg := d.spend(spendReg, htlcTx)
+	d.confirm(confReg, htlcTx)
+	d.requireTimeoutSweep()
+}
+
+// TestIsHtlcTx verifies that only a tx that spends exactly the deposits of the
+// swap and pays to the htlc is taken as the htlc tx.
+func TestIsHtlcTx(t *testing.T) {
+	htlcPkScript := []byte{0x00, 0x20, 0x01}
+	deposit1 := wire.OutPoint{Hash: chainhash.Hash{1}, Index: 0}
+	deposit2 := wire.OutPoint{Hash: chainhash.Hash{2}, Index: 1}
+	foreign := wire.OutPoint{Hash: chainhash.Hash{3}, Index: 0}
+
+	f := &FSM{
+		loopIn: &StaticAddressLoopIn{
+			Deposits: []*deposit.Deposit{
+				{OutPoint: deposit1},
+				{OutPoint: deposit2},
+			},
+		},
+	}
+
+	newTx := func(pkScript []byte, inputs ...wire.OutPoint) *wire.MsgTx {
+		tx := wire.NewMsgTx(2)
+		for _, input := range inputs {
+			tx.AddTxIn(&wire.TxIn{PreviousOutPoint: input})
+		}
+		tx.AddTxOut(&wire.TxOut{Value: 1_000, PkScript: pkScript})
+
+		return tx
+	}
+
+	tests := []struct {
+		name string
+		tx   *wire.MsgTx
+		want bool
+	}{
+		{
+			name: "htlc tx",
+			tx:   newTx(htlcPkScript, deposit1, deposit2),
+			want: true,
+		},
+		{
+			name: "deposits in other order",
+			tx:   newTx(htlcPkScript, deposit2, deposit1),
+			want: true,
+		},
+		{
+			name: "nil tx",
+		},
+		{
+			name: "foreign input only",
+			tx:   newTx(htlcPkScript, foreign),
+		},
+		{
+			name: "one deposit missing",
+			tx:   newTx(htlcPkScript, deposit1),
+		},
+		{
+			name: "foreign input instead of a deposit",
+			tx:   newTx(htlcPkScript, deposit1, foreign),
+		},
+		{
+			name: "extra foreign input",
+			tx:   newTx(htlcPkScript, deposit1, deposit2, foreign),
+		},
+		{
+			name: "same deposit twice",
+			tx:   newTx(htlcPkScript, deposit1, deposit1),
+		},
+		{
+			name: "no htlc output",
+			tx:   newTx([]byte{0x51}, deposit1, deposit2),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := f.isHtlcTx(tc.tx, htlcPkScript)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	// The htlc tx is signed for the outpoint snapshot. The deposit rows
+	// of a recovered swap can differ from it and must not be used then.
+	t.Run("snapshot differs from deposit rows", func(t *testing.T) {
+		f := &FSM{
+			loopIn: &StaticAddressLoopIn{
+				DepositOutpoints: []string{
+					deposit1.String(), deposit2.String(),
+				},
+				Deposits: []*deposit.Deposit{
+					{OutPoint: deposit1},
+				},
+			},
+		}
+
+		require.True(t, f.isHtlcTx(
+			newTx(htlcPkScript, deposit1, deposit2), htlcPkScript,
+		))
+		require.False(t, f.isHtlcTx(
+			newTx(htlcPkScript, deposit1), htlcPkScript,
+		))
+	})
 }
 
 // failingCancelInvoices records cancellation attempts and returns a configured
@@ -3858,6 +4751,10 @@ type recordingTxOutChecker struct {
 	// htlcSpent is what SpentByTxPayingTo returns.
 	htlcSpent bool
 
+	// htlcSpentResults, if set, are returned by SpentByTxPayingTo one
+	// per call before it falls back to htlcSpent.
+	htlcSpentResults []bool
+
 	// spendOutpoints, spendPkScripts and spendStartHeights record what
 	// SpentByTxPayingTo was asked about.
 	spendOutpoints    [][]wire.OutPoint
@@ -3892,6 +4789,13 @@ func (r *recordingTxOutChecker) SpentByTxPayingTo(_ context.Context,
 	r.spendStartHeights = append(r.spendStartHeights, startHeight)
 	if r.err != nil {
 		return false, r.err
+	}
+
+	if len(r.htlcSpentResults) > 0 {
+		spent := r.htlcSpentResults[0]
+		r.htlcSpentResults = r.htlcSpentResults[1:]
+
+		return spent, nil
 	}
 
 	return r.htlcSpent, nil
@@ -3997,6 +4901,8 @@ func TestMonitorInvoiceAndHtlcTxSweepsTimeoutAfterLegacyRefresh(t *testing.T) {
 	liveDeposit.ConfirmationHeight = confirmationHeight
 	f.loopIn.DepositOutpoints = []string{liveDeposit.OutPoint.String()}
 
+	htlcConf := htlcConfirmation(t, f)
+
 	reloaded := make(chan struct{}, 1)
 	depositMgr.depositsForOutpoints = func([]string, bool) {
 		select {
@@ -4035,7 +4941,7 @@ func TestMonitorInvoiceAndHtlcTxSweepsTimeoutAfterLegacyRefresh(t *testing.T) {
 
 	// The HTLC confirms and the payment deadline passes without payment,
 	// which locks the deposits for the timeout sweep.
-	confRegistration.ConfChan <- nil
+	confRegistration.ConfChan <- htlcConf
 
 	select {
 	case transition := <-depositMgr.transitionChan:

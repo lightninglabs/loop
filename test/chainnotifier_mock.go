@@ -38,6 +38,11 @@ type SpendRegistration struct {
 	HeightHint   int32
 	SpendChannel chan<- *chainntnfs.SpendDetail
 	ErrChan      chan<- error
+
+	// ReorgChan is the channel passed with lndclient.WithReOrgChan, or
+	// nil. The mock forwards one event only, so a test sends the reorg
+	// on this channel itself.
+	ReorgChan chan<- struct{}
 }
 
 // ConfRegistration contains registration details.
@@ -48,11 +53,25 @@ type ConfRegistration struct {
 	NumConfs   int32
 	ConfChan   chan *chainntnfs.TxConfirmation
 	ErrChan    chan<- error
+
+	// ReorgChan is the channel passed with lndclient.WithReOrgChan, or
+	// nil. A test sends the reorg on this channel itself.
+	ReorgChan chan<- struct{}
+}
+
+// reorgChan returns the reorg channel set by the notifier options.
+func reorgChan(opts []lndclient.NotifierOption) chan<- struct{} {
+	options := lndclient.DefaultNotifierOptions()
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	return options.ReOrgChan
 }
 
 func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	outpoint *wire.OutPoint, pkScript []byte, heightHint int32,
-	_ ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
+	opts ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
 	chan error, error) {
 
 	spendChan0 := make(chan *chainntnfs.SpendDetail)
@@ -64,6 +83,7 @@ func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 		PkScript:     pkScript,
 		SpendChannel: spendChan0,
 		ErrChan:      spendErrChan,
+		ReorgChan:    reorgChan(opts),
 	}
 
 	c.lnd.RegisterSpendChannel <- reg
@@ -162,6 +182,7 @@ func (c *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 		NumConfs:   numConfs,
 		ConfChan:   make(chan *chainntnfs.TxConfirmation, 1),
 		ErrChan:    confErrChan,
+		ReorgChan:  reorgChan(opts),
 	}
 
 	c.Lock()
