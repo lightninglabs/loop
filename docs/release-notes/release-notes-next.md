@@ -28,6 +28,11 @@
   server may have received the signatures and can publish the HTLC, so the
   swap keeps monitoring it and the deposits stay locked until the swap's
   payment deadline, or the HTLC expiry at the latest.
+* Static address loop-ins now abort if the server sets an HTLC expiry that
+  leaves less than 50 blocks before a selected deposit expires. A deposit that
+  expired first left the swap for its expiry sweep. If the HTLC transaction
+  had already spent the deposit, that sweep could never confirm and the HTLC
+  output was never swept back.
 
 * The static address Loop In timeout sweep now spends the exact HTLC output
   confirmed on chain, including server-published backup fee variants.
