@@ -2,6 +2,12 @@
 
 #### New Features
 
+* Share asset deposit, reservation and CSV/CLTV HTLC contracts through
+  `swapkit`, with transfer, signing, proof and recovery helpers backed by
+  `github.com/lightninglabs/tap-sdk` v0.1.1 and Taproot Assets v0.8.8. New on-chain
+  asset swaps require tapd v0.8.8 or later. Shared helpers also authenticate
+  group issuance evidence and register issuance metadata before verification.
+
 #### Breaking Changes
 
 #### Bug Fixes
@@ -14,6 +20,11 @@
   A static Loop In also no longer locks a deposit that another Loop In is
   already using, and a failed lock no longer resets deposits that a withdrawal
   or a channel open has taken.
+
+* Harden the shared `swapkit` adapter against hostile peer input: bind a
+  recovery fallback to the authenticated deposit before co-signing, verify a
+  caller-provided asset witness before declaring it, recognize annex spends,
+  and report a reorg during outcome verification as retryable.
 
 #### Maintenance
 
