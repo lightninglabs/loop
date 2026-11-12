@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
@@ -1029,16 +1030,106 @@ func (m *Manager) AllStringOutpointsActiveDeposits(outpoints []string,
 func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 	event fsm.EventType, expectedFinalState fsm.StateType) error {
 
+	return m.transitionDeposits(
+		ctx, deposits, event, expectedFinalState, nil,
+	)
+}
+
+// LockDepositsForSwap moves the deposits to LoopingIn and records the swap
+// on them. It fails if a deposit is already looping in.
+func (m *Manager) LockDepositsForSwap(ctx context.Context, deposits []*Deposit,
+	swapHash lntypes.Hash) error {
+
+	return m.transitionDeposits(
+		ctx, deposits, OnLoopInInitiated, LoopingIn, &swapHash,
+	)
+}
+
+// ReleaseDepositsForSwap moves the deposits that are still looping in for the
+// swap back to Deposited and leaves the others alone, since another loop-in,
+// a withdrawal or a channel open may have taken them.
+func (m *Manager) ReleaseDepositsForSwap(ctx context.Context,
+	deposits []*Deposit, swapHash lntypes.Hash) error {
+
+	outpoints, err := depositOutpoints(deposits)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	stateMachines := make([]*FSM, 0, len(outpoints))
+	activeDeposits := make([]*Deposit, 0, len(outpoints))
+	for _, o := range outpoints {
+		sm, ok := m.activeDeposits[o]
+		if !ok {
+			log.Debugf("Not releasing inactive deposit %v for "+
+				"swap %v", o, swapHash)
+
+			continue
+		}
+
+		stateMachines = append(stateMachines, sm)
+		activeDeposits = append(activeDeposits, m.deposits[o])
+	}
+	m.mu.Unlock()
+
+	lockedDeposits := lockDeposits(activeDeposits)
+	defer unlockDeposits(lockedDeposits)
+
+	for i, sm := range stateMachines {
+		d := activeDeposits[i]
+		ownedBySwap := d.SwapHash != nil && *d.SwapHash == swapHash
+		if !d.isInStateNoLock(LoopingIn) || !ownedBySwap {
+			log.Infof("Not releasing deposit %v in state %v for "+
+				"swap %v: it is no longer looping in for it",
+				d.OutPoint, d.getStateNoLock(), swapHash)
+
+			continue
+		}
+
+		err = sm.SendEvent(ctx, fsm.OnError, nil)
+		if err != nil {
+			return err
+		}
+
+		err = sm.DefaultObserver.WaitForState(
+			ctx, DefaultTransitionTimeout, Deposited,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// depositOutpoints returns the deposits' outpoints, rejecting nil deposits
+// and duplicates.
+func depositOutpoints(deposits []*Deposit) ([]wire.OutPoint, error) {
 	outpoints := make([]wire.OutPoint, len(deposits))
 	for i, d := range deposits {
 		if d == nil {
-			return fmt.Errorf("nil deposit at index %d", i)
+			return nil, fmt.Errorf("nil deposit at index %d", i)
 		}
 
 		outpoints[i] = d.OutPoint
 	}
 	if err := CheckDuplicates(outpoints); err != nil {
-		return fmt.Errorf("duplicate deposit outpoint: %w", err)
+		return nil, fmt.Errorf("duplicate deposit outpoint: %w", err)
+	}
+
+	return outpoints, nil
+}
+
+// transitionDeposits implements TransitionDeposits. A non-nil swapHash locks
+// the deposits for that loop-in.
+func (m *Manager) transitionDeposits(ctx context.Context, deposits []*Deposit,
+	event fsm.EventType, expectedFinalState fsm.StateType,
+	swapHash *lntypes.Hash) error {
+
+	outpoints, err := depositOutpoints(deposits)
+	if err != nil {
+		return err
 	}
 
 	m.mu.Lock()
@@ -1059,17 +1150,37 @@ func (m *Manager) TransitionDeposits(ctx context.Context, deposits []*Deposit,
 				"state %v", deposit.OutPoint,
 				deposit.getStateNoLock())
 		}
+
+		// Each loop-in locks its deposits once, so a deposit that is
+		// already looping in belongs to another swap or to none.
+		if swapHash != nil && deposit.isInStateNoLock(LoopingIn) {
+			return fmt.Errorf("deposit %v is already looping in",
+				deposit.OutPoint)
+		}
+	}
+
+	// recordSwap records the loop-in on a deposit.
+	recordSwap := func(d *Deposit) {
+		if swapHash != nil && d.isInStateNoLock(expectedFinalState) {
+			hash := *swapHash
+			d.SwapHash = &hash
+		}
 	}
 
 	for i, sm := range stateMachines {
-		if activeDeposits[i].isInStateNoLock(expectedFinalState) {
+		d := activeDeposits[i]
+		if d.isInStateNoLock(expectedFinalState) {
 			continue
 		}
 
-		err := sm.SendEvent(ctx, event, nil)
+		err = sm.SendEvent(ctx, event, nil)
 		if err != nil {
 			return err
 		}
+
+		// Record the swap before waiting, so a failed wait still
+		// leaves the deposit releasable.
+		recordSwap(d)
 
 		err = sm.DefaultObserver.WaitForState(
 			ctx, DefaultTransitionTimeout, expectedFinalState,
