@@ -1,0 +1,352 @@
+syntax = "proto3";
+
+package looprpc;
+
+option go_package = "github.com/lightninglabs/loop/swapserverrpc";
+
+// AssetReservationService buys asset reservations for later asset Loop Out
+// swaps. Every call requires authentication. Paying the prepay starts funding;
+// no client message can establish payment, publication, or proof validity.
+service AssetReservationService {
+    // QuoteAssetReservation creates one purchase and its two invoices. Retry
+    // with the same ID, asset, amount, and key after an uncertain response.
+    // A response may still be preparing its quote; poll GetAssetReservation.
+    rpc QuoteAssetReservation (QuoteAssetReservationRequest)
+        returns (AssetReservation);
+
+    // GetAssetReservation returns the authenticated owner's purchase by ID
+    // or funding outpoint, including its quote and current server progress.
+    // Poll this method after an uncertain reply or while awaiting delivery.
+    rpc GetAssetReservation (AssetReservationSelector)
+        returns (AssetReservation);
+
+    // ListAssetReservations returns a page of the authenticated owner's
+    // purchases in reservation ID order. Use next_after_id to request the
+    // next page; purchases may change between pages.
+    rpc ListAssetReservations (ListAssetReservationsRequest)
+        returns (ListAssetReservationsResponse);
+
+    // GetAssetReservationProof returns the full exported proof, not merely
+    // an inclusion proof. The client must verify it independently.
+    rpc GetAssetReservationProof (AssetReservationSelector)
+        returns (AssetReservationProof);
+
+    // CancelAssetReservation requests cancellation of an unpaid purchase.
+    // A lost reply is not proof of cancellation. Settlement wins the race:
+    // an already-paid purchase continues delivery instead of being refunded.
+    rpc CancelAssetReservation (CancelAssetReservationRequest)
+        returns (AssetReservation);
+}
+
+message QuoteAssetReservationRequest {
+    // Reservation protocol version: 0 for an exact asset ID, 1 for a group
+    // key. The server rejects versions that do not match the selector.
+    uint32 protocol_version = 1;
+
+    // Client-generated, nonzero 32-byte purchase ID, saved before the first
+    // request. Reuse it with the same selector, amount, and key after a lost
+    // response or restart. The server binds it to the authenticated owner
+    // and rejects reuse with different request fields.
+    bytes reservation_id = 2;
+
+    // Exact, nonzero 32-byte asset ID to reserve. The funding output and the
+    // receiving asset channel must use this issuance. Set exactly one of
+    // asset_id or group_key; leave the other empty.
+    bytes asset_id = 3;
+
+    // Compressed 33-byte tweaked group public key returned by tapd. The
+    // server may choose different member issuances for on-chain funding
+    // and Lightning payments. The quote identifies both; delivery must
+    // match its funding asset ID. Mutually exclusive with asset_id.
+    bytes group_key = 4;
+
+    // Positive reservation principal in indivisible asset units, excluding
+    // the quoted service fee. The funding output must contain this exact
+    // amount. Values must fit signed 64-bit storage and server policy.
+    uint64 amount = 5;
+
+    // Compressed 33-byte public key for the client's side of the reservation
+    // contract's cooperative spend. The client must control its secret and
+    // retain the key across restarts. This is not a Lightning node identity.
+    bytes client_key = 6;
+}
+
+message AssetReservationSelector {
+    // Identify one purchase owned by the authenticated caller. Exactly one
+    // selector is required; neither selector bypasses ownership checks.
+    oneof selector {
+        // Nonzero 32-byte purchase ID from the original quote request.
+        // Works before funding and remains valid after an outpoint is known.
+        bytes reservation_id = 1;
+
+        // Reservation funding output in canonical txid:vout form. Available
+        // only after funding is assigned; alternate encodings are rejected.
+        string outpoint = 2;
+    }
+}
+
+message CancelAssetReservationRequest {
+    // Required selector for the authenticated owner's existing purchase.
+    AssetReservationSelector reservation = 1;
+
+    // If true, cancel only the probe invoice, preserving the purchase and
+    // prepay. If false, request cancellation of the unpaid purchase. Neither
+    // mode refunds a settled prepay. Probe cancellation is permanent; another
+    // probe attempt requires a new purchase ID.
+    bool probe_only = 2;
+}
+
+message AssetReservationTerms {
+    // Exact, nonzero 32-byte issuance ID for the on-chain funding output.
+    // Equals the requested asset ID for an exact purchase; for a group
+    // purchase, identifies the member issuance selected by the server.
+    bytes asset_id = 1;
+
+    // Reserved principal in indivisible asset units, excluding fees. Must
+    // equal the requested amount and the amount proven in the funding output.
+    uint64 amount = 2;
+
+    // Total quoted charge in indivisible asset units, including estimated
+    // server funding costs. Paid upfront and credited once against the later
+    // swap fee. An unused reservation does not receive an automatic refund.
+    uint64 fee = 3;
+
+    // Block-based CSV delay for the server's refund path, from 1 to 65535.
+    // Measured from funding confirmation, not quote creation or delivery.
+    uint32 csv_delay = 4;
+
+    // Positive funding confirmation depth required before delivery is ready.
+    // This is an agreed threshold, not the current confirmation count.
+    uint32 required_confirmations = 5;
+
+    // Positive block margin between the exclusive swap execution cutoff
+    // and CSV refund maturity. The later swap must also enforce its own
+    // claim-time requirements.
+    uint32 execution_delta = 6;
+}
+
+message AssetReservationQuote {
+    // Client-generated 32-byte purchase ID. Must match the request and the
+    // enclosing AssetReservation response.
+    bytes reservation_id = 1;
+
+    // Immutable asset principal, fee, and lifetime offered by the server.
+    // The client validates these terms before approving this exact quote.
+    AssetReservationTerms terms = 2;
+
+    // Compressed 33-byte client contract key, echoed from the request.
+    // The client checks it against its locally saved signing key.
+    bytes client_key = 3;
+
+    // Compressed 33-byte server contract key. Used with client_key for
+    // cooperative spending and by the server for the CSV refund path.
+    bytes server_key = 4;
+
+    // The server's receiving LND node, as a 33-byte compressed identity key.
+    // This node issues both invoices and receives the asset prepay. The
+    // client checks that both invoice destinations match this key.
+    bytes receiving_node_key = 5;
+
+    // Compressed 33-byte identity of the receiving node's conversion peer.
+    // Converts incoming BTC into assets on the receiving channel. Both
+    // invoice route hints and RFQs must identify this peer.
+    bytes edge_key = 6;
+
+    // BOLT11 hold invoice for the quoted fee. The client pays BTC through
+    // the conversion peer; the server receives assets. Accepted HTLCs allow
+    // funding preparation; settlement follows observed funding publication.
+    string prepay_invoice = 7;
+
+    // BOLT11 hold invoice for one probe of the full reserved asset amount.
+    // Its hash must equal ProbeHash(reservation_id). The receiver verifies
+    // the asset receipt and cancels the invoice without settling it.
+    string probe_invoice = 8;
+
+    // Exact BTC prepay amount in millisatoshis, excluding routing fees.
+    // Must match prepay_invoice and the fee conversion in prepay_rfq.
+    uint64 prepay_amount_msat = 9;
+
+    // BTC equivalent of the reserved principal, in millisatoshis excluding
+    // routing fees. Matches the probe invoice and RFQ. Estimates the later
+    // main payment; it does not lock the later swap's conversion rate.
+    uint64 estimated_main_amount_msat = 10;
+
+    // Quote expiry as Unix seconds. No new prepay may start at or after
+    // this time. Bounded by both invoices and both receiving RFQs; an
+    // already-started payment must still be reconciled after expiry.
+    int64 expires_at = 11;
+
+    // Serialized rfqrpc.PeerAcceptedBuyQuote for receiving terms.fee asset
+    // units. Binds the BTC prepay amount, conversion peer, and route hint.
+    // Uses the payment issuance for group purchases. Contains no secrets.
+    bytes prepay_rfq = 12;
+
+    // Serialized rfqrpc.PeerAcceptedBuyQuote for receiving terms.amount
+    // asset units in the probe. Binds its BTC amount, peer, and route hint.
+    // Uses the payment issuance for group purchases. Contains no secrets.
+    bytes probe_rfq = 13;
+
+    // Group key, payment issuance, and membership evidence for a group
+    // request; absent for an exact-ID request. Included in the approval hash
+    // and verified before the client probes or pays.
+    AssetReservationGroup group = 14;
+}
+
+// AssetReservationStatus summarizes server progress for RPC callers. Several
+// internal server states may map to one status. The client tracks its own
+// progress separately and must verify delivery before entering its Ready state.
+enum AssetReservationStatus {
+    // Unspecified status; does not establish valid purchase progress.
+    ASSET_RESERVATION_UNKNOWN = 0;
+
+    // Purchase recorded; the server is preparing its invoices and quote.
+    ASSET_RESERVATION_QUOTING = 1;
+
+    // Quote available; waiting for the prepay to reach the receiving node.
+    ASSET_RESERVATION_AWAITING_PAYMENT = 2;
+
+    // Prepay accepted; the server is preparing the reservation transfer.
+    ASSET_RESERVATION_PREPARING_FUNDING = 3;
+
+    // Funding is being published or awaiting settlement, confirmations, or
+    // proof export. This status alone does not establish publication.
+    ASSET_RESERVATION_FUNDING = 4;
+
+    // Server verified delivery and retains its proof. The client must still
+    // verify the output and active chain before marking its own state Ready.
+    ASSET_RESERVATION_READY = 5;
+
+    // Cancellation requested but not yet authoritative. If payment settled
+    // instead, the server continues delivery rather than refunding it.
+    ASSET_RESERVATION_CANCELING = 6;
+
+    // Server confirmed unpaid cancellation. The client must also resolve
+    // its own payment outcome before treating the purchase as canceled.
+    ASSET_RESERVATION_CANCELED = 7;
+
+    // The reservation reached CSV expiry; the server's refund may still be
+    // preparing, publishing, or awaiting confirmation.
+    ASSET_RESERVATION_EXPIRED = 8;
+
+    // A server-side inconsistency requires operator attention. This does
+    // not establish cancellation, a refund, or a safe client spend.
+    ASSET_RESERVATION_NEED_ADMIN = 9;
+}
+
+message AssetReservation {
+    // Client-generated 32-byte purchase ID from the quote request. Remains
+    // stable through retries, funding, and recovery, including before an
+    // on-chain outpoint exists.
+    bytes reservation_id = 1;
+
+    // Saved purchase terms, keys, invoices, and RFQs. Absent while the server
+    // is still preparing the quote. The client validates and saves the quote
+    // before approval; polling does not create a replacement quote.
+    AssetReservationQuote quote = 2;
+
+    // Public summary of the server's progress, not the client's local FSM
+    // state. READY does not establish client readiness: the client must
+    // independently verify the delivery proof and current chain state.
+    AssetReservationStatus state = 3;
+
+    // Reservation funding output as canonical txid:vout. Empty until the
+    // funding output is assigned, then immutable. Its presence alone does
+    // not establish that the transaction was published or confirmed.
+    string outpoint = 4;
+
+    // Recorded block height containing the funding transaction, not its
+    // confirmation count. Zero until known. The client must check this
+    // height against the active chain and the delivered proof.
+    uint32 confirmation_height = 5;
+
+    // First block height eligible for the server's CSV refund spend:
+    // confirmation_height + quote.terms.csv_delay. Zero until the funding
+    // height is known. Additional confirmations do not extend this deadline.
+    uint32 timeout_height = 6;
+
+    // Exclusive cutoff for starting a later swap: timeout_height minus
+    // quote.terms.execution_delta. Zero until the funding height is known.
+    // A later swap must enforce this cutoff and its own claim-time checks.
+    uint32 execution_cutoff = 7;
+
+    // Settled prepay credited toward the later swap fee, in indivisible
+    // asset units. Zero until the server verifies the settled asset receipt;
+    // otherwise equals quote.terms.fee. This is neither BTC nor a refund.
+    uint64 prepay_credit = 8;
+
+    // The server has a stored full asset proof retrievable through
+    // GetAssetReservationProof. Availability alone does not establish that
+    // the proof is valid on the current chain or the output is unspent.
+    bool proof_available = 9;
+
+    // The server saved a verified receipt for the full-amount asset probe.
+    // The client must also verify probe cancellation and its local payment
+    // outcome. The probe is never settled and reserves no future liquidity.
+    bool probe_succeeded = 10;
+
+    // The purchase's sole probe invoice is permanently canceled. This alone
+    // does not imply probe success or cancel the prepay invoice. A new probe
+    // attempt requires a new purchase ID.
+    bool probe_canceled = 11;
+
+    // Funding was refused and the unpaid purchase authoritatively canceled.
+    // The client must also resolve its local payment before reporting a
+    // terminal failure; this flag alone cannot establish the payment outcome.
+    bool funding_unavailable = 12;
+}
+
+message ListAssetReservationsRequest {
+    // Maximum number of the authenticated owner's purchases to return.
+    // Zero selects the default of 100; values above 1000 are rejected.
+    uint32 limit = 1;
+
+    // Exclusive 32-byte purchase-ID cursor, compared in bytewise order.
+    // Leave empty for the first page; otherwise use the previous response's
+    // next_after_id. Pagination does not freeze records between requests.
+    bytes after_id = 2;
+}
+
+message ListAssetReservationsResponse {
+    // This page of the authenticated owner's purchases in ascending
+    // bytewise purchase-ID order. May be empty; includes terminal purchases.
+    repeated AssetReservation reservations = 1;
+
+    // Pass this 32-byte ID as after_id to continue listing. Empty when no
+    // further page was found. Records may change between page requests.
+    bytes next_after_id = 2;
+}
+
+message AssetReservationProof {
+    // Original 32-byte purchase ID. The client checks it against the saved
+    // purchase to prevent accepting another reservation's delivery.
+    bytes reservation_id = 1;
+
+    // Canonical txid:vout of the funding output proven by proof. Must match
+    // the saved delivery outpoint and the output established by verification.
+    string outpoint = 2;
+
+    // Full serialized Taproot Assets proof file, including transfer history,
+    // bounded to 16 MiB. The client independently verifies its provenance,
+    // contract, asset, amount, and current chain state before accepting it.
+    bytes proof = 3;
+}
+
+// Group membership evidence for the on-chain issuance in terms.asset_id and
+// the issuance carried by the configured Lightning channel. First proof is
+// the group anchor, followed by any distinct member issuance proofs needed.
+message AssetReservationGroup {
+    // Compressed 33-byte tweaked group public key. Must identify the group
+    // requested by the client and proven by the supplied issuance proofs.
+    bytes group_key = 1;
+
+    // Exact 32-byte issuance ID used on the receiving Lightning channel for
+    // the prepay and probe. May differ from terms.asset_id; both issuances
+    // must be fungible members of group_key.
+    bytes payment_asset_id = 2;
+
+    // Serialized individual Taproot Assets genesis proofs, not full proof
+    // files. The group anchor comes first, followed by distinct member
+    // proofs needed for the funding and payment issuances. One to three
+    // proofs, at most 3 MiB in total; verified before probing or paying.
+    repeated bytes issuance_proofs = 3;
+}
