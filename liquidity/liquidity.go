@@ -822,9 +822,11 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 		return noSwap(ReasonLiquidityOk, nil)
 	}
 
-	restrictions, err := m.cfg.Restrictions(
-		ctx, swap.TypeOut, getInitiator(params),
-	)
+	// Get the restrictions placed on swaps by the server, narrowed by the
+	// swap size limits that the client has set. A client minimum above the
+	// server's makes easy autoloop wait for a larger excess, so that it
+	// swaps less often.
+	restrictions, err := m.getSwapRestrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return nil, err
 	}
