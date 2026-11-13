@@ -1944,3 +1944,44 @@ func (f *formatLogger) Criticalf(format string, params ...any) {
 	f.record(format)
 	f.Logger.Criticalf(format, params...)
 }
+
+// TestPreimageRevealed verifies that only a swap that revealed its preimage
+// or completed counts as having no preimage left to protect.
+func TestPreimageRevealed(t *testing.T) {
+	revealed := map[loopdb.SwapState]bool{
+		loopdb.StatePreimageRevealed: true,
+		loopdb.StateSuccess:          true,
+	}
+
+	states := []loopdb.SwapState{
+		loopdb.StateInitiated,
+		loopdb.StatePreimageRevealed,
+		loopdb.StateSuccess,
+		loopdb.StateFailOffchainPayments,
+		loopdb.StateFailTimeout,
+		loopdb.StateFailSweepTimeout,
+		loopdb.StateFailInsufficientValue,
+		loopdb.StateFailTemporary,
+		loopdb.StateHtlcPublished,
+		loopdb.StateInvoiceSettled,
+		loopdb.StateFailIncorrectHtlcAmt,
+		loopdb.StateFailAbandoned,
+		loopdb.StateFailInsufficientConfirmedBalance,
+		loopdb.StateFailIncorrectHtlcAmtSwept,
+	}
+
+	for _, state := range states {
+		event := &loopdb.LoopEvent{}
+		event.State = state
+
+		swp := &loopdb.LoopOut{}
+		swp.Events = []*loopdb.LoopEvent{event}
+
+		require.Equal(
+			t, revealed[state], preimageRevealed(swp), state.String(),
+		)
+	}
+
+	// A swap without events has not revealed anything.
+	require.False(t, preimageRevealed(&loopdb.LoopOut{}))
+}

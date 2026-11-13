@@ -26,6 +26,10 @@ type htlcConfirmedRecoveryManager struct {
 	notifier           htlcChainNotifier
 	wallet             htlcWallet
 	signer             htlcSigner
+
+	// bestHeight returns the current block height. The worker uses it to
+	// not reveal a preimage too close to the HTLC expiry.
+	bestHeight htlcBestHeight
 }
 
 // run starts the HTLC recovery worker.
@@ -65,7 +69,7 @@ func (m *htlcConfirmedRecoveryManager) handleNotification(ctx context.Context,
 	// Require all dependencies up front so the optional recovery path
 	// exits quietly when the daemon is not wired for sweeping.
 	if m.swapStore == nil || m.chainParams == nil || m.notifier == nil ||
-		m.wallet == nil || m.signer == nil {
+		m.wallet == nil || m.signer == nil || m.bestHeight == nil {
 
 		debugf("HTLC recovery dependencies unavailable")
 
@@ -81,14 +85,16 @@ func (m *htlcConfirmedRecoveryManager) handleNotification(ctx context.Context,
 
 	// Reuse sweepHtlc so the worker follows the same success-path spend
 	// construction and destination selection as the manual sweep path.
-	_, err = sweepHtlc(
+	// Nobody watches this sweep, so it also has to respect the preimage
+	// reveal deadline of the swap.
+	_, err = sweepHtlcWithRevealChecks(
 		ctx, &looprpc.SweepHtlcRequest{
 			Outpoint:    outpoint.String(),
 			HtlcAddress: htlcAddress,
 			SatPerVbyte: ntfn.SatPerVbyte,
 			Publish:     true,
 		}, m.chainParams, m.swapStore, m.notifier, m.wallet, m.signer,
-		nil, nil,
+		nil, nil, m.bestHeight,
 	)
 	if err != nil {
 		debugf("Unable to recover HTLC outpoint %s: %v", outpoint, err)
