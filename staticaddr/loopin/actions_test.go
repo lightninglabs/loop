@@ -9,17 +9,22 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/fsm"
+	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -3253,6 +3258,378 @@ func TestSignHtlcTxActionDoesNotCancelOnTxOutLookupError(t *testing.T) {
 		t.Fatalf("invoice should not have been canceled: %x", hash)
 	default:
 	}
+}
+
+// failingHtlcSigPushServer receives the client's htlc signatures and then
+// answers the push with an error, like a lost response or a server that keeps
+// the signatures but reports a failure.
+type failingHtlcSigPushServer struct {
+	swapserverrpc.StaticAddressServerClient
+
+	// onPush is called while the push is in flight, after the server got
+	// the signatures.
+	onPush func()
+
+	pushed []*swapserverrpc.PushStaticAddressHtlcSigsRequest
+}
+
+// PushStaticAddressHtlcSigs records the request and returns an error.
+func (s *failingHtlcSigPushServer) PushStaticAddressHtlcSigs(
+	_ context.Context, req *swapserverrpc.PushStaticAddressHtlcSigsRequest,
+	_ ...grpc.CallOption) (*swapserverrpc.PushStaticAddressHtlcSigsResponse,
+	error) {
+
+	s.pushed = append(s.pushed, req)
+	if s.onPush != nil {
+		s.onPush()
+	}
+
+	return nil, errors.New("htlc sig push failed")
+}
+
+// htlcSigPushTest holds a stored swap that is ready to sign its htlc txs and
+// a server that fails the signature push.
+type htlcSigPushTest struct {
+	mockLnd    *test.LndMockServices
+	dep        *deposit.Deposit
+	loopIn     *StaticAddressLoopIn
+	depositMgr *recordingDepositManager
+	server     *failingHtlcSigPushServer
+	store      *SqlStore
+	cfg        *Config
+}
+
+// newHtlcSigPushTest creates a swap in InitHtlcTx and stores it in a sql
+// store, like InitHtlcAction does, so that state changes are written and can
+// be recovered.
+func newHtlcSigPushTest(t *testing.T) *htlcSigPushTest {
+	t.Helper()
+
+	mockLnd := test.NewMockLnd()
+
+	clientKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	serverKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	staticAddr, err := script.NewStaticAddress(
+		input.MuSig2Version100RC2, 1000, clientKey.PubKey(),
+		serverKey.PubKey(),
+	)
+	require.NoError(t, err)
+
+	pkScript, err := staticAddr.StaticAddressScript()
+	require.NoError(t, err)
+
+	depositID, err := deposit.GetRandomDepositID()
+	require.NoError(t, err)
+
+	dep := &deposit.Deposit{
+		ID: depositID,
+		OutPoint: wire.OutPoint{
+			Hash:  chainhash.Hash{0x42},
+			Index: 1,
+		},
+		Value:                200_000,
+		TimeOutSweepPkScript: []byte{0x00, 0x14, 0x1a, 0x2b},
+	}
+	dep.SetState(deposit.LoopingIn)
+
+	preimage := lntypes.Preimage{0x5a, 0x5b}
+	loopIn := &StaticAddressLoopIn{
+		SwapHash:                   preimage.Hash(),
+		SwapPreimage:               preimage,
+		HtlcCltvExpiry:             mockLnd.Height + 1_000,
+		InitiationHeight:           uint32(mockLnd.Height),
+		InitiationTime:             time.Now(),
+		PaymentTimeoutSeconds:      3_600,
+		ProtocolVersion:            version.ProtocolVersion_V0,
+		ClientPubkey:               clientKey.PubKey(),
+		ServerPubkey:               serverKey.PubKey(),
+		HtlcTxFeeRate:              100,
+		HtlcTxHighFeeRate:          100,
+		HtlcTxExtremelyHighFeeRate: 100,
+		HtlcTimeoutSweepAddress:    test.GetDestAddr(t, 0x01),
+		SwapInvoice:                testSwapInvoice,
+		Deposits:                   []*deposit.Deposit{dep},
+		DepositOutpoints:           []string{dep.OutPoint.String()},
+	}
+	loopIn.SetState(InitHtlcTx)
+
+	// The store network is only used to decode the timeout sweep address,
+	// which the test helper creates for mainnet.
+	testDb := loopdb.NewTestDB(t)
+	t.Cleanup(func() {
+		require.NoError(t, testDb.Close())
+	})
+
+	depositStore := deposit.NewSqlStore(testDb.BaseDB)
+	require.NoError(t, depositStore.CreateDeposit(t.Context(), dep))
+	require.NoError(t, depositStore.UpdateDeposit(t.Context(), dep))
+
+	store := NewSqlStore(
+		loopdb.NewTypedStore[Querier](testDb),
+		clock.NewDefaultClock(), &chaincfg.MainNetParams,
+	)
+	require.NoError(t, store.CreateLoopIn(t.Context(), loopIn))
+
+	depositMgr := newRecordingDepositManager(dep)
+	server := &failingHtlcSigPushServer{}
+	cfg := &Config{
+		Server: server,
+		AddressManager: &mockAddressManager{
+			params: &script.Parameters{
+				PkScript:        pkScript,
+				ClientPubkey:    clientKey.PubKey(),
+				ServerPubkey:    serverKey.PubKey(),
+				ProtocolVersion: version.ProtocolVersion_V0,
+			},
+			staticAddress: staticAddr,
+		},
+		DepositManager: depositMgr,
+		Signer:         mockLnd.Signer,
+		ChainParams:    mockLnd.ChainParams,
+		ChainNotifier:  mockLnd.ChainNotifier,
+		LndClient:      mockLnd.Client,
+		InvoicesClient: mockLnd.LndServices.Invoices,
+		Store:          store,
+	}
+	cfg.MaxStaticAddrHtlcFeePercentage = 0.02
+	cfg.MaxStaticAddrHtlcBackupFeePercentage = 0.05
+
+	mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  loopIn.SwapHash,
+		State: invoices.ContractOpen,
+	})
+
+	return &htlcSigPushTest{
+		mockLnd:    mockLnd,
+		dep:        dep,
+		loopIn:     loopIn,
+		depositMgr: depositMgr,
+		server:     server,
+		store:      store,
+		cfg:        cfg,
+	}
+}
+
+// newFSM returns the state machine of the swap with the server nonces set.
+// The nonces come with the init response and are only kept in memory.
+func (h *htlcSigPushTest) newFSM(t *testing.T, ctx context.Context) *FSM {
+	t.Helper()
+
+	f, err := NewFSM(ctx, h.loopIn, h.cfg, true)
+	require.NoError(t, err)
+
+	// The mock signer doesn't check the nonces, so a placeholder is
+	// enough.
+	var serverNonce [musig2.PubNonceSize]byte
+	serverNonce[0] = 0x01
+	nonces := [][musig2.PubNonceSize]byte{serverNonce}
+	f.htlcServerNonces = nonces
+	f.htlcServerNoncesHighFee = nonces
+	f.htlcServerNoncesExtremelyHighFee = nonces
+
+	return f
+}
+
+// storedState returns the swap state that a restart would recover from.
+func (h *htlcSigPushTest) storedState(t *testing.T) fsm.StateType {
+	t.Helper()
+
+	stored, err := h.store.GetLoopInByHash(t.Context(), h.loopIn.SwapHash)
+	require.NoError(t, err)
+
+	return stored.GetState()
+}
+
+// waitForMonitor waits until the swap watches the invoice and the htlc. It
+// fails if the swap cancels its invoice instead.
+func (h *htlcSigPushTest) waitForMonitor(t *testing.T, ctx context.Context) {
+	t.Helper()
+
+	select {
+	case <-h.mockLnd.SingleInvoiceSubcribeChannel:
+	case hash := <-h.mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice %v was canceled", hash)
+	case <-ctx.Done():
+		t.Fatalf("invoice wasn't watched: %v", ctx.Err())
+	}
+
+	select {
+	case <-h.mockLnd.RegisterConfChannel:
+	case <-ctx.Done():
+		t.Fatalf("htlc confirmation wasn't watched: %v", ctx.Err())
+	}
+}
+
+// TestSignHtlcTxPushErrorKeepsDepositsLocked verifies that a failed htlc
+// signature push doesn't release the deposits. The server may have received
+// the signatures and can publish the htlc tx, so the swap must keep its
+// deposits and watch the htlc like after a successful push.
+func TestSignHtlcTxPushErrorKeepsDepositsLocked(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	h := newHtlcSigPushTest(t)
+	f := h.newFSM(t, ctx)
+
+	resultChan := make(chan error, 1)
+	go func() {
+		resultChan <- f.SendEvent(ctx, OnHtlcInitiated, nil)
+	}()
+
+	// The swap must go on to watch the invoice and the htlc instead of
+	// failing.
+	h.waitForMonitor(t, ctx)
+
+	// The new state is written to the store, so a restart resumes the
+	// monitoring.
+	require.Equal(t, MonitorInvoiceAndHtlcTx, h.storedState(t))
+
+	cancel()
+	require.NoError(t, <-resultChan)
+
+	require.Len(t, h.server.pushed, 1)
+	require.NotEmpty(t, h.server.pushed[0].StandardHtlcInfo.Sigs)
+	require.Equal(t, MonitorInvoiceAndHtlcTx, h.loopIn.GetState())
+	require.Empty(t, h.depositMgr.transitions)
+	require.Equal(t, deposit.LoopingIn, h.dep.GetState())
+}
+
+// TestSignHtlcTxRestartKeepsDepositsLocked verifies that a swap that is
+// recovered in SignHtlcTx keeps its deposits. If loopd stops while the
+// signature push is in flight, the server may have the signatures, but the
+// stored state is still SignHtlcTx. After the restart the swap must watch the
+// invoice and the htlc instead of releasing the deposits.
+func TestSignHtlcTxRestartKeepsDepositsLocked(t *testing.T) {
+	h := newHtlcSigPushTest(t)
+
+	// First run. loopd shuts down while the push is in flight, after the
+	// server got the signatures.
+	runCtx, shutdown := context.WithCancel(t.Context())
+	defer shutdown()
+
+	h.server.onPush = shutdown
+
+	// Fill the buffer of the mock's invoice subscriptions, so that the
+	// stopped run can't subscribe with its canceled context.
+	h.mockLnd.SingleInvoiceSubcribeChannel <- nil
+
+	f := h.newFSM(t, runCtx)
+	require.NoError(t, f.SendEvent(runCtx, OnHtlcInitiated, nil))
+
+	require.Len(t, h.server.pushed, 1)
+	require.NotEmpty(t, h.server.pushed[0].StandardHtlcInfo.Sigs)
+
+	// The state write after the push fails with the canceled context, so
+	// the store still has the swap in SignHtlcTx.
+	require.Equal(t, SignHtlcTx, h.storedState(t))
+
+	<-h.mockLnd.SingleInvoiceSubcribeChannel
+
+	// Second run. The manager loads the swap from the store and recovers
+	// it.
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	manager, err := NewManager(h.cfg, uint32(h.mockLnd.Height))
+	require.NoError(t, err)
+	require.NoError(t, manager.recoverLoopIns(ctx))
+
+	h.waitForMonitor(t, ctx)
+
+	// The swap monitors the htlc, the invoice is still open and the
+	// deposits are still locked.
+	require.Equal(t, MonitorInvoiceAndHtlcTx, h.storedState(t))
+
+	select {
+	case hash := <-h.mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice %v was canceled", hash)
+	default:
+	}
+
+	require.Empty(t, h.depositMgr.transitions)
+	require.Equal(t, deposit.LoopingIn, h.dep.GetState())
+}
+
+// shutdownAddressManager cancels the run context when the static address is
+// looked up and fails with the context error, like an lnd or store call does
+// when loopd shuts down.
+type shutdownAddressManager struct {
+	*mockAddressManager
+
+	shutdown context.CancelFunc
+	ctxErr   func() error
+}
+
+// GetStaticAddress cancels the run and returns the context error.
+func (m *shutdownAddressManager) GetStaticAddress(_ context.Context) (
+	*script.StaticAddress, error) {
+
+	m.shutdown()
+
+	return nil, m.ctxErr()
+}
+
+// TestSignHtlcTxShutdownBeforeSigningKeepsInvoice verifies that a swap that
+// is stopped by a shutdown before it signed anything stays in SignHtlcTx with
+// its invoice open. If it canceled the invoice, the recovered swap would
+// never start its payment deadline and would hold the deposits until the htlc
+// expiry.
+func TestSignHtlcTxShutdownBeforeSigningKeepsInvoice(t *testing.T) {
+	h := newHtlcSigPushTest(t)
+
+	// First run. loopd shuts down before any signature exists.
+	runCtx, shutdown := context.WithCancel(t.Context())
+	defer shutdown()
+
+	addrMgr, ok := h.cfg.AddressManager.(*mockAddressManager)
+	require.True(t, ok)
+	h.cfg.AddressManager = &shutdownAddressManager{
+		mockAddressManager: addrMgr,
+		shutdown:           shutdown,
+		ctxErr:             runCtx.Err,
+	}
+
+	f := h.newFSM(t, runCtx)
+	require.NoError(t, f.SendEvent(runCtx, OnHtlcInitiated, nil))
+
+	// Nothing was pushed, and the swap neither failed nor released its
+	// deposits or canceled its invoice.
+	require.Empty(t, h.server.pushed)
+	require.Equal(t, SignHtlcTx, h.loopIn.GetState())
+	require.Equal(t, SignHtlcTx, h.storedState(t))
+	require.Empty(t, h.depositMgr.transitions)
+
+	select {
+	case hash := <-h.mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice %v was canceled", hash)
+	default:
+	}
+
+	// Second run. The swap recovers into the monitor with its invoice
+	// open and its deposits locked.
+	h.cfg.AddressManager = addrMgr
+
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	manager, err := NewManager(h.cfg, uint32(h.mockLnd.Height))
+	require.NoError(t, err)
+	require.NoError(t, manager.recoverLoopIns(ctx))
+
+	h.waitForMonitor(t, ctx)
+	require.Equal(t, MonitorInvoiceAndHtlcTx, h.storedState(t))
+
+	select {
+	case hash := <-h.mockLnd.FailInvoiceChannel:
+		t.Fatalf("invoice %v was canceled", hash)
+	default:
+	}
+
+	require.Empty(t, h.depositMgr.transitions)
+	require.Equal(t, deposit.LoopingIn, h.dep.GetState())
 }
 
 // TestInitHtlcActionCancelsInvoiceOnServerError verifies that an invoice
