@@ -78,6 +78,16 @@ const (
 	// autoloop was selected, but no full-deposit static candidate was
 	// available for the target peer.
 	ReasonStaticLoopInNoCandidate
+
+	// ReasonBelowMinimum indicates that the amount that easy autoloop
+	// needs to swap to reach its target is below the minimum swap size.
+	ReasonBelowMinimum
+
+	// ReasonNoEligibleChannel indicates that easy autoloop has no channel
+	// to swap from: every channel is inactive, excluded, used by another
+	// swap, backing off after a failure, or holds less than the minimum
+	// swap size.
+	ReasonNoEligibleChannel
 )
 
 // String returns a string representation of a reason.
@@ -133,6 +143,12 @@ func (r Reason) String() string {
 
 	case ReasonStaticLoopInNoCandidate:
 		return "no static loop-in candidate"
+
+	case ReasonBelowMinimum:
+		return "amount below minimum swap size"
+
+	case ReasonNoEligibleChannel:
+		return "no eligible channel"
 
 	default:
 		return "unknown"

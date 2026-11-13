@@ -648,18 +648,67 @@ func (m *Manager) ForceAutoLoop(ctx context.Context) error {
 	}
 }
 
+// easyAutoloopPlan is the outcome of one easy autoloop pass: either the loop
+// out that brings the total local balance back to the target, or the reason
+// that no swap is made.
+type easyAutoloopPlan struct {
+	// swap is the loop out to dispatch. It is nil when no swap is made.
+	swap *loop.OutRequest
+
+	// reason is why no swap is made. It is ReasonNone when swap is set.
+	reason Reason
+
+	// err describes the reason for the log. It is nil when a swap is
+	// planned, and when there is simply nothing to do, such as when the
+	// local balance is at or below the target.
+	err error
+}
+
 // dispatchBestEasyAutoloopSwap tries to dispatch a swap to bring the total
 // local balance back to the target.
 func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
-	// Retrieve existing swaps.
-	loopOut, err := m.cfg.ListLoopOut(ctx)
+	plan, err := m.planEasyAutoloopSwap(ctx, m.params)
 	if err != nil {
 		return err
 	}
 
+	if plan.swap == nil {
+		return plan.err
+	}
+
+	// Dispatch a sticky loop out.
+	go m.dispatchStickyLoopOut(
+		ctx, *plan.swap, defaultAmountBackoffRetry,
+		defaultAmountBackoff,
+	)
+
+	return nil
+}
+
+// planEasyAutoloopSwap works out the swap that brings the total local balance
+// back to the easy autoloop target, or the reason that no swap can be made
+// right now. The swap is built with the parameters provided, which allows a
+// dry run that does not derive a wallet address.
+func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
+	params Parameters) (*easyAutoloopPlan, error) {
+
+	// noSwap returns a plan without a swap for the reason provided.
+	noSwap := func(reason Reason, err error) (*easyAutoloopPlan, error) {
+		return &easyAutoloopPlan{
+			reason: reason,
+			err:    err,
+		}, nil
+	}
+
+	// Retrieve existing swaps.
+	loopOut, err := m.cfg.ListLoopOut(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	loopIn, err := m.cfg.ListLoopIn(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Load the static loop-in snapshot once for the whole easy-autoloop
@@ -667,7 +716,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	// the store twice.
 	staticLoopIns, err := m.loadStaticLoopIns(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Get a summary of our existing swaps so that we can check our autoloop
@@ -678,18 +727,18 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
-		return err
+		return noSwap(ReasonBudgetElapsed, err)
 	}
 
 	_, err = m.checkSummaryInflight(summary)
 	if err != nil {
-		return err
+		return noSwap(ReasonInFlight, err)
 	}
 
 	// Get all channels in order to calculate current total local balance.
 	channels, err := m.cfg.Lnd.Client.ListChannels(ctx, false, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	usableChannels := make([]lndclient.ChannelInfo, 0, len(channels))
@@ -704,22 +753,23 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 
 	// Since we're only autolooping-out we need to check if we are below
 	// the target, meaning that we already meet the requirements.
-	if localTotal <= m.params.EasyAutoloopTarget {
+	if localTotal <= params.EasyAutoloopTarget {
 		log.Debugf("total local balance %v below target %v",
-			localTotal, m.params.EasyAutoloopTarget)
-		return nil
+			localTotal, params.EasyAutoloopTarget)
+
+		return noSwap(ReasonLiquidityOk, nil)
 	}
 
 	restrictions, err := m.cfg.Restrictions(
-		ctx, swap.TypeOut, getInitiator(m.params),
+		ctx, swap.TypeOut, getInitiator(params),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Calculate the amount that we want to loop out. If it exceeds the max
 	// allowed clamp it to max.
-	amount := localTotal - m.params.EasyAutoloopTarget
+	amount := localTotal - params.EasyAutoloopTarget
 	amount = min(amount, restrictions.Maximum)
 
 	// If the amount we want to loop out is less than the minimum we can't
@@ -728,12 +778,13 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		log.Debugf("easy autoloop: swap amount is below minimum swap "+
 			"size, minimum=%v, need to swap %v",
 			restrictions.Minimum, amount)
-		return nil
+
+		return noSwap(ReasonBelowMinimum, nil)
 	}
 
 	log.Debugf("easy autoloop: local_total=%v, target=%v, "+
 		"attempting to loop out %v", localTotal,
-		m.params.EasyAutoloopTarget, amount)
+		params.EasyAutoloopTarget, amount)
 
 	// Start building that swap.
 	builder := newLoopOutBuilder(m.cfg)
@@ -743,11 +794,14 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		staticLoopIns, 0,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if channel == nil {
-		return fmt.Errorf("no eligible channel for easy autoloop")
+		return noSwap(
+			ReasonNoEligibleChannel,
+			fmt.Errorf("no eligible channel for easy autoloop"),
+		)
 	}
 
 	log.Debugf("easy autoloop: picked channel %v with local balance %v",
@@ -757,12 +811,12 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 		math.Min(channel.LocalBalance.ToBTC(), amount.ToBTC()),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// If no fee is set, override our current parameters in order to use the
 	// default percent limit of easy-autoloop.
-	easyParams := m.params
+	easyParams := params
 
 	switch feeLimit := easyParams.FeeLimit.(type) {
 	case *FeePortion:
@@ -785,23 +839,26 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	suggestion, err := builder.buildSwap(
 		ctx, channel.PubKeyBytes, outgoing, swapAmt, easyParams,
 	)
+
+	// A swap that is too expensive for our fee limit is a reason to wait,
+	// not a failure of the pass.
+	if reasonErr, ok := errors.AsType[*reasonError](err); ok {
+		return noSwap(reasonErr.reason, err)
+	}
+
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	var swp loop.OutRequest
-	if t, ok := suggestion.(*loopOutSwapSuggestion); ok {
-		swp = t.OutRequest
-	} else {
-		return fmt.Errorf("unexpected swap suggestion type: %T", t)
+	outSwap, ok := suggestion.(*loopOutSwapSuggestion)
+	if !ok {
+		return nil, fmt.Errorf("unexpected swap suggestion type: %T",
+			suggestion)
 	}
 
-	// Dispatch a sticky loop out.
-	go m.dispatchStickyLoopOut(
-		ctx, swp, defaultAmountBackoffRetry, defaultAmountBackoff,
-	)
-
-	return nil
+	return &easyAutoloopPlan{
+		swap: &outSwap.OutRequest,
+	}, nil
 }
 
 // dispatchBestAssetEasyAutoloopSwap tries to dispatch a swap to bring the total
