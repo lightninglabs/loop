@@ -513,7 +513,7 @@ func (m *Manager) autoloop(ctx context.Context) error {
 	// swaps for autoloop.
 	m.refreshAutoloopBudget(ctx)
 
-	suggestion, err := m.SuggestSwaps(ctx)
+	suggestion, err := m.suggestSwaps(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -683,6 +683,32 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	)
 
 	return nil
+}
+
+// suggestEasyAutoloop returns what easy autoloop would do with the current
+// parameters without dispatching anything: the loop out it would make next, or
+// the reason that it would not make one.
+func (m *Manager) suggestEasyAutoloop(ctx context.Context) (*Suggestions,
+	error) {
+
+	// Build the swap as a dry run, so that no wallet address is derived
+	// for a swap that is not dispatched.
+	params := m.params
+	params.Autoloop = false
+
+	plan, err := m.planEasyAutoloopSwap(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := newSuggestions()
+	resp.EasyAutoloopReason = plan.reason
+
+	if plan.swap != nil {
+		resp.OutSwaps = append(resp.OutSwaps, *plan.swap)
+	}
+
+	return resp, nil
 }
 
 // planEasyAutoloopSwap works out the swap that brings the total local balance
@@ -1086,6 +1112,11 @@ type Suggestions struct {
 	// DisqualifiedPeers maps the set of peers that we do not recommend
 	// swaps for to the reason that they were excluded.
 	DisqualifiedPeers map[route.Vertex]Reason
+
+	// EasyAutoloopReason is the reason that easy autoloop does not suggest
+	// a swap. It is only set when easy autoloop is enabled and no swap is
+	// suggested.
+	EasyAutoloopReason Reason
 }
 
 func newSuggestions() *Suggestions {
@@ -1153,12 +1184,35 @@ func (m *Manager) singleReasonSuggestion(reason Reason) *Suggestions {
 // liquidity balance for the rules configured on the manager. The planner
 // fails when no rules are set and otherwise returns both suggested swaps and
 // structured disqualification reasons for rules that could not be satisfied in
-// the current pass.
+// the current pass. When easy autoloop is enabled the rules are not used, and
+// the planner returns the loop out that easy autoloop would make next or the
+// reason that it would not make one.
 func (m *Manager) SuggestSwaps(ctx context.Context) (
+	*Suggestions, error) {
+
+	return m.suggestSwaps(ctx, true)
+}
+
+// suggestSwaps returns the suggestions that SuggestSwaps describes. With
+// includeEasy false, it returns no swaps while easy autoloop is enabled. The
+// rule based autoloop uses that, because easy autoloop could be enabled after
+// the autoloop tick chose the rule based path, and the swap that easy autoloop
+// would make is built as a dry run that must never be dispatched.
+func (m *Manager) suggestSwaps(ctx context.Context, includeEasy bool) (
 	*Suggestions, error) {
 
 	m.paramsLock.Lock()
 	defer m.paramsLock.Unlock()
+
+	// Easy autoloop ignores our rules and works towards a single target
+	// for the whole node, so we report what it would do instead.
+	if m.params.EasyAutoloop {
+		if !includeEasy {
+			return newSuggestions(), nil
+		}
+
+		return m.suggestEasyAutoloop(ctx)
+	}
 
 	// If we have no rules set, exit early to avoid unnecessary calls to
 	// lnd and the server.
