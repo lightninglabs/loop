@@ -1,11 +1,13 @@
 package liquidity
 
 import (
+	"context"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/loopdb"
+	"github.com/lightninglabs/loop/swap"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,6 +78,33 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 			reason: ReasonLiquidityOk,
 		},
 		{
+			// The server would allow a swap of 5000, but the client
+			// asks for larger swaps.
+			name: "excess below client minimum",
+			setParams: func(params *Parameters) {
+				params.ClientRestrictions.Minimum = 6000
+			},
+			reason: ReasonBelowMinimum,
+		},
+		{
+			name: "excess clamped to client maximum",
+			setParams: func(params *Parameters) {
+				params.ClientRestrictions.Maximum = 3000
+			},
+			amount:  3000,
+			channel: chanID1.ToUint64(),
+		},
+		{
+			// A client minimum above the first channel's balance
+			// leaves no channel that can make the swap.
+			name: "channels below client minimum",
+			setParams: func(params *Parameters) {
+				params.EasyAutoloopTarget = 5000
+				params.ClientRestrictions.Minimum = 9500
+			},
+			reason: ReasonNoEligibleChannel,
+		},
+		{
 			name: "no active channel",
 			channels: []lndclient.ChannelInfo{
 				inactive1, inactive2,
@@ -100,6 +129,14 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 			t.Parallel()
 
 			cfg, lnd := newTestConfig()
+
+			// The client's limits are applied to the restrictions
+			// that the server returns, so each test gets its own.
+			cfg.Restrictions = func(context.Context, swap.Type,
+				string) (*Restrictions, error) {
+
+				return NewRestrictions(1, 10000), nil
+			}
 
 			lnd.Channels = testCase.channels
 			if lnd.Channels == nil {
