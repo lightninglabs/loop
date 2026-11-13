@@ -114,6 +114,34 @@ func (c *lndTxOutChecker) SpentByTxPayingTo(ctx context.Context,
 	return false, nil
 }
 
+// ConfirmedSpendingTx returns a confirmed transaction from lnd's wallet that
+// spends the outpoint, or nil if there is none. The wallet only lists
+// transactions that spend wallet outputs or pay to the wallet. Only
+// transactions confirmed at or above startHeight are listed, so the lookup
+// doesn't decode the whole wallet history.
+func (c *lndTxOutChecker) ConfirmedSpendingTx(ctx context.Context,
+	outpoint wire.OutPoint, startHeight int32) (*wire.MsgTx, error) {
+
+	txs, err := c.client.ListTransactions(ctx, startHeight, -1)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, tx := range txs {
+		if tx.Tx == nil || tx.Confirmations <= 0 {
+			continue
+		}
+
+		for _, txIn := range tx.Tx.TxIn {
+			if txIn.PreviousOutPoint == outpoint {
+				return tx.Tx, nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
 // paysTo reports whether the transaction has an output with the pkScript.
 func paysTo(tx *wire.MsgTx, pkScript []byte) bool {
 	for _, txOut := range tx.TxOut {

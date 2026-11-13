@@ -66,8 +66,9 @@ type Config struct {
 
 	// TxOutChecker checks the selected deposits against lnd's wallet
 	// transactions. It is used before the client gives the server HTLC
-	// signatures, and after a risk rejection to find out whether the htlc
-	// tx spent the deposits.
+	// signatures, after a risk rejection to find out whether the htlc tx
+	// spent the deposits, and by the htlc timeout sweep when lnd doesn't
+	// report a spend.
 	TxOutChecker TxOutChecker
 
 	// InvoicesClient is used to subscribe to invoice settlements and
@@ -125,6 +126,14 @@ type Config struct {
 	// MaxStaticAddrHtlcFeePercentage since it serves the server as backup
 	// transaction in case of fee spikes.
 	MaxStaticAddrHtlcBackupFeePercentage float64
+
+	// HtlcTxLookupTimeout is the maximum time to wait for lnd to report a
+	// confirmed spend when looking up the htlc tx to sweep, or the tx that
+	// already spent the htlc output. After it, lnd's wallet is checked. If
+	// the wallet lists no spend either, the sweep attempt fails so that it
+	// is retried and reported like any other failure. Zero means
+	// defaultHtlcTxLookupTimeout.
+	HtlcTxLookupTimeout time.Duration
 }
 
 // newSwapRequest is used to send a loop-in request to the manager main loop.

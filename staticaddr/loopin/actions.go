@@ -1518,9 +1518,17 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	}
 }
 
-// htlcTimeoutSweepRetryDelay is the delay between retries when publishing the
-// htlc timeout sweep transaction fails.
+// htlcTimeoutSweepRetryDelay is the delay between retries when looking up the
+// htlc tx or creating or publishing the htlc timeout sweep transaction fails.
 const htlcTimeoutSweepRetryDelay = time.Hour
+
+// defaultHtlcTxLookupTimeout is the default maximum time to wait for lnd to
+// report a spend when looking up the htlc tx to sweep, or the tx that already
+// spent the htlc output. The wait ends as soon as a confirmed spend is
+// reported, which is right away when the spend is already confirmed. After the
+// timeout, lnd's wallet is checked for a confirmed spend that lnd didn't
+// report.
+const defaultHtlcTxLookupTimeout = 30 * time.Minute
 
 // SweepHtlcTimeoutAction is called if the server published the htlc tx without
 // paying the invoice. We wait for the timeout path to open up and sweep the
@@ -1534,6 +1542,13 @@ func (f *FSM) SweepHtlcTimeoutAction(ctx context.Context,
 			return OnHtlcTimeoutSweepPublished
 		}
 
+		// Keep the current state on shutdown so recovery resumes the
+		// sweep after restart.
+		if ctx.Err() != nil {
+			return fsm.NoOp
+		}
+
+		f.LastActionError = err
 		f.Errorf("unable to create and publish htlc timeout sweep "+
 			"tx: %v, retrying in %v", err, htlcTimeoutSweepRetryDelay)
 
@@ -1673,6 +1688,13 @@ func (f *FSM) unlockDeposits(ctx context.Context) error {
 // createAndPublishHtlcTimeoutSweepTx creates and publishes the htlc timeout
 // sweep transaction.
 func (f *FSM) createAndPublishHtlcTimeoutSweepTx(ctx context.Context) error {
+	// Look up the htlc tx first. This can take a while, so the fee rate
+	// and the block height are only fetched once it is known.
+	htlcTx, err := f.fetchHtlcTx(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Get a fee rate.
 	feeRate, err := f.cfg.WalletKit.EstimateFeeRate(ctx, defaultConfTarget)
 	if err != nil {
@@ -1686,9 +1708,8 @@ func (f *FSM) createAndPublishHtlcTimeoutSweepTx(ctx context.Context) error {
 
 	// Create htlc timeout transaction.
 	timeoutTx, err := f.loopIn.createHtlcSweepTx(
-		ctx, f.cfg.Signer, f.loopIn.HtlcTimeoutSweepAddress, feeRate,
-		f.cfg.ChainParams, getInfo.BlockHeight,
-		f.cfg.MaxStaticAddrHtlcFeePercentage,
+		ctx, f.cfg.Signer, htlcTx, f.loopIn.HtlcTimeoutSweepAddress,
+		feeRate, f.cfg.ChainParams, getInfo.BlockHeight,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create htlc timeout sweep tx: %w",
@@ -1710,15 +1731,163 @@ func (f *FSM) createAndPublishHtlcTimeoutSweepTx(ctx context.Context) error {
 			f.LastActionError = err
 			return err
 		}
-	} else {
-		f.Debugf("published htlc timeout sweep with txid: %v",
-			timeoutTx.TxHash())
 
-		hash := timeoutTx.TxHash()
+		// lnd also reports missing inputs and mempool conflicts this
+		// way. With the invoice canceled, only our sweeps can spend the
+		// htlc output, so monitor the confirmed spender.
+		spendingTx, spendErr := f.htlcSpendingTx(
+			ctx, timeoutTx.TxIn[0].PreviousOutPoint,
+		)
+		if spendErr != nil {
+			return fmt.Errorf("%v: %w, and no confirmed spend of the "+
+				"htlc output was found: %w", txLabel, err, spendErr)
+		}
+
+		// The monitor only sees txs paying the sweep address.
+		hash := spendingTx.TxHash()
+		paysSweepAddr, _ := input.FindScriptOutputIndex(
+			spendingTx, timeoutTx.TxOut[0].PkScript,
+		)
+		if !paysSweepAddr {
+			return fmt.Errorf("%v: htlc output spent by tx %v, which "+
+				"doesn't pay the sweep address", txLabel, hash)
+		}
+
+		f.Infof("htlc output already spent by sweep tx %v", hash)
 		f.loopIn.HtlcTimeoutSweepTxHash = &hash
+
+		return nil
 	}
 
+	f.Debugf("published htlc timeout sweep with txid: %v",
+		timeoutTx.TxHash())
+
+	hash := timeoutTx.TxHash()
+	f.loopIn.HtlcTimeoutSweepTxHash = &hash
+
 	return nil
+}
+
+// htlcSpendingTx waits for the spend of the given htlc output and returns the
+// spending tx.
+func (f *FSM) htlcSpendingTx(ctx context.Context,
+	htlcOutpoint wire.OutPoint) (*wire.MsgTx, error) {
+
+	htlc, err := f.loopIn.getHtlc(f.cfg.ChainParams)
+	if err != nil {
+		return nil, err
+	}
+
+	return f.waitForSpend(
+		ctx, htlcOutpoint, htlc.PkScript, "htlc output", "sweep tx",
+	)
+}
+
+// fetchHtlcTx waits for the spend of the swap's first deposit and returns the
+// spending htlc tx. The server may publish any of the htlc tx variants the
+// client co-signed, and only the standard fee rate is persisted, so the htlc
+// tx that is swept is taken from the chain instead of being rebuilt.
+func (f *FSM) fetchHtlcTx(ctx context.Context) (*wire.MsgTx, error) {
+	outpoints := f.loopIn.Outpoints()
+	if len(outpoints) == 0 {
+		return nil, errors.New("loop-in has no deposits")
+	}
+
+	if f.loopIn.AddressParams == nil {
+		return nil, errors.New("loop-in has no static address " +
+			"parameters")
+	}
+
+	return f.waitForSpend(
+		ctx, outpoints[0], f.loopIn.AddressParams.PkScript, "deposit",
+		"htlc tx",
+	)
+}
+
+// waitForSpend returns the confirmed tx that spends the outpoint. If lnd
+// doesn't report the spend within the htlc tx lookup timeout, lnd's wallet is
+// checked before giving up. The labels are for logs and errors.
+func (f *FSM) waitForSpend(ctx context.Context, outpoint wire.OutPoint,
+	pkScript []byte, description, spender string) (*wire.MsgTx, error) {
+
+	lookupTimeout := f.cfg.HtlcTxLookupTimeout
+	if lookupTimeout == 0 {
+		lookupTimeout = defaultHtlcTxLookupTimeout
+	}
+
+	spendCtx, cancel := context.WithTimeout(ctx, lookupTimeout)
+	defer cancel()
+
+	spendChan, errChan, err := f.cfg.ChainNotifier.RegisterSpendNtfn(
+		spendCtx, &outpoint, pkScript, int32(f.loopIn.InitiationHeight),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to register for the spend of "+
+			"%s %v: %w", description, outpoint, err)
+	}
+
+	f.Infof("waiting for the %s that spends %s %v, height hint %v",
+		spender, description, outpoint, f.loopIn.InitiationHeight)
+
+	select {
+	case spend := <-spendChan:
+		if spend == nil || spend.SpendingTx == nil {
+			return nil, fmt.Errorf("spend of %s %v has no spending "+
+				"tx", description, outpoint)
+		}
+
+		f.Infof("%s %v spent by %s %v", description, outpoint, spender,
+			spend.SpendingTx.TxHash())
+
+		return spend.SpendingTx, nil
+
+	case err := <-errChan:
+		return nil, fmt.Errorf("unable to watch the spend of %s %v: %w",
+			description, outpoint, err)
+
+	case <-spendCtx.Done():
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		// If lnd's historical spend scan fails, lnd neither reports
+		// the error nor starts a new scan when we register again, so a
+		// past spend is only found after lnd restarts. See
+		// lightningnetwork/lnd#11234. Check lnd's wallet instead.
+		tx := f.walletSpendingTx(ctx, outpoint, description)
+		if tx != nil {
+			f.Infof("%s %v spent by %s %v, found in the wallet",
+				description, outpoint, spender, tx.TxHash())
+
+			return tx, nil
+		}
+
+		return nil, fmt.Errorf("%s %v was not spent within %v",
+			description, outpoint, lookupTimeout)
+	}
+}
+
+// walletSpendingTx returns a confirmed tx from lnd's wallet that spends the
+// outpoint, or nil if the wallet lists none or the lookup fails.
+func (f *FSM) walletSpendingTx(ctx context.Context, outpoint wire.OutPoint,
+	description string) *wire.MsgTx {
+
+	if f.cfg.TxOutChecker == nil {
+		return nil
+	}
+
+	tx, err := f.cfg.TxOutChecker.ConfirmedSpendingTx(
+		ctx, outpoint,
+		htlcTxSearchStartHeight(f.loopIn.InitiationHeight),
+	)
+	if err != nil {
+		f.Warnf("unable to look up the spend of %s %v in the "+
+			"wallet: %v", description, outpoint, err)
+
+		return nil
+	}
+
+	return tx
 }
 
 // toNonces converts a byte slice to a 66 byte slice.

@@ -3863,6 +3863,14 @@ type recordingTxOutChecker struct {
 	spendOutpoints    [][]wire.OutPoint
 	spendPkScripts    [][]byte
 	spendStartHeights []int32
+
+	// spendingTxs is what ConfirmedSpendingTx returns per outpoint.
+	spendingTxs map[wire.OutPoint]*wire.MsgTx
+
+	// spendingTxOutpoints and spendingTxStartHeights record what
+	// ConfirmedSpendingTx was asked about.
+	spendingTxOutpoints    []wire.OutPoint
+	spendingTxStartHeights []int32
 }
 
 // GetTxOuts records the request and returns the configured available outputs.
@@ -3895,6 +3903,27 @@ func (r *recordingTxOutChecker) SpentByTxPayingTo(_ context.Context,
 	}
 
 	return r.htlcSpent, nil
+}
+
+// ConfirmedSpendingTx records the outpoint and start height and returns the
+// configured spending tx, or an error if the context is done.
+func (r *recordingTxOutChecker) ConfirmedSpendingTx(ctx context.Context,
+	outpoint wire.OutPoint, startHeight int32) (*wire.MsgTx, error) {
+
+	r.spendingTxOutpoints = append(r.spendingTxOutpoints, outpoint)
+	r.spendingTxStartHeights = append(
+		r.spendingTxStartHeights, startHeight,
+	)
+	if r.err != nil {
+		return nil, r.err
+	}
+
+	// Like the lnd RPC, fail on a done context.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	return r.spendingTxs[outpoint], nil
 }
 
 // initHtlcTestServer lets InitHtlcAction tests inject a deterministic server
