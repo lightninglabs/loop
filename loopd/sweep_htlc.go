@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/looprpc"
@@ -112,6 +113,9 @@ type htlcCooperativeSigner func(ctx context.Context,
 	paymentAddr [32]byte, nonce, sweepTxPsbt []byte) ([]byte, []byte,
 	error)
 
+// htlcBestHeight returns the current best block height.
+type htlcBestHeight func(ctx context.Context) (int32, error)
+
 // sweepHtlc spends a Loop HTLC output using the preimage success path or the
 // cooperative key path.
 func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
@@ -119,6 +123,25 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	notifier htlcChainNotifier, wallet htlcWallet,
 	signer htlcSigner, muSig2Signer htlcMuSig2Signer,
 	cooperativeSigner htlcCooperativeSigner) (
+	*looprpc.SweepHtlcResponse, error) {
+
+	return sweepHtlcWithRevealChecks(
+		ctx, req, chainParams, store, notifier, wallet, signer,
+		muSig2Signer, cooperativeSigner, nil,
+	)
+}
+
+// sweepHtlcWithRevealChecks is sweepHtlc for a sweep that nobody watches. If
+// bestHeight is set, a success path sweep of a stored swap that has not
+// revealed its preimage yet is refused once no more than
+// loop.MinLoopOutPreimageRevealDelta blocks are left before the HTLC expires,
+// or when the HTLC holds less than the swap amount. A nil bestHeight skips
+// both checks.
+func sweepHtlcWithRevealChecks(ctx context.Context,
+	req *looprpc.SweepHtlcRequest, chainParams *chaincfg.Params,
+	store loopOutStore, notifier htlcChainNotifier, wallet htlcWallet,
+	signer htlcSigner, muSig2Signer htlcMuSig2Signer,
+	cooperativeSigner htlcCooperativeSigner, bestHeight htlcBestHeight) (
 	*looprpc.SweepHtlcResponse, error) {
 
 	// Make sure that the request has all required inputs.
@@ -395,11 +418,18 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	}
 
 	// Wait for a confirmation so we can read the full transaction even if
-	// it's not in our wallet.
-	infof("sweephtlc: registering conf ntfn for %v hint=%v",
-		req.Outpoint, heightHint)
+	// it's not in our wallet. A stored swap may require more than one
+	// confirmation before its preimage is revealed, so honor that depth.
+	// Stateless recovery has no stored value and uses one confirmation.
+	numConfs := int32(1)
+	if targetSwap != nil && targetSwap.Contract.HtlcConfirmations > 1 {
+		numConfs = int32(targetSwap.Contract.HtlcConfirmations)
+	}
+
+	infof("sweephtlc: registering conf ntfn for %v hint=%v confs=%v",
+		req.Outpoint, heightHint, numConfs)
 	confChan, errChan, err := notifier.RegisterConfirmationsNtfn(
-		ctx, &htlcOutpoint.Hash, htlcPkScript, 1,
+		ctx, &htlcOutpoint.Hash, htlcPkScript, numConfs,
 		heightHint,
 	)
 	if err != nil {
@@ -489,6 +519,53 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 	if !cooperative && preimage.Hash() != targetHtlc.Hash {
 		return nil, status.Error(codes.InvalidArgument,
 			"preimage does not match HTLC hash")
+	}
+
+	// The success path sweep reveals the preimage. Like the swap itself,
+	// don't reveal it when too few blocks are left before the HTLC
+	// expires: the server could then take the HTLC back through its
+	// timeout path and still settle the swap payment with the preimage.
+	// The height is read after the confirmation wait, which can take
+	// several blocks. A swap that already revealed its preimage has to
+	// be swept in any case.
+	if bestHeight != nil && targetSwap != nil && !cooperative &&
+		targetSwap.State().State != loopdb.StatePreimageRevealed {
+
+		// Like the swap itself, don't reveal the preimage for an
+		// HTLC that holds less than the swap amount: the server
+		// could settle the full swap payment with it.
+		value := btcutil.Amount(htlcTxOut.Value)
+		amount := targetSwap.Contract.AmountRequested
+		if value < amount {
+			infof("sweephtlc: not sweeping %v, HTLC value %v is "+
+				"below the swap amount %v", req.Outpoint,
+				value, amount)
+
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"HTLC value %v is below the swap amount %v",
+				value, amount)
+		}
+
+		height, heightErr := bestHeight(ctx)
+		if heightErr != nil {
+			return nil, status.Errorf(codes.Internal,
+				"best height: %v", heightErr)
+		}
+
+		// This is the bound the swap applies right before it
+		// reveals the preimage.
+		revealDeadline := targetSwap.Contract.CltvExpiry -
+			loop.MinLoopOutPreimageRevealDelta
+		if height >= revealDeadline {
+			infof("sweephtlc: not sweeping %v, height %v reached "+
+				"the preimage reveal deadline %v",
+				req.Outpoint, height, revealDeadline)
+
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"height %d reached the preimage reveal "+
+					"deadline %d of the HTLC", height,
+				revealDeadline)
+		}
 	}
 
 	infof("sweephtlc: sweeping to %v with feerate %v sat/vbyte",

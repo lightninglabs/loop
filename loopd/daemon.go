@@ -613,6 +613,14 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		notifier:           d.lnd.ChainNotifier,
 		wallet:             d.lnd.WalletKit,
 		signer:             d.lnd.Signer,
+		bestHeight: func(ctx context.Context) (int32, error) {
+			info, err := d.lnd.Client.GetInfo(ctx)
+			if err != nil {
+				return 0, err
+			}
+
+			return int32(info.BlockHeight), nil
+		},
 	}
 
 	d.wg.Go(func() {

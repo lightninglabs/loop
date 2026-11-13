@@ -21,6 +21,13 @@
   fee or extremely high fee HTLC transaction could not be swept back after the
   HTLC timed out. Sweeps that would leave a dust output are no longer signed.
 
+* Automatic Loop Out recovery sweeps and `loop out sweephtlc` in database
+  mode now wait for the swap's stored `htlc_confs` confirmations before
+  signing the sweep. Before, they waited for only one confirmation. Automatic
+  recovery sweeps also no longer reveal the preimage when 20 blocks or fewer
+  are left before the HTLC expires, or when the HTLC holds less than the swap
+  amount, unless the swap already revealed it.
+
 #### Maintenance
 
 #### Contributors (Alphabetical Order)
