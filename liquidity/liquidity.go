@@ -753,7 +753,17 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
-		return noSwap(ReasonBudgetElapsed, err)
+		// Swaps in flight hold their worst-case fees against the
+		// budget until they finish, when only what they paid counts.
+		// A budget that is not spent yet, but that those holds fill,
+		// may have room again once they finish, rather than only when
+		// the budget starts over.
+		reason := ReasonBudgetElapsed
+		if summary.spentFees < params.AutoFeeBudget {
+			reason = ReasonBudgetInsufficient
+		}
+
+		return noSwap(reason, err)
 	}
 
 	_, err = m.checkSummaryInflight(summary)
@@ -882,6 +892,27 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 	if !ok {
 		return nil, fmt.Errorf("unexpected swap suggestion type: %T",
 			suggestion)
+	}
+
+	// The budget check above only tells us that some budget is left. Make
+	// sure that what this swap could cost fits into what is left. Like the
+	// fee limit check, we leave the large multiplier out of the miner fee,
+	// because we want to consider the average case and not the severe
+	// edge-case miner fees, which would keep a small budget from ever
+	// being used. A swap that meets such a miner fee can still take us
+	// over the budget.
+	available := params.AutoFeeBudget - summary.totalFees()
+	fees := worstCaseOutFees(
+		outSwap.MaxPrepayRoutingFee, outSwap.MaxSwapRoutingFee,
+		outSwap.MaxSwapFee, outSwap.MaxMinerFee/maxMinerMultiplier,
+	)
+	if fees > available {
+		return noSwap(
+			ReasonBudgetInsufficient,
+			fmt.Errorf("easy autoloop swap fee %v exceeds "+
+				"remaining autoloop fee budget %v", fees,
+				available),
+		)
 	}
 
 	return &easyAutoloopPlan{
