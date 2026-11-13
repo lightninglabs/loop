@@ -134,8 +134,9 @@ func sweepHtlc(ctx context.Context, req *looprpc.SweepHtlcRequest,
 // sweepHtlcWithRevealChecks is sweepHtlc for a sweep that nobody watches. If
 // bestHeight is set, a success path sweep of a stored swap that has not
 // revealed its preimage yet is refused once no more than
-// loop.MinLoopOutPreimageRevealDelta blocks are left before the HTLC expires.
-// A nil bestHeight skips the check.
+// loop.MinLoopOutPreimageRevealDelta blocks are left before the HTLC expires,
+// or when the HTLC holds less than the swap amount. A nil bestHeight skips
+// both checks.
 func sweepHtlcWithRevealChecks(ctx context.Context,
 	req *looprpc.SweepHtlcRequest, chainParams *chaincfg.Params,
 	store loopOutStore, notifier htlcChainNotifier, wallet htlcWallet,
@@ -529,6 +530,21 @@ func sweepHtlcWithRevealChecks(ctx context.Context,
 	// be swept in any case.
 	if bestHeight != nil && targetSwap != nil && !cooperative &&
 		targetSwap.State().State != loopdb.StatePreimageRevealed {
+
+		// Like the swap itself, don't reveal the preimage for an
+		// HTLC that holds less than the swap amount: the server
+		// could settle the full swap payment with it.
+		value := btcutil.Amount(htlcTxOut.Value)
+		amount := targetSwap.Contract.AmountRequested
+		if value < amount {
+			infof("sweephtlc: not sweeping %v, HTLC value %v is "+
+				"below the swap amount %v", req.Outpoint,
+				value, amount)
+
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"HTLC value %v is below the swap amount %v",
+				value, amount)
+		}
 
 		height, heightErr := bestHeight(ctx)
 		if heightErr != nil {

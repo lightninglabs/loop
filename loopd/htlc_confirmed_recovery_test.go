@@ -655,3 +655,122 @@ func TestHtlcConfirmedRecoveryManagerRevealDeadline(t *testing.T) {
 		})
 	}
 }
+
+// TestHtlcConfirmedRecoveryManagerChecksHtlcValue verifies that the worker
+// doesn't reveal the preimage for an HTLC that holds less than the swap
+// amount, unless the swap already revealed it.
+func TestHtlcConfirmedRecoveryManagerChecksHtlcValue(t *testing.T) {
+	defer test.Guard(t)()
+
+	setLogger(newFormatLogger())
+
+	// The fixture's swap amount.
+	const swapAmount = 1_000_000
+
+	testCases := []struct {
+		name        string
+		htlcValue   int64
+		state       loopdb.SwapState
+		expectSweep bool
+	}{
+		{
+			name:        "htlc holds the swap amount",
+			htlcValue:   swapAmount,
+			expectSweep: true,
+		},
+		{
+			name:        "htlc holds more than the swap amount",
+			htlcValue:   swapAmount + 1,
+			expectSweep: true,
+		},
+		{
+			name:      "htlc is one sat short",
+			htlcValue: swapAmount - 1,
+		},
+		{
+			name:      "htlc holds half the swap amount",
+			htlcValue: swapAmount / 2,
+		},
+		{
+			name:        "htlc is short but already revealed",
+			htlcValue:   swapAmount / 2,
+			state:       loopdb.StatePreimageRevealed,
+			expectSweep: true,
+		},
+		{
+			name:      "htlc is short with a failed swap",
+			htlcValue: swapAmount / 2,
+			state:     loopdb.StateFailInsufficientValue,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newHtlcConfirmedRecoveryFixture(t)
+			require.EqualValues(
+				t, swapAmount,
+				fixture.swap.Contract.AmountRequested,
+			)
+
+			// Fund the HTLC with the tested value. This changes
+			// the funding txid.
+			fixture.fundingTx.TxOut[0].Value = testCase.htlcValue
+			fixture.outpoint.Hash = fixture.fundingTx.TxHash()
+
+			if testCase.state != loopdb.StateInitiated {
+				state := loopdb.SwapStateData{
+					State: testCase.state,
+				}
+				fixture.store.LoopOutUpdates[fixture.swap.Hash] =
+					[]loopdb.SwapStateData{state}
+			}
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(), htlcConfirmedRecoveryTestTimeout,
+			)
+			defer cancel()
+
+			runErrChan := make(chan error, 1)
+
+			go func() {
+				runErrChan <- fixture.manager.run(ctx)
+			}()
+
+			ntfn := &swapserverrpc.ServerHtlcConfirmedNotification{
+				SwapHash:     fixture.swap.Hash[:],
+				HtlcOutpoint: fixture.outpoint.String(),
+				HtlcAddress:  fixture.htlc.Address.String(),
+				SatPerVbyte:  25,
+			}
+			fixture.subscriber.ntfnChan <- ntfn
+			close(fixture.subscriber.ntfnChan)
+
+			waitForConfRegistration(t, ctx, fixture.lnd)
+			fixture.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+				Tx:          fixture.fundingTx,
+				BlockHeight: 321,
+			}
+
+			if testCase.expectSweep {
+				waitForSignOutputRawRequest(t, ctx, fixture.lnd)
+				publishedTx := waitForPublishedTx(
+					t, ctx, fixture.lnd,
+				)
+				require.Equal(
+					t, fixture.outpoint,
+					publishedTx.TxIn[0].PreviousOutPoint,
+				)
+			}
+
+			// The worker is done with the notification once the
+			// manager exits. A refused sweep must not have signed
+			// or published anything by then.
+			err := waitForManagerExit(t, ctx, runErrChan)
+			require.NoError(t, err)
+			if !testCase.expectSweep {
+				assertNoRecoveryActivity(t, fixture.lnd)
+			}
+			require.NoError(t, fixture.lnd.IsDone())
+		})
+	}
+}

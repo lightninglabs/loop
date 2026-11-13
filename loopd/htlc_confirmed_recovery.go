@@ -86,7 +86,7 @@ func (m *htlcConfirmedRecoveryManager) handleNotification(ctx context.Context,
 	// Reuse sweepHtlc so the worker follows the same success-path spend
 	// construction and destination selection as the manual sweep path.
 	// Nobody watches this sweep, so it also has to respect the preimage
-	// reveal deadline of the swap.
+	// reveal deadline of the swap and check the HTLC value.
 	_, err = sweepHtlcWithRevealChecks(
 		ctx, &looprpc.SweepHtlcRequest{
 			Outpoint:    outpoint.String(),
