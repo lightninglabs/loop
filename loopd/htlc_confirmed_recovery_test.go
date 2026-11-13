@@ -3,12 +3,14 @@ package loopd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
@@ -67,6 +69,11 @@ type htlcConfirmedRecoveryFixture struct {
 	fundingTx    *wire.MsgTx
 	outpoint     wire.OutPoint
 	destPkScript []byte
+
+	// bestHeight and bestHeightErr are what the worker's height lookup
+	// returns.
+	bestHeight    int32
+	bestHeightErr error
 }
 
 // newHtlcConfirmedRecoveryFixture builds a loop-out swap and the mock daemon
@@ -147,26 +154,32 @@ func newHtlcConfirmedRecoveryFixture(
 	require.NoError(t, err)
 
 	subscriber := newMockHtlcConfirmedSubscriber()
-	manager := &htlcConfirmedRecoveryManager{
+	fixture := &htlcConfirmedRecoveryFixture{
+		lnd:          lnd,
+		store:        store,
+		subscriber:   subscriber,
+		swap:         loopOut,
+		htlc:         htlc,
+		fundingTx:    fundingTx,
+		outpoint:     outpoint,
+		destPkScript: destPkScript,
+
+		// Well before the last preimage reveal height of the swap.
+		bestHeight: 322,
+	}
+	fixture.manager = &htlcConfirmedRecoveryManager{
 		notificationSource: subscriber,
 		swapStore:          store,
 		chainParams:        lnd.ChainParams,
 		notifier:           lnd.ChainNotifier,
 		wallet:             lnd.WalletKit,
 		signer:             lnd.Signer,
+		bestHeight: func(context.Context) (int32, error) {
+			return fixture.bestHeight, fixture.bestHeightErr
+		},
 	}
 
-	return &htlcConfirmedRecoveryFixture{
-		lnd:          lnd,
-		store:        store,
-		subscriber:   subscriber,
-		manager:      manager,
-		swap:         loopOut,
-		htlc:         htlc,
-		fundingTx:    fundingTx,
-		outpoint:     outpoint,
-		destPkScript: destPkScript,
-	}
+	return fixture
 }
 
 // waitForConfRegistration waits for the recovery worker to register its
@@ -510,4 +523,135 @@ func expectedHtlcConfirmedRecoveryFee(t *testing.T,
 	feeRate := chainfee.SatPerVByte(satPerVByte).FeePerKWeight()
 
 	return feeRate.FeeForWeightRoundUp(estimator.Weight())
+}
+
+// TestHtlcConfirmedRecoveryManagerRevealDeadline verifies that the worker
+// doesn't reveal the preimage once too few blocks are left before the HTLC
+// expires, unless the swap already revealed it.
+func TestHtlcConfirmedRecoveryManagerRevealDeadline(t *testing.T) {
+	defer test.Guard(t)()
+
+	setLogger(newFormatLogger())
+
+	// The fixture's HTLC expires at height 500.
+	const revealDeadline = 500 - loop.MinLoopOutPreimageRevealDelta
+
+	testCases := []struct {
+		name          string
+		height        int32
+		heightErr     error
+		state         loopdb.SwapState
+		noHeightCheck bool
+		expectSweep   bool
+	}{
+		{
+			name:        "one block before the deadline",
+			height:      revealDeadline - 1,
+			expectSweep: true,
+		},
+		{
+			name:   "at the deadline",
+			height: revealDeadline,
+		},
+		{
+			name:   "after the htlc expiry",
+			height: 501,
+		},
+		{
+			name:        "at the deadline but already revealed",
+			height:      revealDeadline,
+			state:       loopdb.StatePreimageRevealed,
+			expectSweep: true,
+		},
+		{
+			name:   "at the deadline with a timed out swap",
+			height: revealDeadline,
+			state:  loopdb.StateFailTimeout,
+		},
+		{
+			name:      "height lookup fails",
+			height:    322,
+			heightErr: errors.New("lnd unavailable"),
+		},
+		{
+			name:          "no height lookup",
+			height:        322,
+			noHeightCheck: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newHtlcConfirmedRecoveryFixture(t)
+			fixture.bestHeight = testCase.height
+			fixture.bestHeightErr = testCase.heightErr
+			if testCase.state != loopdb.StateInitiated {
+				state := loopdb.SwapStateData{
+					State: testCase.state,
+				}
+				fixture.store.LoopOutUpdates[fixture.swap.Hash] =
+					[]loopdb.SwapStateData{state}
+			}
+			if testCase.noHeightCheck {
+				fixture.manager.bestHeight = nil
+			}
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(), htlcConfirmedRecoveryTestTimeout,
+			)
+			defer cancel()
+
+			runErrChan := make(chan error, 1)
+
+			go func() {
+				runErrChan <- fixture.manager.run(ctx)
+			}()
+
+			ntfn := &swapserverrpc.ServerHtlcConfirmedNotification{
+				SwapHash:     fixture.swap.Hash[:],
+				HtlcOutpoint: fixture.outpoint.String(),
+				HtlcAddress:  fixture.htlc.Address.String(),
+				SatPerVbyte:  25,
+			}
+			fixture.subscriber.ntfnChan <- ntfn
+			close(fixture.subscriber.ntfnChan)
+
+			// Without a height lookup the worker can't check the
+			// deadline, so it must not start a sweep at all.
+			if testCase.noHeightCheck {
+				err := waitForManagerExit(t, ctx, runErrChan)
+				require.NoError(t, err)
+				assertNoRecoveryActivity(t, fixture.lnd)
+
+				return
+			}
+
+			waitForConfRegistration(t, ctx, fixture.lnd)
+			fixture.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+				Tx:          fixture.fundingTx,
+				BlockHeight: 321,
+			}
+
+			if testCase.expectSweep {
+				waitForSignOutputRawRequest(t, ctx, fixture.lnd)
+				publishedTx := waitForPublishedTx(
+					t, ctx, fixture.lnd,
+				)
+				require.Equal(
+					t, fixture.outpoint,
+					publishedTx.TxIn[0].PreviousOutPoint,
+				)
+			}
+
+			// The worker is done with the notification once the
+			// manager exits. A refused sweep must not have signed
+			// or published anything by then.
+			err := waitForManagerExit(t, ctx, runErrChan)
+			require.NoError(t, err)
+			if !testCase.expectSweep {
+				assertNoRecoveryActivity(t, fixture.lnd)
+			}
+			require.NoError(t, fixture.lnd.IsDone())
+		})
+	}
 }
