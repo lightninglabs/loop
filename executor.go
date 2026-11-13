@@ -50,14 +50,19 @@ type executor struct {
 	newSwaps      chan genericSwap
 	currentHeight uint32
 	ready         chan struct{}
+
+	// runningLoopOuts holds the hashes of the loop out swaps that are
+	// executing. It is guarded by the executor mutex.
+	runningLoopOuts map[lntypes.Hash]struct{}
 }
 
 // newExecutor returns a new swap executor instance.
 func newExecutor(cfg *executorConfig) *executor {
 	return &executor{
-		executorConfig: *cfg,
-		newSwaps:       make(chan genericSwap),
-		ready:          make(chan struct{}),
+		executorConfig:  *cfg,
+		newSwaps:        make(chan genericSwap),
+		ready:           make(chan struct{}),
+		runningLoopOuts: make(map[lntypes.Hash]struct{}),
 	}
 }
 
@@ -190,6 +195,8 @@ func (s *executor) run(mainCtx context.Context,
 					s.Unlock()
 				}
 
+				s.setLoopOutRunning(newSwap, false)
+
 				select {
 				case swapDoneChan <- swapID:
 				case <-mainCtx.Done():
@@ -234,11 +241,46 @@ func (s *executor) run(mainCtx context.Context,
 func (s *executor) initiateSwap(ctx context.Context,
 	swap genericSwap) {
 
+	// Mark a loop out as running before handing it over, so it already
+	// counts as running once the caller returns.
+	s.setLoopOutRunning(swap, true)
+
 	select {
 	case s.newSwaps <- swap:
 	case <-ctx.Done():
+		s.setLoopOutRunning(swap, false)
+
 		return
 	}
+}
+
+// setLoopOutRunning records whether the given swap, if it is a loop out, is
+// executing.
+func (s *executor) setLoopOutRunning(swap genericSwap, running bool) {
+	loopOut, ok := swap.(*loopOutSwap)
+	if !ok {
+		return
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	if running {
+		s.runningLoopOuts[loopOut.hash] = struct{}{}
+	} else {
+		delete(s.runningLoopOuts, loopOut.hash)
+	}
+}
+
+// loopOutRunning returns whether the loop out swap with the given hash is
+// executing.
+func (s *executor) loopOutRunning(hash lntypes.Hash) bool {
+	s.Lock()
+	defer s.Unlock()
+
+	_, ok := s.runningLoopOuts[hash]
+
+	return ok
 }
 
 // height returns the current height known to the swap server.

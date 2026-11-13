@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -122,6 +123,255 @@ func TestLoopOutFailOffchain(t *testing.T) {
 	ctx.assertStoreFinished(loopdb.StateFailOffchainPayments)
 
 	ctx.finish()
+}
+
+// loopOutRunningTimeout bounds the polling in the LoopOutRunning tests. It is
+// shorter than the test.Guard deadline, so a regression fails the test
+// instead of tripping the guard.
+const loopOutRunningTimeout = 2 * time.Second
+
+// TestLoopOutRunning asserts that a loop out counts as running while it
+// executes and stops counting once it has finished.
+func TestLoopOutRunning(t *testing.T) {
+	defer test.Guard(t)()
+
+	ctx := createClientTestContext(t, nil)
+
+	info, err := ctx.swapClient.LoopOut(t.Context(), testRequest)
+	require.NoError(t, err)
+
+	running, err := ctx.swapClient.LoopOutRunning(
+		t.Context(), info.SwapHash,
+	)
+	require.NoError(t, err)
+	require.True(t, running)
+
+	running, err = ctx.swapClient.LoopOutRunning(
+		t.Context(), lntypes.Hash{1},
+	)
+	require.NoError(t, err)
+	require.False(t, running)
+
+	ctx.assertStored()
+	ctx.assertStatus(loopdb.StateInitiated)
+
+	signalSwapPaymentResult := ctx.AssertPaid(swapInvoiceDesc)
+	signalPrepaymentResult := ctx.AssertPaid(prepayInvoiceDesc)
+
+	ctx.Context.AssertRegisterConf(false, defaultConfirmations)
+
+	signalSwapPaymentResult(
+		errors.New(lndclient.PaymentResultUnknownPaymentHash),
+	)
+	signalPrepaymentResult(
+		errors.New(lndclient.PaymentResultUnknownPaymentHash),
+	)
+	<-ctx.serverMock.cancelSwap
+	ctx.assertStatus(loopdb.StateFailOffchainPayments)
+	ctx.assertStoreFinished(loopdb.StateFailOffchainPayments)
+
+	require.Eventually(t, func() bool {
+		running, err := ctx.swapClient.LoopOutRunning(
+			t.Context(), info.SwapHash,
+		)
+
+		return err == nil && !running
+	}, loopOutRunningTimeout, 10*time.Millisecond)
+
+	ctx.finish()
+}
+
+// TestLoopOutRunningWaitsForResume asserts that LoopOutRunning does not
+// answer before the client has resumed its pending swaps.
+func TestLoopOutRunningWaitsForResume(t *testing.T) {
+	defer test.Guard(t)()
+
+	newClient := func() *Client {
+		lnd := test.NewMockLnd()
+
+		return newSwapClient(t, &clientConfig{
+			LndServices: &lnd.LndServices,
+			Server:      newServerMock(lnd),
+			Store:       loopdb.NewStoreMock(t),
+		})
+	}
+
+	type result struct {
+		running bool
+		err     error
+	}
+
+	hash := lntypes.Hash{1}
+	check := func(ctx context.Context, client *Client) <-chan result {
+		resChan := make(chan result, 1)
+		go func() {
+			running, err := client.LoopOutRunning(ctx, hash)
+			resChan <- result{running: running, err: err}
+		}()
+
+		return resChan
+	}
+
+	assertBlocked := func(resChan <-chan result) {
+		t.Helper()
+
+		select {
+		case res := <-resChan:
+			t.Fatalf("LoopOutRunning returned early: %+v", res)
+
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	// The client was not started, so the call blocks until its context
+	// is canceled.
+	client := newClient()
+	ctx, cancel := context.WithCancel(t.Context())
+	resChan := check(ctx, client)
+	assertBlocked(resChan)
+
+	cancel()
+	res := <-resChan
+	require.ErrorIs(t, res.err, context.Canceled)
+	require.False(t, res.running)
+
+	// A ready executor is not enough, the pending swaps must have been
+	// resumed too.
+	resChan = check(t.Context(), client)
+	close(client.executor.ready)
+	assertBlocked(resChan)
+
+	close(client.resumeReady)
+	res = <-resChan
+	require.NoError(t, res.err)
+	require.False(t, res.running)
+
+	// Resumed swaps are not enough either, the executor must be ready.
+	// If it fails to start, the pending swaps are no longer marked as
+	// running.
+	client = newClient()
+	resChan = check(t.Context(), client)
+	close(client.resumeReady)
+	assertBlocked(resChan)
+
+	close(client.executor.ready)
+	res = <-resChan
+	require.NoError(t, res.err)
+	require.False(t, res.running)
+}
+
+// TestLoopOutRunningPendingSwap asserts that a pending loop out counts as
+// running as soon as LoopOutRunning returns after a client start.
+func TestLoopOutRunningPendingSwap(t *testing.T) {
+	defer test.Guard(t)()
+
+	hash := sha256.Sum256(testPreimage[:])
+	amt := btcutil.Amount(50000)
+
+	swapPayReq, err := getInvoice(hash, amt, swapInvoiceDesc)
+	require.NoError(t, err)
+
+	prePayReq, err := getInvoice(hash, 100, prepayInvoiceDesc)
+	require.NoError(t, err)
+
+	pendingSwap := &loopdb.LoopOut{
+		Contract: &loopdb.LoopOutContract{
+			DestAddr:          test.GetDestAddr(t, 0),
+			SwapInvoice:       swapPayReq,
+			SweepConfTarget:   2,
+			HtlcConfirmations: 1,
+			MaxSwapRoutingFee: 70000,
+			PrepayInvoice:     prePayReq,
+			SwapContract: loopdb.SwapContract{
+				Preimage:        testPreimage,
+				AmountRequested: amt,
+				CltvExpiry:      744,
+				HtlcKeys:        htlcKeys,
+				MaxSwapFee:      60000,
+				MaxMinerFee:     50000,
+				ProtocolVersion: loopdb.ProtocolVersionHtlcV2,
+			},
+		},
+		Loop: loopdb.Loop{
+			Events: []*loopdb.LoopEvent{{
+				SwapStateData: loopdb.SwapStateData{
+					State: loopdb.StateInitiated,
+				},
+			}},
+			Hash: hash,
+		},
+	}
+
+	ctx := createClientTestContext(t, []*loopdb.LoopOut{pendingSwap})
+
+	// Ask before the swap reports any progress.
+	running, err := ctx.swapClient.LoopOutRunning(t.Context(), hash)
+	require.NoError(t, err)
+	require.True(t, running)
+
+	ctx.assertStatus(loopdb.StateInitiated)
+	ctx.AssertPaid(swapInvoiceDesc)
+	ctx.AssertPaid(prepayInvoiceDesc)
+	ctx.Context.AssertRegisterConf(false, 1)
+
+	ctx.finish()
+}
+
+// TestExecutorLoopOutRunningHandover asserts that a loop out counts as
+// running while it is handed over to the executor, and that a canceled
+// handover clears the mark again.
+func TestExecutorLoopOutRunningHandover(t *testing.T) {
+	defer test.Guard(t)()
+
+	// The executor is not started, so nothing reads the handed over
+	// swaps unless the test does.
+	exec := newExecutor(&executorConfig{})
+
+	handOver := func(ctx context.Context,
+		swap *loopOutSwap) <-chan struct{} {
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+
+			exec.initiateSwap(ctx, swap)
+		}()
+
+		return done
+	}
+
+	assertRunning := func(hash lntypes.Hash) {
+		t.Helper()
+
+		require.Eventually(t, func() bool {
+			return exec.loopOutRunning(hash)
+		}, loopOutRunningTimeout, time.Millisecond)
+	}
+
+	// A swap counts as running before the executor has taken it over,
+	// and stays running after.
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	accepted := &loopOutSwap{swapKit: swapKit{hash: lntypes.Hash{1}}}
+	done := handOver(ctx, accepted)
+	assertRunning(accepted.hash)
+
+	require.Equal(t, genericSwap(accepted), <-exec.newSwaps)
+	<-done
+	require.True(t, exec.loopOutRunning(accepted.hash))
+
+	// A swap whose handover is canceled never executes, so it must not
+	// stay marked as running.
+	ctx, cancel = context.WithCancel(t.Context())
+	canceled := &loopOutSwap{swapKit: swapKit{hash: lntypes.Hash{2}}}
+	done = handOver(ctx, canceled)
+	assertRunning(canceled.hash)
+
+	cancel()
+	<-done
+	require.False(t, exec.loopOutRunning(canceled.hash))
+	require.True(t, exec.loopOutRunning(accepted.hash))
 }
 
 // TestLoopOutFailWrongAmount asserts that the client checks the server invoice
