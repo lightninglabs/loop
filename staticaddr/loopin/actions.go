@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
@@ -562,6 +563,17 @@ func (f *FSM) depositOutpoints() ([]wire.OutPoint, error) {
 	return outpoints, nil
 }
 
+// htlcTxInputs returns the deposit outpoints the htlc tx spends. That is the
+// outpoint snapshot the htlc tx was signed for. The deposit rows of a
+// recovered swap can differ from it. Swaps without a snapshot use the rows.
+func (f *FSM) htlcTxInputs() ([]wire.OutPoint, error) {
+	if len(f.loopIn.DepositOutpoints) > 0 {
+		return f.depositOutpoints()
+	}
+
+	return f.loopIn.Outpoints(), nil
+}
+
 // originalDepositOutpointUnavailable reports whether an original selected
 // deposit outpoint is missing from lnd's wallet transactions or spent by one
 // of them. This is lnd's wallet view, not the chain's UTXO set, and it doesn't
@@ -600,13 +612,16 @@ func (f *FSM) originalDepositOutpointUnavailable(ctx context.Context) (
 func (f *FSM) htlcTxSpentDeposits(ctx context.Context,
 	htlcPkScript []byte) (bool, error) {
 
-	if f.cfg.TxOutChecker == nil || len(f.loopIn.DepositOutpoints) == 0 {
+	if f.cfg.TxOutChecker == nil {
 		return false, nil
 	}
 
-	outpoints, err := f.depositOutpoints()
+	outpoints, err := f.htlcTxInputs()
 	if err != nil {
 		return false, err
+	}
+	if len(outpoints) == 0 {
+		return false, nil
 	}
 
 	spent, err := f.cfg.TxOutChecker.SpentByTxPayingTo(
@@ -939,13 +954,18 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	// Subscribe to htlc tx confirmation.
 	reorgChan := make(chan struct{}, 1)
+
+	// htlcTxid is set once the htlc tx is known from the spend of the
+	// deposits. The confirmation is then registered for that tx only.
+	var htlcTxid *chainhash.Hash
+
 	// registerHtlcConf registers for the HTLC transaction confirmation using
 	// the current reorg channel.
 	registerHtlcConf := func() (chan *chainntnfs.TxConfirmation, chan error,
 		error) {
 
 		return f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, nil, htlc.PkScript, defaultConfTarget,
+			ctx, htlcTxid, htlc.PkScript, defaultConfTarget,
 			int32(f.loopIn.InitiationHeight),
 			lndclient.WithReOrgChan(reorgChan),
 		)
@@ -961,6 +981,40 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			err)
 
 		return retryMonitor(err)
+	}
+
+	// registerDepositSpend registers for the spend of the first deposit.
+	// It is used to find the htlc tx after a confirmation of a tx that
+	// pays to the htlc but isn't the htlc tx. The spend watch reports its
+	// own reorgs, because lnd before v0.21 sends no reorg for a
+	// confirmation it didn't report yet. Each registration has its own
+	// reorg channel, so a replaced registration can't report a reorg a
+	// second time.
+	var (
+		depositSpendChan      chan *chainntnfs.SpendDetail
+		depositSpendErrChan   chan error
+		depositSpendReorgChan chan struct{}
+	)
+	registerDepositSpend := func() error {
+		outpoints, err := f.htlcTxInputs()
+		if err != nil {
+			return err
+		}
+		if len(outpoints) == 0 || f.loopIn.AddressParams == nil {
+			return errors.New("no deposits or static address " +
+				"parameters to watch")
+		}
+
+		depositSpendReorgChan = make(chan struct{}, 1)
+		depositSpendChan, depositSpendErrChan, err =
+			f.cfg.ChainNotifier.RegisterSpendNtfn(
+				ctx, &outpoints[0],
+				f.loopIn.AddressParams.PkScript,
+				int32(f.loopIn.InitiationHeight),
+				lndclient.WithReOrgChan(depositSpendReorgChan),
+			)
+
+		return err
 	}
 
 	// Subscribe to new blocks.
@@ -1188,8 +1242,13 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	htlcConfirmed := false
 
-	// depositsSpent is set when a rejection finds that the htlc tx spent
-	// the deposits before its confirmation arrived.
+	// depositsSpent is set when the htlc tx is known to have spent the
+	// deposits before its confirmation arrived. The swap then waits for
+	// the confirmation instead of releasing the deposits. A reorg clears
+	// it, because the htlc tx may be gone for good and the swap must not
+	// wait for it forever. That is safe, because the htlc timeout asks
+	// lnd at every block before it releases the deposits, so an htlc tx
+	// that is only confirming again keeps them locked.
 	depositsSpent := false
 
 	// handleRiskRejected cancels the invoice after a server rejection. The
@@ -1282,7 +1341,43 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 	for {
 		select {
-		case <-htlcConfChan:
+		case conf := <-htlcConfChan:
+			// Anyone who knows the htlc script can confirm a tx
+			// that pays to it. Only the htlc tx we signed also
+			// spends the deposits.
+			if conf == nil || !f.isHtlcTx(conf.Tx, htlc.PkScript) {
+				switch {
+				case conf == nil || conf.Tx == nil:
+					f.Warnf("ignoring htlc confirmation " +
+						"without a tx")
+
+				default:
+					f.Warnf("ignoring confirmation of "+
+						"tx %v at height %d that "+
+						"pays to the htlc but isn't "+
+						"the htlc tx",
+						conf.Tx.TxHash(),
+						conf.BlockHeight)
+				}
+
+				// lnd reports a script match only once, so
+				// find the htlc tx from the deposit spend.
+				htlcConfChan = nil
+				err = registerDepositSpend()
+				if err != nil {
+					if ctx.Err() != nil {
+						return fsm.NoOp
+					}
+
+					err = fmt.Errorf("unable to watch "+
+						"deposit spend: %w", err)
+
+					return retryMonitor(err)
+				}
+
+				continue
+			}
+
 			f.Infof("htlc tx confirmed")
 
 			htlcConfirmed = true
@@ -1323,8 +1418,13 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 		case <-reorgChan:
 			// A reorg happened. We invalidate a previous htlc
 			// confirmation and re-register for the next
-			// confirmation.
+			// confirmation. The htlc tx found from the deposit
+			// spend may have been reorged out too, so the htlc
+			// timeout asks lnd again whether it spent the
+			// deposits.
 			htlcConfirmed = false
+			htlcTxid = nil
+			depositsSpent = false
 
 			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
 			if err != nil {
@@ -1334,6 +1434,80 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 
 				err = fmt.Errorf("unable to monitor htlc tx "+
 					"confirmation: %v", err)
+
+				return retryMonitor(err)
+			}
+
+		case spend := <-depositSpendChan:
+			depositSpendChan = nil
+			if spend == nil ||
+				!f.isHtlcTx(spend.SpendingTx, htlc.PkScript) {
+
+				switch {
+				case spend == nil || spend.SpendingTx == nil:
+					f.Warnf("ignoring deposit spend " +
+						"without a tx")
+
+				default:
+					f.Warnf("deposit spent by tx %v at "+
+						"height %d that isn't the "+
+						"htlc tx",
+						spend.SpendingTx.TxHash(),
+						spend.SpendingHeight)
+				}
+
+				continue
+			}
+
+			// The htlc tx spent the deposits, so the htlc timeout
+			// must wait for its confirmation.
+			txid := spend.SpendingTx.TxHash()
+			htlcTxid = &txid
+			depositsSpent = true
+			f.Infof("htlc tx %v spent the deposits at height %d, "+
+				"waiting for its confirmation", txid,
+				spend.SpendingHeight)
+
+			htlcConfChan, htlcErrConfChan, err = registerHtlcConf()
+			if err != nil {
+				if ctx.Err() != nil {
+					return fsm.NoOp
+				}
+
+				err = fmt.Errorf("unable to monitor htlc tx "+
+					"confirmation: %w", err)
+
+				return retryMonitor(err)
+			}
+
+		case err = <-depositSpendErrChan:
+			if ctx.Err() != nil {
+				return fsm.NoOp
+			}
+
+			return retryMonitor(fmt.Errorf("deposit spend "+
+				"subscription error: %w", err))
+
+		case <-depositSpendReorgChan:
+			// The tx that spent the deposit was reorged out. Drop
+			// the htlc tx found from it and watch the spend again,
+			// the deposits can be spent by another signed fee
+			// variant of the htlc tx with a different txid.
+			f.Infof("deposit spend reorged out, watching the " +
+				"deposit spend again")
+
+			htlcConfirmed = false
+			htlcTxid = nil
+			depositsSpent = false
+
+			err = registerDepositSpend()
+			if err != nil {
+				if ctx.Err() != nil {
+					return fsm.NoOp
+				}
+
+				err = fmt.Errorf("unable to watch deposit "+
+					"spend: %w", err)
 
 				return retryMonitor(err)
 			}
@@ -1427,9 +1601,26 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			if !htlcConfirmed &&
 				!anyDepositInState(deposit.SweepHtlcTimeout) {
 
+				// The htlc tx can spend the deposits before we
+				// see its confirmation, for example if the
+				// monitor starts after the htlc expiry. Ask
+				// lnd before releasing them. The answer isn't
+				// kept, so that the swap stops waiting if lnd
+				// no longer lists the htlc tx at a later
+				// block.
+				waitForHtlc := depositsSpent
+				if !waitForHtlc {
+					waitForHtlc, err = f.htlcTxSpentDeposits(
+						ctx, htlc.PkScript,
+					)
+					if err != nil {
+						return retryMonitor(err)
+					}
+				}
+
 				// The htlc spent the deposits, wait for its
 				// confirmation to sweep it.
-				if depositsSpent {
+				if waitForHtlc {
 					f.Debugf("htlc timed out, waiting for the " +
 						"htlc confirmation")
 
@@ -1516,6 +1707,39 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 			return fsm.NoOp
 		}
 	}
+}
+
+// isHtlcTx reports whether tx spends exactly the deposits the htlc tx was
+// signed for and pays to the htlc pkScript. Anyone who knows the htlc script
+// can create a tx that pays to it, but only the htlc tx we signed also spends
+// the deposits.
+func (f *FSM) isHtlcTx(tx *wire.MsgTx, htlcPkScript []byte) bool {
+	outpoints, err := f.htlcTxInputs()
+	if err != nil {
+		f.Warnf("unable to get the htlc tx inputs: %v", err)
+
+		return false
+	}
+	if tx == nil || len(outpoints) == 0 ||
+		len(tx.TxIn) != len(outpoints) {
+
+		return false
+	}
+
+	deposits := make(map[wire.OutPoint]struct{}, len(outpoints))
+	for _, outpoint := range outpoints {
+		deposits[outpoint] = struct{}{}
+	}
+
+	for _, txIn := range tx.TxIn {
+		if _, ok := deposits[txIn.PreviousOutPoint]; !ok {
+			return false
+		}
+
+		delete(deposits, txIn.PreviousOutPoint)
+	}
+
+	return paysTo(tx, htlcPkScript)
 }
 
 // htlcTimeoutSweepRetryDelay is the delay between retries when publishing the

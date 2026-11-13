@@ -14,6 +14,13 @@
   A static Loop In also no longer locks a deposit that another Loop In is
   already using, and a failed lock no longer resets deposits that a withdrawal
   or a channel open has taken.
+* A static address loop-in no longer takes a confirmed transaction that pays to
+  its htlc as the htlc transaction unless that transaction also spends the
+  swap's deposits. Before, the server could confirm a dust output to the htlc
+  script and lock the deposits in a timeout sweep that could never succeed.
+  The htlc transaction is then found from the spend of the deposits, and at
+  the htlc expiry the deposits are only released if lnd's wallet lists no
+  htlc transaction that spent them.
 
 #### Maintenance
 
