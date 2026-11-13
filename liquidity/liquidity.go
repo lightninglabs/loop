@@ -513,7 +513,7 @@ func (m *Manager) autoloop(ctx context.Context) error {
 	// swaps for autoloop.
 	m.refreshAutoloopBudget(ctx)
 
-	suggestion, err := m.SuggestSwaps(ctx)
+	suggestion, err := m.suggestSwaps(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -685,6 +685,40 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 	return nil
 }
 
+// suggestEasyAutoloop returns what easy autoloop would do with the current
+// parameters without dispatching anything: the loop out it would make next, or
+// the reason that it would not make one.
+func (m *Manager) suggestEasyAutoloop(ctx context.Context) (*Suggestions,
+	error) {
+
+	// Build the swap as a dry run, so that no wallet address is derived
+	// for a swap that is not dispatched.
+	params := m.params
+	params.Autoloop = false
+
+	// The autoloop tick starts a new budget period before it plans, once
+	// the current one is over. Plan with the budget that the tick would
+	// see, without saving it, so that the dry run agrees with the swap
+	// that the next tick dispatches.
+	if m.budgetRefreshDue(params) {
+		params.AutoloopBudgetLastRefresh = m.cfg.Clock.Now()
+	}
+
+	plan, err := m.planEasyAutoloopSwap(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := newSuggestions()
+	resp.EasyAutoloopReason = plan.reason
+
+	if plan.swap != nil {
+		resp.OutSwaps = append(resp.OutSwaps, *plan.swap)
+	}
+
+	return resp, nil
+}
+
 // planEasyAutoloopSwap works out the swap that brings the total local balance
 // back to the easy autoloop target, or the reason that no swap can be made
 // right now. The swap is built with the parameters provided, which allows a
@@ -723,16 +757,39 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 	// budget.
 	summary := m.checkExistingAutoLoopsWithStatic(
 		loopOut, loopIn, staticLoopIns,
+		params.AutoloopBudgetLastRefresh,
 	)
 
 	err = m.checkSummaryBudget(summary)
 	if err != nil {
-		return noSwap(ReasonBudgetElapsed, err)
+		// Swaps in flight hold their worst-case fees against the
+		// budget until they finish, when only what they paid counts.
+		// A budget that is not spent yet, but that those holds fill,
+		// may have room again once they finish, rather than only when
+		// the budget starts over.
+		reason := ReasonBudgetElapsed
+		if summary.spentFees < params.AutoFeeBudget {
+			reason = ReasonBudgetInsufficient
+		}
+
+		return noSwap(reason, err)
 	}
 
 	_, err = m.checkSummaryInflight(summary)
 	if err != nil {
 		return noSwap(ReasonInFlight, err)
+	}
+
+	// A sticky loop out holds its slot from before its swap is stored
+	// until it stops retrying, so it may or may not be counted in the
+	// summary too. Wait while either count fills the slots, rather than
+	// plan a swap that the dispatch would drop. The dispatch checks the
+	// sticky loop outs again, for a slot that is taken after this.
+	active := m.numActiveStickyLoops()
+	if active >= params.MaxAutoInFlight {
+		return noSwap(ReasonInFlight, fmt.Errorf("%v autoloops allowed, "+
+			"%v sticky loop outs active", params.MaxAutoInFlight,
+			active))
 	}
 
 	// Get all channels in order to calculate current total local balance.
@@ -893,6 +950,7 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 	// budget.
 	summary := m.checkExistingAutoLoopsWithStatic(
 		loopOut, loopIn, staticLoopIns,
+		m.params.AutoloopBudgetLastRefresh,
 	)
 
 	err = m.checkSummaryBudget(summary)
@@ -1086,6 +1144,11 @@ type Suggestions struct {
 	// DisqualifiedPeers maps the set of peers that we do not recommend
 	// swaps for to the reason that they were excluded.
 	DisqualifiedPeers map[route.Vertex]Reason
+
+	// EasyAutoloopReason is the reason that easy autoloop does not suggest
+	// a swap. It is only set when easy autoloop is enabled and no swap is
+	// suggested.
+	EasyAutoloopReason Reason
 }
 
 func newSuggestions() *Suggestions {
@@ -1153,12 +1216,35 @@ func (m *Manager) singleReasonSuggestion(reason Reason) *Suggestions {
 // liquidity balance for the rules configured on the manager. The planner
 // fails when no rules are set and otherwise returns both suggested swaps and
 // structured disqualification reasons for rules that could not be satisfied in
-// the current pass.
+// the current pass. When easy autoloop is enabled the rules are not used, and
+// the planner returns the loop out that easy autoloop would make next or the
+// reason that it would not make one.
 func (m *Manager) SuggestSwaps(ctx context.Context) (
+	*Suggestions, error) {
+
+	return m.suggestSwaps(ctx, true)
+}
+
+// suggestSwaps returns the suggestions that SuggestSwaps describes. With
+// includeEasy false, it returns no swaps while easy autoloop is enabled. The
+// rule based autoloop uses that, because easy autoloop could be enabled after
+// the autoloop tick chose the rule based path, and the swap that easy autoloop
+// would make is built as a dry run that must never be dispatched.
+func (m *Manager) suggestSwaps(ctx context.Context, includeEasy bool) (
 	*Suggestions, error) {
 
 	m.paramsLock.Lock()
 	defer m.paramsLock.Unlock()
+
+	// Easy autoloop ignores our rules and works towards a single target
+	// for the whole node, so we report what it would do instead.
+	if m.params.EasyAutoloop {
+		if !includeEasy {
+			return newSuggestions(), nil
+		}
+
+		return m.suggestEasyAutoloop(ctx)
+	}
 
 	// If we have no rules set, exit early to avoid unnecessary calls to
 	// lnd and the server.
@@ -1199,6 +1285,7 @@ func (m *Manager) SuggestSwaps(ctx context.Context) (
 	// budget.
 	summary := m.checkExistingAutoLoopsWithStatic(
 		loopOut, loopIn, staticLoopIns,
+		m.params.AutoloopBudgetLastRefresh,
 	)
 
 	err = m.checkSummaryBudget(summary)
@@ -1648,14 +1735,17 @@ func (m *Manager) checkExistingAutoLoops(ctx context.Context,
 
 	return m.checkExistingAutoLoopsWithStatic(
 		loopOuts, loopIns, staticLoopIns,
+		m.params.AutoloopBudgetLastRefresh,
 	), nil
 }
 
 // checkExistingAutoLoopsWithStatic calculates our autoloop budget summary from
-// the provided swap snapshots.
+// the provided swap snapshots, counting the fees of swaps that finished after
+// the budget start provided.
 func (m *Manager) checkExistingAutoLoopsWithStatic(
 	loopOuts []*loopdb.LoopOut, loopIns []*loopdb.LoopIn,
-	staticLoopIns []*StaticLoopInInfo) *existingAutoLoopSummary {
+	staticLoopIns []*StaticLoopInInfo,
+	budgetStart time.Time) *existingAutoLoopSummary {
 
 	var summary existingAutoLoopSummary
 
@@ -1682,7 +1772,7 @@ func (m *Manager) checkExistingAutoLoopsWithStatic(
 				out.Contract.MaxMinerFee,
 			)
 		} else if out.LastUpdateTime().After(
-			m.params.AutoloopBudgetLastRefresh,
+			budgetStart,
 		) {
 
 			summary.spentFees += out.State().Cost.Total()
@@ -1696,7 +1786,7 @@ func (m *Manager) checkExistingAutoLoopsWithStatic(
 
 		pending := in.State().State.Type() == loopdb.StateTypePending
 		inBudget := !in.LastUpdateTime().
-			Before(m.params.AutoloopBudgetLastRefresh)
+			Before(budgetStart)
 
 		// If an autoloop is in a pending state, we always count it in
 		// our current budget, and record the worst-case fees for it,
@@ -1718,7 +1808,7 @@ func (m *Manager) checkExistingAutoLoopsWithStatic(
 		}
 
 		inBudget := !in.LastUpdateTime.Before(
-			m.params.AutoloopBudgetLastRefresh,
+			budgetStart,
 		)
 
 		switch {
@@ -1885,24 +1975,37 @@ func (m *Manager) currentSwapTrafficWithStatic(loopOut []*loopdb.LoopOut,
 // budget refresh is greater than our configured refresh period. If so, the last
 // refresh timestamp.
 func (m *Manager) refreshAutoloopBudget(ctx context.Context) {
-	if time.Since(m.params.AutoloopBudgetLastRefresh) >
-		m.params.AutoFeeRefreshPeriod {
-
-		log.Debug("Refreshing autoloop budget")
-		m.params.AutoloopBudgetLastRefresh = m.cfg.Clock.Now()
-
-		paramsRpc, err := ParametersToRpc(m.params)
-		if err != nil {
-			log.Errorf("Error converting parameters to rpc: %v",
-				err)
-			return
-		}
-
-		err = m.saveParams(ctx, paramsRpc)
-		if err != nil {
-			log.Errorf("Error saving parameters: %v", err)
-		}
+	// SuggestSwaps reads the budget start under the params lock, so check
+	// and move it under that lock too, and save a copy of the result.
+	m.paramsLock.Lock()
+	if !m.budgetRefreshDue(m.params) {
+		m.paramsLock.Unlock()
+		return
 	}
+
+	log.Debug("Refreshing autoloop budget")
+	m.params.AutoloopBudgetLastRefresh = m.cfg.Clock.Now()
+	params := m.params
+	m.paramsLock.Unlock()
+
+	paramsRpc, err := ParametersToRpc(params)
+	if err != nil {
+		log.Errorf("Error converting parameters to rpc: %v", err)
+		return
+	}
+
+	err = m.saveParams(ctx, paramsRpc)
+	if err != nil {
+		log.Errorf("Error saving parameters: %v", err)
+	}
+}
+
+// budgetRefreshDue returns whether the autoloop budget period that the
+// parameters provided started is over, so that a new one starts before
+// autoloop next plans its swaps.
+func (m *Manager) budgetRefreshDue(params Parameters) bool {
+	return m.cfg.Clock.Now().Sub(params.AutoloopBudgetLastRefresh) >
+		params.AutoFeeRefreshPeriod
 }
 
 // dispatchStickyLoopOut attempts to dispatch a loop out swap that will

@@ -45,6 +45,7 @@
         "lines": [
           "{\n",
           "    \"disqualified\": [],\n",
+          "    \"easy_autoloop_reason\": \"AUTO_REASON_UNKNOWN\",\n",
           "    \"loop_in\": [],\n",
           "    \"loop_out\": [],\n",
           "    \"static_loop_in\": []\n",

@@ -98,7 +98,9 @@ type SwapClientClient interface {
 	// loop: `suggestswaps`
 	//SuggestSwaps returns a list of recommended swaps based on the current
 	//state of your node's channels and it's liquidity manager parameters.
-	//Note that only loop out suggestions are currently supported.
+	//Note that only loop out suggestions are currently supported. When easy
+	//autoloop is enabled, the response holds the loop out that easy autoloop
+	//would make next, or the reason that it would not make one.
 	//[EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(ctx context.Context, in *SuggestSwapsRequest, opts ...grpc.CallOption) (*SuggestSwapsResponse, error)
 	// loop: `listreservations`
@@ -563,7 +565,9 @@ type SwapClientServer interface {
 	// loop: `suggestswaps`
 	//SuggestSwaps returns a list of recommended swaps based on the current
 	//state of your node's channels and it's liquidity manager parameters.
-	//Note that only loop out suggestions are currently supported.
+	//Note that only loop out suggestions are currently supported. When easy
+	//autoloop is enabled, the response holds the loop out that easy autoloop
+	//would make next, or the reason that it would not make one.
 	//[EXPERIMENTAL]: endpoint is subject to change.
 	SuggestSwaps(context.Context, *SuggestSwapsRequest) (*SuggestSwapsResponse, error)
 	// loop: `listreservations`

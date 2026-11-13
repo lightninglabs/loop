@@ -29,6 +29,22 @@ In addition, if you want to control the maximum amount of fees you're willing to
 spend per swap, as a percentage of the total swap amount, you can use the
 `feepercent` parameter as explained in the [Fees](#fees) section.
 
+To see what easy Autoloop would do right now without dispatching anything, run
+`loop suggestswaps`. This dry run covers easy Autoloop for bitcoin, not easy
+Autoloop for assets. The output holds the Loop Out that it would make next. If
+it would not make one, `easy_autoloop_reason` says why: one of the reasons
+listed under [Disqualified Swaps](#disqualified-swaps), or one of:
+
+* Below minimum: the amount over your target is below the minimum swap size.
+* No eligible channel: every channel is inactive, excluded, used by another
+  swap, backing off after a failed swap, or holds less than the minimum swap
+  size.
+
+Swaps in flight hold their worst-case fees against your budget until they
+finish, when only what they paid counts. When your budget is not spent yet but
+those holds fill it, the reason is that the budget is insufficient rather than
+elapsed, since there may be room again once the swaps finish.
+
 ## Liquidity Rules
 
 At present, Autoloop can be configured to either acquire incoming liquidity 

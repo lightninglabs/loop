@@ -132,7 +132,9 @@ service SwapClient {
     /* loop: `suggestswaps`
     SuggestSwaps returns a list of recommended swaps based on the current
     state of your node's channels and it's liquidity manager parameters.
-    Note that only loop out suggestions are currently supported.
+    Note that only loop out suggestions are currently supported. When easy
+    autoloop is enabled, the response holds the loop out that easy autoloop
+    would make next, or the reason that it would not make one.
     [EXPERIMENTAL]: endpoint is subject to change.
     */
     rpc SuggestSwaps (SuggestSwapsRequest) returns (SuggestSwapsResponse);
@@ -1584,6 +1586,19 @@ enum AutoReason {
     channel data and is excluded from the standard autoloop planner.
     */
     AUTO_REASON_CUSTOM_CHANNEL_DATA = 15;
+
+    /*
+    Below minimum indicates that the amount that easy autoloop needs to swap
+    to reach its target is below the minimum swap size.
+    */
+    AUTO_REASON_BELOW_MINIMUM = 16;
+
+    /*
+    No eligible channel indicates that easy autoloop has no channel to swap
+    from: every channel is inactive, excluded, used by another swap, backing
+    off after a failed swap, or holds less than the minimum swap size.
+    */
+    AUTO_REASON_NO_ELIGIBLE_CHANNEL = 17;
 }
 
 message Disqualified {
@@ -1624,6 +1639,12 @@ message SuggestSwapsResponse {
     for.
     */
     repeated Disqualified disqualified = 2;
+
+    /*
+    The reason that easy autoloop does not suggest a swap. This is only set
+    when easy autoloop is enabled and no swap is suggested.
+    */
+    AutoReason easy_autoloop_reason = 5;
 }
 
 message AbandonSwapRequest {
