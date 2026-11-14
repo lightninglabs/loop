@@ -21,6 +21,11 @@
   fee or extremely high fee HTLC transaction could not be swept back after the
   HTLC timed out. Sweeps that would leave a dust output are no longer signed.
 
+* An expired static address deposit is now swept as soon as lnd provides a
+  stable wallet view again, if lnd's wallet tip was changing or unsynced, or
+  its wallet query failed, when the expiry block arrived. Before, the expiry
+  sweep waited for the next block, or indefinitely if none arrived.
+
 #### Maintenance
 
 #### Contributors (Alphabetical Order)

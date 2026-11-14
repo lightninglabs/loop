@@ -166,24 +166,22 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		return err
 	}
 
-	// Reconcile immediately on startup so deposits are available
-	// before the first ticker fires.
-	confirmationTipHeight, err := m.reconcileDeposits(ctx)
+	// Reconcile immediately on startup so deposits are available before
+	// the first ticker fires. The startup height was consumed before
+	// recovered deposit FSMs existed. Replay it so already-expired
+	// recovered deposits can act immediately, but only after their wallet
+	// view and confirmation heights are fresh.
+	notified, err := m.reconcileAndNotify(ctx, startupHeight, false)
 	if err != nil {
-		log.Errorf("unable to reconcile deposits: %v", err)
-	} else if confirmationTipHeight != 0 {
-		// The startup height was consumed before recovered deposit FSMs
-		// existed. Replay it so already-expired recovered deposits can act
-		// immediately, but only after their wallet view and confirmation
-		// heights are fresh.
-		err = m.notifyActiveDeposits(
-			ctx, expiryNotificationHeight(
-				startupHeight, confirmationTipHeight,
-			),
-		)
-		if err != nil {
-			return err
-		}
+		return err
+	}
+
+	// A height that could not be delivered is retried until lnd provides a
+	// stable wallet view. Waiting for the next block instead could delay an
+	// expiry sweep by a whole block interval.
+	var retryExpiry <-chan time.Time
+	if !notified {
+		retryExpiry = time.After(m.expiryRetryInterval)
 	}
 
 	// Start the deposit notifier.
@@ -202,23 +200,29 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 		case height := <-newBlockChan:
 			m.currentHeight.Store(uint32(height))
 
-			confirmationTipHeight, err :=
-				m.reconcileDeposits(ctx)
-			if err != nil {
-				log.Errorf("unable to reconcile deposits: %v", err)
-				continue
-			}
-			if confirmationTipHeight == 0 {
-				continue
-			}
-
-			err = m.notifyActiveDeposits(
-				ctx, expiryNotificationHeight(
-					uint32(height), confirmationTipHeight,
-				),
+			notified, err := m.reconcileAndNotify(
+				ctx, uint32(height), false,
 			)
 			if err != nil {
 				return err
+			}
+
+			retryExpiry = nil
+			if !notified {
+				retryExpiry = time.After(m.expiryRetryInterval)
+			}
+
+		case <-retryExpiry:
+			notified, err := m.reconcileAndNotify(
+				ctx, m.currentHeight.Load(), true,
+			)
+			if err != nil {
+				return err
+			}
+
+			retryExpiry = nil
+			if !notified {
+				retryExpiry = time.After(m.expiryRetryInterval)
 			}
 
 		case outpoint := <-m.finalizedDepositChan:
@@ -233,6 +237,39 @@ func (m *Manager) Run(ctx context.Context, initChan chan struct{}) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// reconcileAndNotify reconciles the deposits with lnd's wallet and then
+// informs the active deposit FSMs about the given block height. It returns
+// false without notifying the FSMs if the reconciliation failed or lnd's wallet
+// tip was changing or unsynced, so that the caller can retry. Deposits must not
+// make expiry decisions from stale confirmation data. Failures of retries are
+// logged at debug level, so that a persistent failure doesn't flood the log.
+func (m *Manager) reconcileAndNotify(ctx context.Context, height uint32,
+	retry bool) (bool, error) {
+
+	confirmationTipHeight, err := m.reconcileDeposits(ctx)
+	if err != nil {
+		logf := log.Errorf
+		if retry {
+			logf = log.Debugf
+		}
+		logf("unable to reconcile deposits: %v", err)
+
+		return false, nil
+	}
+	if confirmationTipHeight == 0 {
+		return false, nil
+	}
+
+	err = m.notifyActiveDeposits(
+		ctx, expiryNotificationHeight(height, confirmationTipHeight),
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // notifyActiveDeposits informs active deposit FSMs about a new block height.
