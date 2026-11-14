@@ -35,6 +35,11 @@ const (
 	// PollInterval is the interval in which we poll for new deposits to our
 	// static address.
 	PollInterval = 10 * time.Second
+
+	// ExpiryRetryInterval is the interval in which a block height that
+	// could not be delivered to the deposits, because lnd's wallet tip was
+	// changing or the wallet query failed, is delivered again.
+	ExpiryRetryInterval = time.Second
 )
 
 var (
@@ -109,6 +114,10 @@ type Manager struct {
 	// currentHeight stores the currently best known block height.
 	currentHeight atomic.Uint32
 
+	// expiryRetryInterval is the interval in which a block height that
+	// could not be delivered to the deposits is delivered again.
+	expiryRetryInterval time.Duration
+
 	// onchainCostLookupFailing is true while the on-chain cost lookups keep
 	// failing, so that only the first failure is logged as a warning. It is
 	// only used by the on-chain cost loop.
@@ -123,6 +132,7 @@ func NewManager(cfg *ManagerConfig) *Manager {
 		activeDepositHolds:   make(map[wire.OutPoint]uint32),
 		deposits:             make(map[wire.OutPoint]*Deposit),
 		finalizedDepositChan: make(chan wire.OutPoint),
+		expiryRetryInterval:  ExpiryRetryInterval,
 	}
 }
 
