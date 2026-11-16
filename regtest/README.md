@@ -300,7 +300,8 @@ This `docker-compose` is only meant as a demo and quick start help. You can of
 course also integrate the Loop server Docker image into your existing `regtest`
 environment.
 
-Simply pull the image and run it by pointing it to an existing `lnd` node:
+Simply pull the image and run it by pointing it to an existing `lnd` node and
+to the RPC interface of a `bitcoind` node of the same `regtest` network:
 
 ```shell
 $ docker pull lightninglabs/loopserver:latest
@@ -309,10 +310,14 @@ $ docker run -d \
     -v /some/dir/to/lnd:/root/.lnd \
     lightninglabs/loopserver:latest \
       daemon \
+      --insecure \
       --maxamt=5000000 \
       --lnd.host=some-lnd-node:10009 \
       --lnd.macaroondir=/root/.lnd/data/chain/bitcoin/regtest \
       --lnd.tlspath=/root/.lnd/tls.cert \
+      --bitcoin.host=some-bitcoind-node:18443 \
+      --bitcoin.user=some-rpc-user \
+      --bitcoin.password=some-rpc-password
 ```
 
 An existing Loop client (`loopd`) can then be pointed to this server with:
@@ -328,8 +333,10 @@ $ loopd \
     --lnd.tlspath=/root/.lnd/tls.cert
 ```
 
-The `--server.notls` is important here as the `regtest` version of the Loop
-server only supports insecure, non-TLS connections.
+`--insecure` makes the server serve plaintext gRPC, which the client accepts
+with `--server.notls`. Without it, the server serves TLS with a self-signed
+certificate, which is how Aperture connects to it in the `docker-compose`
+environment above.
 
 Also make sure you connect the Loop server and Loop client to a different `lnd`
 node each since an `lnd` node cannot pay itself. Obviously there also need to be
