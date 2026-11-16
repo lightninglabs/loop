@@ -34,6 +34,14 @@ $ cd loop/regtest
 $ ./regtest.sh start
 ```
 
+The first `start` pulls the Loop server image, `lightninglabs/loopserver`, and
+later ones keep using that copy. To update the server to its latest release,
+pull the image again before starting:
+
+```shell
+$ docker pull lightninglabs/loopserver:latest
+```
+
 ## Looping out
 
 Looping out is the process of moving funds from your channel (off-chain) balance
