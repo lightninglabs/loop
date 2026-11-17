@@ -9,6 +9,8 @@ import (
 	"github.com/lightninglabs/loop/labels"
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,6 +63,16 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 			}},
 			Contract: autoOutContract,
 		}
+
+		// chan1Failed is a swap over the first channel that failed to
+		// pay within the failure backoff.
+		chan1Failed = &loopdb.LoopOut{
+			Events: []*loopdb.LoopEvent{{
+				State: loopdb.StateFailOffchainPayments,
+				Time:  testTime,
+			}},
+			Contract: chan1Out,
+		}
 	)
 
 	inactive1.Active = false
@@ -78,6 +90,10 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 
 		// setParams changes the easy autoloop parameters for the test.
 		setParams func(params *Parameters)
+
+		// skipped holds the channels that we expect easy autoloop to
+		// skip, with the reason for each.
+		skipped map[lnwire.ShortChannelID]Reason
 
 		// amount is the amount of the single loop out that we expect.
 		// It is zero when we expect no swap.
@@ -129,6 +145,10 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 				params.ClientRestrictions.Minimum = 9500
 			},
 			reason: ReasonNoEligibleChannel,
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonBelowMinimum,
+				chanID2: ReasonBelowMinimum,
+			},
 		},
 		{
 			name: "no active channel",
@@ -136,6 +156,43 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 				inactive1, inactive2,
 			},
 			reason: ReasonNoEligibleChannel,
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonChannelInactive,
+				chanID2: ReasonChannelInactive,
+			},
+		},
+		{
+			// The channel that is skipped is reported along with
+			// the swap from the next channel.
+			name: "peer excluded",
+			setParams: func(params *Parameters) {
+				params.EasyAutoloopExcludedPeers = []route.Vertex{
+					peer1,
+				}
+			},
+			amount:  5000,
+			channel: chanID2.ToUint64(),
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonPeerExcluded,
+			},
+		},
+		{
+			name:     "channel used by another swap",
+			loopOuts: []*loopdb.LoopOut{{Contract: chan1Out}},
+			amount:   5000,
+			channel:  chanID2.ToUint64(),
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonLoopOut,
+			},
+		},
+		{
+			name:     "channel backing off after failure",
+			loopOuts: []*loopdb.LoopOut{chan1Failed},
+			amount:   5000,
+			channel:  chanID2.ToUint64(),
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonFailureBackoff,
+			},
 		},
 		{
 			// The budget is not spent, but the fees held for a swap
@@ -242,8 +299,13 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 			)
 			require.Empty(t, actual.InSwaps)
 			require.Empty(t, actual.StaticInSwaps)
-			require.Empty(t, actual.DisqualifiedChans)
 			require.Empty(t, actual.DisqualifiedPeers)
+
+			skipped := testCase.skipped
+			if skipped == nil {
+				skipped = noneDisqualified
+			}
+			require.Equal(t, skipped, actual.DisqualifiedChans)
 
 			if testCase.amount == 0 {
 				require.Empty(t, actual.OutSwaps)
