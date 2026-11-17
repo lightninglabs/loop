@@ -217,6 +217,25 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 			"htlc signing info"))
 	}
 
+	// Each fee tier must provide one nonce per deposit before signing can
+	// index the server's nonce lists.
+	for _, tier := range []struct {
+		name string
+		info *swapserverrpc.ServerHtlcSigningInfo
+	}{
+		{"standard", loopInResp.StandardHtlcInfo},
+		{"high fee", loopInResp.HighFeeHtlcInfo},
+		{"extreme fee", loopInResp.ExtremeFeeHtlcInfo},
+	} {
+		if len(tier.info.Nonces) != len(f.loopIn.Deposits) {
+			pushEmptySigs()
+
+			return returnError(fmt.Errorf("invalid %s htlc nonce "+
+				"count: got %d, want %d", tier.name,
+				len(tier.info.Nonces), len(f.loopIn.Deposits)))
+		}
+	}
+
 	serverPubkey, err := btcec.ParsePubKey(loopInResp.HtlcServerPubKey)
 	if err != nil {
 		pushEmptySigs()
