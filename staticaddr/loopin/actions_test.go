@@ -768,7 +768,7 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 
 	server := &mockStaticAddressServer{
 		response: testStaticAddressLoopInResponse(
-			serverKey.SerializeCompressed(),
+			serverKey.SerializeCompressed(), 2,
 		),
 	}
 
@@ -780,10 +780,17 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 		Value: 500_000,
 	}
 
+	secondDeposit := &deposit.Deposit{
+		Hash:  chainhash.Hash{2},
+		Value: 500_000,
+	}
+
 	loopIn := &StaticAddressLoopIn{
-		Deposits:              []*deposit.Deposit{dep},
-		DepositOutpoints:      []string{dep.OutPoint.String()},
-		SelectedAmount:        dep.Value,
+		Deposits: []*deposit.Deposit{dep, secondDeposit},
+		DepositOutpoints: []string{
+			dep.OutPoint.String(), secondDeposit.OutPoint.String(),
+		},
+		SelectedAmount:        dep.Value + secondDeposit.Value,
 		QuotedSwapFee:         1_000,
 		RouteHints:            testStaticAddressRouteHints(),
 		InitiationHeight:      uint32(mockLnd.Height),
@@ -810,6 +817,9 @@ func TestInitHtlcActionPreservesRouteHints(t *testing.T) {
 	event := f.InitHtlcAction(t.Context(), nil)
 	require.Equal(t, OnHtlcInitiated, event)
 	require.Nil(t, f.LastActionError)
+	require.Len(t, f.htlcServerNonces, 2)
+	require.Len(t, f.htlcServerNoncesHighFee, 2)
+	require.Len(t, f.htlcServerNoncesExtremelyHighFee, 2)
 	require.NotNil(t, server.request)
 
 	_, routeHints, _, _, err := swap.DecodeInvoice(
@@ -894,7 +904,7 @@ func TestInitHtlcActionIgnoresSendUpdateErrorAfterPersistence(t *testing.T) {
 
 	server := &mockStaticAddressServer{
 		response: testStaticAddressLoopInResponse(
-			serverKey.SerializeCompressed(),
+			serverKey.SerializeCompressed(), 1,
 		),
 	}
 
@@ -969,20 +979,27 @@ func (m *mockStaticAddressServer) ServerStaticAddressLoopIn(
 
 // testStaticAddressLoopInResponse returns a minimal successful server response
 // for InitHtlcAction tests.
-func testStaticAddressLoopInResponse(
-	serverPubKey []byte) *swapserverrpc.ServerStaticAddressLoopInResponse {
+func testStaticAddressLoopInResponse(serverPubKey []byte,
+	numDeposits int) *swapserverrpc.ServerStaticAddressLoopInResponse {
 
-	signingInfo := &swapserverrpc.ServerHtlcSigningInfo{
-		FeeRate: 1,
-		Nonces:  [][]byte{make([]byte, musig2.PubNonceSize)},
+	signingInfo := func() *swapserverrpc.ServerHtlcSigningInfo {
+		nonces := make([][]byte, numDeposits)
+		for i := range nonces {
+			nonces[i] = make([]byte, musig2.PubNonceSize)
+		}
+
+		return &swapserverrpc.ServerHtlcSigningInfo{
+			FeeRate: 1,
+			Nonces:  nonces,
+		}
 	}
 
 	return &swapserverrpc.ServerStaticAddressLoopInResponse{
 		HtlcServerPubKey:   serverPubKey,
 		HtlcExpiry:         1_000,
-		StandardHtlcInfo:   signingInfo,
-		HighFeeHtlcInfo:    signingInfo,
-		ExtremeFeeHtlcInfo: signingInfo,
+		StandardHtlcInfo:   signingInfo(),
+		HighFeeHtlcInfo:    signingInfo(),
+		ExtremeFeeHtlcInfo: signingInfo(),
 	}
 }
 
@@ -3381,6 +3398,11 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 		ProtocolVersion:       version.ProtocolVersion_V0,
 	}
 
+	response := testStaticAddressLoopInResponse(
+		serverKey.PubKey().SerializeCompressed(), 1,
+	)
+	response.StandardHtlcInfo.FeeRate = 1_000_000
+
 	cfg := &Config{
 		AddressManager: &mockAddressManager{
 			params: &script.Parameters{
@@ -3392,18 +3414,7 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 		LndClient:      mockLnd.Client,
 		InvoicesClient: mockLnd.LndServices.Invoices,
 		Server: &initHtlcTestServer{
-			loopInResp: &swapserverrpc.ServerStaticAddressLoopInResponse{
-				HtlcServerPubKey: serverKey.PubKey().
-					SerializeCompressed(),
-				HtlcExpiry: mockLnd.Height +
-					DefaultLoopInOnChainCltvDelta,
-				StandardHtlcInfo: &swapserverrpc.ServerHtlcSigningInfo{
-					FeeRate: 1_000_000,
-				},
-				HighFeeHtlcInfo: &swapserverrpc.ServerHtlcSigningInfo{},
-				ExtremeFeeHtlcInfo: &swapserverrpc.
-					ServerHtlcSigningInfo{},
-			},
+			loopInResp: response,
 		},
 		ValidateLoopInContract: func(int32, int32) error {
 			return nil
@@ -3419,6 +3430,7 @@ func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
 	// cancel the invoice on this error path as well.
 	event := f.InitHtlcAction(ctx, nil)
 	require.Equal(t, fsm.OnError, event)
+	require.ErrorIs(t, f.LastActionError, ErrFeeTooHigh)
 
 	select {
 	case hash := <-mockLnd.FailInvoiceChannel:
@@ -4133,7 +4145,7 @@ func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
 			_, serverKey := test.CreateKey(21)
 			server := &mockStaticAddressServer{
 				response: testStaticAddressLoopInResponse(
-					serverKey.SerializeCompressed(),
+					serverKey.SerializeCompressed(), 1,
 				),
 			}
 			dep := &deposit.Deposit{Value: depositAmount}
@@ -4207,29 +4219,57 @@ func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
 func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 	t.Parallel()
 
-	for _, missing := range []string{
-		"standard", "high fee", "extreme fee", "all", "response",
-		"standard nonces", "high fee nonces", "extreme fee nonces",
-		"extra standard nonce", "extra high fee nonce",
-		"extra extreme fee nonce",
+	const missingInfo = "server response is missing htlc signing info"
+	for _, tc := range []struct {
+		name    string
+		wantErr string
+	}{
+		{"standard", missingInfo},
+		{"high fee", missingInfo},
+		{"extreme fee", missingInfo},
+		{"all", missingInfo},
+		{"response", missingInfo},
+		{
+			"standard nonces",
+			"invalid standard htlc nonce count: got 0, want 1",
+		},
+		{
+			"high fee nonces",
+			"invalid high fee htlc nonce count: got 0, want 1",
+		},
+		{
+			"extreme fee nonces",
+			"invalid extreme fee htlc nonce count: got 0, want 1",
+		},
+		{
+			"extra standard nonce",
+			"invalid standard htlc nonce count: got 2, want 1",
+		},
+		{
+			"extra high fee nonce",
+			"invalid high fee htlc nonce count: got 2, want 1",
+		},
+		{
+			"extra extreme fee nonce",
+			"invalid extreme fee htlc nonce count: got 2, want 1",
+		},
 	} {
-		t.Run(missing, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			mockLnd := test.NewMockLnd()
 			_, serverKey := test.CreateKey(21)
 			response := testStaticAddressLoopInResponse(
-				serverKey.SerializeCompressed(),
+				serverKey.SerializeCompressed(), 1,
 			)
-			wantErr := "server response is missing htlc signing info"
 			invalidInfo := &swapserverrpc.ServerHtlcSigningInfo{}
-			if strings.HasPrefix(missing, "extra ") {
+			if strings.HasPrefix(tc.name, "extra ") {
 				invalidInfo.Nonces = [][]byte{
 					make([]byte, musig2.PubNonceSize),
 					make([]byte, musig2.PubNonceSize),
 				}
 			}
-			switch missing {
+			switch tc.name {
 			case "standard nonces", "extra standard nonce":
 				response.StandardHtlcInfo = invalidInfo
 			case "high fee nonces", "extra high fee nonce":
@@ -4249,12 +4289,6 @@ func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 			case "response":
 				response = nil
 			}
-			if response != nil && response.StandardHtlcInfo != nil &&
-				response.HighFeeHtlcInfo != nil &&
-				response.ExtremeFeeHtlcInfo != nil {
-
-				wantErr = "server response has invalid htlc nonce count"
-			}
 			server := &initHtlcTestServer{loopInResp: response}
 			dep := &deposit.Deposit{Value: 500_000}
 			manager := newRecordingDepositManager(dep)
@@ -4271,6 +4305,7 @@ func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 				loopIn:       loopIn,
 				cfg: &Config{
 					Server:         server,
+					Store:          &mockStore{},
 					DepositManager: manager,
 					LndClient:      mockLnd.Client,
 					WalletKit:      mockLnd.WalletKit,
@@ -4285,7 +4320,7 @@ func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 				event = f.InitHtlcAction(t.Context(), nil)
 			})
 			require.Equal(t, fsm.OnError, event)
-			require.EqualError(t, f.LastActionError, wantErr)
+			require.EqualError(t, f.LastActionError, tc.wantErr)
 
 			// Only an empty abandonment request is sent to the server.
 			require.Len(t, server.pushed, 1)
