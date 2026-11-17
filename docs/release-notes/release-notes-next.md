@@ -6,6 +6,9 @@
 
 #### Bug Fixes
 
+* Reject static Loop In server responses with missing or extra HTLC nonces
+  before signing, preventing a client crash from an incomplete nonce list.
+
 * A static Loop In that releases its deposits a second time after its payment
   deadline, at its HTLC expiry or when the server rejects the swap, now only
   releases deposits that are still looping in for it. Before, it could move a

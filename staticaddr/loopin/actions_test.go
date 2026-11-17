@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -972,6 +974,7 @@ func testStaticAddressLoopInResponse(
 
 	signingInfo := &swapserverrpc.ServerHtlcSigningInfo{
 		FeeRate: 1,
+		Nonces:  [][]byte{make([]byte, musig2.PubNonceSize)},
 	}
 
 	return &swapserverrpc.ServerStaticAddressLoopInResponse{
@@ -4199,13 +4202,16 @@ func TestInitHtlcActionValidatesSwapFee(t *testing.T) {
 	}
 }
 
-// TestInitHtlcActionRejectsMissingSigningInfo verifies that incomplete responses
+// TestInitHtlcActionRejectsInvalidSigningInfo verifies that malformed responses
 // abort the swap, cancel its invoice and release deposits instead of panicking.
-func TestInitHtlcActionRejectsMissingSigningInfo(t *testing.T) {
+func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 	t.Parallel()
 
 	for _, missing := range []string{
 		"standard", "high fee", "extreme fee", "all", "response",
+		"standard nonces", "high fee nonces", "extreme fee nonces",
+		"extra standard nonce", "extra high fee nonce",
+		"extra extreme fee nonce",
 	} {
 		t.Run(missing, func(t *testing.T) {
 			t.Parallel()
@@ -4215,7 +4221,21 @@ func TestInitHtlcActionRejectsMissingSigningInfo(t *testing.T) {
 			response := testStaticAddressLoopInResponse(
 				serverKey.SerializeCompressed(),
 			)
+			wantErr := "server response is missing htlc signing info"
+			invalidInfo := &swapserverrpc.ServerHtlcSigningInfo{}
+			if strings.HasPrefix(missing, "extra ") {
+				invalidInfo.Nonces = [][]byte{
+					make([]byte, musig2.PubNonceSize),
+					make([]byte, musig2.PubNonceSize),
+				}
+			}
 			switch missing {
+			case "standard nonces", "extra standard nonce":
+				response.StandardHtlcInfo = invalidInfo
+			case "high fee nonces", "extra high fee nonce":
+				response.HighFeeHtlcInfo = invalidInfo
+			case "extreme fee nonces", "extra extreme fee nonce":
+				response.ExtremeFeeHtlcInfo = invalidInfo
 			case "standard":
 				response.StandardHtlcInfo = nil
 			case "high fee":
@@ -4228,6 +4248,12 @@ func TestInitHtlcActionRejectsMissingSigningInfo(t *testing.T) {
 				response.ExtremeFeeHtlcInfo = nil
 			case "response":
 				response = nil
+			}
+			if response != nil && response.StandardHtlcInfo != nil &&
+				response.HighFeeHtlcInfo != nil &&
+				response.ExtremeFeeHtlcInfo != nil {
+
+				wantErr = "server response has invalid htlc nonce count"
 			}
 			server := &initHtlcTestServer{loopInResp: response}
 			dep := &deposit.Deposit{Value: 500_000}
@@ -4259,8 +4285,7 @@ func TestInitHtlcActionRejectsMissingSigningInfo(t *testing.T) {
 				event = f.InitHtlcAction(t.Context(), nil)
 			})
 			require.Equal(t, fsm.OnError, event)
-			require.EqualError(t, f.LastActionError,
-				"server response is missing htlc signing info")
+			require.EqualError(t, f.LastActionError, wantErr)
 
 			// Only an empty abandonment request is sent to the server.
 			require.Len(t, server.pushed, 1)
