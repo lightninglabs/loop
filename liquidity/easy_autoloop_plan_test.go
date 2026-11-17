@@ -14,6 +14,8 @@ import (
 	"github.com/lightninglabs/loop/loopdb"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
+	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,6 +84,16 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 			}},
 			Contract: autoOutContract,
 		}
+
+		// chan1Failed is a swap over the first channel that failed to
+		// pay within the failure backoff.
+		chan1Failed = &loopdb.LoopOut{
+			Events: []*loopdb.LoopEvent{{
+				State: loopdb.StateFailOffchainPayments,
+				Time:  testTime,
+			}},
+			Contract: chan1Out,
+		}
 	)
 
 	inactive1.Active = false
@@ -103,6 +115,10 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 		// activeSticky is the number of sticky loop outs that hold an
 		// in-flight slot.
 		activeSticky int
+
+		// skipped holds the channels that we expect easy autoloop to
+		// skip, with the reason for each.
+		skipped map[lnwire.ShortChannelID]Reason
 
 		// amount is the amount of the single loop out that we expect.
 		// It is zero when we expect no swap.
@@ -134,6 +150,43 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 				inactive1, inactive2,
 			},
 			reason: ReasonNoEligibleChannel,
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonChannelInactive,
+				chanID2: ReasonChannelInactive,
+			},
+		},
+		{
+			// The channel that is skipped is reported along with
+			// the swap from the next channel.
+			name: "peer excluded",
+			setParams: func(params *Parameters) {
+				params.EasyAutoloopExcludedPeers = []route.Vertex{
+					peer1,
+				}
+			},
+			amount:  5000,
+			channel: chanID2.ToUint64(),
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonPeerExcluded,
+			},
+		},
+		{
+			name:     "channel used by another swap",
+			loopOuts: []*loopdb.LoopOut{{Contract: chan1Out}},
+			amount:   5000,
+			channel:  chanID2.ToUint64(),
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonLoopOut,
+			},
+		},
+		{
+			name:     "channel backing off after failure",
+			loopOuts: []*loopdb.LoopOut{chan1Failed},
+			amount:   5000,
+			channel:  chanID2.ToUint64(),
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonFailureBackoff,
+			},
 		},
 		{
 			// The budget is not spent, but the fees held for a swap
@@ -269,18 +322,23 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 			)
 			require.Empty(t, actual.InSwaps)
 			require.Empty(t, actual.StaticInSwaps)
-			require.Empty(t, actual.DisqualifiedChans)
 			require.Empty(t, actual.DisqualifiedPeers)
 
+			skipped := testCase.skipped
+			if skipped == nil {
+				skipped = noneDisqualified
+			}
+			require.Equal(t, skipped, actual.DisqualifiedChans)
 			require.Zero(t, wallet.addrs.Load())
 
 			// The autoloop tick, which starts a new budget period
 			// first when one is due, plans the same swap or gives
 			// the same reason. It derives a wallet address only for
-			// a swap that it makes.
+			// a swap that it makes. Like the tick, it does not ask
+			// for the channels that were skipped.
 			manager.refreshAutoloopBudget(t.Context())
 			plan, err := manager.planEasyAutoloopSwap(
-				t.Context(), manager.params,
+				t.Context(), manager.params, nil,
 			)
 			require.NoError(t, err)
 			require.Equal(t, testCase.reason, plan.reason)
@@ -433,7 +491,7 @@ func TestSuggestEasyAutoloopStickyWorker(t *testing.T) {
 	require.Empty(t, actual.OutSwaps)
 
 	plan, err := manager.planEasyAutoloopSwap(
-		t.Context(), manager.params,
+		t.Context(), manager.params, nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, ReasonInFlight, plan.reason)

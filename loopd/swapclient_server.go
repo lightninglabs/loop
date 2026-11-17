@@ -3018,6 +3018,12 @@ func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
 	case liquidity.ReasonNoEligibleChannel:
 		return looprpc.AutoReason_AUTO_REASON_NO_ELIGIBLE_CHANNEL, nil
 
+	case liquidity.ReasonChannelInactive:
+		return looprpc.AutoReason_AUTO_REASON_CHANNEL_INACTIVE, nil
+
+	case liquidity.ReasonPeerExcluded:
+		return looprpc.AutoReason_AUTO_REASON_PEER_EXCLUDED, nil
+
 	default:
 		return 0, fmt.Errorf("unknown autoloop reason: %v", reason)
 	}

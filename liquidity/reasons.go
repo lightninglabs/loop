@@ -81,6 +81,8 @@ const (
 
 	// ReasonBelowMinimum indicates that the amount that easy autoloop
 	// needs to swap to reach its target is below the minimum swap size.
+	// For a channel that easy autoloop skips, it indicates that the
+	// channel's local balance is below the minimum swap size.
 	ReasonBelowMinimum
 
 	// ReasonNoEligibleChannel indicates that easy autoloop has no channel
@@ -88,6 +90,14 @@ const (
 	// swap, backing off after a failure, or holds less than the minimum
 	// swap size.
 	ReasonNoEligibleChannel
+
+	// ReasonChannelInactive indicates that easy autoloop skips a channel
+	// because it is inactive.
+	ReasonChannelInactive
+
+	// ReasonPeerExcluded indicates that easy autoloop skips a channel
+	// because its peer is excluded from easy autoloop.
+	ReasonPeerExcluded
 )
 
 // String returns a string representation of a reason.
@@ -149,6 +159,12 @@ func (r Reason) String() string {
 
 	case ReasonNoEligibleChannel:
 		return "no eligible channel"
+
+	case ReasonChannelInactive:
+		return "channel inactive"
+
+	case ReasonPeerExcluded:
+		return "peer excluded"
 
 	default:
 		return "unknown"

@@ -667,7 +667,7 @@ type easyAutoloopPlan struct {
 // dispatchBestEasyAutoloopSwap tries to dispatch a swap to bring the total
 // local balance back to the target.
 func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
-	plan, err := m.planEasyAutoloopSwap(ctx, m.params)
+	plan, err := m.planEasyAutoloopSwap(ctx, m.params, nil)
 	if err != nil {
 		return err
 	}
@@ -704,12 +704,14 @@ func (m *Manager) suggestEasyAutoloop(ctx context.Context) (*Suggestions,
 		params.AutoloopBudgetLastRefresh = m.cfg.Clock.Now()
 	}
 
-	plan, err := m.planEasyAutoloopSwap(ctx, params)
+	// Report the channels that easy autoloop skipped and why, so that a
+	// client can tell which channels are waiting and what for.
+	resp := newSuggestions()
+	plan, err := m.planEasyAutoloopSwap(ctx, params, resp.DisqualifiedChans)
 	if err != nil {
 		return nil, err
 	}
 
-	resp := newSuggestions()
 	resp.EasyAutoloopReason = plan.reason
 
 	if plan.swap != nil {
@@ -722,9 +724,12 @@ func (m *Manager) suggestEasyAutoloop(ctx context.Context) (*Suggestions,
 // planEasyAutoloopSwap works out the swap that brings the total local balance
 // back to the easy autoloop target, or the reason that no swap can be made
 // right now. The swap is built with the parameters provided, which allows a
-// dry run that does not derive a wallet address.
+// dry run that does not derive a wallet address. If skipped is not nil, the
+// reason that each channel checked before the one picked was skipped, or each
+// channel checked when none is picked, is added to it.
 func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
-	params Parameters) (*easyAutoloopPlan, error) {
+	params Parameters,
+	skipped map[lnwire.ShortChannelID]Reason) (*easyAutoloopPlan, error) {
 
 	// noSwap returns a plan without a swap for the reason provided.
 	noSwap := func(reason Reason, err error) (*easyAutoloopPlan, error) {
@@ -846,13 +851,10 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 	// Start building that swap.
 	builder := newLoopOutBuilder(m.cfg)
 
-	channel, err := m.pickEasyAutoloopChannelWithStatic(
+	channel := m.pickEasyAutoloopChannelWithStatic(
 		usableChannels, restrictions, loopOut, loopIn,
-		staticLoopIns, 0,
+		staticLoopIns, 0, skipped,
 	)
-	if err != nil {
-		return nil, err
-	}
 
 	if channel == nil {
 		return noSwap(
@@ -1057,13 +1059,10 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 	// Start building that swap.
 	builder := newLoopOutBuilder(m.cfg)
 
-	channel, err := m.pickEasyAutoloopChannelWithStatic(
+	channel := m.pickEasyAutoloopChannelWithStatic(
 		usableChannels, restrictions, loopOut, loopIn,
-		staticLoopIns, satsPerAsset,
+		staticLoopIns, satsPerAsset, nil,
 	)
-	if err != nil {
-		return err
-	}
 
 	if channel == nil {
 		return fmt.Errorf("no eligible channel for easy autoloop")
@@ -2178,20 +2177,25 @@ func (m *Manager) pickEasyAutoloopChannel(ctx context.Context,
 		return nil, err
 	}
 
-	return m.pickEasyAutoloopChannelWithStatic(
+	channel := m.pickEasyAutoloopChannelWithStatic(
 		channels, restrictions, loopOut, loopIn, staticLoopIns,
-		satsPerAsset,
+		satsPerAsset, nil,
 	)
+
+	return channel, nil
 }
 
 // pickEasyAutoloopChannelWithStatic picks an easy-autoloop channel using a
 // shared static loop-in snapshot so callers can reuse one store load across
-// budget and traffic checks within the same autoloop tick.
+// budget and traffic checks within the same autoloop tick. If skipped is not
+// nil, the reason that each channel checked before the picked one was skipped,
+// or each channel provided when none is picked, is added to it, so that a dry
+// run can report them.
 func (m *Manager) pickEasyAutoloopChannelWithStatic(
 	channels []lndclient.ChannelInfo, restrictions *Restrictions,
 	loopOut []*loopdb.LoopOut, loopIn []*loopdb.LoopIn,
-	staticLoopIns []*StaticLoopInInfo,
-	satsPerAsset float64) (*lndclient.ChannelInfo, error) {
+	staticLoopIns []*StaticLoopInInfo, satsPerAsset float64,
+	skipped map[lnwire.ShortChannelID]Reason) *lndclient.ChannelInfo {
 
 	traffic := m.currentSwapTrafficWithStatic(
 		loopOut, loopIn, staticLoopIns,
@@ -2213,37 +2217,47 @@ func (m *Manager) pickEasyAutoloopChannelWithStatic(
 		excluded[v] = struct{}{}
 	}
 
-	// Check each channel, since channels are already sorted, we return the
-	// first channel that passes all checks.
-	for _, channel := range channels {
-		// Skip channels whose remote peer is excluded for easy autoloop.
-		if _, ok := excluded[channel.PubKeyBytes]; ok {
-			log.Debugf("Channel %v cannot be used for easy "+
-				"autoloop: peer %v manually excluded",
-				channel.ChannelID, channel.PubKeyBytes)
-
-			continue
-		}
-
+	// skipReason returns the reason that a channel cannot be used for easy
+	// autoloop regardless of its balance, or ReasonNone if it can be used.
+	skipReason := func(channel lndclient.ChannelInfo) Reason {
 		shortChanID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
 
-		if !channel.Active {
-			log.Debugf("Channel %v cannot be used for easy "+
-				"autoloop: inactive", channel.ChannelID)
-			continue
+		// Skip channels whose remote peer is excluded for easy
+		// autoloop.
+		if _, ok := excluded[channel.PubKeyBytes]; ok {
+			return ReasonPeerExcluded
 		}
 
-		lastFail, recentFail := traffic.failedLoopOut[shortChanID]
+		if !channel.Active {
+			return ReasonChannelInactive
+		}
+
+		_, recentFail := traffic.failedLoopOut[shortChanID]
 		if recentFail {
-			log.Debugf("Channel %v cannot be used for easy "+
-				"autoloop: last failed swap was at %v",
-				channel.ChannelID, lastFail)
-			continue
+			return ReasonFailureBackoff
 		}
 
 		if traffic.ongoingLoopOut[shortChanID] {
-			log.Debugf("Channel %v cannot be used for easy "+
-				"autoloop: ongoing swap", channel.ChannelID)
+			return ReasonLoopOut
+		}
+
+		return ReasonNone
+	}
+
+	// Check each channel, since channels are already sorted, we return the
+	// first channel that passes all checks.
+	for i, channel := range channels {
+		shortChanID := lnwire.NewShortChanIDFromInt(channel.ChannelID)
+
+		if reason := skipReason(channel); reason != ReasonNone {
+			log.Debugf("Channel %v with peer %v cannot be used for "+
+				"easy autoloop: %v", channel.ChannelID,
+				channel.PubKeyBytes, reason)
+
+			if skipped != nil {
+				skipped[shortChanID] = reason
+			}
+
 			continue
 		}
 
@@ -2262,13 +2276,34 @@ func (m *Manager) pickEasyAutoloopChannelWithStatic(
 				"minimum is %v, skipping remaining channels",
 				channel.ChannelID, channel.LocalBalance,
 				restrictions.Minimum)
-			return nil, nil
+
+			// The remaining channels hold no more than this one, so
+			// none of them holds the minimum either. Record why
+			// each of them is skipped, which is below the minimum
+			// unless something else rules the channel out first.
+			if skipped == nil {
+				return nil
+			}
+
+			for _, rest := range channels[i:] {
+				restID := lnwire.NewShortChanIDFromInt(
+					rest.ChannelID,
+				)
+
+				reason := skipReason(rest)
+				if reason == ReasonNone {
+					reason = ReasonBelowMinimum
+				}
+				skipped[restID] = reason
+			}
+
+			return nil
 		}
 
-		return &channel, nil
+		return &channel
 	}
 
-	return nil, nil
+	return nil
 }
 
 func (m *Manager) numActiveStickyLoops() int {

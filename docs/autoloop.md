@@ -45,6 +45,17 @@ finish, when only what they paid counts. When your budget is not spent yet but
 those holds fill it, the reason is that the budget is insufficient rather than
 elapsed, since there may be room again once the swaps finish.
 
+The `Disqualified` section lists each channel that easy Autoloop skipped before
+the one it would swap from, or each channel it checked when it would not swap
+from any, with one of these reasons. Channels with custom channel data, such as
+asset channels, are left out of easy Autoloop and are not listed.
+
+* Peer excluded: the channel's peer is excluded from easy Autoloop.
+* Channel inactive: the channel is inactive.
+* Backing off due to failure: a recent swap over the channel failed.
+* Loop out using channel: another swap is using the channel.
+* Below minimum: the channel holds less than the minimum swap size.
+
 ## Liquidity Rules
 
 At present, Autoloop can be configured to either acquire incoming liquidity 

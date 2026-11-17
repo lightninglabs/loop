@@ -13,6 +13,11 @@
   `AUTO_REASON_BUDGET_ELAPSED`, since there may be room again once those swaps
   finish.
 
+* With easy autoloop enabled, `SuggestSwaps` lists the channels that easy
+  autoloop skipped in `disqualified`, with the reason for each. Two reasons
+  were added for it: `AUTO_REASON_CHANNEL_INACTIVE` and
+  `AUTO_REASON_PEER_EXCLUDED`.
+
 #### Breaking Changes
 
 #### Bug Fixes

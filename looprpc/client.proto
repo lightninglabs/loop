@@ -1589,7 +1589,9 @@ enum AutoReason {
 
     /*
     Below minimum indicates that the amount that easy autoloop needs to swap
-    to reach its target is below the minimum swap size.
+    to reach its target is below the minimum swap size. For a channel that
+    easy autoloop skips, it indicates that the channel's local balance is
+    below the minimum swap size.
     */
     AUTO_REASON_BELOW_MINIMUM = 16;
 
@@ -1599,6 +1601,18 @@ enum AutoReason {
     off after a failed swap, or holds less than the minimum swap size.
     */
     AUTO_REASON_NO_ELIGIBLE_CHANNEL = 17;
+
+    /*
+    Channel inactive indicates that easy autoloop skips a channel because it
+    is inactive.
+    */
+    AUTO_REASON_CHANNEL_INACTIVE = 18;
+
+    /*
+    Peer excluded indicates that easy autoloop skips a channel because its
+    peer is excluded from easy autoloop.
+    */
+    AUTO_REASON_PEER_EXCLUDED = 19;
 }
 
 message Disqualified {
@@ -1636,7 +1650,10 @@ message SuggestSwapsResponse {
 
     /*
     Disqualified contains the set of channels that swaps are not recommended
-    for.
+    for. When easy autoloop is enabled, it holds the channels that easy
+    autoloop skipped before the one that it would swap from, or each channel
+    that it checked when it would not swap from any, with the reason that each
+    was skipped. Channels with custom channel data are not checked.
     */
     repeated Disqualified disqualified = 2;
 
