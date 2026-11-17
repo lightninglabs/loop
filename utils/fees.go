@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -41,4 +43,26 @@ func ClampSweepFee(fee btcutil.Amount, totalAmount btcutil.Amount,
 	}
 
 	return clampedFee, clamped, nil
+}
+
+// FeeForWeight calculates a fee rounded down to whole satoshis without
+// overflowing the intermediate product. It rejects negative rates, zero
+// weights, and fees that cannot be represented as a btcutil.Amount.
+func FeeForWeight(rate chainfee.SatPerKWeight,
+	weight lntypes.WeightUnit) (btcutil.Amount, error) {
+
+	if rate < 0 || weight == 0 {
+		return 0, errors.New("invalid transaction fee parameters")
+	}
+
+	fee := new(big.Int).Mul(
+		big.NewInt(int64(rate)),
+		new(big.Int).SetUint64(uint64(weight)),
+	)
+	fee.Quo(fee, big.NewInt(1000))
+	if !fee.IsInt64() {
+		return 0, errors.New("transaction fee overflows int64")
+	}
+
+	return btcutil.Amount(fee.Int64()), nil
 }
