@@ -132,7 +132,9 @@ service SwapClient {
     /* loop: `suggestswaps`
     SuggestSwaps returns a list of recommended swaps based on the current
     state of your node's channels and it's liquidity manager parameters.
-    Note that only loop out suggestions are currently supported.
+    Note that only loop out suggestions are currently supported. When easy
+    autoloop is enabled, the response holds the loop out that easy autoloop
+    would make next, or the reason that it would not make one.
     [EXPERIMENTAL]: endpoint is subject to change.
     */
     rpc SuggestSwaps (SuggestSwapsRequest) returns (SuggestSwapsResponse);
@@ -1581,6 +1583,33 @@ enum AutoReason {
     channel data and is excluded from the standard autoloop planner.
     */
     AUTO_REASON_CUSTOM_CHANNEL_DATA = 15;
+
+    /*
+    Below minimum indicates that the amount that easy autoloop needs to swap
+    to reach its target is below the minimum swap size. For a channel that
+    easy autoloop skips, it indicates that the channel's local balance is
+    below the minimum swap size.
+    */
+    AUTO_REASON_BELOW_MINIMUM = 16;
+
+    /*
+    No eligible channel indicates that easy autoloop has no channel to swap
+    from: every channel is inactive, excluded, used by another swap, backing
+    off after a failed swap, or holds less than the minimum swap size.
+    */
+    AUTO_REASON_NO_ELIGIBLE_CHANNEL = 17;
+
+    /*
+    Channel inactive indicates that easy autoloop skips a channel because it
+    is inactive.
+    */
+    AUTO_REASON_CHANNEL_INACTIVE = 18;
+
+    /*
+    Peer excluded indicates that easy autoloop skips a channel because its
+    peer is excluded from easy autoloop.
+    */
+    AUTO_REASON_PEER_EXCLUDED = 19;
 }
 
 message Disqualified {
@@ -1618,9 +1647,18 @@ message SuggestSwapsResponse {
 
     /*
     Disqualified contains the set of channels that swaps are not recommended
-    for.
+    for. When easy autoloop is enabled, it holds the channels that easy
+    autoloop skipped before the one that it would swap from, or each channel
+    that it checked when it would not swap from any, with the reason that each
+    was skipped. Channels with custom channel data are not checked.
     */
     repeated Disqualified disqualified = 2;
+
+    /*
+    The reason that easy autoloop does not suggest a swap. This is only set
+    when easy autoloop is enabled and no swap is suggested.
+    */
+    AutoReason easy_autoloop_reason = 5;
 }
 
 message AbandonSwapRequest {
