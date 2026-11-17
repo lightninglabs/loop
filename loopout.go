@@ -28,6 +28,7 @@ import (
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 	paymentsdb "github.com/lightningnetwork/lnd/payments/db"
 	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/lightningnetwork/lnd/zpay32"
@@ -1705,10 +1706,14 @@ func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
 
 	amtRequested := swap.Contract.AmountRequested
 
-	if inv.Value.ToSatoshis() > swap.Contract.MaxSwapFee*2+amtRequested {
+	// Recovery must retain the original server-fee budget. Compare in
+	// millisatoshis so fractional satoshis cannot exceed the ceiling.
+	maxInvoiceAmt := lnwire.NewMSatFromSatoshis(
+		amtRequested + swap.Contract.MaxSwapFee,
+	)
+	if inv.Value > maxInvoiceAmt {
 		return fmt.Errorf("invoice amount %v exceeds max "+
-			"allowed %v", inv.Value.ToSatoshis(),
-			swap.Contract.MaxSwapFee+amtRequested)
+			"allowed %v", inv.Value, maxInvoiceAmt)
 	}
 
 	payChan, errChan, err := m.lnd.Router.SendPayment(
@@ -1716,7 +1721,10 @@ func (m *resumeManager) resumeLoopOutPayment(ctx context.Context,
 		lndclient.SendPaymentRequest{
 			Invoice: paymentReq,
 			Timeout: time.Hour,
-			MaxFee:  swap.Contract.MaxSwapFee,
+			MaxFee:  swap.Contract.MaxSwapRoutingFee,
+			OutgoingChanIds: []uint64(
+				swap.Contract.OutgoingChanSet,
+			),
 		})
 	if err != nil {
 		return err

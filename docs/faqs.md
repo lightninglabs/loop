@@ -8,6 +8,12 @@ pending swaps after a restart.
 Information about pending swaps is stored persistently in the swap database.
 Its location is `~/.loopd/<network>/loop.db`.
 
+When recovering an unpaid loop-out payment after on-chain success, the client
+retains the stored swap routing-fee ceiling and outgoing channel restrictions.
+The replacement invoice must match the swap hash and cannot exceed the requested
+amount plus the stored maximum server fee. This recovery is only attempted when
+the original payment failed and the recorded server cost is zero.
+
 ## Can Loop handle multiple simultaneous swaps?
 It is possible to execute multiple swaps simultaneously. Just keep loopd
 running.

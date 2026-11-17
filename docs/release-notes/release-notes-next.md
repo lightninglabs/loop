@@ -6,6 +6,10 @@
 
 #### Bug Fixes
 
+* Loop-out payment recovery now enforces the stored swap routing-fee limit
+  and outgoing channel restrictions. Replacement invoices cannot exceed the
+  requested amount plus the maximum server fee, including fractional satoshis.
+
 * A static Loop In that releases its deposits a second time after its payment
   deadline, at its HTLC expiry or when the server rejects the swap, now only
   releases deposits that are still looping in for it. Before, it could move a
