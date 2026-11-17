@@ -469,13 +469,23 @@ const (
 	AutoReason_AUTO_REASON_CUSTOM_CHANNEL_DATA AutoReason = 15
 	//
 	//Below minimum indicates that the amount that easy autoloop needs to swap
-	//to reach its target is below the minimum swap size.
+	//to reach its target is below the minimum swap size. For a channel that
+	//easy autoloop skips, it indicates that the channel's local balance is
+	//below the minimum swap size.
 	AutoReason_AUTO_REASON_BELOW_MINIMUM AutoReason = 16
 	//
 	//No eligible channel indicates that easy autoloop has no channel to swap
 	//from: every channel is inactive, excluded, used by another swap, backing
 	//off after a failed swap, or holds less than the minimum swap size.
 	AutoReason_AUTO_REASON_NO_ELIGIBLE_CHANNEL AutoReason = 17
+	//
+	//Channel inactive indicates that easy autoloop skips a channel because it
+	//is inactive.
+	AutoReason_AUTO_REASON_CHANNEL_INACTIVE AutoReason = 18
+	//
+	//Peer excluded indicates that easy autoloop skips a channel because its
+	//peer is excluded from easy autoloop.
+	AutoReason_AUTO_REASON_PEER_EXCLUDED AutoReason = 19
 )
 
 // Enum value maps for AutoReason.
@@ -499,6 +509,8 @@ var (
 		15: "AUTO_REASON_CUSTOM_CHANNEL_DATA",
 		16: "AUTO_REASON_BELOW_MINIMUM",
 		17: "AUTO_REASON_NO_ELIGIBLE_CHANNEL",
+		18: "AUTO_REASON_CHANNEL_INACTIVE",
+		19: "AUTO_REASON_PEER_EXCLUDED",
 	}
 	AutoReason_value = map[string]int32{
 		"AUTO_REASON_UNKNOWN":                     0,
@@ -519,6 +531,8 @@ var (
 		"AUTO_REASON_CUSTOM_CHANNEL_DATA":         15,
 		"AUTO_REASON_BELOW_MINIMUM":               16,
 		"AUTO_REASON_NO_ELIGIBLE_CHANNEL":         17,
+		"AUTO_REASON_CHANNEL_INACTIVE":            18,
+		"AUTO_REASON_PEER_EXCLUDED":               19,
 	}
 )
 
@@ -4456,7 +4470,10 @@ type SuggestSwapsResponse struct {
 	StaticLoopIn []*StaticAddressLoopInRequest `protobuf:"bytes,4,rep,name=static_loop_in,json=staticLoopIn,proto3" json:"static_loop_in,omitempty"`
 	//
 	//Disqualified contains the set of channels that swaps are not recommended
-	//for.
+	//for. When easy autoloop is enabled, it holds the channels that easy
+	//autoloop skipped before the one that it would swap from, or each channel
+	//that it checked when it would not swap from any, with the reason that each
+	//was skipped. Channels with custom channel data are not checked.
 	Disqualified []*Disqualified `protobuf:"bytes,2,rep,name=disqualified,proto3" json:"disqualified,omitempty"`
 	//
 	//The reason that easy autoloop does not suggest a swap. This is only set
@@ -7855,7 +7872,7 @@ const file_client_proto_rawDesc = "" +
 	"\x1dLOOP_IN_SOURCE_STATIC_ADDRESS\x10\x01*/\n" +
 	"\x11LiquidityRuleType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\r\n" +
-	"\tTHRESHOLD\x10\x01*\xbc\x04\n" +
+	"\tTHRESHOLD\x10\x01*\xfd\x04\n" +
 	"\n" +
 	"AutoReason\x12\x17\n" +
 	"\x13AUTO_REASON_UNKNOWN\x10\x00\x12\"\n" +
@@ -7876,7 +7893,9 @@ const file_client_proto_rawDesc = "" +
 	"'AUTO_REASON_STATIC_LOOP_IN_NO_CANDIDATE\x10\x0e\x12#\n" +
 	"\x1fAUTO_REASON_CUSTOM_CHANNEL_DATA\x10\x0f\x12\x1d\n" +
 	"\x19AUTO_REASON_BELOW_MINIMUM\x10\x10\x12#\n" +
-	"\x1fAUTO_REASON_NO_ELIGIBLE_CHANNEL\x10\x11*\x88\x02\n" +
+	"\x1fAUTO_REASON_NO_ELIGIBLE_CHANNEL\x10\x11\x12 \n" +
+	"\x1cAUTO_REASON_CHANNEL_INACTIVE\x10\x12\x12\x1d\n" +
+	"\x19AUTO_REASON_PEER_EXCLUDED\x10\x13*\x88\x02\n" +
 	"\fDepositState\x12\x11\n" +
 	"\rUNKNOWN_STATE\x10\x00\x12\r\n" +
 	"\tDEPOSITED\x10\x01\x12\x0f\n" +
