@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -578,6 +579,148 @@ func TestManagerSkipsExpiryWhileLndIsCatchingUp(t *testing.T) {
 
 	case <-time.After(time.Second):
 		t.Fatal("manager did not stop")
+	}
+}
+
+// TestManagerRetriesDeferredExpiryNotification verifies that a block height
+// that could not be delivered to the deposits, because lnd's wallet tip was
+// unsynced or the wallet query failed, is delivered once lnd recovers, without
+// waiting for another block. In the block cases lnd is healthy at startup, so
+// the failing block alone has to start the retries.
+func TestManagerRetriesDeferredExpiryNotification(t *testing.T) {
+	expiryHeight := int32(defaultDepositConfirmations + defaultExpiry)
+
+	testCases := []struct {
+		name          string
+		startupHeight int32
+		blockHeight   int32
+		walletFailure bool
+	}{
+		{
+			name:          "unsynced at startup",
+			startupHeight: expiryHeight,
+		},
+		{
+			name:          "unsynced at block",
+			startupHeight: int32(defaultDepositConfirmations),
+			blockHeight:   expiryHeight,
+		},
+		{
+			name:          "wallet failure at block",
+			startupHeight: int32(defaultDepositConfirmations),
+			blockHeight:   expiryHeight,
+			walletFailure: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			testContext := newManagerTestContext(t)
+			manager := testContext.manager
+			manager.expiryRetryInterval = 10 * time.Millisecond
+
+			// While lnd is unhealthy, either its wallet tip is
+			// unsynced or its wallet query fails.
+			var healthy atomic.Bool
+			healthy.Store(testCase.blockHeight != 0)
+			errWallet := errors.New("injected wallet failure")
+			manager.cfg.LightningClient = &testLightningClient{
+				getInfo: func(context.Context) (*lndclient.Info,
+					error) {
+
+					height := manager.currentHeight.Load()
+					hash := chainhash.Hash{1}
+					synced := healthy.Load() ||
+						testCase.walletFailure
+
+					return &lndclient.Info{
+						BlockHeight:   height,
+						BestBlockHash: hash,
+						SyncedToChain: synced,
+					}, nil
+				},
+			}
+			addressManager := testContext.mockAddressManager
+			manager.cfg.AddressManager = &listUnspentOverride{
+				AddressManager: addressManager,
+				listUnspent: func(ctx context.Context,
+					minConfs, maxConfs int32) (
+					[]*lnwallet.Utxo, error) {
+
+					if testCase.walletFailure &&
+						!healthy.Load() {
+
+						return nil, errWallet
+					}
+
+					return addressManager.ListUnspent(
+						ctx, minConfs, maxConfs,
+					)
+				},
+			}
+
+			initChan := make(chan struct{})
+			runErrChan := make(chan error, 1)
+			go func() {
+				runErrChan <- manager.Run(ctx, initChan)
+			}()
+
+			testContext.blockChan <- testCase.startupHeight
+
+			select {
+			case <-initChan:
+
+			case err := <-runErrChan:
+				require.NoError(t, err)
+
+			case <-time.After(time.Second):
+				t.Fatal("manager timed out starting")
+			}
+
+			if testCase.blockHeight != 0 {
+				healthy.Store(false)
+				testContext.blockChan <- testCase.blockHeight
+			}
+
+			// Retries must not act on the expiry height while lnd
+			// can't provide a stable wallet view.
+			select {
+			case <-testContext.mockLnd.SignOutputRawChannel:
+				t.Fatal("expiry signed before lnd recovered")
+
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			// Once lnd recovers, the deposit expires without
+			// another block.
+			healthy.Store(true)
+
+			select {
+			case <-testContext.mockLnd.SignOutputRawChannel:
+
+			case <-time.After(5 * time.Second):
+				t.Fatal("did not receive sign request")
+			}
+
+			select {
+			case <-testContext.mockLnd.TxPublishChannel:
+
+			case <-time.After(5 * time.Second):
+				t.Fatal("did not receive published expiry tx")
+			}
+
+			cancel()
+			select {
+			case err := <-runErrChan:
+				require.ErrorIs(t, err, context.Canceled)
+
+			case <-time.After(time.Second):
+				t.Fatal("manager did not stop")
+			}
+		})
 	}
 }
 
