@@ -205,7 +205,10 @@ func (i *InstantOut) createHtlcTransaction(network *chaincfg.Params,
 
 	// Estimate the fee
 	weight := htlcWeight(len(inputReservations))
-	fee := i.htlcFeeRate.FeeForWeight(weight)
+	fee, err := utils.FeeForWeight(i.htlcFeeRate, weight)
+	if err != nil {
+		return nil, err
+	}
 
 	// We cap the fee at 20% of the deposit value.
 	_, clamped, err := utils.ClampSweepFee(
@@ -258,7 +261,10 @@ func (i *InstantOut) createSweeplessSweepTx(feerate,
 
 	// Estimate the fee
 	weight := sweeplessSweepWeight(len(inputReservations))
-	fee := feerate.FeeForWeight(weight)
+	fee, err := utils.FeeForWeight(feerate, weight)
+	if err != nil {
+		return nil, err
+	}
 	_, clamped, err := utils.ClampSweepFee(
 		fee, i.Value, utils.MaxFeeToAmountRatio, minRelayFeeRate,
 		weight,

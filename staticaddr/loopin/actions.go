@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/invoices"
@@ -194,7 +195,7 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 	// Pushing empty sigs signals the server that we abandoned the swap
 	// attempt.
 	pushEmptySigs := func() {
-		_, err = f.cfg.Server.PushStaticAddressHtlcSigs(
+		_, err := f.cfg.Server.PushStaticAddressHtlcSigs(
 			ctx, &swapserverrpc.PushStaticAddressHtlcSigsRequest{
 				SwapHash: f.loopIn.SwapHash[:],
 			},
@@ -295,13 +296,36 @@ func (f *FSM) InitHtlcAction(ctx context.Context,
 
 	htlcWeight := f.loopIn.htlcWeight(hasChange)
 	feeRate := chainfee.SatPerKWeight(loopInResp.StandardHtlcInfo.FeeRate)
-	fee := feeRate.FeeForWeight(htlcWeight)
+	fee, err := utils.FeeForWeight(feeRate, htlcWeight)
+	if err != nil {
+		pushEmptySigs()
+
+		return returnError(fmt.Errorf("%w: standard tier "+
+			"fee_rate=%d: %v", ErrFeeTooHigh,
+			loopInResp.StandardHtlcInfo.FeeRate, err))
+	}
 	highFeeRate := chainfee.SatPerKWeight(loopInResp.HighFeeHtlcInfo.FeeRate)
-	highFee := highFeeRate.FeeForWeight(htlcWeight)
+	highFee, err := utils.FeeForWeight(highFeeRate, htlcWeight)
+	if err != nil {
+		pushEmptySigs()
+
+		return returnError(fmt.Errorf("%w: high tier "+
+			"fee_rate=%d: %v", ErrFeeTooHigh,
+			loopInResp.HighFeeHtlcInfo.FeeRate, err))
+	}
 	extremelyHighFeeRate := chainfee.SatPerKWeight(
 		loopInResp.ExtremeFeeHtlcInfo.FeeRate,
 	)
-	extremelyHighFee := extremelyHighFeeRate.FeeForWeight(htlcWeight)
+	extremelyHighFee, err := utils.FeeForWeight(
+		extremelyHighFeeRate, htlcWeight,
+	)
+	if err != nil {
+		pushEmptySigs()
+
+		return returnError(fmt.Errorf("%w: extreme tier "+
+			"fee_rate=%d: %v", ErrFeeTooHigh,
+			loopInResp.ExtremeFeeHtlcInfo.FeeRate, err))
+	}
 
 	f.Debugf("htlc fee validation: "+
 		"deposit_count=%d, total_deposit=%v, "+

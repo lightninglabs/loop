@@ -3,6 +3,7 @@ package loopin
 import (
 	"bytes"
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -108,6 +109,17 @@ func TestCreateHtlcSweepTxSweepValue(t *testing.T) {
 	require.NoError(t, err)
 
 	signer := &noopSigner{}
+
+	// Reconstructing an HTLC must also reject overflowing fee products.
+	weight := loopIn.htlcWeight(true)
+	for _, rate := range []chainfee.SatPerKWeight{
+		-1, chainfee.SatPerKWeight(math.MaxInt64/int64(weight) + 1),
+		math.MaxInt64,
+	} {
+		tx, err := loopIn.createHtlcTx(network, rate, maxFeePercentage)
+		require.Error(t, err)
+		require.Nil(t, tx)
+	}
 
 	// Build the HTLC transaction once. It has two outputs with distinct
 	// values: the HTLC output and a change output.

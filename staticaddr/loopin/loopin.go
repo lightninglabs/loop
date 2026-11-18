@@ -23,6 +23,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swap"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -303,7 +304,10 @@ func (l *StaticAddressLoopIn) createHtlcTx(chainParams *chaincfg.Params,
 	// Calculate htlc tx fee for server provided fee rate.
 	hasChange := changeAmount > 0
 	weight := l.htlcWeight(hasChange)
-	fee := feeRate.FeeForWeight(weight)
+	fee, err := utils.FeeForWeight(feeRate, weight)
+	if err != nil {
+		return nil, err
+	}
 
 	// Check if the server breaches our fee limits.
 	feeLimit := btcutil.Amount(float64(swapAmt) * maxFeePercentage)
