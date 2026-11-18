@@ -605,7 +605,8 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 	})
 
 	// Start the HTLC recovery worker that handles HTLC-confirmed
-	// notifications with a direct sweep attempt.
+	// notifications with a direct sweep attempt, unless the swap is
+	// still running in this daemon.
 	htlcConfirmedRecovery := &htlcConfirmedRecoveryManager{
 		notificationSource: notificationManager,
 		swapStore:          swapDb,
@@ -613,6 +614,7 @@ func (d *Daemon) initialize(withMacaroonService bool) error {
 		notifier:           d.lnd.ChainNotifier,
 		wallet:             d.lnd.WalletKit,
 		signer:             d.lnd.Signer,
+		loopOutRunning:     swapClient.LoopOutRunning,
 	}
 
 	d.wg.Go(func() {
