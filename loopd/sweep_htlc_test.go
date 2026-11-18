@@ -60,7 +60,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -77,7 +78,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -96,7 +98,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -117,7 +120,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -135,7 +139,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -232,7 +237,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: conf ntfn error for %v: %v",
 		},
@@ -249,7 +255,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 		},
 	},
@@ -267,7 +274,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 		},
@@ -284,7 +292,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 		},
@@ -298,7 +307,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -317,7 +327,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -335,7 +346,8 @@ var sweepHtlcTests = []struct {
 			"sweephtlc: generated new destination address: %v",
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -354,7 +366,8 @@ var sweepHtlcTests = []struct {
 		expectLogs: []string{
 			"sweephtlc: start sweep for %v -> %v",
 			"sweephtlc: using swap hash %v at height hint %v",
-			"sweephtlc: registering conf ntfn for %v hint=%v",
+			"sweephtlc: registering conf ntfn for %v hint=%v " +
+				"confs=%v",
 			"sweephtlc: waiting for confirmation of %v",
 			"sweephtlc: funding confirmed at height %v",
 			"sweephtlc: swap hash validated for %v",
@@ -857,7 +870,22 @@ func TestSweepHtlcStateless(t *testing.T) {
 				t.Context(), 5*time.Second,
 			)
 			defer cancel()
-			go sendSweepConfirmation(ctx, lnd, fundingTx)
+
+			// Record the confirmation depth that the sweep
+			// registers for before confirming the HTLC.
+			numConfsChan := make(chan int32, 1)
+			go func() {
+				select {
+				case reg := <-lnd.RegisterConfChannel:
+					numConfsChan <- reg.NumConfs
+					conf := &chainntnfs.TxConfirmation{
+						Tx: fundingTx,
+					}
+					reg.ConfChan <- conf
+
+				case <-ctx.Done():
+				}
+			}()
 
 			signer := &realSweepSigner{
 				privateKey:        clientPrivKey,
@@ -925,6 +953,17 @@ func TestSweepHtlcStateless(t *testing.T) {
 				require.NoError(t, verifySweepHtlcWitness(
 					&sweepTx, fundingTx.TxOut[0],
 				))
+			}
+
+			// Stateless recovery has no stored confirmation depth,
+			// so it must wait for exactly one confirmation.
+			select {
+			case numConfs := <-numConfsChan:
+				require.Equal(t, int32(1), numConfs)
+
+			case <-ctx.Done():
+				t.Fatalf("no confirmation registration: %v",
+					ctx.Err())
 			}
 
 			require.Zero(t, store.calls)

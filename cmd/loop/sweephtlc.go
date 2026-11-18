@@ -28,7 +28,10 @@ var sweepHtlcCommand = &cli.Command{
 		"recovered key locator. The cooperative option instead " +
 		"requests a MuSig2 server signature and spends via the " +
 		"Taproot key path. Stateless cooperative recovery also " +
-		"requires the swap invoice payment address.",
+		"requires the swap invoice payment address. Without " +
+		"stateless-recovery flags, Loop uses its swap database " +
+		"and waits until the HTLC has the swap's stored number of " +
+		"confirmations before it sweeps.",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:     "outpoint",
