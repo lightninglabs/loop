@@ -24,7 +24,7 @@ PaymentReceived --> Succeeded: OnSucceeded
 SignHtlcTx
 SignHtlcTx --> UnlockDeposits: OnError
 SignHtlcTx --> MonitorInvoiceAndHtlcTx: OnHtlcTxSigned
-SignHtlcTx --> UnlockDeposits: OnRecover
+SignHtlcTx --> MonitorInvoiceAndHtlcTx: OnRecover
 Succeeded
 SucceededTransitioningFailed
 SweepHtlcTimeout

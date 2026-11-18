@@ -665,9 +665,27 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 
 	var err error
 
+	// handleError fails the swap for an error before the signatures are
+	// pushed. If the error comes from a shutdown, the swap is left in
+	// SignHtlcTx with its invoice open instead. Failing it would cancel
+	// the invoice while the new state can no longer be stored. The swap
+	// would then recover into MonitorInvoiceAndHtlcTx with a canceled
+	// invoice, which never starts the payment deadline, and hold its
+	// deposits until the htlc expiry.
+	handleError := func(err error) fsm.EventType {
+		if ctx.Err() != nil {
+			f.Warnf("stopping before the htlc tx was signed: %v",
+				err)
+
+			return fsm.NoOp
+		}
+
+		return f.HandleError(err)
+	}
+
 	outpointUnavailable, err := f.originalDepositOutpointUnavailable(ctx)
 	if err != nil {
-		return f.HandleError(err)
+		return handleError(err)
 	}
 	if outpointUnavailable {
 		err = errors.New("original deposit outpoint no longer available")
@@ -687,19 +705,19 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		err = fmt.Errorf("unable to get static address parameters: "+
 			"%w", err)
 
-		return f.HandleError(err)
+		return handleError(err)
 	}
 
 	f.loopIn.Address, err = f.cfg.AddressManager.GetStaticAddress(ctx)
 	if err != nil {
 		err = fmt.Errorf("unable to get static address: %w", err)
 
-		return f.HandleError(err)
+		return handleError(err)
 	}
 
 	err = f.checkDepositsAvailable(ctx)
 	if err != nil {
-		return f.HandleError(err)
+		return handleError(err)
 	}
 
 	// Create a musig2 session for each deposit and different htlc tx fee
@@ -712,7 +730,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	if err != nil {
 		err = fmt.Errorf("unable to create musig2 sessions: %w", err)
 
-		return f.HandleError(err)
+		return handleError(err)
 	}
 	defer f.cleanUpSessions(ctx, htlcSessions)
 
@@ -721,7 +739,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		f.loopIn.Address,
 	)
 	if err != nil {
-		return f.HandleError(err)
+		return handleError(err)
 	}
 	defer f.cleanUpSessions(ctx, htlcSessionsHighFee)
 
@@ -731,7 +749,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to convert nonces: %w", err)
-		return f.HandleError(err)
+		return handleError(err)
 	}
 	defer f.cleanUpSessions(ctx, htlcSessionsExtremelyHighFee)
 
@@ -741,14 +759,14 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		f.cfg.MaxStaticAddrHtlcFeePercentage,
 	)
 	if err != nil {
-		return f.HandleError(err)
+		return handleError(err)
 	}
 	htlcTxHighFee, err := f.loopIn.createHtlcTx(
 		f.cfg.ChainParams, f.loopIn.HtlcTxHighFeeRate,
 		f.cfg.MaxStaticAddrHtlcBackupFeePercentage,
 	)
 	if err != nil {
-		return f.HandleError(err)
+		return handleError(err)
 	}
 	htlcTxExtremelyHighFee, err := f.loopIn.createHtlcTx(
 		f.cfg.ChainParams, f.loopIn.HtlcTxExtremelyHighFeeRate,
@@ -756,7 +774,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to create the htlc tx: %w", err)
-		return f.HandleError(err)
+		return handleError(err)
 	}
 
 	// Next we'll get our htlc tx signatures for different fee rates.
@@ -765,7 +783,7 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	)
 	if err != nil {
 		err = fmt.Errorf("unable to sign htlc tx: %w", err)
-		return f.HandleError(err)
+		return handleError(err)
 	}
 
 	htlcSigsHighFee, err := f.loopIn.signMusig2Tx(
@@ -773,14 +791,14 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 		f.htlcServerNoncesHighFee,
 	)
 	if err != nil {
-		return f.HandleError(err)
+		return handleError(err)
 	}
 	htlcSigsExtremelyHighFee, err := f.loopIn.signMusig2Tx(
 		ctx, htlcTxExtremelyHighFee, f.cfg.Signer,
 		htlcSessionsExtremelyHighFee, f.htlcServerNoncesExtremelyHighFee,
 	)
 	if err != nil {
-		return f.HandleError(err)
+		return handleError(err)
 	}
 
 	// Push htlc tx sigs to server.
@@ -801,10 +819,11 @@ func (f *FSM) SignHtlcTxAction(ctx context.Context,
 	}
 	_, err = f.cfg.Server.PushStaticAddressHtlcSigs(ctx, pushHtlcReq)
 	if err != nil {
-		err = fmt.Errorf("unable to push htlc tx sigs to server: %w",
-			err)
-
-		return f.HandleError(err)
+		// An error doesn't mean that the server didn't get our
+		// signatures, so it may still publish the htlc tx. Keep the
+		// deposits and monitor the htlc as after a successful push.
+		f.Warnf("unable to push htlc tx sigs to server: %v, "+
+			"monitoring the htlc tx", err)
 	}
 
 	// Note:
@@ -925,9 +944,9 @@ func (f *FSM) MonitorInvoiceAndHtlcTxAction(ctx context.Context,
 	}
 
 	// Subscribe to the state of the swap invoice. If upon restart recovery,
-	// we land here and observe that the invoice is already canceled, it can
-	// only be the case where a user-provided payment timeout was hit, the
-	// invoice got canceled and the timeout of the htlc was not reached yet.
+	// we land here and observe that the invoice is already canceled, the
+	// payment timeout was hit or the swap was failing when loopd stopped,
+	// and the timeout of the htlc was not reached yet.
 	// So we want to wait until the htlc timeout path opens up so that we
 	// could sweep the funds back to us if the server published it without
 	// paying the invoice.
