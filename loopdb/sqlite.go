@@ -24,6 +24,10 @@ const (
 	// options. This is used in the following format:
 	//   * sqliteOptionPrefix || option_name = option_value.
 	sqliteOptionPrefix = "_pragma"
+
+	// sqliteTxLockOption is the modernc.org/sqlite DSN option that sets how
+	// a transaction that is not read-only begins.
+	sqliteTxLockOption = "_txlock"
 )
 
 // SqliteConfig holds all the config arguments needed to interact with our
@@ -91,9 +95,18 @@ func NewSqliteStore(cfg *SqliteConfig, network *chaincfg.Params) (*SqliteSwapSto
 		)
 	}
 
+	// Begin write transactions with BEGIN IMMEDIATE, so that they take the
+	// write lock up front and wait up to busy_timeout for it. A deferred
+	// transaction that reads before it writes gets SQLITE_BUSY right away
+	// if another connection is writing, because SQLite doesn't call the
+	// busy handler when a transaction that has already read needs the
+	// write lock. Read-only transactions still begin deferred.
+	sqliteOptions.Set(sqliteTxLockOption, "immediate")
+
 	// Construct the DSN which is just the database file name, appended
-	// with the series of pragma options as a query URL string. For more
-	// details on the formatting here, see the modernc.org/sqlite docs:
+	// with the series of pragma and transaction options as a query URL
+	// string. For more details on the formatting here, see the
+	// modernc.org/sqlite docs:
 	// https://pkg.go.dev/modernc.org/sqlite#Driver.Open.
 	dsn := fmt.Sprintf(
 		"%v?%v", cfg.DatabaseFileName, sqliteOptions.Encode(),
@@ -262,14 +275,13 @@ func (db *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 		return err
 	}
 
-	tx, err := db.BeginTx(ctx, &SqliteTxOptions{})
-	if err != nil {
-		return err
+	// Find the faulty timestamps and the valid times to replace them with.
+	type timestampFix struct {
+		hash      []byte
+		fixedTime time.Time
 	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
 
+	var fixes []timestampFix
 	for _, swap := range loopOutSwaps {
 		// Get the year of the timestamp.
 		year, err := getTimeStampYear(swap.PublicationDeadline)
@@ -287,8 +299,30 @@ func (db *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		fixedTime := payReq.Timestamp.Add(time.Minute * 30)
 
+		fixes = append(fixes, timestampFix{
+			hash:      swap.Hash,
+			fixedTime: payReq.Timestamp.Add(time.Minute * 30),
+		})
+	}
+
+	// Usually there is nothing to fix. Don't begin a write transaction then,
+	// because it would wait for the write lock, and the database couldn't be
+	// opened while another connection held that lock for longer than the
+	// busy timeout.
+	if len(fixes) == 0 {
+		return nil
+	}
+
+	tx, err := db.BeginTx(ctx, &SqliteTxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	for _, fix := range fixes {
 		// Update the faulty time to a valid time.
 		_, err = tx.ExecContext(
 			ctx, `
@@ -299,7 +333,7 @@ func (db *BaseDB) FixFaultyTimestamps(ctx context.Context) error {
 			WHERE
 			  swap_hash = $2;
 			`,
-			fixedTime, swap.Hash,
+			fix.fixedTime, fix.hash,
 		)
 		if err != nil {
 			return err
