@@ -24,6 +24,12 @@
   fee or extremely high fee HTLC transaction could not be swept back after the
   HTLC timed out. Sweeps that would leave a dust output are no longer signed.
 
+* SQLite write transactions now take the database write lock when they begin.
+  Before, a transaction that read before it wrote failed at once with
+  `database is locked (SQLITE_BUSY)` if another write was in progress, instead
+  of waiting for the busy timeout. For example, loopd could log this error when
+  it stored the server's confirmation risk decision for a static Loop In.
+
 #### Maintenance
 
 #### Contributors (Alphabetical Order)
