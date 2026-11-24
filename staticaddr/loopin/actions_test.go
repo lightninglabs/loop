@@ -3381,63 +3381,116 @@ func TestInitHtlcActionLocksDepositsForSwap(t *testing.T) {
 // TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure verifies that the early
 // fee guard also cancels the pre-created invoice before returning an error.
 func TestInitHtlcActionCancelsInvoiceOnFeeGuardFailure(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
-	defer cancel()
-
-	mockLnd := test.NewMockLnd()
-	serverKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-
-	loopIn := &StaticAddressLoopIn{
-		Deposits: []*deposit.Deposit{{
-			Value: 200_000,
-		}},
-		InitiationHeight:      uint32(mockLnd.Height),
-		InitiationTime:        time.Now(),
-		PaymentTimeoutSeconds: DefaultPaymentTimeoutSeconds,
-		ProtocolVersion:       version.ProtocolVersion_V0,
-	}
-
-	response := testStaticAddressLoopInResponse(
-		serverKey.PubKey().SerializeCompressed(), 1,
-	)
-	response.StandardHtlcInfo.FeeRate = 1_000_000
-
-	cfg := &Config{
-		AddressManager: &mockAddressManager{
-			params: &script.Parameters{
-				ProtocolVersion: version.ProtocolVersion_V0,
-			},
+	weight := (&StaticAddressLoopIn{
+		Deposits: []*deposit.Deposit{{Value: 200_000}},
+	}).htlcWeight(false)
+	for _, tc := range []struct {
+		name    string
+		tier    int
+		rate    uint64
+		pushErr error
+	}{
+		{name: "over cap", rate: 1_000_000},
+		{name: "standard invalid", rate: math.MaxUint64},
+		{name: "high invalid", tier: 1, rate: math.MaxUint64},
+		{name: "extreme invalid", tier: 2, rate: math.MaxUint64},
+		{
+			name: "product overflow",
+			rate: uint64(math.MaxInt64)/uint64(weight) + 1,
 		},
-		DepositManager: &noopDepositManager{},
-		WalletKit:      mockLnd.WalletKit,
-		LndClient:      mockLnd.Client,
-		InvoicesClient: mockLnd.LndServices.Invoices,
-		Server: &initHtlcTestServer{
-			loopInResp: response,
+		{
+			name: "abort notification fails", rate: math.MaxUint64,
+			pushErr: errors.New("push failed"),
 		},
-		ValidateLoopInContract: func(int32, int32) error {
-			return nil
-		},
-		MaxStaticAddrHtlcFeePercentage:       0,
-		MaxStaticAddrHtlcBackupFeePercentage: 1,
-	}
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(
+				t.Context(), testTimeout,
+			)
+			defer cancel()
 
-	f, err := NewFSM(ctx, loopIn, cfg, false)
-	require.NoError(t, err)
+			mockLnd := test.NewMockLnd()
+			serverKey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
 
-	// The fee guard runs before persistence, so the deferred cleanup must
-	// cancel the invoice on this error path as well.
-	event := f.InitHtlcAction(ctx, nil)
-	require.Equal(t, fsm.OnError, event)
-	require.ErrorIs(t, f.LastActionError, ErrFeeTooHigh)
+			protocol := version.ProtocolVersion_V0
+			const timeout = DefaultPaymentTimeoutSeconds
+			loopIn := &StaticAddressLoopIn{
+				Deposits: []*deposit.Deposit{{
+					Value: 200_000,
+				}},
+				InitiationHeight:      uint32(mockLnd.Height),
+				InitiationTime:        time.Now(),
+				PaymentTimeoutSeconds: timeout,
+				ProtocolVersion:       protocol,
+			}
 
-	select {
-	case hash := <-mockLnd.FailInvoiceChannel:
-		require.Equal(t, loopIn.SwapHash, hash)
+			response := testStaticAddressLoopInResponse(
+				serverKey.PubKey().SerializeCompressed(), 1,
+			)
+			infos := []*swapserverrpc.ServerHtlcSigningInfo{
+				response.StandardHtlcInfo,
+				response.HighFeeHtlcInfo,
+				response.ExtremeFeeHtlcInfo,
+			}
+			infos[tc.tier].FeeRate = tc.rate
+			server := &initHtlcTestServer{
+				loopInResp: response, pushErr: tc.pushErr,
+			}
 
-	case <-ctx.Done():
-		t.Fatalf("invoice was not canceled: %v", ctx.Err())
+			validate := func(int32, int32) error { return nil }
+			cfg := &Config{
+				AddressManager: &mockAddressManager{
+					params: &script.Parameters{
+						ProtocolVersion: protocol,
+					},
+				},
+				DepositManager: &noopDepositManager{},
+				WalletKit:      mockLnd.WalletKit,
+				LndClient:      mockLnd.Client,
+				InvoicesClient: mockLnd.LndServices.Invoices,
+				Server:         server,
+
+				ValidateLoopInContract: validate,
+
+				MaxStaticAddrHtlcFeePercentage:       0.2,
+				MaxStaticAddrHtlcBackupFeePercentage: 1,
+			}
+
+			f, err := NewFSM(ctx, loopIn, cfg, false)
+			require.NoError(t, err)
+
+			// Cancel the invoice before persisting the swap.
+			event := f.InitHtlcAction(ctx, nil)
+			require.Equal(t, fsm.OnError, event)
+			require.ErrorIs(t, f.LastActionError, ErrFeeTooHigh)
+			if tc.rate == math.MaxUint64 {
+				require.ErrorContains(t, f.LastActionError,
+					"invalid transaction fee parameters")
+				tiers := []string{
+					"standard tier fee_rate=",
+					"high tier fee_rate=",
+					"extreme tier fee_rate=",
+				}
+				require.ErrorContains(t, f.LastActionError,
+					fmt.Sprintf("%s%d",
+						tiers[tc.tier], tc.rate))
+			}
+			require.Len(t, server.pushed, 1)
+			require.Equal(t,
+				&swapserverrpc.PushStaticAddressHtlcSigsRequest{
+					SwapHash: loopIn.SwapHash[:],
+				}, server.pushed[0])
+
+			select {
+			case hash := <-mockLnd.FailInvoiceChannel:
+				require.Equal(t, loopIn.SwapHash, hash)
+
+			case <-ctx.Done():
+				t.Fatalf("invoice was not canceled: %v",
+					ctx.Err())
+			}
+		})
 	}
 }
 
@@ -3948,6 +4001,7 @@ type initHtlcTestServer struct {
 
 	loopInResp *swapserverrpc.ServerStaticAddressLoopInResponse
 	loopInErr  error
+	pushErr    error
 	pushed     []*swapserverrpc.PushStaticAddressHtlcSigsRequest
 }
 
@@ -3966,7 +4020,7 @@ func (s *initHtlcTestServer) PushStaticAddressHtlcSigs(_ context.Context,
 
 	s.pushed = append(s.pushed, req)
 
-	return &swapserverrpc.PushStaticAddressHtlcSigsResponse{}, nil
+	return &swapserverrpc.PushStaticAddressHtlcSigsResponse{}, s.pushErr
 }
 
 // TestLegacyConfirmationFallbackKeepsLiveDeposits verifies that refreshing the
@@ -4220,10 +4274,15 @@ func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 	t.Parallel()
 
 	const missingInfo = "server response is missing htlc signing info"
+	const invalidNonce = "invalid byte slice length"
 	for _, tc := range []struct {
 		name    string
 		wantErr string
 	}{
+		{"short high nonce", invalidNonce},
+		{"short extreme nonce", invalidNonce},
+		{"short high nonce push failure", invalidNonce},
+		{"short extreme nonce push failure", invalidNonce},
 		{"standard", missingInfo},
 		{"high fee", missingInfo},
 		{"extreme fee", missingInfo},
@@ -4269,12 +4328,19 @@ func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 					make([]byte, musig2.PubNonceSize),
 				}
 			}
+			if strings.HasPrefix(tc.name, "short ") {
+				invalidInfo.Nonces = [][]byte{{1}}
+			}
 			switch tc.name {
 			case "standard nonces", "extra standard nonce":
 				response.StandardHtlcInfo = invalidInfo
-			case "high fee nonces", "extra high fee nonce":
+			case "high fee nonces", "extra high fee nonce",
+				"short high nonce",
+				"short high nonce push failure":
 				response.HighFeeHtlcInfo = invalidInfo
-			case "extreme fee nonces", "extra extreme fee nonce":
+			case "extreme fee nonces", "extra extreme fee nonce",
+				"short extreme nonce",
+				"short extreme nonce push failure":
 				response.ExtremeFeeHtlcInfo = invalidInfo
 			case "standard":
 				response.StandardHtlcInfo = nil
@@ -4290,6 +4356,9 @@ func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 				response = nil
 			}
 			server := &initHtlcTestServer{loopInResp: response}
+			if strings.HasSuffix(tc.name, "push failure") {
+				server.pushErr = errors.New("push failed")
+			}
 			dep := &deposit.Deposit{Value: 500_000}
 			manager := newRecordingDepositManager(dep)
 			loopIn := &StaticAddressLoopIn{

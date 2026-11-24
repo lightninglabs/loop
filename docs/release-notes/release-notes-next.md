@@ -12,6 +12,9 @@
 
 #### Bug Fixes
 
+* Reject extreme fee rates that could produce incorrect transaction fees in
+  static Loop In and Instant Loop Out.
+
 * Reject static Loop In server responses with missing or extra HTLC nonces
   before signing, preventing a client crash from an incomplete nonce list.
 
