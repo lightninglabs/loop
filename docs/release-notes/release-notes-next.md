@@ -4,6 +4,12 @@
 
 #### Breaking Changes
 
+* `loop static openchannel` now defaults to anchor channels. Remove
+  `--channel_type=tweakless` from scripts to use the new default. RPC callers
+  that specify `STATIC_REMOTE_KEY` must omit the commitment type or select a
+  supported type. Opening a public anchor channel requires an on-chain
+  reserve in the funding node's lnd wallet.
+
 #### Bug Fixes
 
 * Reject static Loop In server responses with missing or extra HTLC nonces
