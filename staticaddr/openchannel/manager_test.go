@@ -654,14 +654,14 @@ func TestResolveCommitmentType(t *testing.T) {
 		expectedErrSubstr string
 	}{
 		{
-			name:           "unknown defaults to static remote key",
+			name:           "unknown defaults to anchors",
 			commitmentType: lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE,
-			expectedType:   lnrpc.CommitmentType_STATIC_REMOTE_KEY,
+			expectedType:   lnrpc.CommitmentType_ANCHORS,
 		},
 		{
-			name:           "static remote key supported",
-			commitmentType: lnrpc.CommitmentType_STATIC_REMOTE_KEY,
-			expectedType:   lnrpc.CommitmentType_STATIC_REMOTE_KEY,
+			name:              "static remote key rejected",
+			commitmentType:    lnrpc.CommitmentType_STATIC_REMOTE_KEY,
+			expectedErrSubstr: "unsupported commitment type STATIC_REMOTE_KEY",
 		},
 		{
 			name:           "anchors supported",
