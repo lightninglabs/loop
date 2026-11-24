@@ -3611,6 +3611,25 @@ func newHtlcSigPushTest(t *testing.T) *htlcSigPushTest {
 		require.NoError(t, testDb.Close())
 	})
 
+	// Every deposit belongs to a persisted static address, whose
+	// parameters the swap signs with.
+	addressParams := &script.Parameters{
+		ClientPubkey:    clientKey.PubKey(),
+		ServerPubkey:    serverKey.PubKey(),
+		Expiry:          1000,
+		PkScript:        pkScript,
+		ProtocolVersion: version.ProtocolVersion_V0,
+	}
+	addressStore := address.NewSqlStore(testDb.BaseDB)
+	require.NoError(
+		t, addressStore.CreateStaticAddress(t.Context(), addressParams),
+	)
+	addressParams.ID, err = addressStore.GetStaticAddressID(
+		t.Context(), pkScript,
+	)
+	require.NoError(t, err)
+	dep.AddressParams = addressParams
+
 	depositStore := deposit.NewSqlStore(testDb.BaseDB)
 	require.NoError(t, depositStore.CreateDeposit(t.Context(), dep))
 	require.NoError(t, depositStore.UpdateDeposit(t.Context(), dep))
@@ -3626,13 +3645,7 @@ func newHtlcSigPushTest(t *testing.T) *htlcSigPushTest {
 	cfg := &Config{
 		Server: server,
 		AddressManager: &mockAddressManager{
-			params: &script.Parameters{
-				PkScript:        pkScript,
-				ClientPubkey:    clientKey.PubKey(),
-				ServerPubkey:    serverKey.PubKey(),
-				ProtocolVersion: version.ProtocolVersion_V0,
-			},
-			staticAddress: staticAddr,
+			params: addressParams,
 		},
 		DepositManager: depositMgr,
 		Signer:         mockLnd.Signer,
@@ -3801,23 +3814,23 @@ func TestSignHtlcTxRestartKeepsDepositsLocked(t *testing.T) {
 	require.Equal(t, deposit.LoopingIn, h.dep.GetState())
 }
 
-// shutdownAddressManager cancels the run context when the static address is
+// shutdownTxOutChecker cancels the run context when the deposit outpoints are
 // looked up and fails with the context error, like an lnd or store call does
 // when loopd shuts down.
-type shutdownAddressManager struct {
-	*mockAddressManager
+type shutdownTxOutChecker struct {
+	TxOutChecker
 
 	shutdown context.CancelFunc
 	ctxErr   func() error
 }
 
-// GetStaticAddress cancels the run and returns the context error.
-func (m *shutdownAddressManager) GetStaticAddress(_ context.Context) (
-	*script.StaticAddress, error) {
+// GetTxOuts cancels the run and returns the context error.
+func (c *shutdownTxOutChecker) GetTxOuts(context.Context,
+	[]wire.OutPoint) (map[wire.OutPoint]*wire.TxOut, error) {
 
-	m.shutdown()
+	c.shutdown()
 
-	return nil, m.ctxErr()
+	return nil, c.ctxErr()
 }
 
 // TestSignHtlcTxShutdownBeforeSigningKeepsInvoice verifies that a swap that
@@ -3832,12 +3845,9 @@ func TestSignHtlcTxShutdownBeforeSigningKeepsInvoice(t *testing.T) {
 	runCtx, shutdown := context.WithCancel(t.Context())
 	defer shutdown()
 
-	addrMgr, ok := h.cfg.AddressManager.(*mockAddressManager)
-	require.True(t, ok)
-	h.cfg.AddressManager = &shutdownAddressManager{
-		mockAddressManager: addrMgr,
-		shutdown:           shutdown,
-		ctxErr:             runCtx.Err,
+	h.cfg.TxOutChecker = &shutdownTxOutChecker{
+		shutdown: shutdown,
+		ctxErr:   runCtx.Err,
 	}
 
 	f := h.newFSM(t, runCtx)
@@ -3858,7 +3868,7 @@ func TestSignHtlcTxShutdownBeforeSigningKeepsInvoice(t *testing.T) {
 
 	// Second run. The swap recovers into the monitor with its invoice
 	// open and its deposits locked.
-	h.cfg.AddressManager = addrMgr
+	h.cfg.TxOutChecker = nil
 
 	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
