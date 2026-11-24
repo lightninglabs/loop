@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -65,6 +66,15 @@ var (
 	// MinConfs is the minimum number of confirmations we require for a
 	// deposit to be considered withdrawn.
 	MinConfs int32 = 3
+
+	// defaultFinalizeRetryDelay is the delay before the first retry of a
+	// failed finalization of a confirmed withdrawal. It doubles after each
+	// further failure.
+	defaultFinalizeRetryDelay = time.Second
+
+	// defaultFinalizeRetryMaxDelay caps the delay between two finalization
+	// attempts.
+	defaultFinalizeRetryMaxDelay = time.Minute
 
 	// Is the default confirmation target for the fee estimation of the
 	// withdrawal transaction.
@@ -143,6 +153,14 @@ type Manager struct {
 	// finalizedWithdrawalTxns are the finalized withdrawal transactions
 	// that are published to the network and re-published on block arrivals.
 	finalizedWithdrawalTxns map[chainhash.Hash]*wire.MsgTx
+
+	// finalizeRetryDelay is the delay before the first retry of a failed
+	// finalization of a confirmed withdrawal.
+	finalizeRetryDelay time.Duration
+
+	// finalizeRetryMaxDelay caps the delay between two finalization
+	// attempts.
+	finalizeRetryMaxDelay time.Duration
 }
 
 // NewManager creates a new deposit withdrawal manager.
@@ -157,6 +175,8 @@ func NewManager(cfg *ManagerConfig, currentHeight uint32) (*Manager, error) {
 		finalizedWithdrawalTxns:  make(map[chainhash.Hash]*wire.MsgTx),
 		exitChan:                 make(chan struct{}),
 		newWithdrawalRequestChan: make(chan newWithdrawalRequest),
+		finalizeRetryDelay:       defaultFinalizeRetryDelay,
+		finalizeRetryMaxDelay:    defaultFinalizeRetryMaxDelay,
 	}
 	m.initiationHeight.Store(currentHeight)
 
@@ -886,7 +906,10 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 
 			select {
 			case tx := <-confChan:
-				err := m.finalizeWithdrawal(
+				// Retry until finalization succeeds. Returning
+				// after a transient failure would leave the
+				// confirmed withdrawal pending until a restart.
+				err := m.finalizeWithdrawalWithRetry(
 					ctx, deposits, originalTxHash, withdrawalPkScript,
 					tx.Tx, spendingHeight,
 				)
@@ -914,6 +937,48 @@ func (m *Manager) handleWithdrawal(ctx context.Context,
 	}()
 
 	return nil
+}
+
+// finalizeWithdrawalWithRetry finalizes a confirmed withdrawal and repeats the
+// attempt until it succeeds or the context is canceled. The withdrawal
+// transaction is already confirmed at this point, so giving up after a
+// transient failure, for example a busy database, would leave the deposits
+// in the withdrawing state and the transaction on the republish list until
+// the next restart. Finalization is idempotent, so repeating it is safe.
+func (m *Manager) finalizeWithdrawalWithRetry(ctx context.Context,
+	deposits []*deposit.Deposit, originalTxHash chainhash.Hash,
+	withdrawalPkScript []byte, tx *wire.MsgTx, spendingHeight uint32) error {
+
+	delay := m.finalizeRetryDelay
+	for attempt := 1; ; attempt++ {
+		err := m.finalizeWithdrawal(
+			ctx, deposits, originalTxHash, withdrawalPkScript, tx,
+			spendingHeight,
+		)
+		if err == nil {
+			return nil
+		}
+
+		log.Warnf("Finalizing withdrawal %v failed on attempt %d, "+
+			"retrying in %v: %v", tx.TxHash(), attempt, delay, err)
+
+		select {
+		case <-time.After(delay):
+
+		case <-ctx.Done():
+			return fmt.Errorf("finalizing withdrawal %v canceled "+
+				"after %d attempts, last error: %w", tx.TxHash(),
+				attempt, err)
+		}
+
+		delay = nextFinalizeRetryDelay(delay, m.finalizeRetryMaxDelay)
+	}
+}
+
+// nextFinalizeRetryDelay doubles the delay between two finalization attempts
+// up to the given maximum.
+func nextFinalizeRetryDelay(delay, maxDelay time.Duration) time.Duration {
+	return min(delay*2, maxDelay)
 }
 
 // finalizeWithdrawal saves confirmation accounting before retiring the pending

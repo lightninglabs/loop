@@ -102,8 +102,10 @@
   coin type 1 on simnet, so synchronized startups consume no additional keys.
 
 * Persist confirmed static withdrawal accounting before finalizing deposits.
-  Other persistence failures leave withdrawals pending for recovery on restart;
-  missing history still allows confirmed deposits to finalize, with a warning.
+  Other persistence failures, for example a busy database, are retried with a
+  growing delay until finalization succeeds, and a withdrawal that is still
+  pending at shutdown is recovered on restart; missing history still allows
+  confirmed deposits to finalize, with a warning.
 
 * Reject static channel opens without confirmed deposits, empty withdrawal
   inputs, and fee rates that overflow conversion before locking or signing.
