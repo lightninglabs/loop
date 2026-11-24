@@ -153,6 +153,12 @@ var (
 	ErrMinLessThanServer = errors.New("minimum swap amount is less than " +
 		"server minimum")
 
+	// ErrNoSwapSizeOverlap is returned if the swap size limits set leave
+	// no swap size that the server allows: the minimum is above the
+	// server's maximum, or the maximum below the server's minimum.
+	ErrNoSwapSizeOverlap = errors.New("swap size limits do not overlap " +
+		"the server's")
+
 	// ErrNoRules is returned when no rules are set for swap suggestions.
 	ErrNoRules = errors.New("no rules set for autoloop")
 
@@ -832,6 +838,15 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 	restrictions, err := m.getSwapRestrictions(ctx, swap.TypeOut)
 	if err != nil {
 		return nil, err
+	}
+
+	// A client minimum above the server's maximum, or a client maximum
+	// below the server's minimum, leaves no swap size that fits both. The
+	// server can change its limits after the client's were set, so this is
+	// checked here rather than when they are set. Waiting would not help,
+	// so we fail the pass.
+	if restrictions.Minimum > restrictions.Maximum {
+		return nil, ErrNoSwapSizeOverlap
 	}
 
 	// Calculate the amount that we want to loop out. If it exceeds the max
