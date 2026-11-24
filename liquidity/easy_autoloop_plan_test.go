@@ -512,8 +512,7 @@ func TestSuggestEasyAutoloopStickyWorker(t *testing.T) {
 		defer close(done)
 
 		manager.dispatchStickyLoopOut(
-			t.Context(), loop.OutRequest{Amount: 4000}, 1,
-			defaultAmountBackoff,
+			t.Context(), loop.OutRequest{Amount: 4000}, 1, 0,
 		)
 	}()
 

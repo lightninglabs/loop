@@ -536,8 +536,7 @@ func (m *Manager) autoloop(ctx context.Context) error {
 		}
 
 		go m.dispatchStickyLoopOut(
-			ctx, swap, defaultAmountBackoffRetry,
-			defaultAmountBackoff,
+			ctx, swap, defaultAmountBackoffRetry, 0,
 		)
 	}
 
@@ -662,6 +661,11 @@ type easyAutoloopPlan struct {
 	// planned, and when there is simply nothing to do, such as when the
 	// local balance is at or below the target.
 	err error
+
+	// minAmount is the smallest swap that the client and the server allow.
+	// A retry of the swap with a smaller amount after a failed payment is
+	// not made.
+	minAmount btcutil.Amount
 }
 
 // dispatchBestEasyAutoloopSwap tries to dispatch a swap to bring the total
@@ -678,8 +682,7 @@ func (m *Manager) dispatchBestEasyAutoloopSwap(ctx context.Context) error {
 
 	// Dispatch a sticky loop out.
 	go m.dispatchStickyLoopOut(
-		ctx, *plan.swap, defaultAmountBackoffRetry,
-		defaultAmountBackoff,
+		ctx, *plan.swap, defaultAmountBackoffRetry, plan.minAmount,
 	)
 
 	return nil
@@ -918,7 +921,8 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 	}
 
 	return &easyAutoloopPlan{
-		swap: &outSwap.OutRequest,
+		swap:      &outSwap.OutRequest,
+		minAmount: restrictions.Minimum,
 	}, nil
 }
 
@@ -1118,9 +1122,7 @@ func (m *Manager) dispatchBestAssetEasyAutoloopSwap(ctx context.Context,
 	}
 
 	// Dispatch a sticky loop out.
-	go m.dispatchStickyLoopOut(
-		ctx, swp, defaultAmountBackoffRetry, defaultAmountBackoff,
-	)
+	go m.dispatchStickyLoopOut(ctx, swp, defaultAmountBackoffRetry, 0)
 
 	return nil
 }
@@ -2010,9 +2012,11 @@ func (m *Manager) budgetRefreshDue(params Parameters) bool {
 }
 
 // dispatchStickyLoopOut attempts to dispatch a loop out swap that will
-// automatically retry its execution with an amount based backoff.
+// automatically retry its execution with an amount based backoff. A retry
+// whose amount would be below minAmount is not made. A minAmount of zero
+// lets the backoff go as low as the server accepts.
 func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
-	out loop.OutRequest, retryCount uint16, amountBackoff float64) {
+	out loop.OutRequest, retryCount uint16, minAmount btcutil.Amount) {
 
 	// Check our sticky loop counter to decide whether we should continue
 	// executing this loop.
@@ -2081,8 +2085,20 @@ func (m *Manager) dispatchStickyLoopOut(ctx context.Context,
 				// decrease the amount of the swap and try
 				// again.
 				out.Amount -= btcutil.Amount(
-					float64(out.Amount) * amountBackoff,
+					float64(out.Amount) *
+						defaultAmountBackoff,
 				)
+
+				// A smaller swap than the client allows is not
+				// made, so we stop retrying.
+				if out.Amount < minAmount {
+					log.Infof("swap %v: amount backoff to %v "+
+						"is below minimum %v, not "+
+						"retrying", swap.SwapHash,
+						out.Amount, minAmount)
+
+					return
+				}
 
 				log.Infof("swap %v: amount backoff old amount="+
 					"%v, new amount=%v", swap.SwapHash,
