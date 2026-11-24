@@ -29,6 +29,11 @@ In addition, if you want to control the maximum amount of fees you're willing to
 spend per swap, as a percentage of the total swap amount, you can use the
 `feepercent` parameter as explained in the [Fees](#fees) section.
 
+Easy Autoloop for bitcoin only dispatches a swap when the fees that the swap is
+allowed to pay fit into what is left of your budget, leaving out the allowance
+for edge-case miner fees. A swap that pays such a miner fee can still go over
+the budget. Easy Autoloop for assets only checks that some budget is left.
+
 To see what easy Autoloop would do right now without dispatching anything, run
 `loop suggestswaps`. This dry run covers easy Autoloop for bitcoin, not easy
 Autoloop for assets. The output holds the Loop Out that it would make next. If
