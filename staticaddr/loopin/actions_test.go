@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -5817,6 +5818,177 @@ func TestInitHtlcActionRejectsInvalidSigningInfo(t *testing.T) {
 				states[InitHtlcTx].Transitions[event])
 			states[UnlockDeposits].Action(t.Context(), nil)
 			require.Equal(t, deposit.Deposited, dep.GetState())
+		})
+	}
+}
+
+// timeoutSweepConfNotifier is a chain notifier that reports an error on its
+// first confirmation subscriptions and confirms the transaction afterwards.
+type timeoutSweepConfNotifier struct {
+	lndclient.ChainNotifierClient
+
+	mu sync.Mutex
+
+	// regErrs is the number of registrations that fail.
+	regErrs int
+
+	// subErrs is the number of subscriptions that report an error.
+	subErrs int
+
+	// txids are the transactions registered for.
+	txids []chainhash.Hash
+}
+
+// RegisterConfirmationsNtfn fails, hands out a subscription that reports an
+// error, or hands out one that confirms.
+func (n *timeoutSweepConfNotifier) RegisterConfirmationsNtfn(
+	_ context.Context, txid *chainhash.Hash, _ []byte, numConfs,
+	_ int32, _ ...lndclient.NotifierOption) (
+	chan *chainntnfs.TxConfirmation, chan error, error) {
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.txids = append(n.txids, *txid)
+
+	if n.regErrs > 0 {
+		n.regErrs--
+
+		return nil, nil, errors.New("notifier unavailable")
+	}
+
+	confChan := make(chan *chainntnfs.TxConfirmation, 1)
+	errChan := make(chan error, 1)
+	if n.subErrs > 0 {
+		n.subErrs--
+		errChan <- errors.New("notifier stream closed")
+
+		return confChan, errChan, nil
+	}
+
+	confChan <- &chainntnfs.TxConfirmation{
+		BlockHeight: 100 + uint32(numConfs),
+	}
+
+	return confChan, errChan, nil
+}
+
+// TestMonitorHtlcTimeoutSweepActionRetriesNotifierError verifies that a chain
+// notifier error while the published timeout sweep waits for its confirmation
+// doesn't fail the swap. The action registers again after a delay, and the
+// confirmation that follows still finalizes the deposits.
+func TestMonitorHtlcTimeoutSweepActionRetriesNotifierError(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		regErrs int
+		subErrs int
+	}{
+		{
+			name:    "registration error",
+			regErrs: 1,
+		},
+		{
+			name:    "stream error",
+			subErrs: 1,
+		},
+		{
+			name:    "both, twice",
+			regErrs: 2,
+			subErrs: 2,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(), testTimeout,
+			)
+			defer cancel()
+
+			mockLnd := test.NewMockLnd()
+			sweepAddr, err := mockLnd.WalletKit.NextAddr(
+				ctx, "", 0, false,
+			)
+			require.NoError(t, err)
+
+			notifier := &timeoutSweepConfNotifier{
+				regErrs: tc.regErrs,
+				subErrs: tc.subErrs,
+			}
+			ticks := make(chan time.Duration, 1)
+			testClock := clock.NewTestClockWithTickSignal(
+				time.Unix(1, 0), ticks,
+			)
+			depositManager := &recordingDepositManager{}
+			sweepTxHash := chainhash.Hash{1}
+
+			f := &FSM{
+				StateMachine: &fsm.StateMachine{},
+				cfg: &Config{
+					ChainNotifier:  notifier,
+					Clock:          testClock,
+					DepositManager: depositManager,
+				},
+				loopIn: &StaticAddressLoopIn{
+					HtlcTimeoutSweepAddress: sweepAddr,
+					HtlcTimeoutSweepTxHash:  &sweepTxHash,
+				},
+			}
+
+			resultChan := make(chan fsm.EventType, 1)
+			go func() {
+				resultChan <- f.MonitorHtlcTimeoutSweepAction(
+					ctx, nil,
+				)
+			}()
+
+			// Every failure starts a retry delay and doesn't end
+			// the action.
+			failures := tc.regErrs + tc.subErrs
+			for range failures {
+				select {
+				case delay := <-ticks:
+					require.Equal(
+						t, confWatchRetryDelay, delay,
+					)
+
+				case event := <-resultChan:
+					t.Fatalf("action returned %v", event)
+
+				case <-ctx.Done():
+					t.Fatal("no retry delay started")
+				}
+
+				now := testClock.Now()
+				testClock.SetTime(now.Add(confWatchRetryDelay))
+			}
+
+			select {
+			case event := <-resultChan:
+				require.Equal(t, OnHtlcTimeoutSwept, event)
+
+			case <-ctx.Done():
+				t.Fatal("timeout sweep monitor did not return")
+			}
+
+			require.NoError(t, f.LastActionError)
+			require.Equal(
+				t, []fsm.EventType{deposit.OnHtlcTimeoutSwept},
+				depositManager.events,
+			)
+
+			// Every attempt watched the timeout sweep tx.
+			notifier.mu.Lock()
+			defer notifier.mu.Unlock()
+
+			require.Len(t, notifier.txids, failures+1)
+			for _, txid := range notifier.txids {
+				require.Equal(t, sweepTxHash, txid)
+			}
 		})
 	}
 }

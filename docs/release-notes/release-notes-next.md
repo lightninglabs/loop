@@ -62,6 +62,11 @@
   HTLC and records the reveal. Swaps that are not running are still recovered,
   with the checks above.
 
+* A static address Loop In that waits for its published HTLC timeout sweep to
+  confirm now keeps watching after a chain notifier error. Before, such an
+  error moved the Loop In to `Failed` although the refund was already
+  published.
+
 #### Maintenance
 
 * Update the OpenTelemetry Go SDK from v1.45.0 to v1.47.0 in Loop and
