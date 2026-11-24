@@ -20,6 +20,15 @@
 
 #### Breaking Changes
 
+* Easy autoloop for bitcoin now respects the client's minimum and maximum
+  swap amounts (`loop setparams --minamt/--maxamt`). Before, it only used the
+  server's limits. A node with a minimum above the server's now waits for a
+  larger excess over its target, and makes fewer, larger swaps. Retries after
+  a failed payment stop at that minimum. As with autoloop rules, easy autoloop
+  stops with an error while these amounts are outside the server's limits, or
+  leave no size that the server allows, such as a `--minamt` above the
+  server's maximum.
+
 #### Bug Fixes
 
 * Fix a deadlock in the static address loop-in, withdrawal and open channel

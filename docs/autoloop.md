@@ -29,6 +29,15 @@ In addition, if you want to control the maximum amount of fees you're willing to
 spend per swap, as a percentage of the total swap amount, you can use the
 `feepercent` parameter as explained in the [Fees](#fees) section.
 
+Easy Autoloop for bitcoin respects the swap size limits that you set with the
+`minamt` and `maxamt` parameters. With a minimum above the server's, it waits
+until your balance is at least that far over the target, so it makes fewer,
+larger swaps. When a swap's payment fails and easy Autoloop retries it with a
+smaller amount, it stops once the amount would be below your minimum. If your
+limits leave no swap size that the server allows, such as a minimum above the
+server's maximum, easy Autoloop stops with an error until you change them. Easy
+Autoloop for assets still uses the server's limits.
+
 To see what easy Autoloop would do right now without dispatching anything, run
 `loop suggestswaps`. This dry run covers easy Autoloop for bitcoin, not easy
 Autoloop for assets. The output holds the Loop Out that it would make next. If
