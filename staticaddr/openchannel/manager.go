@@ -787,17 +787,14 @@ func validateInitialPsbtFlags(req *lnrpc.OpenChannelRequest) error {
 }
 
 // resolveCommitmentType validates supported channel commitment types and
-// normalizes unknown/default to STATIC_REMOTE_KEY.
+// defaults to ANCHORS when the caller omits the type.
 func resolveCommitmentType(commitmentType lnrpc.CommitmentType) (
 	lnrpc.CommitmentType, error) {
 
 	switch commitmentType {
 	case lnrpc.CommitmentType_UNKNOWN_COMMITMENT_TYPE,
-		lnrpc.CommitmentType_STATIC_REMOTE_KEY:
+		lnrpc.CommitmentType_ANCHORS:
 
-		return lnrpc.CommitmentType_STATIC_REMOTE_KEY, nil
-
-	case lnrpc.CommitmentType_ANCHORS:
 		return lnrpc.CommitmentType_ANCHORS, nil
 
 	case lnrpc.CommitmentType_SIMPLE_TAPROOT:
