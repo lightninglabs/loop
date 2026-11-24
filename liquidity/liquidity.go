@@ -895,8 +895,13 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 		lnwire.NewShortChanIDFromInt(channel.ChannelID),
 	}
 
+	// Build the swap without readying it for dispatch, which derives a
+	// wallet address, until it has passed the budget check below.
+	dryRunParams := easyParams
+	dryRunParams.Autoloop = false
+
 	suggestion, err := builder.buildSwap(
-		ctx, channel.PubKeyBytes, outgoing, swapAmt, easyParams,
+		ctx, channel.PubKeyBytes, outgoing, swapAmt, dryRunParams,
 	)
 
 	// A swap that is too expensive for our fee limit is a reason to wait,
@@ -913,6 +918,38 @@ func (m *Manager) planEasyAutoloopSwap(ctx context.Context,
 	if !ok {
 		return nil, fmt.Errorf("unexpected swap suggestion type: %T",
 			suggestion)
+	}
+
+	// The budget check above only tells us that some budget is left. Make
+	// sure that what this swap could cost fits into what is left. Like the
+	// fee limit check, we leave the large multiplier out of the miner fee,
+	// because we want to consider the average case and not the severe
+	// edge-case miner fees, which would keep a small budget from ever
+	// being used. A swap that meets such a miner fee can still take us
+	// over the budget.
+	available := params.AutoFeeBudget - summary.totalFees()
+	fees := worstCaseOutFees(
+		outSwap.MaxPrepayRoutingFee, outSwap.MaxSwapRoutingFee,
+		outSwap.MaxSwapFee, outSwap.MaxMinerFee/maxMinerMultiplier,
+	)
+	if fees > available {
+		return noSwap(
+			ReasonBudgetInsufficient,
+			fmt.Errorf("easy autoloop swap fee %v exceeds "+
+				"remaining autoloop fee budget %v", fees,
+				available),
+		)
+	}
+
+	// The swap fits, so ready it for autoloop to dispatch, unless this is
+	// a dry run.
+	if params.Autoloop {
+		err := builder.prepareAutoloop(
+			ctx, &outSwap.OutRequest, easyParams,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &easyAutoloopPlan{
