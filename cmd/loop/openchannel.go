@@ -14,7 +14,6 @@ import (
 
 const (
 	defaultUtxoMinConf       = 1
-	channelTypeTweakless     = "tweakless"
 	channelTypeAnchors       = "anchors"
 	channelTypeSimpleTaproot = "simple-taproot"
 	channelTypeTaproot       = "taproot"
@@ -134,9 +133,10 @@ var openChannelCommand = &cli.Command{
 		},
 		&cli.StringFlag{
 			Name: "channel_type",
-			Usage: fmt.Sprintf("(optional) the type of channel to "+
-				"propose to the remote peer (%q, %q, %q, %q)",
-				channelTypeTweakless, channelTypeAnchors,
+			Usage: fmt.Sprintf("(optional) channel type to propose to the "+
+				"peer (%q by default, %q, %q). Public anchor "+
+				"channels require an on-chain reserve in the "+
+				"funding node's lnd wallet.", channelTypeAnchors,
 				channelTypeSimpleTaproot, channelTypeTaproot),
 		},
 		&cli.BoolFlag{
@@ -320,9 +320,6 @@ func openChannel(ctx context.Context, cmd *cli.Command) error {
 	switch channelType {
 	case "":
 		break
-
-	case channelTypeTweakless:
-		req.CommitmentType = lnrpc.CommitmentType_STATIC_REMOTE_KEY
 
 	case channelTypeAnchors:
 		req.CommitmentType = lnrpc.CommitmentType_ANCHORS
