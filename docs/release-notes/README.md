@@ -115,4 +115,5 @@ a versioned file, then reset the next-release sections.
 | [v0.35.2-beta](release-notes-0.35.2.md) | 2026-10-21 | Hardened Loop In keys/refunds, fixed static Loop In UTC deadlines, updated compression, and raised Go minimum to 1.27.3 |
 | [v0.35.3-beta](release-notes-0.35.3.md) | 2026-11-05 | Added blinded Loop Out invoices and fixed withdrawal, sweep-batcher, notification-cache, and MPTCP handling |
 | [v0.35.4-beta](release-notes-0.35.4.md) | 2026-11-11 | Hardened destination validation, Loop In fees and recovery, and Postgres connection handling |
+| [v0.36.0-beta](release-notes-0.36.0.md) | Pending | Added multi-address deposits and change, hardened static Loop In recovery, and switched static channel opens to anchors |
 | [Next release](release-notes-next.md) | Unreleased | No changes yet |
