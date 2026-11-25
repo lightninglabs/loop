@@ -428,7 +428,7 @@ Create a new static loop in address.
 \fB--help, -h\fP: show help
 
 .SS deposit
-Create an address and print an lncli command to fund it.
+Fund a new static address from your lnd wallet.
 
 .PP
 \fB--amt\fP="": the number of bitcoin denominated in satoshis to send to the new static address (default: 0)
@@ -440,13 +440,13 @@ Create an address and print an lncli command to fund it.
 \fB--conf_target\fP="": (optional) the number of blocks that the funding transaction should confirm in, will be used for fee estimation (default: 0)
 
 .PP
-\fB--force, -f\fP: skip the new-address warning acknowledgement; only print the funding command
+\fB--force, -f\fP: skip the new-address warning acknowledgement
 
 .PP
 \fB--help, -h\fP: show help
 
 .PP
-\fB--label\fP="": (optional) a label for the funding transaction
+\fB--label\fP="": (optional) a wallet transaction label. The default includes the new static address
 
 .PP
 \fB--min_confs\fP="": (optional) the minimum number of confirmations each one of your outputs used for the funding transaction must satisfy (default: 1)
@@ -455,10 +455,10 @@ Create an address and print an lncli command to fund it.
 \fB--sat_per_vbyte\fP="": (optional) a manual fee expressed in sat/vbyte that should be used when crafting the funding transaction (default: 0)
 
 .PP
-\fB--sweepall\fP: if set, then the amount field should be unset. This indicates that the wallet will attempt to sweep all outputs within the wallet or all funds in selected utxos (when supplied) to the new static address
+\fB--sweepall\fP: sweep eligible outputs from the default account, limited to the selected inputs when --utxo is supplied
 
 .PP
-\fB--utxo\fP="": a utxo specified as outpoint(tx:idx) which will be used as input for the funding transaction. This flag can be repeatedly used to specify multiple utxos as inputs. The selected utxos can either be entirely spent by specifying the sweepall flag or a specified amount can be spent in the utxos through the amt flag (default: [])
+\fB--utxo\fP="": select a funding input from the default account by txid:index. Repeat to select multiple inputs (default: [])
 
 .SS listunspent, l
 List unspent static address outputs.
