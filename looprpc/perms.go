@@ -2,6 +2,18 @@ package looprpc
 
 import "gopkg.in/macaroon-bakery.v2/bakery"
 
+const (
+	// MinStaticDepositSat is the funding RPC's minimum deposit. It leaves
+	// room above dust for a standalone Taproot withdrawal even at the
+	// maximum funding fee rate. Deposits can be combined to meet a
+	// server's minimum swap amount.
+	MinStaticDepositSat = 15_000
+
+	// MaxStaticDepositSatPerVByte limits the fee rate a Loop macaroon
+	// holder can ask the funding RPC to pay.
+	MaxStaticDepositSatPerVByte = 100
+)
+
 // RequiredPermissions is a map of all loop RPC methods and their
 // required macaroon permissions to access loopd.
 var RequiredPermissions = map[string][]bakery.Op{
@@ -81,6 +93,13 @@ var RequiredPermissions = map[string][]bakery.Op{
 		Action: "read",
 	}},
 	"/looprpc.SwapClient/NewStaticAddress": {{
+		Entity: "swap",
+		Action: "execute",
+	}, {
+		Entity: "loop",
+		Action: "in",
+	}},
+	"/looprpc.SwapClient/FundStaticAddress": {{
 		Entity: "swap",
 		Action: "execute",
 	}, {
