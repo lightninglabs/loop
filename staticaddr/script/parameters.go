@@ -1,14 +1,21 @@
 package script
 
 import (
+	"fmt"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/loop/staticaddr/version"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
 // Parameters holds all the necessary information for the 2-of-2 multisig
 // address.
 type Parameters struct {
+	// ID is the database primary key of the static address row. A zero value
+	// means the parameters have not been persisted yet.
+	ID int32
+
 	// ClientPubkey is the client's pubkey for the static address. It is
 	// used for the 2-of-2 funding output as well as for the client's
 	// timeout path.
@@ -33,4 +40,16 @@ type Parameters struct {
 
 	// InitiationHeight is the height at which the address was initiated.
 	InitiationHeight int32
+}
+
+// StaticAddress reconstructs the spending script for these address parameters.
+func (p *Parameters) StaticAddress() (*StaticAddress, error) {
+	if p == nil {
+		return nil, fmt.Errorf("missing static address parameters")
+	}
+
+	return NewStaticAddress(
+		input.MuSig2Version100RC2, int64(p.Expiry),
+		p.ClientPubkey, p.ServerPubkey,
+	)
 }

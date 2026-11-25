@@ -9,11 +9,12 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
+
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/staticaddr/version"
-	"github.com/lightningnetwork/lnd/input"
-	"github.com/lightningnetwork/lnd/keychain"
 )
 
 const (
@@ -181,13 +182,13 @@ func NewFSM(ctx context.Context, deposit *Deposit, cfg *ManagerConfig,
 	finalizedDepositChan chan wire.OutPoint,
 	recoverStateMachine bool) (*FSM, error) {
 
-	params, err := cfg.AddressManager.GetStaticAddressParameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get static address "+
-			"parameters: %w", err)
+	if deposit.AddressParams == nil {
+		return nil, fmt.Errorf("missing deposit static address " +
+			"parameters")
 	}
+	params := deposit.AddressParams
 
-	address, err := cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get static address: %w", err)
 	}
@@ -375,9 +376,10 @@ func (f *FSM) DepositStatesV0() fsm.States {
 				// final state.
 				OnLoopedIn: LoopedIn,
 
-				// If the deposit expires while the loop in is
-				// still pending, we publish the expiry sweep.
-				OnExpiry: PublishExpirySweep,
+				// The loop-in owns these deposits until it resolves
+				// the HTLC or releases unspent inputs. This also
+				// prevents startup expiry from racing HTLC recovery.
+				OnExpiry: LoopingIn,
 
 				// If the server publishes the HTLC without
 				// paying us, we need to keep the deposit locked
@@ -401,6 +403,7 @@ func (f *FSM) DepositStatesV0() fsm.States {
 			Transitions: fsm.Transitions{
 				OnHtlcTimeoutSwept: HtlcTimeoutSwept,
 				OnRecover:          SweepHtlcTimeout,
+				OnExpiry:           SweepHtlcTimeout,
 			},
 			Action: fsm.NoOpAction,
 		},
@@ -449,6 +452,13 @@ func (f *FSM) updateDeposit(ctx context.Context,
 	notification fsm.Notification) {
 
 	if f.deposit == nil {
+		return
+	}
+
+	// Self-transitions neither change nor persist the deposit. Avoid taking
+	// its lock while holding the FSM lock: an owner transition may already
+	// hold the deposit lock while waiting for this FSM.
+	if notification.PreviousState == notification.NextState {
 		return
 	}
 
@@ -535,21 +545,25 @@ func (f *FSM) Errorf(format string, args ...any) {
 }
 
 // SignDescriptor returns the sign descriptor for the static address output.
-func (f *FSM) SignDescriptor(ctx context.Context) (*lndclient.SignDescriptor,
+func (f *FSM) SignDescriptor(_ context.Context) (*lndclient.SignDescriptor,
 	error) {
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
+	address, err := f.deposit.GetStaticAddressScript()
 	if err != nil {
 		return nil, err
 	}
 
+	// The key locator lets lnd derive the signing key directly. A restored
+	// wallet may not yet have derived the key, so a pubkey-only lookup could
+	// fall back to the wrong key. Leave PubKey unset so SignOutputRaw sends
+	// the locator instead of selecting its legacy pubkey-only wire format.
 	return &lndclient.SignDescriptor{
 		WitnessScript: address.TimeoutLeaf.Script,
 		KeyDesc: keychain.KeyDescriptor{
-			PubKey: f.params.ClientPubkey,
+			KeyLocator: f.deposit.AddressParams.KeyLocator,
 		},
 		Output: wire.NewTxOut(
-			int64(f.deposit.Value), f.params.PkScript,
+			int64(f.deposit.Value), f.deposit.AddressParams.PkScript,
 		),
 		HashType:   txscript.SigHashDefault,
 		InputIndex: 0,

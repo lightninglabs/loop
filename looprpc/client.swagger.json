@@ -870,7 +870,7 @@
     },
     "/v1/staticaddr": {
       "post": {
-        "summary": "loop: `static newstaticaddress`\nNewStaticAddress requests a new static address for loop-ins from the server.",
+        "summary": "loop: `static new`\nNewStaticAddress derives a fresh static receive address on every request.\nThis RPC never funds the address.\nThe CLI's static new and static deposit commands use this RPC. Only static\ndeposit prints lncli instructions for funding the returned address.",
         "operationId": "SwapClient_NewStaticAddress",
         "responses": {
           "200": {
@@ -1368,6 +1368,10 @@
         "cost_onchain_status": {
           "$ref": "#/definitions/looprpcOnchainCostStatus",
           "description": "Whether cost_onchain is known: ONCHAIN_COST_STATUS_COMPLETE if the client\nwallet knows the fee of the deposit's funding transaction,\nONCHAIN_COST_STATUS_UNKNOWN if it doesn't, for example for a deposit\nfunded by an external wallet, or ONCHAIN_COST_STATUS_PENDING if the cost\nhasn't been determined yet. The cost of a single deposit is never\npartial."
+        },
+        "static_address": {
+          "type": "string",
+          "description": "The static address that the deposit was sent to."
         }
       }
     },
@@ -2273,12 +2277,12 @@
       "properties": {
         "address": {
           "type": "string",
-          "description": "The taproot static address."
+          "description": "The newly derived taproot static address."
         },
         "expiry": {
           "type": "integer",
           "format": "int64",
-          "description": "The CSV expiry of the static address."
+          "description": "The CSV expiry of the static address in blocks."
         }
       }
     },
@@ -2656,12 +2660,12 @@
       "properties": {
         "static_address": {
           "type": "string",
-          "description": "The static address of the client."
+          "description": "Deprecated: The legacy/root static address anchoring derived addresses.\nNew deposits should use fresh addresses returned by NewStaticAddress; this\naddress must not be treated as the current receive address."
         },
         "relative_expiry_blocks": {
           "type": "string",
           "format": "uint64",
-          "description": "The CSV expiry of the static address."
+          "description": "The shared CSV delay in blocks inherited by all static addresses derived\nfrom the legacy/root address."
         },
         "total_num_deposits": {
           "type": "integer",

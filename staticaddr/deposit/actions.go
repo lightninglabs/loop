@@ -1,9 +1,11 @@
 package deposit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -12,6 +14,7 @@ import (
 	"github.com/lightninglabs/loop/fsm"
 	"github.com/lightninglabs/loop/staticaddr/script"
 	"github.com/lightninglabs/loop/utils"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -27,9 +30,15 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 
 	msgTx := wire.NewMsgTx(2)
 
-	params, err := f.cfg.AddressManager.GetStaticAddressParameters(ctx)
+	if f.deposit.AddressParams == nil {
+		return f.HandleError(fmt.Errorf("missing static address " +
+			"parameters"))
+	}
+	params := f.deposit.AddressParams
+
+	address, err := f.deposit.GetStaticAddressScript()
 	if err != nil {
-		return fsm.OnError
+		return f.HandleError(err)
 	}
 
 	// Add the deposit outpoint as input to the transaction.
@@ -96,11 +105,6 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	address, err := f.cfg.AddressManager.GetStaticAddress(ctx)
-	if err != nil {
-		return f.HandleError(err)
-	}
-
 	sig := rawSigs[0]
 	msgTx.TxIn[0].Witness, err = address.GenTimeoutWitness(sig)
 	if err != nil {
@@ -131,32 +135,189 @@ func (f *FSM) PublishDepositExpirySweepAction(ctx context.Context,
 func (f *FSM) WaitForExpirySweepAction(ctx context.Context,
 	_ fsm.EventContext) fsm.EventType {
 
-	var txID *chainhash.Hash
-	// Only pass the txid if we know it from our own publication.
-	if f.deposit.ExpirySweepTxid != (chainhash.Hash{}) {
-		txID = &f.deposit.ExpirySweepTxid
+	if f.deposit.AddressParams == nil {
+		return f.HandleError(fmt.Errorf("missing static address " +
+			"parameters"))
 	}
 
-	spendChan, errSpendChan, err := f.cfg.ChainNotifier.RegisterConfirmationsNtfn( //nolint:lll
-		ctx, txID, f.deposit.TimeOutSweepPkScript, DefaultConfTarget,
-		int32(f.deposit.GetConfirmationHeight()),
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
+
+	var (
+		spendChan    chan *chainntnfs.SpendDetail
+		spendErrChan chan error
+		reorgChan    chan struct{}
+		spendCancel  context.CancelFunc
+		confChan     chan *chainntnfs.TxConfirmation
+		confErrChan  chan error
+		confCancel   context.CancelFunc
+		spendingTxID chainhash.Hash
 	)
-	if err != nil {
+	cancelConfirmation := func() {
+		if confCancel != nil {
+			confCancel()
+			confCancel = nil
+		}
+		confChan, confErrChan = nil, nil
+		spendingTxID = chainhash.Hash{}
+	}
+	defer cancelConfirmation()
+
+	// Replace both subscriptions after a reorg. The spend channel can still
+	// contain the old spender, so retaining that stream could re-arm a
+	// confirmation watch for an already reorged transaction. A fresh spend
+	// subscription replays the current canonical spender, if there is one.
+	registerSpend := func() error {
+		cancelConfirmation()
+		if spendCancel != nil {
+			spendCancel()
+		}
+		var spendCtx context.Context
+		spendCtx, spendCancel = context.WithCancel(watchCtx)
+		reorgChan = make(chan struct{})
+
+		var err error
+		spendChan, spendErrChan, err =
+			f.cfg.ChainNotifier.RegisterSpendNtfn(
+				spendCtx, &f.deposit.OutPoint,
+				f.deposit.AddressParams.PkScript,
+				int32(f.deposit.GetConfirmationHeight()),
+				lndclient.WithReOrgChan(reorgChan),
+			)
+		return err
+	}
+	if err := registerSpend(); err != nil {
 		return f.HandleError(err)
 	}
 
-	select {
-	case err = <-errSpendChan:
-		log.Debugf("error while sweeping expired deposit: %v", err)
-		return fsm.OnError
+	for {
+		select {
+		case <-reorgChan:
+			if err := registerSpend(); err != nil {
+				return f.HandleError(err)
+			}
 
-	case confirmedTx := <-spendChan:
-		f.deposit.ExpirySweepTxid = confirmedTx.Tx.TxHash()
-		return OnExpirySwept
+		case err := <-spendErrChan:
+			// lnd ends the stream normally once a spend is beyond its
+			// reorg safety horizon. Keep a buffered spend or its active
+			// confirmation watch, but never treat EOF as proof that
+			// this deposit was swept.
+			if errors.Is(err, io.EOF) &&
+				(confChan != nil || len(spendChan) > 0) {
 
-	case <-ctx.Done():
-		return fsm.OnError
+				spendErrChan = nil
+				continue
+			}
+
+			log.Debugf("error while sweeping expired deposit: %v", err)
+			return fsm.OnError
+
+		case spend, ok := <-spendChan:
+			if !ok || spend == nil || spend.SpendingTx == nil {
+				return f.HandleError(errors.New("expiry spend notification " +
+					"missing transaction"))
+			}
+
+			spendingTx := spend.SpendingTx
+			if err := validateExpirySpend(
+				spendingTx, f.deposit.OutPoint,
+				f.deposit.TimeOutSweepPkScript,
+			); err != nil {
+				return f.HandleError(err)
+			}
+
+			cancelConfirmation()
+			confCtx, cancel := context.WithCancel(watchCtx)
+			confCancel = cancel
+			txID := spendingTx.TxHash()
+			spendingTxID = txID
+			heightHint := spend.SpendingHeight
+			if heightHint <= 0 {
+				heightHint = int32(f.deposit.GetConfirmationHeight())
+			}
+
+			var err error
+			confChan, confErrChan, err =
+				f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
+					confCtx, &txID,
+					f.deposit.TimeOutSweepPkScript,
+					DefaultConfTarget, heightHint,
+				)
+			if err != nil {
+				return f.HandleError(err)
+			}
+
+		case err := <-confErrChan:
+			log.Debugf("error while confirming expired deposit: %v",
+				err)
+			return fsm.OnError
+
+		case confirmation, ok := <-confChan:
+			// A reorg and a confirmation may both be ready. Invalidate
+			// the old watch before accepting an already queued result.
+			select {
+			case <-reorgChan:
+				if err := registerSpend(); err != nil {
+					return f.HandleError(err)
+				}
+				continue
+
+			default:
+			}
+
+			if !ok || confirmation == nil || confirmation.Tx == nil {
+				return f.HandleError(errors.New("expiry confirmation " +
+					"missing transaction"))
+			}
+
+			confirmedTx := confirmation.Tx
+
+			if confirmedTx.TxHash() != spendingTxID {
+				return f.HandleError(fmt.Errorf("expiry confirmation " +
+					"transaction does not match outpoint spender"))
+			}
+			err := validateExpirySpend(
+				confirmedTx, f.deposit.OutPoint,
+				f.deposit.TimeOutSweepPkScript,
+			)
+			if err != nil {
+				return f.HandleError(err)
+			}
+
+			f.deposit.ExpirySweepTxid = spendingTxID
+			return OnExpirySwept
+
+		case <-ctx.Done():
+			return fsm.OnError
+		}
 	}
+}
+
+// validateExpirySpend verifies that tx spends the deposit outpoint to the
+// configured timeout sweep destination.
+func validateExpirySpend(tx *wire.MsgTx, outpoint wire.OutPoint,
+	timeoutPkScript []byte) error {
+
+	spendsDeposit := false
+	for _, txIn := range tx.TxIn {
+		if txIn.PreviousOutPoint == outpoint {
+			spendsDeposit = true
+			break
+		}
+	}
+	if !spendsDeposit {
+		return fmt.Errorf("expiry transaction does not spend deposit %v",
+			outpoint)
+	}
+
+	for _, txOut := range tx.TxOut {
+		if bytes.Equal(txOut.PkScript, timeoutPkScript) {
+			return nil
+		}
+	}
+
+	return errors.New("expiry transaction does not pay timeout sweep " +
+		"destination")
 }
 
 // FinalizeDepositAction is the final action after a withdrawal. It signals to

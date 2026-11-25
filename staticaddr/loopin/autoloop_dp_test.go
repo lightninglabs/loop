@@ -14,9 +14,9 @@ import (
 func TestSelectNoChangeDepositsWithMemoryBudget(t *testing.T) {
 	t.Parallel()
 
-	depositSeven := makeDeposit(31, 0, 7_000, 240)
-	depositFour := makeDeposit(32, 0, 4_000, 241)
-	depositThree := makeDeposit(33, 0, 3_000, 242)
+	depositSeven := makeAutoloopDeposit(31, 0, 7_000, 240)
+	depositFour := makeAutoloopDeposit(32, 0, 4_000, 241)
+	depositThree := makeAutoloopDeposit(33, 0, 3_000, 242)
 
 	testCases := []struct {
 		name          string
@@ -60,7 +60,7 @@ func TestSelectNoChangeDepositsWithMemoryBudget(t *testing.T) {
 
 			deposits, err := selectNoChangeDepositsWithMemoryBudget(
 				testCase.maxAmount, testCase.minAmount,
-				testCase.deposits, 1_000, 100, nil,
+				testCase.deposits, 100, nil,
 				testCase.maxMemory,
 			)
 
@@ -87,13 +87,13 @@ func TestSelectNoChangeDepositsWithMemoryBudget(t *testing.T) {
 func TestSelectNoChangeDepositsPrefersConfirmedTie(t *testing.T) {
 	t.Parallel()
 
-	unconfirmed := makeDeposit(34, 0, 5_000, 0)
-	confirmed := makeDeposit(35, 0, 5_000, 200)
+	unconfirmed := makeAutoloopDeposit(34, 0, 5_000, 0)
+	confirmed := makeAutoloopDeposit(35, 0, 5_000, 200)
 
 	deposits, err := selectNoChangeDeposits(
 		5_000, 5_000, []*deposit.Deposit{
 			unconfirmed, confirmed,
-		}, 1_000, 100, nil,
+		}, 100, nil,
 	)
 	require.NoError(t, err)
 	require.Equal(
@@ -307,11 +307,11 @@ func TestCompareResidualLifeSequences(t *testing.T) {
 func TestFilterAutoloopCandidateDeposits(t *testing.T) {
 	t.Parallel()
 
-	earlierSameValue := makeDeposit(41, 0, 5_000, 200)
-	laterSameValueA := makeDeposit(42, 0, 5_000, 210)
-	laterSameValueB := makeDeposit(43, 0, 5_000, 210)
-	oversized := makeDeposit(44, 0, 9_000, 220)
-	unswappable := makeDeposit(45, 0, 4_000, 149)
+	earlierSameValue := makeAutoloopDeposit(41, 0, 5_000, 200)
+	laterSameValueA := makeAutoloopDeposit(42, 0, 5_000, 210)
+	laterSameValueB := makeAutoloopDeposit(43, 0, 5_000, 210)
+	oversized := makeAutoloopDeposit(44, 0, 9_000, 220)
+	unswappable := makeAutoloopDeposit(45, 0, 4_000, 149)
 
 	selectedDeposits, total := filterAutoloopCandidateDeposits(
 		7_000,
@@ -319,7 +319,7 @@ func TestFilterAutoloopCandidateDeposits(t *testing.T) {
 			laterSameValueB, oversized, earlierSameValue,
 			unswappable, laterSameValueA,
 		},
-		1_000, 100, nil,
+		100, nil,
 	)
 
 	require.Equal(t, btcutil.Amount(15_000), total)
@@ -362,9 +362,9 @@ func TestAutoloopDPComparators(t *testing.T) {
 		func(t *testing.T) {
 			t.Parallel()
 
-			small := makeDeposit(51, 0, 4_000, 300)
-			medium := makeDeposit(52, 0, 5_000, 301)
-			later := makeDeposit(53, 0, 1_000, 302)
+			small := makeAutoloopDeposit(51, 0, 4_000, 300)
+			medium := makeAutoloopDeposit(52, 0, 5_000, 301)
+			later := makeAutoloopDeposit(53, 0, 1_000, 302)
 
 			candidates := makeCandidateDeposits(
 				small, medium, later,
@@ -384,8 +384,8 @@ func TestAutoloopDPComparators(t *testing.T) {
 		func(t *testing.T) {
 			t.Parallel()
 
-			six := makeDeposit(54, 0, 6_000, 300)
-			five := makeDeposit(55, 0, 5_000, 300)
+			six := makeAutoloopDeposit(54, 0, 6_000, 300)
+			five := makeAutoloopDeposit(55, 0, 5_000, 300)
 
 			candidates := makeCandidateDeposits(six, five)
 			table := newAutoloopDPTable(3, len(candidates))
@@ -404,9 +404,9 @@ func TestAutoloopDPComparators(t *testing.T) {
 		func(t *testing.T) {
 			t.Parallel()
 
-			six := makeDeposit(56, 0, 6_000, 300)
-			five := makeDeposit(57, 0, 5_000, 300)
-			one := makeDeposit(58, 0, 1_000, 300)
+			six := makeAutoloopDeposit(56, 0, 6_000, 300)
+			five := makeAutoloopDeposit(57, 0, 5_000, 300)
+			one := makeAutoloopDeposit(58, 0, 1_000, 300)
 
 			candidates := makeCandidateDeposits(six, five, one)
 			table := newAutoloopDPTable(4, len(candidates))

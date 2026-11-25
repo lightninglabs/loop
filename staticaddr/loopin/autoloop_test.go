@@ -21,32 +21,31 @@ import (
 //  4. inside that band, prefer earlier-expiring deposits
 //  5. fall back to larger total, then fewer deposits
 func TestSelectNoChangeDeposits(t *testing.T) {
-	depositSeven := makeDeposit(7, 0, 7_000, 200)
-	depositFour := makeDeposit(4, 0, 4_000, 210)
-	depositThreeA := makeDeposit(3, 0, 3_000, 220)
-	depositThreeB := makeDeposit(9, 0, 3_000, 221)
-	depositNine := makeDeposit(8, 0, 9_000, 205)
-	depositFourA := makeDeposit(5, 0, 4_000, 215)
-	depositFourB := makeDeposit(6, 0, 4_000, 216)
-	depositOneA := makeDeposit(10, 0, 1_000, 230)
-	depositOneB := makeDeposit(11, 0, 1_000, 231)
-	depositOneC := makeDeposit(21, 0, 1_000, 232)
-	depositFourC := makeDeposit(13, 0, 4_000, 200)
-	depositFourD := makeDeposit(14, 0, 4_000, 201)
-	depositFourE := makeDeposit(15, 0, 4_000, 220)
-	depositFourF := makeDeposit(16, 0, 4_000, 221)
-	depositFive := makeDeposit(17, 0, 5_000, 200)
-	depositUnsuitable := makeDeposit(18, 0, 6_000, 149)
-	depositOversized := makeDeposit(19, 0, 9_000, 220)
-	depositTwo := makeDeposit(20, 0, 2_000, 210)
-	depositTen := makeDeposit(23, 0, 10_000, 500)
+	depositSeven := makeAutoloopDeposit(7, 0, 7_000, 200)
+	depositFour := makeAutoloopDeposit(4, 0, 4_000, 210)
+	depositThreeA := makeAutoloopDeposit(3, 0, 3_000, 220)
+	depositThreeB := makeAutoloopDeposit(9, 0, 3_000, 221)
+	depositNine := makeAutoloopDeposit(8, 0, 9_000, 205)
+	depositFourA := makeAutoloopDeposit(5, 0, 4_000, 215)
+	depositFourB := makeAutoloopDeposit(6, 0, 4_000, 216)
+	depositOneA := makeAutoloopDeposit(10, 0, 1_000, 230)
+	depositOneB := makeAutoloopDeposit(11, 0, 1_000, 231)
+	depositOneC := makeAutoloopDeposit(21, 0, 1_000, 232)
+	depositFourC := makeAutoloopDeposit(13, 0, 4_000, 200)
+	depositFourD := makeAutoloopDeposit(14, 0, 4_000, 201)
+	depositFourE := makeAutoloopDeposit(15, 0, 4_000, 220)
+	depositFourF := makeAutoloopDeposit(16, 0, 4_000, 221)
+	depositFive := makeAutoloopDeposit(17, 0, 5_000, 200)
+	depositUnsuitable := makeAutoloopDeposit(18, 0, 6_000, 149)
+	depositOversized := makeAutoloopDeposit(19, 0, 9_000, 220)
+	depositTwo := makeAutoloopDeposit(20, 0, 2_000, 210)
+	depositTen := makeAutoloopDeposit(23, 0, 10_000, 500)
 
 	testCases := []struct {
 		name             string
 		maxAmount        btcutil.Amount
 		minAmount        btcutil.Amount
 		deposits         []*deposit.Deposit
-		csvExpiry        uint32
 		blockHeight      uint32
 		excludedOutpoint map[string]struct{}
 		expected         []*deposit.Deposit
@@ -59,7 +58,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			deposits: []*deposit.Deposit{
 				depositSeven, depositFour, depositThreeA,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected:    []*deposit.Deposit{depositSeven},
 		},
@@ -70,7 +68,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			deposits: []*deposit.Deposit{
 				depositSeven, depositFour, depositThreeA,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			excludedOutpoint: map[string]struct{}{
 				depositSeven.OutPoint.String(): {},
@@ -87,7 +84,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 				depositFour, depositThreeA, depositThreeB,
 				depositOneA, depositOneB,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected: []*deposit.Deposit{
 				depositThreeA, depositThreeB,
@@ -101,7 +97,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 				depositTwo, depositOneA,
 				depositOneB, depositOneC,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected:    []*deposit.Deposit{depositTwo},
 		},
@@ -113,7 +108,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 				depositFourC, depositFourD,
 				depositFourE, depositFourF,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected: []*deposit.Deposit{
 				depositFourC, depositFourD,
@@ -127,7 +121,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 				depositFour, depositThreeA,
 				depositFourA, depositThreeB,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected: []*deposit.Deposit{
 				depositFour, depositFourA,
@@ -141,7 +134,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 				depositFive, depositUnsuitable,
 				depositOversized,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected:    []*deposit.Deposit{depositFive},
 		},
@@ -152,7 +144,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			deposits: []*deposit.Deposit{
 				depositUnsuitable, depositOversized,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expectedErr: ErrNoAutoloopCandidate,
 		},
@@ -163,7 +154,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			deposits: []*deposit.Deposit{
 				depositFour, depositTwo,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expectedErr: ErrNoAutoloopCandidate,
 		},
@@ -174,7 +164,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			deposits: []*deposit.Deposit{
 				depositFour, depositThreeA,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected: []*deposit.Deposit{
 				depositFour, depositThreeA,
@@ -189,7 +178,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 				depositFourA, depositFourB,
 				depositThreeA,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected: []*deposit.Deposit{
 				depositNine, depositFourA,
@@ -206,7 +194,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			deposits: []*deposit.Deposit{
 				depositTen, depositFive, depositFourC,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected: []*deposit.Deposit{
 				depositFive, depositFourC,
@@ -220,7 +207,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			deposits: []*deposit.Deposit{
 				depositNine, depositSeven,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expected:    []*deposit.Deposit{depositNine},
 		},
@@ -232,7 +218,6 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 			deposits: []*deposit.Deposit{
 				depositFourC, depositFourD, depositFourE,
 			},
-			csvExpiry:   1_000,
 			blockHeight: 100,
 			expectedErr: ErrNoAutoloopCandidate,
 		},
@@ -253,7 +238,7 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			selectedDeposits, err := selectNoChangeDeposits(
 				testCase.maxAmount, testCase.minAmount,
-				testCase.deposits, testCase.csvExpiry,
+				testCase.deposits,
 				testCase.blockHeight, testCase.excludedOutpoint,
 			)
 
@@ -277,7 +262,7 @@ func TestSelectNoChangeDeposits(t *testing.T) {
 func TestPrepareAutoloopLoopIn(t *testing.T) {
 	ctx := t.Context()
 
-	selectedDeposit := makeDeposit(1, 0, 9_000, 300)
+	selectedDeposit := makeAutoloopDeposit(1, 0, 9_000, 300)
 
 	quoteGetter := &mockQuoteGetter{
 		quote: &loop.LoopInQuote{
@@ -285,12 +270,13 @@ func TestPrepareAutoloopLoopIn(t *testing.T) {
 		},
 	}
 
-	manager, err := NewManager(&Config{
-		AddressManager: &mockAddressManager{
-			params: &script.Parameters{
-				Expiry: 1_000,
-			},
+	addressMgr := &mockAddressManager{
+		params: &script.Parameters{
+			Expiry: 1_000,
 		},
+	}
+	manager, err := NewManager(&Config{
+		AddressManager: addressMgr,
 		DepositManager: &mockDepositManager{
 			activeDeposits: []*deposit.Deposit{selectedDeposit},
 		},
@@ -325,6 +311,7 @@ func TestPrepareAutoloopLoopIn(t *testing.T) {
 	require.Equal(t, "autoloop", quoteGetter.initiator)
 	require.Equal(t, uint32(1), quoteGetter.numDeposits)
 	require.False(t, quoteGetter.fast)
+	require.Zero(t, addressMgr.getParamsCalls.Load())
 }
 
 // TestPrepareAutoloopLoopInExcludedOutpoints verifies that the manager passes
@@ -333,9 +320,9 @@ func TestPrepareAutoloopLoopIn(t *testing.T) {
 func TestPrepareAutoloopLoopInExcludedOutpoints(t *testing.T) {
 	ctx := t.Context()
 
-	excludedDeposit := makeDeposit(1, 0, 9_000, 300)
+	excludedDeposit := makeAutoloopDeposit(1, 0, 9_000, 300)
 
-	selectedDeposit := makeDeposit(2, 0, 7_000, 301)
+	selectedDeposit := makeAutoloopDeposit(2, 0, 7_000, 301)
 
 	quoteGetter := &mockQuoteGetter{
 		quote: &loop.LoopInQuote{
@@ -374,4 +361,35 @@ func TestPrepareAutoloopLoopInExcludedOutpoints(t *testing.T) {
 	require.Equal(t, 1, numDeposits)
 	require.False(t, hasChange)
 	require.Equal(t, selectedDeposit.Value, quoteGetter.amount)
+}
+
+// makeAutoloopDeposit attaches the address metadata required for selection.
+func makeAutoloopDeposit(h byte, index uint32, value btcutil.Amount,
+	confirmationHeight int64) *deposit.Deposit {
+
+	d := makeDeposit(h, index, value, confirmationHeight)
+	d.AddressParams = &script.Parameters{Expiry: 1_000}
+	return d
+}
+
+// TestSelectNoChangeDepositsOwnExpiry verifies eligibility and expiry ordering
+// use each deposit's owning address rather than a root-address CSV delay.
+func TestSelectNoChangeDepositsOwnExpiry(t *testing.T) {
+	t.Parallel()
+
+	short := makeAutoloopDeposit(51, 0, 5_000, 200)
+	short.AddressParams.Expiry = 1_100
+	long := makeAutoloopDeposit(52, 0, 5_000, 100)
+	long.AddressParams.Expiry = 1_500
+	expiring := makeAutoloopDeposit(53, 0, 6_000, 100)
+	expiring.AddressParams.Expiry = 1_000
+	missing := makeDeposit(54, 0, 6_000, 200)
+
+	selected, err := selectNoChangeDeposits(
+		6_000, 5_000, []*deposit.Deposit{
+			long, short, expiring, missing,
+		}, 100, nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []*deposit.Deposit{short}, selected)
 }

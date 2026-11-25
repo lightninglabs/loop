@@ -83,8 +83,8 @@ type Manager struct {
 	// mu guards access to the activeDeposits map.
 	mu sync.Mutex
 
-	// reconcileMu serializes deposit reconciliation so new deposits are
-	// discovered and retained exactly once per outpoint.
+	// reconcileMu serializes startup recovery and deposit reconciliation so
+	// new deposits are discovered and retained exactly once per outpoint.
 	reconcileMu sync.Mutex
 
 	// activeDeposits contains all the active static address outputs.
@@ -263,6 +263,9 @@ func (m *Manager) notifyActiveDeposits(ctx context.Context,
 // recoverDeposits recovers static address parameters, previous deposits and
 // state machines from the database and starts the deposit notifier.
 func (m *Manager) recoverDeposits(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+
 	log.Infof("Recovering static address parameters and deposits...")
 
 	// Recover deposits.
@@ -282,6 +285,10 @@ func (m *Manager) recoverDeposits(ctx context.Context) error {
 		}
 
 		log.Debugf("Recovering deposit %x", d.ID)
+
+		// A legacy mapping alone cannot identify the owner of a timeout
+		// already in progress when the client restarted.
+		d.recoveredTimeout = d.IsInState(SweepHtlcTimeout)
 
 		// Create a state machine for a given deposit.
 		fsm, err := NewFSM(ctx, d, m.cfg, m.finalizedDepositChan, true)
@@ -402,7 +409,10 @@ func (m *Manager) determineOnchainCosts(ctx context.Context) {
 	}
 
 	costs, lookupErr := onchainCosts(
-		ctx, m.cfg.WalletKit, m.isKnownDeposit, pending,
+		ctx, m.cfg.WalletKit, m.isKnownDeposit,
+		func(pkScript []byte) bool {
+			return m.cfg.AddressManager.GetParameters(pkScript) != nil
+		}, pending,
 	)
 
 	byID := make(map[ID]OnchainCost, len(costs))
@@ -610,6 +620,16 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		return nil, err
 	}
 
+	addressParams := m.cfg.AddressManager.GetParameters(utxo.PkScript)
+	if addressParams == nil {
+		return nil, fmt.Errorf("missing static address parameters "+
+			"for deposit %v", utxo.OutPoint)
+	}
+	if addressParams.ID <= 0 {
+		return nil, fmt.Errorf("missing static address ID for deposit %v",
+			utxo.OutPoint)
+	}
+
 	// Get the sweep pk script.
 	addr, err := m.cfg.WalletKit.NextAddr(
 		ctx, lnwallet.DefaultAccountName,
@@ -628,6 +648,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
 	deposit := &Deposit{
 		ID:                   id,
 		state:                Deposited,
@@ -635,6 +656,7 @@ func (m *Manager) createNewDeposit(ctx context.Context,
 		Value:                utxo.Value,
 		ConfirmationHeight:   confirmationHeight,
 		TimeOutSweepPkScript: timeoutSweepPkScript,
+		AddressParams:        addressParams,
 	}
 
 	err = m.cfg.Store.CreateDeposit(ctx, deposit)
@@ -1164,6 +1186,7 @@ func (m *Manager) transitionDeposits(ctx context.Context, deposits []*Deposit,
 		if swapHash != nil && d.isInStateNoLock(expectedFinalState) {
 			hash := *swapHash
 			d.SwapHash = &hash
+			d.recoveredTimeout = false
 		}
 	}
 
@@ -1191,6 +1214,69 @@ func (m *Manager) transitionDeposits(ctx context.Context, deposits []*Deposit,
 	}
 
 	return nil
+}
+
+// RestoreLoopInClaim repairs a legacy ownership mapping in memory before
+// recovered swaps or new requests can release the deposit.
+func (m *Manager) RestoreLoopInClaim(ctx context.Context,
+	deposits []*Deposit, swapHash lntypes.Hash) error {
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	outpoints, err := depositOutpoints(deposits)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, active := m.toActiveDeposits(&outpoints)
+	if active == nil {
+		return errors.New("cannot restore an inactive loop-in deposit")
+	}
+	locked := lockDeposits(active)
+	defer unlockDeposits(locked)
+	for _, d := range active {
+		if !d.isInStateNoLock(LoopingIn) {
+			return fmt.Errorf("deposit %v is no longer looping in", d.OutPoint)
+		}
+	}
+	for _, d := range active {
+		d.SwapHash = new(swapHash)
+		d.recoveredTimeout = false
+	}
+	return nil
+}
+
+// GetLoopInClaim returns the current owner of an active loop-in or timeout.
+func (m *Manager) GetLoopInClaim(outpoint wire.OutPoint) (lntypes.Hash, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sm := m.activeDeposits[outpoint]
+	if sm == nil {
+		return lntypes.Hash{}, false
+	}
+	d := sm.deposit
+	d.Lock()
+	defer d.Unlock()
+	if d.SwapHash == nil || d.recoveredTimeout ||
+		!(d.isInStateNoLock(LoopingIn) || d.isInStateNoLock(SweepHtlcTimeout)) {
+
+		return lntypes.Hash{}, false
+	}
+	return *d.SwapHash, true
+}
+
+// ClearLoopInClaim retains an ambiguous startup lock while preventing any
+// recovered swap from releasing it.
+func (m *Manager) ClearLoopInClaim(outpoint wire.OutPoint) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sm := m.activeDeposits[outpoint]; sm != nil {
+		sm.deposit.Lock()
+		defer sm.deposit.Unlock()
+		sm.deposit.SwapHash = nil
+	}
 }
 
 // lockDeposits locks deposits in canonical outpoint order and returns the

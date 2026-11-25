@@ -111,7 +111,7 @@ func newHtlcVariantTestLoopIn(t *testing.T,
 		ServerPubkey:     serverKey.PubKey(),
 		Deposits:         deposits,
 		SelectedAmount:   btcutil.Amount(800_000),
-		AddressParams: &script.Parameters{
+		ChangeAddressParams: &script.Parameters{
 			ClientPubkey:    clientKey.PubKey(),
 			ServerPubkey:    serverKey.PubKey(),
 			PkScript:        pkScript,
@@ -123,6 +123,18 @@ func newHtlcVariantTestLoopIn(t *testing.T,
 		HtlcTxExtremelyHighFeeRate: testExtremeHtlcFeeRate,
 		HtlcTimeoutSweepAddress:    sweepAddr,
 		PaymentTimeoutSeconds:      3_600,
+	}
+
+	// Give the input its own script so a lookup using the change script
+	// would fail the spend registration assertion.
+	inputAddr, err := newStaticAddress(
+		clientKey.PubKey(), serverKey.PubKey(), 2016,
+	)
+	require.NoError(t, err)
+	inputScript, err := inputAddr.StaticAddressScript()
+	require.NoError(t, err)
+	for _, d := range deposits {
+		d.AddressParams = &script.Parameters{PkScript: inputScript}
 	}
 
 	variants := make(map[chainfee.SatPerKWeight]*wire.MsgTx, 3)
@@ -220,7 +232,7 @@ func testHtlcTimeoutSweepSpendsVariant(t *testing.T,
 
 	// The sweep looks up the tx that spent the first deposit.
 	spendReg := receiveDepositSpendReg(t, ctx, mockLnd, loopIn)
-	require.Equal(t, loopIn.AddressParams.PkScript, spendReg.PkScript)
+	require.Equal(t, loopIn.Deposits[0].AddressParams.PkScript, spendReg.PkScript)
 	require.Equal(t, int32(loopIn.InitiationHeight), spendReg.HeightHint)
 
 	deliverDepositSpend(t, ctx, spendReg, publishedTx)
@@ -469,9 +481,6 @@ func newHtlcSweepTestFSM(t *testing.T, ctx context.Context,
 	t.Helper()
 
 	cfg := &Config{
-		AddressManager: &mockAddressManager{
-			params: loopIn.AddressParams,
-		},
 		ChainNotifier:                        mockLnd.ChainNotifier,
 		DepositManager:                       &noopDepositManager{},
 		LndClient:                            mockLnd.Client,

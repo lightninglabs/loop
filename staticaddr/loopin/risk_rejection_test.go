@@ -65,6 +65,7 @@ func newRiskRejectionTest(t *testing.T, ctx context.Context,
 		outpoint: f.loopIn.Deposits[0],
 	}
 	f.loopIn.DepositOutpoints = []string{outpoint.String()}
+	depositMgr.claims = map[wire.OutPoint]lntypes.Hash{outpoint: swapHash}
 	txOutChecker := &recordingTxOutChecker{
 		txOuts: map[wire.OutPoint]*wire.TxOut{outpoint: {}},
 	}
@@ -97,13 +98,12 @@ func (r *riskRejectionTest) spendDeposits() {
 	r.txOuts.htlcSpent = true
 }
 
-// replaceDeposits makes the deposits unavailable in lnd's wallet without an
-// htlc tx, as after their funding transaction was replaced or another
-// transaction spent them. Before the fix, an unavailable deposit was taken as
-// spent by the htlc tx.
+// replaceDeposits supplies confirmed conflict proof for a replaced funding
+// transaction. Wallet absence alone is insufficient in multi-address recovery.
 func (r *riskRejectionTest) replaceDeposits() {
 	r.txOuts.txOuts = nil
 	r.txOuts.htlcSpent = false
+	r.txOuts.confirmedConflict = true
 }
 
 // riskRejectionInitiationHeight is the swap's initiation height in the risk
@@ -475,6 +475,7 @@ func TestRiskRejectionPartialLock(t *testing.T) {
 	second.SetState(deposit.SweepHtlcTimeout)
 	r.f.loopIn.Deposits = append(r.f.loopIn.Deposits, second)
 	r.depositMgr.active[second.OutPoint] = second
+	r.depositMgr.claims[second.OutPoint] = r.swapHash
 	r.recoverRejection()
 
 	resultChan, reg := r.start(ctx)
@@ -616,7 +617,7 @@ func TestRiskRejectionRecoveredReplacementAfterHtlcExpiry(t *testing.T) {
 }
 
 // TestRiskRejectionSpenderCheckError checks that a failed lookup of the
-// deposits' spender retries the monitor instead of releasing the deposits.
+// deposits' spender keeps monitoring instead of releasing the deposits.
 func TestRiskRejectionSpenderCheckError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
@@ -625,11 +626,58 @@ func TestRiskRejectionSpenderCheckError(t *testing.T) {
 	r.recoverRejection()
 	r.txOuts.err = errors.New("list transactions failed")
 
-	resultChan, _ := r.start(ctx)
+	monitorCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	resultChan, _ := r.start(monitorCtx)
 	r.requireInvoiceCanceled()
 
-	require.Equal(t, OnRecover, r.result(resultChan))
+	r.requireRunning(resultChan)
+	stop()
+	require.Equal(t, fsm.NoOp, r.result(resultChan))
 	require.Empty(t, r.depositMgr.transitions)
 	require.NotContains(t, r.depositMgr.states, deposit.Deposited)
 	r.requireSpenderLookup()
+}
+
+// TestRiskRejectionMissingHistoryKeepsMonitoring distinguishes an absent
+// funding transaction from positive proof that a replacement confirmed.
+func TestRiskRejectionMissingHistoryKeepsMonitoring(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	r := newRiskRejectionTest(t, ctx, defaultInvoices)
+	r.recoverRejection()
+	r.txOuts.txOuts = nil
+	r.f.loopIn.HtlcCltvExpiry = r.mockLnd.Height - 10
+
+	monitorCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	resultChan, _ := r.start(monitorCtx)
+	r.requireInvoiceCanceled()
+	r.requireRunning(resultChan)
+	stop()
+	require.Equal(t, fsm.NoOp, r.result(resultChan))
+	require.Empty(t, r.depositMgr.transitions)
+}
+
+// TestRiskRejectionUnknownTimeoutOwnerWaitsForConfirmation keeps an ambiguous
+// recovered timeout lock without treating another swap's state as confirmation.
+func TestRiskRejectionUnknownTimeoutOwnerWaitsForConfirmation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+
+	r := newRiskRejectionTest(t, ctx, defaultInvoices)
+	r.recoverRejection()
+	r.f.loopIn.HtlcCltvExpiry = r.mockLnd.Height - 10
+	r.f.loopIn.Deposits[0].SetState(deposit.SweepHtlcTimeout)
+	r.depositMgr.claims = nil
+	r.mockLnd.SetInvoice(&lndclient.Invoice{
+		Hash:  r.swapHash,
+		State: invoices.ContractCanceled,
+	})
+
+	resultChan, reg := r.start(ctx)
+	r.requireRunning(resultChan)
+	r.confirmHtlc(reg)
+	r.requireTimeoutSweep(resultChan)
 }
