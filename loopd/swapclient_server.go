@@ -18,17 +18,25 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/l402"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/taproot-assets/rfqmath"
+	"github.com/lightningnetwork/lnd/input"
+	lndlabels "github.com/lightningnetwork/lnd/labels"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/lightninglabs/loop"
 	"github.com/lightninglabs/loop/assets"
@@ -1877,6 +1885,303 @@ func (s *swapClientServer) NewStaticAddress(ctx context.Context,
 		Address: staticAddress.String(),
 		Expiry:  uint32(expiry),
 	}, nil
+}
+
+// FundStaticAddress creates a fresh receive address and funds it from lnd.
+func (s *swapClientServer) FundStaticAddress(ctx context.Context,
+	req *lnrpc.SendCoinsRequest) (*looprpc.FundStaticAddressResponse,
+	error) {
+
+	funding, err := staticAddressFundingRequest(req)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if err := s.checkStaticDepositFunds(ctx, funding); err != nil {
+		return nil, err
+	}
+
+	addr, expiry, err := s.staticAddressManager.NewAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	funding.Addr = addr.String()
+	if funding.Label == "" {
+		funding.Label = "Loop static deposit " + funding.Addr
+	}
+
+	walletCtx, timeout, wallet := s.lnd.Client.RawClientWithMacAuth(ctx)
+	walletCtx, cancel := context.WithTimeout(walletCtx, timeout)
+	defer cancel()
+
+	tx, err := wallet.SendCoins(walletCtx, funding)
+	if err != nil {
+		// A lost reply can follow a successful broadcast. Include the
+		// derived address so callers can check before making a new deposit.
+		return nil, fmt.Errorf("funding %s: check wallet transactions "+
+			"before retrying: %w", funding.Addr, err)
+	}
+
+	return &looprpc.FundStaticAddressResponse{
+		Address:           funding.Addr,
+		Expiry:            uint32(expiry),
+		SendCoinsResponse: tx,
+	}, nil
+}
+
+// staticAddressFundingRequest validates wallet options before deriving an address.
+func staticAddressFundingRequest(req *lnrpc.SendCoinsRequest) (
+	*lnrpc.SendCoinsRequest, error) {
+
+	switch {
+	case req == nil:
+		return nil, errors.New("funding request is required")
+	case req.Addr != "":
+		return nil, errors.New("leave addr empty for a fresh static address")
+	case req.GetSatPerByte() != 0: //nolint:staticcheck
+		return nil, errors.New("use sat_per_vbyte for a manual fee rate")
+	case req.Amount < 0 || req.Amount > btcutil.MaxSatoshi:
+		return nil, errors.New("amount is outside the bitcoin amount range")
+	case (req.Amount > 0) == req.SendAll:
+		return nil, errors.New("specify a positive amount or send_all")
+	case !req.SendAll && req.Amount < looprpc.MinStaticDepositSat:
+		return nil, fmt.Errorf("deposit amount must be at least %d sat",
+			looprpc.MinStaticDepositSat)
+	case req.TargetConf < 0:
+		return nil, errors.New("target_conf must be non-negative")
+	case req.TargetConf != 0 && req.SatPerVbyte != 0:
+		return nil, errors.New("set either target_conf or sat_per_vbyte")
+	case req.SatPerVbyte > looprpc.MaxStaticDepositSatPerVByte:
+		return nil, fmt.Errorf("maximum deposit fee rate is %d sat/vbyte",
+			looprpc.MaxStaticDepositSatPerVByte)
+	}
+	if _, err := lndlabels.ValidateAPI(req.Label); err != nil {
+		return nil, err
+	}
+	_, err := lnrpc.UnmarshallCoinSelectionStrategy(
+		req.CoinSelectionStrategy, nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Reject additional options even after a dependency upgrade makes
+	// them known to protobuf. Only reviewed fields reach the wallet.
+	funding := &lnrpc.SendCoinsRequest{
+		Amount:                req.Amount,
+		SendAll:               req.SendAll,
+		TargetConf:            req.TargetConf,
+		SatPerVbyte:           req.SatPerVbyte,
+		Label:                 req.Label,
+		MinConfs:              req.MinConfs,
+		SpendUnconfirmed:      req.SpendUnconfirmed,
+		CoinSelectionStrategy: req.CoinSelectionStrategy,
+		Outpoints:             req.Outpoints,
+	}
+	if !proto.Equal(req, funding) {
+		return nil, errors.New("unsupported SendCoins funding options")
+	}
+	funding.Outpoints = nil
+	seen := make(map[wire.OutPoint]bool, len(req.Outpoints))
+	for _, input := range req.Outpoints {
+		if input == nil || !proto.Equal(input, &lnrpc.OutPoint{
+			TxidBytes:   input.TxidBytes,
+			TxidStr:     input.TxidStr,
+			OutputIndex: input.OutputIndex,
+		}) {
+
+			return nil, errors.New("invalid or unsupported funding outpoint")
+		}
+		txid := input.GetTxidStr()
+		if raw := input.GetTxidBytes(); len(raw) > 0 {
+			hash, err := chainhash.NewHash(raw)
+			if err != nil {
+				return nil, fmt.Errorf("invalid txid_bytes: %w", err)
+			}
+			if txid != "" && !strings.EqualFold(hash.String(), txid) {
+				return nil, errors.New("txid_bytes and txid_str disagree")
+			}
+			txid = hash.String()
+		}
+		op, err := wire.NewOutPointFromString(fmt.Sprintf(
+			"%s:%d", txid, input.GetOutputIndex(),
+		))
+		if err != nil {
+			return nil, fmt.Errorf("invalid funding outpoint: %w", err)
+		}
+		if seen[*op] {
+			return nil, fmt.Errorf("duplicate funding outpoint %s", op)
+		}
+		seen[*op] = true
+
+		// SendCoins reads txid_str even for callers that supply bytes.
+		funding.Outpoints = append(
+			funding.Outpoints, lnrpc.MarshalOutPoint(op),
+		)
+	}
+
+	return funding, nil
+}
+
+// checkStaticDepositFunds checks the wallet before issuing an address. Lnd
+// still owns coin selection, locking and the final balance check at broadcast.
+func (s *swapClientServer) checkStaticDepositFunds(ctx context.Context,
+	req *lnrpc.SendCoinsRequest) error {
+
+	minConfs, err := lnrpc.ExtractMinConfs(req.MinConfs, req.SpendUnconfirmed)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	if req.SatPerVbyte == 0 {
+		if err := s.setStaticDepositFeeRate(ctx, req); err != nil {
+			return err
+		}
+	}
+
+	coins, err := s.lnd.WalletKit.ListUnspent(
+		ctx, minConfs, math.MaxInt32,
+		lndclient.WithUnspentAccount(lnwallet.DefaultAccountName),
+	)
+	if err != nil {
+		return err
+	}
+
+	var eligible, selected btcutil.Amount
+	byOutpoint := make(map[wire.OutPoint]*lnwallet.Utxo, len(coins))
+	for _, coin := range coins {
+		eligible += coin.Value
+		byOutpoint[coin.OutPoint] = coin
+	}
+
+	inputs := coins
+	if len(req.Outpoints) > 0 {
+		inputs = make([]*lnwallet.Utxo, 0, len(req.Outpoints))
+		for _, op := range req.Outpoints {
+			// staticAddressFundingRequest normalized both txid forms.
+			outpoint := wire.OutPoint{
+				Hash:  chainhash.Hash(op.TxidBytes),
+				Index: op.OutputIndex,
+			}
+			coin := byOutpoint[outpoint]
+			if coin == nil {
+				return status.Errorf(codes.FailedPrecondition,
+					"%s is not an eligible default-account input "+
+						"(static deposits cannot fund another deposit)", outpoint)
+			}
+			inputs = append(inputs, coin)
+		}
+	}
+	for _, coin := range inputs {
+		selected += coin.Value
+	}
+	rate := max(
+		chainfee.SatPerVByte(req.SatPerVbyte).FeePerKWeight(),
+		chainfee.FeePerKwFloor,
+	)
+	if !req.SendAll {
+		// Even the smallest possible payment needs one input and the
+		// deposit output. Lnd chooses the actual inputs and change.
+		var minimum input.TxWeightEstimator
+		minimum.AddTaprootKeySpendInput(txscript.SigHashDefault)
+		minimum.AddP2TROutput()
+		if selected-rate.FeeForWeight(minimum.Weight()) < btcutil.Amount(req.Amount) {
+			return status.Error(codes.FailedPrecondition,
+				"insufficient default-account funds for deposit and fee")
+		}
+		return nil
+	}
+
+	// Pin the sweep inputs. A concurrent spend must fail at lnd instead
+	// of silently reducing the amount that reaches the static address.
+	if len(inputs) == 0 {
+		return status.Error(codes.FailedPrecondition,
+			"no eligible default-account inputs")
+	}
+	if len(req.Outpoints) == 0 {
+		for _, coin := range inputs {
+			req.Outpoints = append(req.Outpoints,
+				lnrpc.MarshalOutPoint(&coin.OutPoint))
+		}
+	}
+
+	walletCtx, timeout, wallet := s.lnd.Client.RawClientWithMacAuth(ctx)
+	walletCtx, cancel := context.WithTimeout(walletCtx, timeout)
+	defer cancel()
+	balance, err := wallet.WalletBalance(
+		walletCtx, &lnrpc.WalletBalanceRequest{
+			Account: lnwallet.DefaultAccountName,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	reserve := btcutil.Amount(balance.ReservedBalanceAnchorChan)
+	if eligible-selected >= reserve {
+		reserve = 0
+	}
+	return checkStaticSweepAmount(inputs, selected, reserve, rate)
+}
+
+// checkStaticSweepAmount mirrors SendCoins' sweep weights and includes its
+// second Taproot output if lnd needs to return the channel reserve.
+func checkStaticSweepAmount(inputs []*lnwallet.Utxo, selected,
+	reserve btcutil.Amount, rate chainfee.SatPerKWeight) error {
+
+	var weight input.TxWeightEstimator
+	weight.AddP2TROutput()
+	if reserve > 0 {
+		weight.AddP2TROutput()
+	}
+	for _, coin := range inputs {
+		var witness input.StandardWitnessType
+		switch coin.AddressType {
+		case lnwallet.WitnessPubKey:
+			witness = input.WitnessKeyHash
+		case lnwallet.NestedWitnessPubKey:
+			witness = input.NestedWitnessKeyHash
+		case lnwallet.TaprootPubkey:
+			witness = input.TaprootPubKeySpend
+		default:
+			return status.Errorf(codes.FailedPrecondition,
+				"unsupported sweep input type for %s", coin.OutPoint)
+		}
+		if err := witness.AddWeightEstimation(&weight); err != nil {
+			return err
+		}
+	}
+	if selected-reserve-rate.FeeForWeight(weight.Weight()) < looprpc.MinStaticDepositSat {
+		return status.Errorf(codes.FailedPrecondition,
+			"sweep would leave less than %d sat after fees and wallet reserve",
+			looprpc.MinStaticDepositSat)
+	}
+	return nil
+}
+
+// setStaticDepositFeeRate pins the wallet's estimate to a checked manual
+// rate. SendCoins cannot re-estimate above the limit after address issuance.
+func (s *swapClientServer) setStaticDepositFeeRate(ctx context.Context,
+	req *lnrpc.SendCoinsRequest) error {
+
+	// Six blocks is SendCoins' default confirmation target.
+	target := cmp.Or(req.TargetConf, int32(6))
+	rate, err := s.lnd.WalletKit.EstimateFeeRate(ctx, target)
+	if err != nil {
+		return err
+	}
+	const limit = chainfee.SatPerVByte(looprpc.MaxStaticDepositSatPerVByte)
+	if rate <= 0 || rate > limit.FeePerKWeight() {
+		return status.Errorf(codes.FailedPrecondition,
+			"wallet fee estimate %v outside deposit limit of %d sat/vbyte",
+			rate, looprpc.MaxStaticDepositSatPerVByte)
+	}
+	// SendCoins accepts whole sat/vbyte. Its 1 sat/vbyte option
+	// already rounds up to the safe relay floor.
+	req.SatPerVbyte = 1
+	if rate > chainfee.FeePerKwFloor {
+		req.SatPerVbyte = uint64((rate.FeePerKVByte() + 999) / 1000)
+	}
+	req.TargetConf = 0
+	return nil
 }
 
 // ListUnspentDeposits returns a list of utxos behind the static address.

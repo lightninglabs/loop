@@ -8,6 +8,7 @@ import (
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -38,6 +39,7 @@ func TestStaticAddressPermissions(t *testing.T) {
 	require.NoError(t, err)
 
 	const method = "/looprpc.SwapClient/NewStaticAddress"
+	const fundMethod = "/looprpc.SwapClient/FundStaticAddress"
 
 	execute := bakery.Op{Entity: "swap", Action: "execute"}
 	loopIn := bakery.Op{Entity: "loop", Action: "in"}
@@ -45,10 +47,27 @@ func TestStaticAddressPermissions(t *testing.T) {
 
 	tests := []struct {
 		name    string
+		funding bool
 		perms   []bakery.Op
 		expired bool
 		allowed bool
 	}{
+		{
+			name:    "fund with existing execute and loop in permissions",
+			funding: true, perms: []bakery.Op{execute, loopIn}, allowed: true,
+		},
+		{
+			name:    "address URI cannot fund",
+			funding: true, perms: []bakery.Op{addressURI},
+		},
+		{
+			name:    "funding requires execute",
+			funding: true, perms: []bakery.Op{loopIn},
+		},
+		{
+			name:    "funding requires loop in",
+			funding: true, perms: []bakery.Op{execute},
+		},
 		{
 			name:    "execute and loop in permissions",
 			perms:   []bakery.Op{execute, loopIn},
@@ -111,11 +130,16 @@ func TestStaticAddressPermissions(t *testing.T) {
 				))
 			}
 
-			req := &looprpc.NewStaticAddressRequest{}
+			var req any = &looprpc.NewStaticAddressRequest{}
+			fullMethod := method
+			if test.funding {
+				fullMethod = fundMethod
+				req = &lnrpc.SendCoinsRequest{}
+			}
 
 			called := false
 			_, err := intercept(ctx, req, &grpc.UnaryServerInfo{
-				FullMethod: method,
+				FullMethod: fullMethod,
 			}, func(context.Context, any) (any, error) {
 				called = true
 				return nil, nil
