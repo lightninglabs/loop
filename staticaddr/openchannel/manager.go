@@ -864,8 +864,11 @@ func (m *Manager) DeliverOpenChannelRequest(ctx context.Context,
 	req *lnrpc.OpenChannelRequest) (*wire.OutPoint, error) {
 
 	request := newOpenChannelRequest{
-		request:  req,
-		respChan: make(chan *newOpenChannelResponse),
+		request: req,
+		// The response channel is buffered so that the manager's run
+		// loop can always deliver its response, even if this caller
+		// stopped waiting because its context was canceled.
+		respChan: make(chan *newOpenChannelResponse, 1),
 	}
 
 	// Send the open channel request to the manager run loop.
