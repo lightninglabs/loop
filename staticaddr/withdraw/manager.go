@@ -1430,7 +1430,10 @@ func (m *Manager) DeliverWithdrawalRequest(ctx context.Context,
 		destAddr:    destAddr,
 		satPerVbyte: satPerVbyte,
 		amount:      amount,
-		respChan:    make(chan *newWithdrawalResponse),
+		// The response channel is buffered so that the manager's run
+		// loop can always deliver its response, even if this caller
+		// stopped waiting because its context was canceled.
+		respChan: make(chan *newWithdrawalResponse, 1),
 	}
 
 	// Send the new loop-in request to the manager run loop.
