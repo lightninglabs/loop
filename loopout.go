@@ -1540,6 +1540,10 @@ func (s *loopOutSwap) isAssetSwap() bool {
 
 const (
 	ResumeSwapInitiator = "resume_swap"
+
+	// resumeRetryDelay is the time the resume manager waits before it
+	// tries to recover an unfinished swap again after a failed attempt.
+	resumeRetryDelay = 10 * time.Second
 )
 
 // NotificationManager handles subscribing to incoming unfinished swaps from the
@@ -1592,19 +1596,37 @@ func (m *resumeManager) start(ctx context.Context) {
 			if !ok {
 				return
 			}
-			m.reqChan <- ntfn
+			m.handle(ctx, ntfn)
 
 		case req := <-m.reqChan:
-			err := m.handleUnfinishedSwap(ctx, req)
-			if err != nil {
-				go func() {
-					// wait a bit before retrying
-					time.Sleep(time.Second * 10)
-					m.reqChan <- req
-				}() // retry
-			}
+			m.handle(ctx, req)
 		}
 	}
+}
+
+// handle tries to recover an unfinished swap. If that fails, it hands the
+// notification back to start through reqChan after resumeRetryDelay. start
+// is the only reader of reqChan, so it must never send to reqChan itself.
+func (m *resumeManager) handle(ctx context.Context,
+	req *swapserverrpc.ServerUnfinishedSwapNotification) {
+
+	err := m.handleUnfinishedSwap(ctx, req)
+	if err == nil {
+		return
+	}
+
+	go func() {
+		select {
+		case <-m.clock.TickAfter(resumeRetryDelay):
+		case <-ctx.Done():
+			return
+		}
+
+		select {
+		case m.reqChan <- req:
+		case <-ctx.Done():
+		}
+	}()
 }
 
 // handleUnfinishedSwap processes an unfinished swap notification from the
