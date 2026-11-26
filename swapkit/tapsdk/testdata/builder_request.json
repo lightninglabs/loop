@@ -1,0 +1,385 @@
+{
+  "Request": {
+    "Inputs": [
+      {
+        "ID": "asset-input",
+        "AssetRef": "tapr1qqqvf4wta3rfpxvuauv3xx0glv5lgy78x34y2dyq4r7ksuvxm9zsm5qjdcsj7",
+        "Amount": 100,
+        "ProofFile": "VEFQRgAAAAAB/QLhVEFQUAAEAAAAAQIkAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAatWwK2mb6b9cBCjkRUli09D6oBMXGNjptuiXD3kg+ZwAJbogAAAAAAAAAAAZeAwAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAFKAQAAAAAAACJRIBWAwqm9Ntk9OxJQKldaBpaxLfQZFu/6NkIsFhNVXbN/AAAAAAgBAAr3AAEBAloBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEQYXNzZXQtcHJvb2YtcGF0aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAQAGAWQLaQFnAWUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4CAAAQIQLaRxCWT3hSaV3i2gJSkOJK9tjCgd5aC5ArcTX9n9dNIQyfAAQAAAAAAiECxgR/lEHtfW0wRUBulcB82Fx3jkuM7zynq6wJuVxwnuUDdAFJAAEBAiDE1cvsRpCZnO8ZExno+yn0E8c0akU0gKj9aHGG2UUN0AQiAAD//////////////////////////////////////////wInAAECAiIAAP//////////////////////////////////////////FgQAAABkF1oBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEQYXNzZXQtcHJvb2YtcGF0aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABan+WnD6nnUqtFpTlr4jyhk5IS73ZCp551AN4sK+C/XA==",
+        "ProofPath": null,
+        "Witness": {
+          "Mode": 1,
+          "Stack": null
+        }
+      }
+    ],
+    "Outputs": [
+      {
+        "ID": "asset-output",
+        "AssetRef": "tapr1qqqvf4wta3rfpxvuauv3xx0glv5lgy78x34y2dyq4r7ksuvxm9zsm5qjdcsj7",
+        "Amount": 100,
+        "AnchorOutputIndex": 1,
+        "AnchorValueSat": 777,
+        "Script": {
+          "Mode": 2,
+          "Wallet": null,
+          "External": {
+            "ScriptKey": {
+              "PubKey": [
+                3,
+                236,
+                235,
+                1,
+                9,
+                8,
+                90,
+                10,
+                62,
+                52,
+                52,
+                250,
+                234,
+                178,
+                14,
+                157,
+                8,
+                229,
+                180,
+                253,
+                200,
+                83,
+                140,
+                67,
+                139,
+                163,
+                230,
+                116,
+                131,
+                73,
+                213,
+                242,
+                95
+              ],
+              "KeyDesc": {
+                "RawKeyBytes": [
+                  3,
+                  172,
+                  212,
+                  132,
+                  226,
+                  240,
+                  199,
+                  246,
+                  83,
+                  9,
+                  173,
+                  23,
+                  138,
+                  159,
+                  85,
+                  154,
+                  189,
+                  224,
+                  151,
+                  150,
+                  151,
+                  76,
+                  87,
+                  231,
+                  20,
+                  195,
+                  95,
+                  17,
+                  13,
+                  252,
+                  39,
+                  204,
+                  190
+                ],
+                "KeyLocator": {
+                  "Family": 0,
+                  "Index": 0
+                }
+              },
+              "TapTweak": null
+            }
+          },
+          "OPTrue": null,
+          "Burn": null
+        },
+        "Anchor": {
+          "InternalKey": {
+            "PubKey": [
+              2,
+              47,
+              1,
+              229,
+              225,
+              92,
+              202,
+              53,
+              29,
+              175,
+              243,
+              132,
+              63,
+              183,
+              15,
+              60,
+              47,
+              10,
+              27,
+              221,
+              5,
+              229,
+              175,
+              136,
+              138,
+              103,
+              120,
+              78,
+              243,
+              225,
+              10,
+              42,
+              1
+            ],
+            "KeyLocator": {
+              "Family": 0,
+              "Index": 0
+            }
+          },
+          "Tapscript": {
+            "TapLeaves": null,
+            "SerializedSibling": null
+          }
+        },
+        "ProofDelivery": {
+          "recipient_id": "",
+          "courier_address": "",
+          "opaque_metadata": null
+        },
+        "Timelocks": {
+          "Absolute": 0,
+          "Relative": 0
+        }
+      }
+    ],
+    "AnchorPSBT": "cHNidP8BAH0DAAAAAqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEQAAAAARERERGrVsCtpm+m/XAQo5EVJYtPQ+qATFxjY6bbolw95IPmcAAAAAACIiIiIDOTAAAAAAAAABUQkDAAAAAAAAAQAAAAAAAAAAAARRAk5zKgAAAAABASv4MQAAAAAAACJRIBnLpbY73L9GYp7fF82hO85We5BEK7Qh6uijLjWEOWfDARcgXL3wZG5dtOqjmPNl8up6Dj1Bm34DMOOc6Svd7crE+bwAAAAAAA==",
+    "Funding": {
+      "Mode": 3,
+      "WalletFunded": null,
+      "CallerFundedExact": null,
+      "ExternalP2AFeeBump": {
+        "P2AOutputIndex": 2
+      }
+    },
+    "PassiveAssets": {
+      "Policy": 0,
+      "Packets": null
+    },
+    "LossPolicy": {
+      "Mode": 0,
+      "Allowances": null,
+      "ConfirmIrreversibleLoss": false
+    },
+    "SigningPlans": [
+      {
+        "input_index": 0,
+        "key_path": {
+          "signer": [
+            92,
+            189,
+            240,
+            100,
+            110,
+            93,
+            180,
+            234,
+            163,
+            152,
+            243,
+            101,
+            242,
+            234,
+            122,
+            14,
+            61,
+            65,
+            155,
+            126,
+            3,
+            48,
+            227,
+            156,
+            233,
+            43,
+            221,
+            237,
+            202,
+            196,
+            249,
+            188
+          ]
+        }
+      },
+      {
+        "input_index": 1,
+        "key_path": {
+          "signer": [
+            198,
+            4,
+            127,
+            148,
+            65,
+            237,
+            125,
+            109,
+            48,
+            69,
+            64,
+            110,
+            149,
+            192,
+            124,
+            216,
+            92,
+            119,
+            142,
+            75,
+            140,
+            239,
+            60,
+            167,
+            171,
+            172,
+            9,
+            185,
+            92,
+            112,
+            158,
+            229
+          ]
+        }
+      }
+    ]
+  },
+  "Verified": {
+    "Valid": true,
+    "DecodedProof": {
+      "ProofAtDepth": 0,
+      "NumberOfProofs": 0,
+      "AssetRef": "tapr1qqqvf4wta3rfpxvuauv3xx0glv5lgy78x34y2dyq4r7ksuvxm9zsm5qjdcsj7",
+      "IssuanceID": [
+        196,
+        213,
+        203,
+        236,
+        70,
+        144,
+        153,
+        156,
+        239,
+        25,
+        19,
+        25,
+        232,
+        251,
+        41,
+        244,
+        19,
+        199,
+        52,
+        106,
+        69,
+        52,
+        128,
+        168,
+        253,
+        104,
+        113,
+        134,
+        217,
+        69,
+        13,
+        208
+      ],
+      "ScriptKey": [
+        2,
+        218,
+        71,
+        16,
+        150,
+        79,
+        120,
+        82,
+        105,
+        93,
+        226,
+        218,
+        2,
+        82,
+        144,
+        226,
+        74,
+        246,
+        216,
+        194,
+        129,
+        222,
+        90,
+        11,
+        144,
+        43,
+        113,
+        53,
+        253,
+        159,
+        215,
+        77,
+        33
+      ],
+      "Amount": 100,
+      "Outpoint": {
+        "Txid": [
+          26,
+          181,
+          108,
+          10,
+          218,
+          102,
+          250,
+          111,
+          215,
+          1,
+          10,
+          57,
+          17,
+          82,
+          88,
+          180,
+          244,
+          62,
+          168,
+          4,
+          197,
+          198,
+          54,
+          58,
+          109,
+          186,
+          37,
+          195,
+          222,
+          72,
+          62,
+          103
+        ],
+        "Index": 0
+      },
+      "AltLeaves": null,
+      "PrevIDs": null,
+      "IsIssuance": false
+    }
+  }
+}
