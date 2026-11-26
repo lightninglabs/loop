@@ -2,7 +2,21 @@
 
 #### New Features
 
+* The `--postgres.password` flag now accepts a `@/path/to/file` syntax that
+  reads the password from a file instead of taking it on the command line, so
+  the secret is no longer exposed in process listings or shell history. A
+  password that begins with a literal `@` is written as `@@password`.
+  [Issue #1088](https://github.com/lightninglabs/loop/issues/1088)
+
 #### Breaking Changes
+
+* A `--postgres.password` value beginning with `@` is now read as the path to a
+  file holding the password rather than as the password itself. Operators whose
+  password starts with a literal `@` must double the prefix, as in
+  `@@password`, before upgrading. Left unchanged, such a value either stops
+  `loopd` from starting or, if a file happens to exist at the implied path,
+  connects using that file's contents.
+  [Issue #1088](https://github.com/lightninglabs/loop/issues/1088)
 
 #### Bug Fixes
 
