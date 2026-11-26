@@ -2,6 +2,24 @@
 
 #### New Features
 
+* Experimental clients can quote and purchase an on-chain asset reservation,
+  verify its funding proof against the agreed CSV contract, and resume a
+  pending purchase after restarting. Buyers can request an exact issuance or
+  a fungible asset group and verify both quoted issuances before payment.
+  A reorg that invalidates a delivered proof withdraws its readiness and
+  advertised deadlines. Delivery must precede the execution cutoff, and a
+  reservation expires once the cutoff is reached. On mainnet the client
+  rejects quotes whose CSV delay, confirmation depth, execution margin or
+  usable window falls below a fixed minimum. Probe and prepay prices are
+  approved with the quote; each invoice is checked against its own receiving
+  RFQ.
+
+* Share asset deposit, reservation and CSV/CLTV HTLC contracts through
+  `swapkit`, with transfer, signing, proof and recovery helpers backed by
+  `github.com/lightninglabs/tap-sdk` v0.1.1 and Taproot Assets v0.8.9. New on-chain
+  asset swaps require tapd v0.8.9 or later. Shared helpers also authenticate
+  group issuance evidence and register issuance metadata before verification.
+
 #### Breaking Changes
 
 #### Bug Fixes
@@ -17,9 +35,17 @@
   until `loopd` was restarted. A recovery attempt that is retried after a
   failure also no longer outlives `loopd`'s shutdown.
 
+* Harden the shared `swapkit` adapter against hostile peer input: bind a
+  recovery fallback to the authenticated deposit before co-signing, verify a
+  caller-provided asset witness before declaring it, recognize annex spends,
+  and report a reorg during outcome verification as retryable.
+
 #### Maintenance
 
 * Update the OpenTelemetry Go SDK from v1.45.0 to v1.47.0 in Loop and
   `looprpc`.
+
+* Keep reservation quote and invoice checks in the client library; move
+  incoming Lightning receipt validation to its server consumers.
 
 #### Contributors (Alphabetical Order)
