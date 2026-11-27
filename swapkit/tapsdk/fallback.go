@@ -4,10 +4,27 @@ import (
 	"bytes"
 	"reflect"
 
+	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/swapkit"
 	sdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 )
+
+const (
+	// fallbackTxVersion is the transaction version of a fallback. A
+	// zero-fee parent with a pay-to-anchor output is only relayed as a
+	// version 3 transaction.
+	fallbackTxVersion = 3
+
+	// fallbackP2AIndex is the fixed position of the fallback's
+	// pay-to-anchor output. The HTLC always occupies output zero.
+	fallbackP2AIndex = 1
+)
+
+// p2aScript is the canonical pay-to-anchor output script. Anyone can spend it
+// with an empty witness, so either party can attach a fee-paying child.
+var p2aScript = []byte{0x51, 0x02, 0x4e, 0x73}
 
 // HTLC constructs the existing V3 Bitcoin contract for the offered swap.
 func HTLC(offer swapkit.Offer, c DepositContract) (*swapkit.SwapKit, error) {
@@ -54,10 +71,21 @@ func validateRecoveryPackage(offer swapkit.Offer, d *DepositContext,
 
 		return nil, swapkit.ErrInvalid
 	}
+	// The fallback pays no fee itself. Its pay-to-anchor output lets the
+	// publisher choose the fee at broadcast time with a child transaction,
+	// instead of fixing it when the swap is signed.
+	funding := pkg.Funding
+	if funding.Mode != sdk.CustomAnchorFundingExternalP2AFeeBump ||
+		funding.P2AOutputIndex == nil ||
+		*funding.P2AOutputIndex != fallbackP2AIndex {
+
+		return nil, swapkit.ErrInvalid
+	}
 	// The peer owns the package it hands us, including its publication
-	// metadata. A fallback must be broadcast normally, so reject a package
-	// that would be logged without reaching the network.
-	if pkg.Publish.SkipAnchorTxBroadcast || pkg.Publish.ExternalBroadcast {
+	// metadata. A zero-fee parent cannot relay alone, so the publisher
+	// submits it together with its child and tapd must only log it. Reject
+	// any other publication policy.
+	if !pkg.Publish.SkipAnchorTxBroadcast || !pkg.Publish.ExternalBroadcast {
 		return nil, swapkit.ErrInvalid
 	}
 	packet, err := DecodePSBT(pkg.AnchorPsbt)
@@ -65,10 +93,12 @@ func validateRecoveryPackage(offer swapkit.Offer, d *DepositContext,
 		return nil, err
 	}
 	tx := packet.UnsignedTx
-	fee := c.Output.AnchorValueSat - out.AnchorValueSat
-	if len(tx.TxIn) != 1 || len(tx.TxOut) != 1 || tx.Version != 2 ||
-		tx.LockTime != 0 || tx.TxIn[0].Sequence != 0xfffffffc ||
-		fee <= 0 || out.AnchorValueSat-330 < fee {
+	if len(tx.TxIn) != 1 || len(tx.TxOut) != 2 ||
+		tx.Version != fallbackTxVersion || tx.LockTime != 0 ||
+		tx.TxIn[0].Sequence != 0xfffffffc ||
+		out.AnchorValueSat != c.Output.AnchorValueSat ||
+		tx.TxOut[fallbackP2AIndex].Value != 0 ||
+		!bytes.Equal(tx.TxOut[fallbackP2AIndex].PkScript, p2aScript) {
 
 		return nil, swapkit.ErrInvalid
 	}
@@ -144,7 +174,12 @@ func validateRecoveryPackage(offer swapkit.Offer, d *DepositContext,
 }
 
 // FallbackRequest constructs the unsigned SDK request for one validated offer.
-func FallbackRequest(s *SwapContext, fee, maxFee uint64) (
+// The fallback is a zero-fee version 3 transaction that moves the whole
+// deposit anchor value into the HTLC and adds a pay-to-anchor output. Its
+// publisher pays the fee with a child of that output and submits both as one
+// package. maxSweepFee is the fee the HTLC output must still be able to pay
+// for its later claim or refund.
+func FallbackRequest(s *SwapContext, maxSweepFee uint64) (
 	*sdk.CustomAnchorRequest, error) {
 
 	d, offer := s.Deposit, s.Offer
@@ -153,8 +188,8 @@ func FallbackRequest(s *SwapContext, fee, maxFee uint64) (
 	if err != nil {
 		return nil, err
 	}
-	value := c.Output.AnchorValueSat - int64(fee)
-	if value < 330+int64(maxFee) {
+	value := c.Output.AnchorValueSat
+	if value < 330 || maxSweepFee > uint64(value-330) {
 		return nil, swapkit.ErrInvalid
 	}
 	output, err := LegacyOPTrueOutput(sdk.CustomAssetOutput{
@@ -182,6 +217,9 @@ func FallbackRequest(s *SwapContext, fee, maxFee uint64) (
 	internal := dk.AnchorPlan().InternalKey
 	packet.Inputs[0].TaprootInternalKey = internal[1:]
 	packet.Inputs[0].TaprootMerkleRoot = c.Output.TaprootMerkleRoot[:]
+	packet.UnsignedTx.Version = fallbackTxVersion
+	packet.UnsignedTx.AddTxOut(wire.NewTxOut(0, bytes.Clone(p2aScript)))
+	packet.Outputs = append(packet.Outputs, psbt.POutput{})
 	anchor, err = EncodePSBT(packet)
 	if err != nil {
 		return nil, err
@@ -194,5 +232,11 @@ func FallbackRequest(s *SwapContext, fee, maxFee uint64) (
 		output, anchor, CooperativeSigningPlan(
 			dk.CooperativeParticipants(), 0, offer.Hash[:],
 		))
+	plan.Funding = sdk.CustomAnchorFundingPlan{
+		Mode: sdk.CustomAnchorFundingExternalP2AFeeBump,
+		ExternalP2AFeeBump: &sdk.CustomAnchorExternalP2AFeeBump{
+			P2AOutputIndex: fallbackP2AIndex,
+		},
+	}
 	return plan, nil
 }

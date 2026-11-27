@@ -223,6 +223,8 @@ func DiscoverPreimage(ctx context.Context, chain Chain,
 }
 
 // FallbackProof locates the fixed fallback and logs its confirmed witness.
+// A fallback is a zero-fee pay-to-anchor parent that tapd never broadcasts:
+// the caller submits it with its fee-paying child as one package beforehand.
 // SDK Build verifies the returned lineage when constructing its successor;
 // validation-only callers verify the complete outcome proof instead.
 func FallbackProof(ctx context.Context, wallet *sdk.Wallet,

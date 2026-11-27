@@ -176,12 +176,35 @@ are independently validated by the native SDK.
 `NewSwap` validates a peer's fallback package against the authenticated deposit
 before it is ever co-signed. It binds the committed PSBT's signed previous
 output to the deposit output, rejects a committed asset that carries its own
-lock time, and requires normal publication (no skip-broadcast). The observed
+lock time, and requires the zero-fee pay-to-anchor form described below. The observed
 refund and claim discovery helpers tolerate a `Chain` that returns a block
 without the watched spend, recognize the agreed leaf when the spend carries a
 BIP-341 annex, and reject an annex spend from reconstruction rather than
 mis-slicing its witness. A reorg observed while verifying an outcome is
 reported as retryable, not invalid.
+
+## Fallback fee bumping
+
+A Loop In fallback is signed when the swap is set up and may be published much
+later, so it does not fix its own fee. `FallbackRequest` builds a version 3
+transaction with one input and two outputs: the HTLC at index 0, which keeps
+the whole deposit anchor value, and a zero-value pay-to-anchor (P2A) output at
+index 1. The transaction pays no fee. `NewSwap` rejects any other shape,
+including a fallback that pays its own fee.
+
+The publisher spends the P2A output in a child transaction funded from its own
+wallet and submits parent and child as one package, for example through lnd's
+`walletrpc.SubmitPackage` (lnd v0.21.2 or later with a bitcoind backend). The
+child sets the fee for both and can be replaced with a higher-fee child without
+a new signature from the peer. Anyone can spend a P2A output, so the peer can
+attach a child too; version 3 relay rules let a higher-fee child replace it.
+
+The SDK seals such a package for external broadcast, so tapd only logs it.
+`FallbackProof` and `LogAndExport` therefore never broadcast a fallback: submit
+the package first, then call them to log the transfer and export its proof.
+`maxSweepFee` in `FallbackRequest` is the fee the HTLC output must still be
+able to pay for its later claim or refund, which remain single-input,
+single-output transactions.
 
 ## Validation
 

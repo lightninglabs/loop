@@ -12,6 +12,11 @@
   the ordering of deposit, reservation, HTLC and Lightning payment expiries
   against the current tip before a swap flow pays, signs or reveals a preimage.
 
+* The asset Loop In fallback HTLC transaction built by `swapkit/tapsdk` no
+  longer fixes its fee when the swap is signed. It is now a zero-fee version 3
+  transaction with a pay-to-anchor output, so its publisher sets the fee at
+  broadcast time with a child transaction and submits both as one package.
+
 #### Breaking Changes
 
 #### Bug Fixes

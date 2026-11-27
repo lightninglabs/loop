@@ -22,6 +22,7 @@ import (
 type fallbackFixture struct {
 	offer   swapkit.Offer
 	deposit *DepositContext
+	swap    *SwapContext
 	pkg     *sdk.CustomAnchorTransferPackage
 	prevout *wire.TxOut
 }
@@ -90,7 +91,7 @@ func newFallbackFixture(t *testing.T) *fallbackFixture {
 	// The honest author builds and commits the fallback natively.
 	s, err := NewSwap(offer, d, nil)
 	require.NoError(t, err)
-	request, err := FallbackRequest(s, 1_000, 1_000)
+	request, err := FallbackRequest(s, 1_000)
 	require.NoError(t, err)
 	wallet := sdk.NewWallet(&pathClient{t: t}, sdk.NetworkRegtest)
 	built, err := wallet.NewCustomAnchorTxBuilder().Build(
@@ -107,7 +108,7 @@ func newFallbackFixture(t *testing.T) *fallbackFixture {
 	require.NoError(t, err)
 
 	point := deposit.OutPoint()
-	return &fallbackFixture{offer: offer, deposit: d, pkg: pkg,
+	return &fallbackFixture{offer: offer, deposit: d, swap: s, pkg: pkg,
 		prevout: deposit.AnchorTx.TxOut[point.Index]}
 }
 
@@ -163,50 +164,124 @@ func TestFallbackHonestBaselineExecutes(t *testing.T) {
 	require.NoError(t, executeAgainst(t, final, f.prevout))
 }
 
-// TestFallbackRejectsForgedPrevout checks that the fallback validator binds
-// the committed package's signed previous output to the authenticated deposit.
-// A peer that changes only the PSBT's claimed input value keeps the unsigned
-// transaction, every summary and the honest txid, so only this prevout
-// comparison distinguishes it. The forged package must be rejected before it
-// is ever co-signed.
-func TestFallbackRejectsForgedPrevout(t *testing.T) {
+// TestFallbackIsZeroFeeP2AParent checks the shape of the honest fallback: a
+// version 3 transaction that moves the whole deposit anchor value into the
+// HTLC, pays no fee and carries one zero-value pay-to-anchor output.
+func TestFallbackIsZeroFeeP2AParent(t *testing.T) {
 	f := newFallbackFixture(t)
-
-	forged := f.pkg.Clone()
-	packet, err := DecodePSBT(forged.CommittedAnchorPsbt)
+	packet, err := DecodePSBT(f.pkg.CommittedAnchorPsbt)
 	require.NoError(t, err)
-	packet.Inputs[0].WitnessUtxo = wire.NewTxOut(
-		f.prevout.Value+5_000, bytes.Clone(f.prevout.PkScript),
+	tx := packet.UnsignedTx
+	require.EqualValues(t, 3, tx.Version)
+	require.Len(t, tx.TxIn, 1)
+	require.Len(t, tx.TxOut, 2)
+	require.Equal(t, f.prevout.Value, tx.TxOut[0].Value)
+	require.Zero(t, tx.TxOut[1].Value)
+	require.Equal(t, []byte{0x51, 0x02, 0x4e, 0x73}, tx.TxOut[1].PkScript)
+
+	require.Equal(t, sdk.CustomAnchorFundingExternalP2AFeeBump,
+		f.pkg.Funding.Mode)
+	require.NotNil(t, f.pkg.Funding.P2AOutputIndex)
+	require.EqualValues(t, 1, *f.pkg.Funding.P2AOutputIndex)
+	require.Zero(t, f.pkg.Funding.ActualFeeSat)
+
+	// The publisher broadcasts the package itself; tapd only logs it.
+	require.True(t, f.pkg.Publish.SkipAnchorTxBroadcast)
+	require.True(t, f.pkg.Publish.ExternalBroadcast)
+}
+
+// TestFallbackRequestReservesSweepFee checks that the HTLC output must keep
+// the requested claim or refund fee above the dust limit.
+func TestFallbackRequestReservesSweepFee(t *testing.T) {
+	f := newFallbackFixture(t)
+	value := uint64(f.prevout.Value)
+
+	_, err := FallbackRequest(f.swap, value-330)
+	require.NoError(t, err)
+	_, err = FallbackRequest(f.swap, value-329)
+	require.ErrorIs(t, err, swapkit.ErrInvalid)
+}
+
+// TestFallbackRejectsFeePayingPackage checks that a fallback which fixes its
+// fee at signing time is rejected. Such a transaction has no pay-to-anchor
+// output, so its publisher could not raise the fee later.
+func TestFallbackRejectsFeePayingPackage(t *testing.T) {
+	f := newFallbackFixture(t)
+	request, err := FallbackRequest(f.swap, 1_000)
+	require.NoError(t, err)
+
+	packet, err := DecodePSBT(request.AnchorPSBT)
+	require.NoError(t, err)
+	packet.UnsignedTx.Version = 2
+	packet.UnsignedTx.TxOut = packet.UnsignedTx.TxOut[:1]
+	packet.UnsignedTx.TxOut[0].Value -= 1_000
+	packet.Outputs = packet.Outputs[:1]
+	request.AnchorPSBT, err = EncodePSBT(packet)
+	require.NoError(t, err)
+	request.Outputs[0].AnchorValueSat -= 1_000
+	request.Funding = sdk.CustomAnchorFundingPlan{
+		Mode:              sdk.CustomAnchorFundingCallerFundedExact,
+		CallerFundedExact: &sdk.CustomAnchorCallerFundedExact{},
+	}
+
+	wallet := sdk.NewWallet(&pathClient{t: t}, sdk.NetworkRegtest)
+	built, err := wallet.NewCustomAnchorTxBuilder().Build(
+		t.Context(), request,
 	)
-	anchor, err := EncodePSBT(packet)
 	require.NoError(t, err)
-	forged.CommittedAnchorPsbt = anchor
-	forged.AnchorPsbt = bytes.Clone(anchor)
-	forged.Funding.ActualFeeSat += 5_000
-	forged, err = forged.Seal()
+	pkg, err := built.Commit(t.Context(), sdk.CustomAnchorCommitOptions{})
 	require.NoError(t, err)
-	raw, err := forged.MarshalBinary()
+	raw, err := pkg.MarshalBinary()
 	require.NoError(t, err)
-
-	// The unsigned transaction and txid are exactly the honest ones, so the
-	// only tell is the committed previous output the signature covers.
-	honest, err := DecodePSBT(f.pkg.CommittedAnchorPsbt)
-	require.NoError(t, err)
-	require.Equal(t, honest.UnsignedTx.TxHash(), packet.UnsignedTx.TxHash())
 
 	_, err = NewSwap(f.offer, f.deposit, raw)
 	require.ErrorIs(t, err, swapkit.ErrInvalid)
 }
 
-// TestFallbackRejectsSkipBroadcast checks that the validator rejects a package
-// whose sealed publication metadata would log the fallback without broadcasting
-// it. The honest package never sets this flag.
-func TestFallbackRejectsSkipBroadcast(t *testing.T) {
+// TestFallbackForgedPrevoutCannotBeSealed checks that a peer cannot hand over
+// a fallback whose signed previous output differs from the deposit. A changed
+// value breaks the zero-fee rule of a pay-to-anchor parent and a changed script
+// no longer matches the asset input, so the SDK refuses to seal either one. The
+// validator's own prevout comparison remains as a second, independent check.
+func TestFallbackForgedPrevoutCannotBeSealed(t *testing.T) {
 	f := newFallbackFixture(t)
-	require.False(t, f.pkg.Publish.SkipAnchorTxBroadcast)
+	script := bytes.Clone(f.prevout.PkScript)
+	script[len(script)-1] ^= 1
+
+	forgeries := map[string]*wire.TxOut{
+		"value":  wire.NewTxOut(f.prevout.Value+5_000, f.prevout.PkScript),
+		"script": wire.NewTxOut(f.prevout.Value, script),
+	}
+	for name, prevout := range forgeries {
+		t.Run(name, func(t *testing.T) {
+			forged := f.pkg.Clone()
+			packet, err := DecodePSBT(forged.CommittedAnchorPsbt)
+			require.NoError(t, err)
+			packet.Inputs[0].WitnessUtxo = prevout
+			anchor, err := EncodePSBT(packet)
+			require.NoError(t, err)
+			forged.CommittedAnchorPsbt = anchor
+			forged.AnchorPsbt = bytes.Clone(anchor)
+			_, err = forged.Seal()
+			require.Error(t, err)
+
+			// An unsealed forgery cannot be encoded for a peer either.
+			_, err = forged.MarshalBinary()
+			require.Error(t, err)
+		})
+	}
+}
+
+// TestFallbackRejectsInternalBroadcast checks that the validator rejects a
+// package whose sealed publication metadata would have tapd broadcast the
+// fallback on its own. A zero-fee parent only relays together with its child,
+// so the honest package always leaves the broadcast to its publisher.
+func TestFallbackRejectsInternalBroadcast(t *testing.T) {
+	f := newFallbackFixture(t)
 
 	forged := f.pkg.Clone()
-	forged.Publish.SkipAnchorTxBroadcast = true
+	forged.Publish.SkipAnchorTxBroadcast = false
+	forged.Publish.ExternalBroadcast = false
 	forged, err := forged.Seal()
 	require.NoError(t, err)
 	raw, err := forged.MarshalBinary()
