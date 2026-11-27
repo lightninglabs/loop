@@ -39,6 +39,13 @@
   of waiting for the busy timeout. For example, loopd could log this error when
   it stored the server's confirmation risk decision for a static Loop In.
 
+* A static address loop-in no longer takes a confirmed transaction that pays to
+  its htlc as the htlc transaction unless that transaction also spends the
+  swap's deposits. Before, the server could confirm a dust output to the htlc
+  script and lock the deposits in a timeout sweep that could never succeed.
+  The htlc transaction is then found from the spend of the deposits and its
+  confirmation is taken by transaction id.
+
 #### Maintenance
 
 * Update the OpenTelemetry Go SDK from v1.45.0 to v1.47.0 in Loop and

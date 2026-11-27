@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/deposit"
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
@@ -29,6 +30,7 @@ type riskRejectionTest struct {
 	depositMgr *recordingDepositManager
 	riskMgr    *mockNotificationManager
 	txOuts     *recordingTxOutChecker
+	htlcConf   *chainntnfs.TxConfirmation
 }
 
 // invoicesFor returns the invoices client the monitor uses.
@@ -172,6 +174,8 @@ func (r *riskRejectionTest) result(resultChan chan fsm.EventType) fsm.EventType 
 func (r *riskRejectionTest) start(ctx context.Context) (chan fsm.EventType,
 	*test.ConfRegistration) {
 
+	r.htlcConf = htlcConfirmation(r.t, r.f)
+
 	resultChan := make(chan fsm.EventType, 1)
 	go func() {
 		resultChan <- r.f.MonitorInvoiceAndHtlcTxAction(ctx, nil)
@@ -199,8 +203,8 @@ func (r *riskRejectionTest) start(ctx context.Context) (chan fsm.EventType,
 // confirmHtlc delivers the htlc confirmation. The second send only fits the
 // buffer once the monitor received the first one.
 func (r *riskRejectionTest) confirmHtlc(reg *test.ConfRegistration) {
-	reg.ConfChan <- nil
-	reg.ConfChan <- nil
+	reg.ConfChan <- r.htlcConf
+	reg.ConfChan <- r.htlcConf
 }
 
 func (r *riskRejectionTest) reject() {
