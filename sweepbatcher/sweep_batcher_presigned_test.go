@@ -1837,6 +1837,16 @@ func testPresigned_presigned_group_with_dust_change(t *testing.T,
 		Notifier: &dummyNotifier,
 	})
 	require.NoError(t, err)
+
+	// Since a batch was created we check that it registered for its primary
+	// sweep's spend. The mock blocks the batch until the registration is
+	// received, even after the context is canceled, so not receiving it
+	// would leak the batcher's goroutines.
+	<-lnd.RegisterSpendChannel
+
+	// Wait for the batch transaction to be published. Publishing blocks in
+	// the mock the same way.
+	<-lnd.TxPublishChannel
 }
 
 // wrappedStoreWithPresignedFlag wraps a SweepFetcher store adding IsPresigned
