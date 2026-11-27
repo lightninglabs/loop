@@ -8,6 +8,10 @@
   asset swaps require tapd v0.8.9 or later. Shared helpers also authenticate
   group issuance evidence and register issuance metadata before verification.
 
+* Add `swapkit.LoopInTimelocks` and `swapkit.LoopOutTimelocks`, which check
+  the ordering of deposit, reservation, HTLC and Lightning payment expiries
+  against the current tip before a swap flow pays, signs or reveals a preimage.
+
 #### Breaking Changes
 
 #### Bug Fixes

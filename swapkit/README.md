@@ -49,6 +49,16 @@ to signal RBF; already signed transactions keep their original sequence. Chain m
 Lightning deadlines, invoice state and authority release remain owned by the
 calling FSM.
 
+`LoopInTimelocks` and `LoopOutTimelocks` check the ordering of these heights
+against the current tip. For Loop In, the deposit refund must open only after
+the HTLC refund plus a recovery window, and the server must still have its
+execution window before the HTLC refund. For Loop Out, the fallback must
+confirm before the reservation refund, and the client's claim before the HTLC
+refund. `ValidatePayment` bounds the Lightning payment against the HTLC
+expiry for the server of either direction. The checks are pure and
+point-in-time: the caller supplies the tip and repeats them immediately before
+paying, signing or revealing a preimage.
+
 The [`tapsdk`](tapsdk/README.md) adapter owns conversion to native SDK requests,
 proof validation and package handling. The SDK owns generic transfer
 construction, allocation, virtual transitions, proof processing and sealed
