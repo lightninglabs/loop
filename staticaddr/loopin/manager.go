@@ -27,6 +27,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/staticaddr/version"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
@@ -93,6 +94,10 @@ type Config struct {
 	// ChainNotifier is the chain notifier that is used to listen for new
 	// blocks.
 	ChainNotifier lndclient.ChainNotifierClient
+
+	// Clock times the retry delay of confirmation watches. The default
+	// clock is used if it is nil.
+	Clock clock.Clock
 
 	// Signer is the signer client that is used to sign transactions.
 	Signer lndclient.SignerClient

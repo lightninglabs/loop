@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/staticaddr/staticutil"
 	"github.com/lightninglabs/loop/swap"
 	"github.com/lightninglabs/loop/swapserverrpc"
+	"github.com/lightninglabs/loop/utils"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/invoices"
@@ -1928,6 +1929,16 @@ func (f *FSM) isHtlcTx(tx *wire.MsgTx, htlcPkScript []byte) bool {
 	return paysTo(tx, htlcPkScript)
 }
 
+const (
+	// confWatchRetryDelay is the delay before a failed confirmation watch
+	// registers again.
+	confWatchRetryDelay = 10 * time.Second
+
+	// confWatchLogInterval is the number of failed confirmation watch
+	// attempts between two warnings, about five minutes.
+	confWatchLogInterval = 30
+)
+
 // htlcTimeoutSweepRetryDelay is the delay between retries when looking up the
 // htlc tx or creating or publishing the htlc timeout sweep transaction fails.
 const htlcTimeoutSweepRetryDelay = time.Hour
@@ -1993,33 +2004,36 @@ func (f *FSM) MonitorHtlcTimeoutSweepAction(ctx context.Context,
 		return f.HandleError(err)
 	}
 
-	htlcTimeoutTxidChan, errChan, err :=
-		f.cfg.ChainNotifier.RegisterConfirmationsNtfn(
-			ctx, f.loopIn.HtlcTimeoutSweepTxHash,
-			timeoutSweepPkScript, defaultConfTarget,
-			int32(f.loopIn.InitiationHeight),
-		)
+	// The watch registers again after a notifier error. The refund is
+	// already published, so a notifier outage must not fail the swap.
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
 
-	if err != nil {
-		if ctx.Err() != nil {
-			return fsm.NoOp
-		}
+	htlcTimeoutTxidChan := utils.WatchConfirmation(
+		watchCtx, utils.ConfWatch{
+			Notifier:   f.cfg.ChainNotifier,
+			Clock:      f.cfg.Clock,
+			Txid:       f.loopIn.HtlcTimeoutSweepTxHash,
+			PkScript:   timeoutSweepPkScript,
+			NumConfs:   defaultConfTarget,
+			HeightHint: int32(f.loopIn.InitiationHeight),
+			RetryDelay: confWatchRetryDelay,
+			OnRetry: func(attempt int, err error) {
+				// Don't log every attempt of a long outage.
+				if attempt%confWatchLogInterval != 1 {
+					return
+				}
 
-		err = fmt.Errorf("unable to register to the htlc timeout "+
-			"sweep tx: %w", err)
-
-		return f.HandleError(err)
-	}
+				f.Warnf("htlc timeout sweep tx confirmation "+
+					"watch failed %d times, retrying "+
+					"every %v: %v", attempt,
+					confWatchRetryDelay, err)
+			},
+		},
+	)
 
 	for {
 		select {
-		case err := <-errChan:
-			if ctx.Err() != nil {
-				return fsm.NoOp
-			}
-
-			return f.HandleError(err)
-
 		case conf := <-htlcTimeoutTxidChan:
 			err = f.cfg.DepositManager.TransitionDeposits(
 				ctx, f.loopIn.Deposits,
