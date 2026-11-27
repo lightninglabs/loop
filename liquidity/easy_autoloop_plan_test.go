@@ -240,6 +240,26 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 			channel: chanID1.ToUint64(),
 		},
 		{
+			// Some budget is left, but less than the swap could
+			// cost.
+			name: "swap fee over remaining budget",
+			setParams: func(params *Parameters) {
+				params.AutoFeeBudget = 50
+			},
+			reason: ReasonBudgetInsufficient,
+		},
+		{
+			// The budget covers the fee limit of 100 sats for this
+			// swap, but not the edge-case miner fee that the swap
+			// request allows for.
+			name: "swap fee limit within remaining budget",
+			setParams: func(params *Parameters) {
+				params.AutoFeeBudget = 150
+			},
+			amount:  5000,
+			channel: chanID1.ToUint64(),
+		},
+		{
 			// The quote's swap fee of 5 sats is more than 0.05% of
 			// the swap amount.
 			name: "swap over fee limit",

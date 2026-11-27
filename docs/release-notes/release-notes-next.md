@@ -20,6 +20,12 @@
 
 #### Breaking Changes
 
+* Easy autoloop for bitcoin no longer dispatches a Loop Out that could cost
+  more than what is left of the autoloop fee budget. Before, it only checked
+  that some budget was left, so a single swap could go over the budget. The
+  cost is taken from the swap's fee limit, without the allowance for edge-case
+  miner fees.
+
 #### Bug Fixes
 
 * Fix a deadlock in the static address loop-in, withdrawal and open channel

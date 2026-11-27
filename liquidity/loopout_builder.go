@@ -227,34 +227,51 @@ func (b *loopOutBuilder) buildSwap(ctx context.Context, pubkey route.Vertex,
 	}
 
 	if params.Autoloop {
-		request.Label = labels.AutoloopLabel(swap.TypeOut)
-
-		if params.EasyAutoloop {
-			request.Label = labels.EasyAutoloopLabel(swap.TypeOut)
-		}
-
-		account := ""
-		addrType := walletrpc.AddressType_WITNESS_PUBKEY_HASH
-		if len(params.Account) > 0 {
-			account = params.Account
-			addrType = params.AccountAddrType
-			request.IsExternalAddr = true
-		}
-		if params.DestAddr != nil {
-			request.DestAddr = params.DestAddr
-			request.IsExternalAddr = true
-		} else {
-			addr, err := b.cfg.Lnd.WalletKit.NextAddr(
-				ctx, account, addrType, false,
-			)
-			if err != nil {
-				return nil, err
-			}
-			request.DestAddr = addr
+		err := b.prepareAutoloop(ctx, &request, params)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	return &loopOutSwapSuggestion{
 		OutRequest: request,
 	}, nil
+}
+
+// prepareAutoloop readies a loop out request for autoloop to dispatch: it adds
+// the autoloop label and the destination address, deriving a new wallet
+// address when no destination is set. It is left out of a dry run, so that no
+// wallet address is derived for a swap that is not dispatched.
+func (b *loopOutBuilder) prepareAutoloop(ctx context.Context,
+	request *loop.OutRequest, params Parameters) error {
+
+	request.Label = labels.AutoloopLabel(swap.TypeOut)
+
+	if params.EasyAutoloop {
+		request.Label = labels.EasyAutoloopLabel(swap.TypeOut)
+	}
+
+	account := ""
+	addrType := walletrpc.AddressType_WITNESS_PUBKEY_HASH
+	if len(params.Account) > 0 {
+		account = params.Account
+		addrType = params.AccountAddrType
+		request.IsExternalAddr = true
+	}
+	if params.DestAddr != nil {
+		request.DestAddr = params.DestAddr
+		request.IsExternalAddr = true
+
+		return nil
+	}
+
+	addr, err := b.cfg.Lnd.WalletKit.NextAddr(
+		ctx, account, addrType, false,
+	)
+	if err != nil {
+		return err
+	}
+	request.DestAddr = addr
+
+	return nil
 }
