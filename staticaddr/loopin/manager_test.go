@@ -1547,6 +1547,13 @@ func (m *mockDepositManager) RestoreLoopInClaim(context.Context,
 	return nil
 }
 
+// ClaimHtlcTimeoutDeposits implements DepositManager with a no-op.
+func (m *mockDepositManager) ClaimHtlcTimeoutDeposits(context.Context,
+	[]*deposit.Deposit, lntypes.Hash) error {
+
+	return nil
+}
+
 func (m *mockDepositManager) GetLoopInClaim(wire.OutPoint) (lntypes.Hash, bool) {
 	return lntypes.Hash{}, false
 }
@@ -1679,6 +1686,14 @@ func (s *mockStore) GetLoopInByHash(_ context.Context,
 	}
 	return li, nil
 }
+
+// BatchMapDepositsToSwapHashes implements Store for manager tests.
+func (s *mockStore) BatchMapDepositsToSwapHashes(context.Context,
+	map[deposit.ID]lntypes.Hash) error {
+
+	return nil
+}
+
 func (s *mockStore) SwapHashesForDepositIDs(_ context.Context,
 	depositIDs []deposit.ID) (map[lntypes.Hash][]deposit.ID, error) {
 

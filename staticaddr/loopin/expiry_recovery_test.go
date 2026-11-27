@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/loop/swapserverrpc"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
@@ -394,6 +395,13 @@ func newExpiryRecoveryHarnessWithFunding(t *testing.T, state fsm.StateType,
 		ctx, "", walletrpc.AddressType_TAPROOT_PUBKEY, false,
 	)
 	f.cfg.DepositManager = manager
+
+	// The monitor maps the deposits to the swap once its own htlc tx
+	// confirms, which needs a loop-in store.
+	f.cfg.Store = NewSqlStore(
+		loopdb.NewTypedStore[Querier](db), clock.NewDefaultClock(),
+		lnd.ChainParams,
+	)
 	f.cfg.TxOutChecker = nil
 	f.cfg.ChainNotifier = notifier
 	f.cfg.LndClient = client

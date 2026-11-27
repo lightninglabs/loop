@@ -81,6 +81,10 @@ func newRiskRejectionTest(t *testing.T, ctx context.Context,
 	}
 	f.cfg.NotificationManager = riskMgr
 
+	// The htlc tx spends the deposit, so it is mapped to the swap once it
+	// is locked.
+	f.cfg.Store = newDecisionStore(swapHash)
+
 	return &riskRejectionTest{
 		t:          t,
 		ctx:        ctx,

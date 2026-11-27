@@ -57,6 +57,12 @@ type DepositManager interface {
 	RestoreLoopInClaim(context.Context, []*deposit.Deposit,
 		lntypes.Hash) error
 
+	// ClaimHtlcTimeoutDeposits records the swap as the in-memory owner of
+	// deposits that its confirmed htlc tx spent and that are locked for
+	// its htlc timeout sweep.
+	ClaimHtlcTimeoutDeposits(context.Context, []*deposit.Deposit,
+		lntypes.Hash) error
+
 	// GetLoopInClaim returns the current in-memory owner, including claims
 	// made before persistence and ownership repairs made during startup.
 	GetLoopInClaim(wire.OutPoint) (lntypes.Hash, bool)
@@ -151,6 +157,11 @@ type StaticAddressLoopInStore interface {
 	// for the given deposit IDs.
 	SwapHashesForDepositIDs(ctx context.Context,
 		depositIDs []deposit.ID) (map[lntypes.Hash][]deposit.ID, error)
+
+	// BatchMapDepositsToSwapHashes maps the given deposits to their swap
+	// hashes in a single transaction.
+	BatchMapDepositsToSwapHashes(ctx context.Context,
+		depositsToHashes map[deposit.ID]lntypes.Hash) error
 }
 
 type QuoteGetter interface {
