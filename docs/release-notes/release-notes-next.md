@@ -46,6 +46,15 @@
   The htlc transaction is then found from the spend of the deposits and its
   confirmation is taken by transaction id.
 
+* Automatic Loop Out recovery sweeps and `loop out sweephtlc` in database
+  mode now wait for the swap's stored `htlc_confs` confirmations before
+  signing the sweep. Before, they waited for only one confirmation. Automatic
+  recovery sweeps also no longer reveal the preimage when 20 blocks or fewer
+  are left before the HTLC expires, or when the HTLC holds less than the swap
+  amount, unless the swap already revealed it or completed. Extra coins sent
+  to the HTLC address of a completed swap are still recovered at any amount
+  and height.
+
 #### Maintenance
 
 * Update the OpenTelemetry Go SDK from v1.45.0 to v1.47.0 in Loop and

@@ -57,7 +57,7 @@ The following flags are supported:
 
 sweep an HTLC output using a preimage or cooperation.
 
-Supplying any stateless-recovery flag selects stateless recovery mode. Both public keys, the preimage, CLTV expiry, and swap initiation height must then be supplied. In this mode, Loop reconstructs a protocol-11 Loop Out HTLC without querying its swap database. It verifies the reconstructed address against the requested address and the actual on-chain output, then asks lnd to sign using the client public key. If signing fails or the signature does not verify, Loop scans the configured number of keys in key family 99 and retries with the recovered key locator. The cooperative option instead requests a MuSig2 server signature and spends via the Taproot key path. Stateless cooperative recovery also requires the swap invoice payment address.
+Supplying any stateless-recovery flag selects stateless recovery mode. Both public keys, the preimage, CLTV expiry, and swap initiation height must then be supplied. In this mode, Loop reconstructs a protocol-11 Loop Out HTLC without querying its swap database. It verifies the reconstructed address against the requested address and the actual on-chain output, then asks lnd to sign using the client public key. If signing fails or the signature does not verify, Loop scans the configured number of keys in key family 99 and retries with the recovered key locator. The cooperative option instead requests a MuSig2 server signature and spends via the Taproot key path. Stateless cooperative recovery also requires the swap invoice payment address. Without stateless-recovery flags, Loop uses its swap database and waits until the HTLC has the swap's stored number of confirmations before it sweeps.
 
 Usage:
 
