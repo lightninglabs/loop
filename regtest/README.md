@@ -342,3 +342,15 @@ Also make sure you connect the Loop server and Loop client to a different `lnd`
 node each since an `lnd` node cannot pay itself. Obviously there also need to be
 some channels with enough liquidity between the server's and client's `lnd`
 nodes (direct or indirect doesn't matter).
+
+### Static deposit wallet inputs
+
+From the repository root, run the account-selection test against local lnd
+and btcd binaries. The test starts a fresh regtest miner and wallet, funds a
+static address, rejects it as an explicit input, then verifies that a sweep
+spends only default-account change.
+
+```sh
+go test ./loopd -run '^TestStaticDepositFundingAccounts$' \
+  -count=1 -lndexec=/path/to/lnd-itest -btcdexec=/path/to/btcd
+```

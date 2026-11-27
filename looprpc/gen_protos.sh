@@ -39,6 +39,7 @@ function generate() {
   falafel=$(which falafel)
   pkg="looprpc"
   opts="package_name=$pkg,js_stubs=1"
+  opts+=",manual_import=github.com/lightningnetwork/lnd/lnrpc"
   protoc "${proto_paths[@]}" \
     --plugin=protoc-gen-custom=$falafel\
     --custom_out=. \

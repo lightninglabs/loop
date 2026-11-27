@@ -4,6 +4,7 @@ package looprpc
 
 import (
 	context "context"
+	lnrpc "github.com/lightningnetwork/lnd/lnrpc"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -118,9 +119,23 @@ type SwapClientClient interface {
 	// loop: `static new`
 	//NewStaticAddress derives a fresh static receive address on every request.
 	//This RPC never funds the address.
-	//The CLI's static new and static deposit commands use this RPC. Only static
-	//deposit prints lncli instructions for funding the returned address.
 	NewStaticAddress(ctx context.Context, in *NewStaticAddressRequest, opts ...grpc.CallOption) (*NewStaticAddressResponse, error)
+	// loop: `static deposit`
+	//FundStaticAddress derives a fresh static receive address and funds it from
+	//the default account of loopd's connected lnd wallet. Leave addr empty.
+	//Specify amount (at least 15,000 sat) or send_all. The maximum requested or
+	//estimated fee rate is 100 sat/vbyte. A sweep checks its expected deposit
+	//after fees and the wallet's channel reserve before issuing the address.
+	//
+	//With send_all, all eligible funds (or the selected outpoints) go behind
+	//the cooperative 2-of-2. Unilateral recovery requires the address's CSV
+	//delay, counted from deposit confirmation. The RPC broadcasts without an
+	//interactive confirmation.
+	//
+	//Each call initiates a separate deposit. On a timeout, check lnd's wallet
+	//transactions before retrying. The default transaction label is
+	//"Loop static deposit <address>". An issued address remains monitored.
+	FundStaticAddress(ctx context.Context, in *lnrpc.SendCoinsRequest, opts ...grpc.CallOption) (*FundStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
 	//ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error)
@@ -407,6 +422,15 @@ func (c *swapClientClient) NewStaticAddress(ctx context.Context, in *NewStaticAd
 	return out, nil
 }
 
+func (c *swapClientClient) FundStaticAddress(ctx context.Context, in *lnrpc.SendCoinsRequest, opts ...grpc.CallOption) (*FundStaticAddressResponse, error) {
+	out := new(FundStaticAddressResponse)
+	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/FundStaticAddress", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *swapClientClient) ListUnspentDeposits(ctx context.Context, in *ListUnspentDepositsRequest, opts ...grpc.CallOption) (*ListUnspentDepositsResponse, error) {
 	out := new(ListUnspentDepositsResponse)
 	err := c.cc.Invoke(ctx, "/looprpc.SwapClient/ListUnspentDeposits", in, out, opts...)
@@ -583,9 +607,23 @@ type SwapClientServer interface {
 	// loop: `static new`
 	//NewStaticAddress derives a fresh static receive address on every request.
 	//This RPC never funds the address.
-	//The CLI's static new and static deposit commands use this RPC. Only static
-	//deposit prints lncli instructions for funding the returned address.
 	NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error)
+	// loop: `static deposit`
+	//FundStaticAddress derives a fresh static receive address and funds it from
+	//the default account of loopd's connected lnd wallet. Leave addr empty.
+	//Specify amount (at least 15,000 sat) or send_all. The maximum requested or
+	//estimated fee rate is 100 sat/vbyte. A sweep checks its expected deposit
+	//after fees and the wallet's channel reserve before issuing the address.
+	//
+	//With send_all, all eligible funds (or the selected outpoints) go behind
+	//the cooperative 2-of-2. Unilateral recovery requires the address's CSV
+	//delay, counted from deposit confirmation. The RPC broadcasts without an
+	//interactive confirmation.
+	//
+	//Each call initiates a separate deposit. On a timeout, check lnd's wallet
+	//transactions before retrying. The default transaction label is
+	//"Loop static deposit <address>". An issued address remains monitored.
+	FundStaticAddress(context.Context, *lnrpc.SendCoinsRequest) (*FundStaticAddressResponse, error)
 	// loop: `static listunspentdeposits`
 	//ListUnspentDeposits returns a list of utxos deposited at a static address.
 	ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error)
@@ -695,6 +733,9 @@ func (UnimplementedSwapClientServer) ListInstantOuts(context.Context, *ListInsta
 }
 func (UnimplementedSwapClientServer) NewStaticAddress(context.Context, *NewStaticAddressRequest) (*NewStaticAddressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NewStaticAddress not implemented")
+}
+func (UnimplementedSwapClientServer) FundStaticAddress(context.Context, *lnrpc.SendCoinsRequest) (*FundStaticAddressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FundStaticAddress not implemented")
 }
 func (UnimplementedSwapClientServer) ListUnspentDeposits(context.Context, *ListUnspentDepositsRequest) (*ListUnspentDepositsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListUnspentDeposits not implemented")
@@ -1186,6 +1227,24 @@ func _SwapClient_NewStaticAddress_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SwapClient_FundStaticAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(lnrpc.SendCoinsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SwapClientServer).FundStaticAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/looprpc.SwapClient/FundStaticAddress",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SwapClientServer).FundStaticAddress(ctx, req.(*lnrpc.SendCoinsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SwapClient_ListUnspentDeposits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListUnspentDepositsRequest)
 	if err := dec(in); err != nil {
@@ -1432,6 +1491,10 @@ var SwapClient_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NewStaticAddress",
 			Handler:    _SwapClient_NewStaticAddress_Handler,
+		},
+		{
+			MethodName: "FundStaticAddress",
+			Handler:    _SwapClient_FundStaticAddress_Handler,
 		},
 		{
 			MethodName: "ListUnspentDeposits",
