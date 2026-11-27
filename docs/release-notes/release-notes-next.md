@@ -17,6 +17,11 @@
   transaction with a pay-to-anchor output, so its publisher sets the fee at
   broadcast time with a child transaction and submits both as one package.
 
+* Add `tapsdk.HTLCRequest` and `tapsdk.ValidateHTLCPackage`, which build and
+  validate that zero-fee pay-to-anchor HTLC transaction for either direction:
+  from a client deposit for asset Loop In, or from a server reservation for
+  asset Loop Out.
+
 #### Breaking Changes
 
 #### Bug Fixes

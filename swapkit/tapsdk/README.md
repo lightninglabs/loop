@@ -183,14 +183,30 @@ BIP-341 annex, and reject an annex spend from reconstruction rather than
 mis-slicing its witness. A reorg observed while verifying an outcome is
 reported as retryable, not invalid.
 
-## Fallback fee bumping
+## HTLC transfers and fee bumping
 
-A Loop In fallback is signed when the swap is set up and may be published much
-later, so it does not fix its own fee. `FallbackRequest` builds a version 3
-transaction with one input and two outputs: the HTLC at index 0, which keeps
-the whole deposit anchor value, and a zero-value pay-to-anchor (P2A) output at
-index 1. The transaction pays no fee. `NewSwap` rejects any other shape,
-including a fallback that pays its own fee.
+The cooperative transaction that moves a funded contract output into an HTLC is
+signed when the swap is set up and may be published much later, so it does not
+fix its own fee. `HTLCRequest` builds it for either direction from `HTLCTerms`:
+the funding contract (a deposit for Loop In, a reservation for Loop Out), the
+verified funded output and its proof, the HTLC contract and the public MuSig2
+session context. The result is a version 3 transaction with one input and two
+outputs: the HTLC at index 0, which keeps the whole funding anchor value, and a
+zero-value pay-to-anchor (P2A) output at index 1. The transaction pays no fee.
+
+`ValidateHTLCPackage` is the check a party runs on a peer's package before
+co-signing. Build `HTLCTerms` only from values the party agreed to or verified
+itself: its own keys, payment hash and expiry, and the funded output it checked
+with `VerifyInputProof` or `VerifyDeposit`. The validator accepts only the exact
+transaction `HTLCRequest` builds for those terms. It rejects another payment
+hash, expiry, key role or refund policy, another funding contract, extra inputs
+or outputs, a transaction that pays its own fee, and an asset that carries its
+own lock time. It does not verify proof history, chain state or timelock
+ordering; use the proof helpers and `swapkit.LoopInTimelocks` or
+`swapkit.LoopOutTimelocks` for those.
+
+`FallbackRequest` and `NewSwap` are the Loop In forms of the same two calls,
+with the terms taken from the offer and the deposit contract.
 
 The publisher spends the P2A output in a child transaction funded from its own
 wallet and submits parent and child as one package, for example through lnd's
