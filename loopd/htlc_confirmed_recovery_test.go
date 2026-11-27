@@ -177,6 +177,13 @@ func newHtlcConfirmedRecoveryFixture(
 		bestHeight: func(context.Context) (int32, error) {
 			return fixture.bestHeight, fixture.bestHeightErr
 		},
+
+		// By default no swap is running, so the worker sweeps.
+		loopOutRunning: func(context.Context, lntypes.Hash) (bool,
+			error) {
+
+			return false, nil
+		},
 	}
 
 	return fixture
@@ -782,6 +789,249 @@ func TestHtlcConfirmedRecoveryManagerChecksHtlcValue(t *testing.T) {
 			if !testCase.expectSweep {
 				assertNoRecoveryActivity(t, fixture.lnd)
 			}
+			require.NoError(t, fixture.lnd.IsDone())
+		})
+	}
+}
+
+// TestHtlcConfirmedRecoveryManagerSkipsRunningSwap verifies that the worker
+// does not sweep the HTLC of a loop out that is running in this daemon. The
+// HTLC is left to the running swap, which sweeps it or has decided not to
+// reveal the preimage.
+func TestHtlcConfirmedRecoveryManagerSkipsRunningSwap(t *testing.T) {
+	defer test.Guard(t)()
+
+	setLogger(newFormatLogger())
+
+	fixture := newHtlcConfirmedRecoveryFixture(t)
+
+	var checked []lntypes.Hash
+	fixture.manager.loopOutRunning = func(_ context.Context,
+		hash lntypes.Hash) (bool, error) {
+
+		checked = append(checked, hash)
+
+		return hash == fixture.swap.Hash, nil
+	}
+
+	ctx, cancel := context.WithTimeout(
+		t.Context(), htlcConfirmedRecoveryTestTimeout,
+	)
+	defer cancel()
+
+	runErrChan := make(chan error, 1)
+
+	go func() {
+		runErrChan <- fixture.manager.run(ctx)
+	}()
+
+	ntfn := &swapserverrpc.ServerHtlcConfirmedNotification{
+		SwapHash:     fixture.swap.Hash[:],
+		HtlcOutpoint: fixture.outpoint.String(),
+		HtlcAddress:  fixture.htlc.Address.String(),
+		SatPerVbyte:  25,
+	}
+	fixture.subscriber.ntfnChan <- ntfn
+	close(fixture.subscriber.ntfnChan)
+
+	// Check for sweep activity first, so a sweep of the running swap
+	// fails the test here and not in the test guard.
+	assertNoRecoveryActivity(t, fixture.lnd)
+	require.NoError(t, waitForManagerExit(t, ctx, runErrChan))
+	require.Equal(t, []lntypes.Hash{fixture.swap.Hash}, checked)
+	require.NoError(t, fixture.lnd.IsDone())
+}
+
+// TestHtlcConfirmedRecoveryManagerRejectsMismatchedHash verifies that the
+// worker ignores a notification whose swap hash is not the hash of the
+// swap with the notified HTLC. Otherwise a server could pair the hash of a
+// stopped swap with the HTLC of a running swap, pass the running check and get
+// the running swap swept.
+func TestHtlcConfirmedRecoveryManagerRejectsMismatchedHash(t *testing.T) {
+	stoppedHash := lntypes.Hash{9}
+
+	testCases := []struct {
+		name     string
+		swapHash []byte
+	}{
+		{
+			name:     "hash of another swap",
+			swapHash: stoppedHash[:],
+		},
+		{
+			name:     "unknown hash",
+			swapHash: bytes.Repeat([]byte{8}, lntypes.HashSize),
+		},
+		{
+			name:     "short hash",
+			swapHash: []byte{1, 2, 3},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer test.Guard(t)()
+
+			setLogger(newFormatLogger())
+
+			fixture := newHtlcConfirmedRecoveryFixture(t)
+
+			// A second, stopped swap with its own HTLC.
+			fixture.store.LoopOutSwaps[stoppedHash] =
+				fixture.store.LoopOutSwaps[fixture.swap.Hash]
+
+			var checked []lntypes.Hash
+			fixture.manager.loopOutRunning = func(_ context.Context,
+				hash lntypes.Hash) (bool, error) {
+
+				checked = append(checked, hash)
+
+				return hash == fixture.swap.Hash, nil
+			}
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(), htlcConfirmedRecoveryTestTimeout,
+			)
+			defer cancel()
+
+			runErrChan := make(chan error, 1)
+
+			go func() {
+				runErrChan <- fixture.manager.run(ctx)
+			}()
+
+			ntfn := &swapserverrpc.ServerHtlcConfirmedNotification{
+				SwapHash:     tc.swapHash,
+				HtlcOutpoint: fixture.outpoint.String(),
+				HtlcAddress:  fixture.htlc.Address.String(),
+				SatPerVbyte:  25,
+			}
+			fixture.subscriber.ntfnChan <- ntfn
+			close(fixture.subscriber.ntfnChan)
+
+			assertNoRecoveryActivity(t, fixture.lnd)
+			require.NoError(
+				t, waitForManagerExit(t, ctx, runErrChan),
+			)
+			require.Empty(t, checked)
+			require.NoError(t, fixture.lnd.IsDone())
+		})
+	}
+}
+
+// TestHtlcConfirmedRecoveryManagerSweepsStoppedSwap verifies that the worker
+// still sweeps the HTLC directly when the loop out is not running, after it
+// checked the swap that owns the HTLC.
+func TestHtlcConfirmedRecoveryManagerSweepsStoppedSwap(t *testing.T) {
+	defer test.Guard(t)()
+
+	setLogger(newFormatLogger())
+
+	fixture := newHtlcConfirmedRecoveryFixture(t)
+
+	var checked []lntypes.Hash
+	fixture.manager.loopOutRunning = func(_ context.Context,
+		hash lntypes.Hash) (bool, error) {
+
+		checked = append(checked, hash)
+
+		return false, nil
+	}
+
+	ctx, cancel := context.WithTimeout(
+		t.Context(), htlcConfirmedRecoveryTestTimeout,
+	)
+	defer cancel()
+
+	runErrChan := make(chan error, 1)
+
+	go func() {
+		runErrChan <- fixture.manager.run(ctx)
+	}()
+
+	ntfn := &swapserverrpc.ServerHtlcConfirmedNotification{
+		SwapHash:     fixture.swap.Hash[:],
+		HtlcOutpoint: fixture.outpoint.String(),
+		HtlcAddress:  fixture.htlc.Address.String(),
+		SatPerVbyte:  25,
+	}
+	fixture.subscriber.ntfnChan <- ntfn
+	close(fixture.subscriber.ntfnChan)
+
+	waitForConfRegistration(t, ctx, fixture.lnd)
+	fixture.lnd.ConfChannel <- &chainntnfs.TxConfirmation{
+		Tx:          fixture.fundingTx,
+		BlockHeight: 321,
+	}
+
+	waitForSignOutputRawRequest(t, ctx, fixture.lnd)
+	publishedTx := waitForPublishedTx(t, ctx, fixture.lnd)
+	require.Equal(
+		t, fixture.outpoint, publishedTx.TxIn[0].PreviousOutPoint,
+	)
+
+	require.NoError(t, waitForManagerExit(t, ctx, runErrChan))
+	require.Equal(t, []lntypes.Hash{fixture.swap.Hash}, checked)
+	require.NoError(t, fixture.lnd.IsDone())
+}
+
+// TestHtlcConfirmedRecoveryManagerRunningCheckFailClosed verifies that the
+// worker does not sweep when it cannot tell whether the loop out is running:
+// either the check is not wired up or it returns an error.
+func TestHtlcConfirmedRecoveryManagerRunningCheckFailClosed(t *testing.T) {
+	type runningFunc func(context.Context, lntypes.Hash) (bool, error)
+
+	testCases := []struct {
+		name           string
+		loopOutRunning runningFunc
+	}{
+		{
+			name:           "check missing",
+			loopOutRunning: nil,
+		},
+		{
+			name: "check fails",
+			loopOutRunning: func(context.Context,
+				lntypes.Hash) (bool, error) {
+
+				return false, errors.New("not initialized")
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer test.Guard(t)()
+
+			setLogger(newFormatLogger())
+
+			fixture := newHtlcConfirmedRecoveryFixture(t)
+			fixture.manager.loopOutRunning = tc.loopOutRunning
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(), htlcConfirmedRecoveryTestTimeout,
+			)
+			defer cancel()
+
+			runErrChan := make(chan error, 1)
+
+			go func() {
+				runErrChan <- fixture.manager.run(ctx)
+			}()
+
+			ntfn := &swapserverrpc.ServerHtlcConfirmedNotification{
+				SwapHash:     fixture.swap.Hash[:],
+				HtlcOutpoint: fixture.outpoint.String(),
+				HtlcAddress:  fixture.htlc.Address.String(),
+				SatPerVbyte:  25,
+			}
+			fixture.subscriber.ntfnChan <- ntfn
+			close(fixture.subscriber.ntfnChan)
+
+			assertNoRecoveryActivity(t, fixture.lnd)
+			require.NoError(
+				t, waitForManagerExit(t, ctx, runErrChan),
+			)
 			require.NoError(t, fixture.lnd.IsDone())
 		})
 	}

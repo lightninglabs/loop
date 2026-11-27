@@ -766,6 +766,24 @@ func (s *Client) waitForInitialized(ctx context.Context) error {
 	return nil
 }
 
+// LoopOutRunning returns whether the loop out swap with the given hash is
+// executing in this client.
+//
+// NOTE: This call blocks until the client has resumed its pending swaps, so
+// that a swap which is about to resume counts as running. Before Run is
+// called it only returns when the context is canceled, with the context
+// error.
+func (s *Client) LoopOutRunning(ctx context.Context,
+	hash lntypes.Hash) (bool, error) {
+
+	err := s.waitForInitialized(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return s.executor.loopOutRunning(hash), nil
+}
+
 // LoopIn initiates a loop in swap.
 func (s *Client) LoopIn(globalCtx context.Context,
 	request *LoopInRequest) (*LoopInSwapInfo, error) {

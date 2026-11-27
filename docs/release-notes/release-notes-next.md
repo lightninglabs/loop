@@ -55,6 +55,13 @@
   to the HTLC address of a completed swap are still recovered at any amount
   and height.
 
+* Fix a case where a Loop Out could give up on its swap although its preimage
+  was already public. Automatic Loop Out recovery sweeps also swept the HTLC of
+  a swap that was still running, which revealed the preimage without the swap
+  recording it. They now leave running swaps alone, so the swap sweeps its own
+  HTLC and records the reveal. Swaps that are not running are still recovered,
+  with the checks above.
+
 #### Maintenance
 
 * Update the OpenTelemetry Go SDK from v1.45.0 to v1.47.0 in Loop and
