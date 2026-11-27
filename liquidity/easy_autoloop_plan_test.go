@@ -145,6 +145,37 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 			reason: ReasonLiquidityOk,
 		},
 		{
+			// The server would allow a swap of 5000, but the client
+			// asks for larger swaps.
+			name: "excess below client minimum",
+			setParams: func(params *Parameters) {
+				params.ClientRestrictions.Minimum = 6000
+			},
+			reason: ReasonBelowMinimum,
+		},
+		{
+			name: "excess clamped to client maximum",
+			setParams: func(params *Parameters) {
+				params.ClientRestrictions.Maximum = 3000
+			},
+			amount:  3000,
+			channel: chanID1.ToUint64(),
+		},
+		{
+			// A client minimum above the first channel's balance
+			// leaves no channel that can make the swap.
+			name: "channels below client minimum",
+			setParams: func(params *Parameters) {
+				params.EasyAutoloopTarget = 5000
+				params.ClientRestrictions.Minimum = 9500
+			},
+			reason: ReasonNoEligibleChannel,
+			skipped: map[lnwire.ShortChannelID]Reason{
+				chanID1: ReasonBelowMinimum,
+				chanID2: ReasonBelowMinimum,
+			},
+		},
+		{
 			name: "no active channel",
 			channels: []lndclient.ChannelInfo{
 				inactive1, inactive2,
@@ -279,6 +310,14 @@ func TestSuggestEasyAutoloop(t *testing.T) {
 				WalletKitClient: lnd.WalletKit,
 			}
 			lnd.WalletKit = wallet
+
+			// The client's limits are applied to the restrictions
+			// that the server returns, so each test gets its own.
+			cfg.Restrictions = func(context.Context, swap.Type,
+				string) (*Restrictions, error) {
+
+				return NewRestrictions(1, 10000), nil
+			}
 
 			lnd.Channels = testCase.channels
 			if lnd.Channels == nil {
@@ -473,8 +512,7 @@ func TestSuggestEasyAutoloopStickyWorker(t *testing.T) {
 		defer close(done)
 
 		manager.dispatchStickyLoopOut(
-			t.Context(), loop.OutRequest{Amount: 4000}, 1,
-			defaultAmountBackoff,
+			t.Context(), loop.OutRequest{Amount: 4000}, 1, 0,
 		)
 	}()
 
@@ -504,4 +542,73 @@ func TestSuggestEasyAutoloopStickyWorker(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ReasonNone, actual.EasyAutoloopReason)
 	require.Len(t, actual.OutSwaps, 1)
+}
+
+// TestSuggestEasyAutoloopNoOverlap tests that easy autoloop fails, rather than
+// waiting, when the client's swap size limits and the server's leave no swap
+// size that fits both. Here the server changes its limits after the client's
+// were set.
+func TestSuggestEasyAutoloopNoOverlap(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+
+		// client is the client's swap size limits.
+		client Restrictions
+
+		// server is the server's limits once it has changed them.
+		server *Restrictions
+	}{
+		{
+			name:   "client minimum above server maximum",
+			client: Restrictions{Minimum: 6000},
+			server: NewRestrictions(1, 5000),
+		},
+		{
+			name:   "client maximum below server minimum",
+			client: Restrictions{Maximum: 5000},
+			server: NewRestrictions(7000, 10000),
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, lnd := newTestConfig()
+
+			server := NewRestrictions(1, 10000)
+			cfg.Restrictions = func(context.Context, swap.Type,
+				string) (*Restrictions, error) {
+
+				return server, nil
+			}
+
+			lnd.Channels = []lndclient.ChannelInfo{{
+				Active:       true,
+				ChannelID:    chanID1.ToUint64(),
+				PubKeyBytes:  peer1,
+				LocalBalance: 9000,
+				Capacity:     10000,
+			}}
+
+			params := defaultParameters
+			params.AutoloopBudgetLastRefresh = testBudgetStart
+			params.EasyAutoloop = true
+			params.EasyAutoloopTarget = 1000
+			params.FeeLimit = defaultFeePortion()
+			params.ClientRestrictions = testCase.client
+
+			manager := NewManager(cfg)
+			require.NoError(
+				t, manager.setParameters(t.Context(), params),
+			)
+
+			server = testCase.server
+
+			_, err := manager.SuggestSwaps(t.Context())
+			require.ErrorIs(t, err, ErrNoSwapSizeOverlap)
+		})
+	}
 }
