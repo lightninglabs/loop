@@ -1719,6 +1719,13 @@ func (s *swapClientServer) SuggestSwaps(ctx context.Context,
 		resp.Disqualified = append(resp.Disqualified, exclChan)
 	}
 
+	resp.EasyAutoloopReason, err = rpcAutoloopReason(
+		suggestions.EasyAutoloopReason,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return resp, nil
 }
 
@@ -3004,6 +3011,18 @@ func rpcAutoloopReason(reason liquidity.Reason) (looprpc.AutoReason, error) {
 
 	case liquidity.ReasonCustomChannelData:
 		return looprpc.AutoReason_AUTO_REASON_CUSTOM_CHANNEL_DATA, nil
+
+	case liquidity.ReasonBelowMinimum:
+		return looprpc.AutoReason_AUTO_REASON_BELOW_MINIMUM, nil
+
+	case liquidity.ReasonNoEligibleChannel:
+		return looprpc.AutoReason_AUTO_REASON_NO_ELIGIBLE_CHANNEL, nil
+
+	case liquidity.ReasonChannelInactive:
+		return looprpc.AutoReason_AUTO_REASON_CHANNEL_INACTIVE, nil
+
+	case liquidity.ReasonPeerExcluded:
+		return looprpc.AutoReason_AUTO_REASON_PEER_EXCLUDED, nil
 
 	default:
 		return 0, fmt.Errorf("unknown autoloop reason: %v", reason)
