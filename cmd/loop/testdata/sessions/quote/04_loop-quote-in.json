@@ -28,7 +28,8 @@
           "state_filter": "UNKNOWN_STATE",
           "outpoints": [
             "edcdab8f0b1138d853a453b8b7a5ac3c694bd53ad38b7ccf062e45f99440e6e6:0"
-          ]
+          ],
+          "skip_funding_tx_labels": true
         }
       }
     },

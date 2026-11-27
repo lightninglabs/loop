@@ -1,0 +1,90 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "listdeposits",
+      "--filter",
+      "deposited",
+      "--network=regtest"
+    ],
+    "env": {},
+    "version": "0.36.0-beta commit=looprpc/v1.0.18-31-g04ebf9d1907d49a0cdbd0494f5dea989d9ba861d commit_hash=04ebf9d1907d49a0cdbd0494f5dea989d9ba861d",
+    "duration": 109401502,
+    "clock_start_unix": 1795801397
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListStaticAddressDepositsRequest",
+        "payload": {
+          "state_filter": "DEPOSITED",
+          "outpoints": [],
+          "skip_funding_tx_labels": false
+        }
+      }
+    },
+    {
+      "time_ms": 109,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListStaticAddressDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListStaticAddressDepositsResponse",
+        "payload": {
+          "filtered_deposits": [
+            {
+              "id": "UeHdCqAYXfMWQNEdzD9dpjKIkCwoZC/noSaD4ak2oiU=",
+              "state": "DEPOSITED",
+              "outpoint": "a6bd06494256a80b20cd8f77187fac701e894e13e0978ccc05cfcf5c85a459f7:0",
+              "value": "2500000",
+              "confirmation_height": "125",
+              "blocks_until_expiry": "4315",
+              "swap_hash": "",
+              "cost_onchain": "3875",
+              "cost_onchain_status": "ONCHAIN_COST_STATUS_COMPLETE",
+              "static_address": "bcrt1p9aqrhhwns64a2aksx6wyaehjujs3ekhdew7w2j06gsqpfs8h2udqnfahrx",
+              "address_label": "treasury",
+              "funding_tx_label": "september top-up"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 109,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"filtered_deposits\": [\n",
+          "        {\n",
+          "            \"address_label\": \"treasury\",\n",
+          "            \"blocks_until_expiry\": \"4315\",\n",
+          "            \"confirmation_height\": \"125\",\n",
+          "            \"cost_onchain\": \"3875\",\n",
+          "            \"cost_onchain_status\": \"ONCHAIN_COST_STATUS_COMPLETE\",\n",
+          "            \"funding_tx_label\": \"september top-up\",\n",
+          "            \"id\": \"51e1dd0aa0185df31640d11dcc3f5da63288902c28642fe7a12683e1a936a225\",\n",
+          "            \"outpoint\": \"a6bd06494256a80b20cd8f77187fac701e894e13e0978ccc05cfcf5c85a459f7:0\",\n",
+          "            \"state\": \"DEPOSITED\",\n",
+          "            \"static_address\": \"bcrt1p9aqrhhwns64a2aksx6wyaehjujs3ekhdew7w2j06gsqpfs8h2udqnfahrx\",\n",
+          "            \"swap_hash\": \"\",\n",
+          "            \"value\": \"2500000\"\n",
+          "        }\n",
+          "    ]\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 109,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

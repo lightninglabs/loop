@@ -1,0 +1,73 @@
+{
+  "metadata": {
+    "args": [
+      "loop",
+      "static",
+      "l",
+      "--network=regtest"
+    ],
+    "env": {},
+    "version": "0.36.0-beta commit=looprpc/v1.0.18-31-g04ebf9d1907d49a0cdbd0494f5dea989d9ba861d commit_hash=04ebf9d1907d49a0cdbd0494f5dea989d9ba861d",
+    "duration": 112920110,
+    "clock_start_unix": 1795801397
+  },
+  "events": [
+    {
+      "time_ms": 0,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListUnspentDeposits",
+        "event": "request",
+        "message_type": "looprpc.ListUnspentDepositsRequest",
+        "payload": {
+          "min_confs": 0,
+          "max_confs": 0
+        }
+      }
+    },
+    {
+      "time_ms": 112,
+      "kind": "grpc",
+      "data": {
+        "method": "/looprpc.SwapClient/ListUnspentDeposits",
+        "event": "response",
+        "message_type": "looprpc.ListUnspentDepositsResponse",
+        "payload": {
+          "utxos": [
+            {
+              "static_address": "bcrt1p9aqrhhwns64a2aksx6wyaehjujs3ekhdew7w2j06gsqpfs8h2udqnfahrx",
+              "amount_sat": "2500000",
+              "outpoint": "a6bd06494256a80b20cd8f77187fac701e894e13e0978ccc05cfcf5c85a459f7:0",
+              "confirmations": "6",
+              "address_label": "treasury"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "time_ms": 112,
+      "kind": "stdout",
+      "data": {
+        "lines": [
+          "{\n",
+          "    \"utxos\": [\n",
+          "        {\n",
+          "            \"address_label\": \"treasury\",\n",
+          "            \"amount_sat\": \"2500000\",\n",
+          "            \"confirmations\": \"6\",\n",
+          "            \"outpoint\": \"a6bd06494256a80b20cd8f77187fac701e894e13e0978ccc05cfcf5c85a459f7:0\",\n",
+          "            \"static_address\": \"bcrt1p9aqrhhwns64a2aksx6wyaehjujs3ekhdew7w2j06gsqpfs8h2udqnfahrx\"\n",
+          "        }\n",
+          "    ]\n",
+          "}\n"
+        ]
+      }
+    },
+    {
+      "time_ms": 112,
+      "kind": "exit",
+      "data": {}
+    }
+  ]
+}

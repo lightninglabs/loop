@@ -40,4 +40,10 @@ type Store interface {
 	// is false if no such HTLC key exists.
 	GetMaxStaticAddressHtlcKeyIndex(ctx context.Context,
 		family keychain.KeyFamily) (uint32, bool, error)
+
+	// UpdateStaticAddressLabel updates the local label for a static address by
+	// its pkScript so metadata changes never alter address scripts or server
+	// state.
+	UpdateStaticAddressLabel(ctx context.Context, pkScript []byte,
+		label string) error
 }

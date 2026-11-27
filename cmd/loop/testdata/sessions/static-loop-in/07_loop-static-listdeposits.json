@@ -22,7 +22,8 @@
         "message_type": "looprpc.ListStaticAddressDepositsRequest",
         "payload": {
           "state_filter": "UNKNOWN_STATE",
-          "outpoints": []
+          "outpoints": [],
+          "skip_funding_tx_labels": false
         }
       }
     },

@@ -311,6 +311,112 @@ func TestListStaticAddressDepositsReturnsVisibleDeposits(t *testing.T) {
 	)
 }
 
+// TestListStaticAddressDepositsIncludesLabels verifies deposit listings carry
+// the current address label and the lnd label of the funding transaction.
+func TestListStaticAddressDepositsIncludesLabels(t *testing.T) {
+	t.Parallel()
+	setLogger(btclog.Disabled)
+
+	ctx := context.Background()
+	addrMgr, lnd := newTestStaticAddressContext(t, 10)
+	addresses, err := addrMgr.GetAllAddresses(ctx)
+	require.NoError(t, err)
+	require.Len(t, addresses, 1)
+
+	// Relabel after the deposit captured its address parameters, so the
+	// listing must read the label from the manager's active snapshot.
+	params := addresses[0]
+	err = addrMgr.UpdateStaticAddressLabel(ctx, params.PkScript, "treasury")
+	require.NoError(t, err)
+
+	fundingTx := wire.NewMsgTx(2)
+	fundingTx.AddTxOut(wire.NewTxOut(100_000, params.PkScript))
+	lnd.Transactions = append(lnd.Transactions, lndclient.Transaction{
+		Tx:    fundingTx,
+		Label: "September top-up",
+	})
+
+	labeled := &deposit.Deposit{
+		Hash:          fundingTx.TxHash(),
+		Index:         0,
+		AddressParams: params,
+	}
+	labeled.SetState(deposit.Deposited)
+
+	// lnd doesn't know this deposit's transaction, so its funding label
+	// stays empty without failing the listing.
+	unknown := &deposit.Deposit{
+		Hash:          chainhash.Hash{4},
+		Index:         1,
+		AddressParams: params,
+	}
+	unknown.SetState(deposit.Deposited)
+
+	walletKit := &txLookupCountingWalletKit{WalletKitClient: lnd.WalletKit}
+	lndServices := lnd.LndServices
+	lndServices.WalletKit = walletKit
+	server := &swapClientServer{
+		network:              lndclient.NetworkTestnet,
+		depositManager:       newTestDepositManager(labeled, unknown),
+		staticAddressManager: addrMgr,
+		lnd:                  &lndServices,
+	}
+
+	resp, err := server.ListStaticAddressDeposits(
+		ctx, &looprpc.ListStaticAddressDepositsRequest{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.FilteredDeposits, 2)
+	require.Equal(t, 2, walletKit.lookups)
+
+	byOutpoint := make(map[string]*looprpc.Deposit)
+	for _, d := range resp.FilteredDeposits {
+		byOutpoint[d.Outpoint] = d
+	}
+
+	got := byOutpoint[labeled.OutPoint.String()]
+	require.NotNil(t, got)
+	require.Equal(t, "treasury", got.AddressLabel)
+	require.Equal(t, "September top-up", got.FundingTxLabel)
+
+	got = byOutpoint[unknown.OutPoint.String()]
+	require.NotNil(t, got)
+	require.Equal(t, "treasury", got.AddressLabel)
+	require.Empty(t, got.FundingTxLabel)
+
+	// Callers that only select deposits can skip the wallet lookups. Address
+	// labels are local and still returned.
+	walletKit.lookups = 0
+	resp, err = server.ListStaticAddressDeposits(
+		ctx, &looprpc.ListStaticAddressDepositsRequest{
+			SkipFundingTxLabels: true,
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.FilteredDeposits, 2)
+	require.Zero(t, walletKit.lookups)
+	for _, d := range resp.FilteredDeposits {
+		require.Equal(t, "treasury", d.AddressLabel)
+		require.Empty(t, d.FundingTxLabel)
+	}
+}
+
+// txLookupCountingWalletKit counts funding transaction lookups.
+type txLookupCountingWalletKit struct {
+	lndclient.WalletKitClient
+
+	lookups int
+}
+
+// GetTransaction records the lookup and delegates to the wrapped wallet.
+func (w *txLookupCountingWalletKit) GetTransaction(ctx context.Context,
+	txid chainhash.Hash) (lndclient.Transaction, error) {
+
+	w.lookups++
+
+	return w.WalletKitClient.GetTransaction(ctx, txid)
+}
+
 // TestStaticAddressWithdrawalIncludesDepositAddress verifies withdrawal
 // listings use the common deposit conversion path, including the address that
 // received each deposit.
