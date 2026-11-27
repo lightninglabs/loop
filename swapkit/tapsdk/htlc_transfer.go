@@ -73,31 +73,42 @@ type HTLCTerms struct {
 // prevout returns the authenticated funding output and its outpoint after
 // checking that it carries the funding contract.
 func (t HTLCTerms) prevout() (*wire.TxOut, wire.OutPoint, error) {
-	if t.Funding == nil || t.HTLC == nil {
+	if t.HTLC == nil {
 		return nil, wire.OutPoint{}, swapkit.ErrInvalid
 	}
-	p, err := LastProof(t.InputProof)
+
+	return fundedPrevout(t.Funding, t.Input, t.InputProof)
+}
+
+// fundedPrevout returns the authenticated output of a funded contract and its
+// outpoint, after checking that the output really is locked by that contract.
+// A cooperative signature is only meaningful for such an output.
+func fundedPrevout(funding FundingContract,
+	funded sdk.CustomAnchorAssetOutputSummary,
+	rawProof []byte) (*wire.TxOut, wire.OutPoint, error) {
+
+	if funding == nil {
+		return nil, wire.OutPoint{}, swapkit.ErrInvalid
+	}
+	p, err := LastProof(rawProof)
 	if err != nil {
 		return nil, wire.OutPoint{}, err
 	}
 	point := p.OutPoint()
-	if point != SDKPoint(t.Input.AnchorOutpoint) ||
+	if point != SDKPoint(funded.AnchorOutpoint) ||
 		point.Index >= uint32(len(p.AnchorTx.TxOut)) ||
 		p.AnchorTx.TxOut[point.Index] == nil {
 
 		return nil, wire.OutPoint{}, swapkit.ErrInvalid
 	}
 	prevout := p.AnchorTx.TxOut[point.Index]
-
-	// The cooperative signature is only meaningful for an output that is
-	// really locked by the funding contract.
-	spend, err := t.Funding.TimeoutSpend(t.Input.TaprootAssetRoot)
+	spend, err := funding.TimeoutSpend(funded.TaprootAssetRoot)
 	if err != nil {
 		return nil, wire.OutPoint{}, err
 	}
 	if !bytes.Equal(spend.PkScript, prevout.PkScript) ||
-		spend.TaprootMerkleRoot != t.Input.TaprootMerkleRoot ||
-		prevout.Value != t.Input.AnchorValueSat {
+		spend.TaprootMerkleRoot != funded.TaprootMerkleRoot ||
+		prevout.Value != funded.AnchorValueSat {
 
 		return nil, wire.OutPoint{}, swapkit.ErrInvalid
 	}

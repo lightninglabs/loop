@@ -208,6 +208,17 @@ ordering; use the proof helpers and `swapkit.LoopInTimelocks` or
 `FallbackRequest` and `NewSwap` are the Loop In forms of the same two calls,
 with the terms taken from the offer and the deposit contract.
 
+A swap that settles off chain ends without the HTLC transaction: both parties
+sign a direct spend of the funded output to the party that would have claimed
+the HTLC. `ValidateCooperativeSpend` is the funder's check of that package
+before it co-signs. By then the funder is paid, so the outputs are not
+constrained. The check only ensures that the signature cannot be used for
+anything else: the funded output must be the single input, with no further
+asset, passive or wallet input, the signed transaction must commit to the
+authenticated funding output's value and script, and the signing plan must be
+the funding contract's cooperative key path under the agreed session context.
+It does not decide whether the swap is settled; that stays with the caller.
+
 The publisher spends the P2A output in a child transaction funded from its own
 wallet and submits parent and child as one package, for example through lnd's
 `walletrpc.SubmitPackage` (lnd v0.21.2 or later with a bitcoind backend). The

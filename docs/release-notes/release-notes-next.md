@@ -22,6 +22,9 @@
   from a client deposit for asset Loop In, or from a server reservation for
   asset Loop Out.
 
+* Add `tapsdk.ValidateCooperativeSpend`, the funder's check of a cooperative
+  spend of its deposit or reservation before it co-signs.
+
 #### Breaking Changes
 
 #### Bug Fixes
